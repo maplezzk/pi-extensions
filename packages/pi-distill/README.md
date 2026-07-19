@@ -26,7 +26,7 @@ The distillation prompt strictly follows the current locale selected by `/pi-lan
 
 ## How it works
 
-- Observes `bash`, `read`, `grep`, and `find` through Pi's native `tool_call` / `tool_result` events.
+- Discovers all active tools with an object parameter schema and observes their results through Pi's native `tool_call` / `tool_result` events.
 - Uses the tool's `outputPrompt` as the source of truth for whether and how to distill a result.
 - Treats a prompt containing only `RAW` as an explicit request for the original output.
 - Uses the current session model by default, or a configured `provider/model` override.
@@ -34,7 +34,7 @@ The distillation prompt strictly follows the current locale selected by `/pi-lan
 - Writes oversized distilled output or final output to a temporary file and returns its path instead of overflowing the tool result.
 - Adds a compact audit card when the active Pi display middleware is available, with a fallback renderer otherwise.
 
-It does not register a second `bash`, `read`, `grep`, or `find` tool, and it does not depend on `pi-tool-display`.
+It does not register replacement tools, and it does not depend on `pi-tool-display`.
 
 ## Install
 

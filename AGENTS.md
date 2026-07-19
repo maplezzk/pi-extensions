@@ -22,7 +22,7 @@ Each package owns its entrypoint, tests, configuration example, localization res
 
 ## Package boundaries
 
-- `pi-distill` observes `bash`, `read`, `grep`, and `find` results through Pi's native `tool_call` and `tool_result` events. It does not register duplicate built-in tools.
+- `pi-distill` discovers active tools with object parameter schemas and observes their results through Pi's native `tool_call` and `tool_result` events. It does not register duplicate tools.
 - `pi-tool-supervisor` reviews the actual before/after diff of `edit` and `write` against configured rule files. It reports findings but is not an operating-system sandbox or an edit rollback mechanism.
 - `pi-extensions-i18n` owns locale selection, catalog validation, interpolation, and the `/pi-language` command. Feature packages use it instead of implementing separate locale runtimes.
 

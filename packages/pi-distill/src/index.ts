@@ -1,8 +1,8 @@
 /**
  * pi-distill 工具输出提炼扩展
  *
- * 通过 Pi 的工具事件处理 bash、read、grep、find 工具结果，并在会话启动时
- * 原地扩展最终生效工具的参数 schema。不注册同名工具，也不争夺工具所有权。
+ * 通过 Pi 的工具事件处理所有可扩展工具的结果，并在会话启动时原地扩展
+ * 最终生效工具的参数 schema。不注册同名工具，也不争夺工具所有权。
  *
  * 所有工具统一使用 outputPrompt：严格传入 RAW 时返回原始输出；其他非空
  * outputPrompt 表示调用提炼模型，具体保留内容由 outputPrompt 决定。
@@ -518,23 +518,27 @@ async function processToolResult(
   }
 }
 
-const DISTILL_TOOL_NAMES = ["bash", "read", "grep", "find"] as const;
-type DistillToolName = typeof DISTILL_TOOL_NAMES[number];
-
-function isDistillToolName(toolName: string): toolName is DistillToolName {
-  return (DISTILL_TOOL_NAMES as readonly string[]).includes(toolName);
-}
-
 function extendOutputPromptParameter(tool: ToolInfo): boolean {
-  if (!isDistillToolName(tool.name)) return false;
-  const parameters = tool.parameters as unknown as Record<string, unknown>;
-  const properties = parameters?.properties;
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+  const parameters = tool.parameters as unknown as Record<string, unknown> | undefined;
+  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
     console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputPrompt is unavailable.`);
     return false;
   }
 
-  (properties as Record<string, unknown>).outputPrompt = {
+  if (parameters.type !== "object") {
+    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputPrompt is unavailable.`);
+    return false;
+  }
+
+  const properties = parameters.properties;
+  if (properties === undefined) {
+    parameters.properties = {};
+  } else if (typeof properties !== "object" || properties === null || Array.isArray(properties)) {
+    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputPrompt is unavailable.`);
+    return false;
+  }
+
+  (parameters.properties as Record<string, unknown>).outputPrompt = {
     type: "string",
     description: tool.name === "bash"
       ? BASH_OUTPUT_PROMPT_DESCRIPTION
@@ -717,7 +721,6 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     extendParameters();
   });
   pi.on("tool_call", (event) => {
-    if (!isDistillToolName(event.toolName)) return;
     pendingCalls.set(event.toolCallId, {
       outputPrompt: getOutputPrompt(event.input),
       originalUserPrompt,
@@ -727,7 +730,6 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     delete (event.input as Record<string, unknown>).outputPrompt;
   });
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
-    if (!isDistillToolName(event.toolName)) return;
     const pending = pendingCalls.get(event.toolCallId);
     pendingCalls.delete(event.toolCallId);
     const outputPrompt = pending?.outputPrompt ?? getOutputPrompt(event.input);

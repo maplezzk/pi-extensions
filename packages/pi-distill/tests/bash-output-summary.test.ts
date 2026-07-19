@@ -379,13 +379,14 @@ test("pi-distill 通过通用 tool-display result middleware 渲染且不重复�
     },
     unregisterResultRenderMiddleware: () => true,
     hasResultRenderMiddleware: (id: string) => id === "pi-distill.result-renderer.v1",
-    isResultRenderPipelineActive: (toolName: string) => toolName === "bash",
+    isResultRenderPipelineActive: (toolName: string) => ["bash", "custom-tool"].includes(toolName),
   };
   (globalThis as any)[apiKey] = fakeApi;
   const dispose = registerDistillToolDisplayMiddleware();
   try {
     assert.equal(isDistillToolDisplayMiddlewareActive("bash"), true);
     assert.equal(isDistillToolDisplayMiddlewareActive("read"), false);
+    assert.equal(isDistillToolDisplayMiddlewareActive("custom-tool"), true);
     const component = registration.middleware({
       toolName: "bash",
       result: {
@@ -452,7 +453,7 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
   process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-distill-extension-"));
   try {
     const handlers = new Map<string, (...args: any[]) => any>();
-    const tools = ["bash", "read", "grep", "find", "ls"].map((name) => ({
+    const tools = ["bash", "read", "grep", "find", "ls", "custom-tool"].map((name) => ({
       name,
       description: `${name} tool`,
       parameters: {
@@ -478,7 +479,7 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     await handlers.get("before_agent_start")?.({ type: "before_agent_start" }, {});
 
     assert.equal(registeredToolCount, 0);
-    for (const tool of tools.slice(0, 4)) {
+    for (const tool of tools) {
       const schema = tool.parameters as any;
       assert.equal(schema.required.filter((value: string) => value === "outputPrompt").length, 1);
       assert.equal(schema.properties.outputPrompt.type, "string");
@@ -487,12 +488,11 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
         tool.name === "bash" ? BASH_OUTPUT_PROMPT_DESCRIPTION : OUTPUT_PROMPT_DESCRIPTION,
       );
     }
-    assert.equal((tools[4]!.parameters as any).properties.outputPrompt, undefined);
 
-    const input: Record<string, unknown> = { command: "printf ok", outputPrompt: "RAW" };
+    const input: Record<string, unknown> = { value: "custom", outputPrompt: "RAW" };
     await handlers.get("tool_call")?.({
       type: "tool_call",
-      toolName: "bash",
+      toolName: "custom-tool",
       toolCallId: "call-1",
       input,
     }, {});
@@ -500,7 +500,7 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
 
     const result = await handlers.get("tool_result")?.({
       type: "tool_result",
-      toolName: "bash",
+      toolName: "custom-tool",
       toolCallId: "call-1",
       input,
       content: [{ type: "text", text: "ok" }],

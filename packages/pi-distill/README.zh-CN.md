@@ -26,7 +26,7 @@
 
 ## 工作方式
 
-- 通过 Pi 原生的 `tool_call` / `tool_result` 事件监听 `bash`、`read`、`grep` 和 `find`。
+- 自动发现所有参数 schema 为 object 的已启用工具，并通过 Pi 原生的 `tool_call` / `tool_result` 事件监听其结果。
 - 以工具的 `outputPrompt` 作为是否提炼、如何提炼的依据。
 - 当提示词严格只有 `RAW` 时，视为明确要求返回原始输出。
 - 默认使用当前会话模型，也可以配置独立的 `provider/model`。
@@ -34,7 +34,7 @@
 - 提炼结果或最终返回结果过大时写入临时文件，只把文件路径返回给 Agent，避免工具结果失控膨胀。
 - 当前 Pi 展示中间件可用时显示紧凑审计卡片，否则使用自己的 fallback renderer。
 
-它不会注册第二个 `bash`、`read`、`grep` 或 `find` 工具，也不依赖 `pi-tool-display`。
+它不会注册替代工具，也不依赖 `pi-tool-display`。
 
 ## 安装
 

@@ -5,7 +5,6 @@ import { loadDistillConfig } from "./summary-utils.ts";
 const TOOL_DISPLAY_API_KEY = Symbol.for("pi-tool-display.api.v1");
 const PENDING_MIDDLEWARES_KEY = Symbol.for("pi-tool-display.pendingResultRenderMiddlewares.v1");
 const DISTILL_MIDDLEWARE_ID = "pi-distill.result-renderer.v1";
-const SUPPORTED_TOOLS = new Set(["bash", "read", "grep", "find"]);
 
 type RenderTheme = {
   fg(color: string, text: string): string;
@@ -58,7 +57,6 @@ function asComponent(value: unknown): Component | undefined {
 }
 
 const distillMiddleware: ResultMiddleware = (context, next) => {
-  if (!SUPPORTED_TOOLS.has(context.toolName)) return next();
   const details = getDetails(context.result);
   if (!details) return next();
   const render = resolveDistillRenderConfig(details, loadDistillConfig().render);
