@@ -1,10 +1,28 @@
 {
   "name": "pi-extensions",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "workspaces": [
     "packages/*"
   ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "coding-agent"
+  ],
+  "pi": {
+    "extensions": [
+      "packages/*/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0",
+    "pi-extensions-i18n": "^0.2.0"
+  },
   "scripts": {
     "test": "node scripts/run-workspaces.mjs test",
     "typecheck": "node scripts/run-workspaces.mjs typecheck",
