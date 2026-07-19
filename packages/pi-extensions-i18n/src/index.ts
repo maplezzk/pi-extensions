@@ -23,6 +23,7 @@ export interface LocaleConfig {
 export type MessageCatalog = Record<string, Record<Locale, string>>;
 export type MessageKey<Catalog extends MessageCatalog> = keyof Catalog & string;
 export type MessageParams = Record<string, string | number>;
+export type LocaleResolver = () => Locale;
 
 interface Translator<Catalog extends MessageCatalog> {
   locale(): Locale;
@@ -166,17 +167,19 @@ function interpolate(template: string, params: MessageParams | undefined): strin
 
 export function createTranslator<Catalog extends MessageCatalog>(
   catalog: Catalog,
+  localeResolver: LocaleResolver = getLocale,
 ): Translator<Catalog> {
   return {
-    locale: getLocale,
+    locale: localeResolver,
     t(key, params) {
       const entry = catalog[key];
       if (!entry) {
         throw new Error(`Unknown i18n message key: ${String(key)}`);
       }
-      const message = entry[getLocale()];
+      const locale = localeResolver();
+      const message = entry[locale];
       if (message === undefined) {
-        throw new Error(`Missing ${getLocale()} translation for message key: ${String(key)}`);
+        throw new Error(`Missing ${locale} translation for message key: ${String(key)}`);
       }
       return interpolate(message, params);
     },
