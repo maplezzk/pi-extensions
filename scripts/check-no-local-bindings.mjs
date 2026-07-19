@@ -11,11 +11,15 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 let failed = false;
+
+// packages/ 可能尚未填充（空骨架阶段）：不存在则创建，保证 grep 有稳定目标
+const PACKAGES_DIR = join(ROOT, "packages");
+if (!existsSync(PACKAGES_DIR)) mkdirSync(PACKAGES_DIR);
 
 function grepCheck(label, pattern, targets) {
   try {
