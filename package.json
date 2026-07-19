@@ -6,8 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "npm test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "node scripts/run-workspaces.mjs test",
+    "typecheck": "node scripts/run-workspaces.mjs typecheck",
     "check": "npm run typecheck && npm test && node scripts/check-no-local-bindings.mjs"
   },
   "engines": {
