@@ -4,6 +4,24 @@
 
 `pi-distill` is a Pi extension that controls how tool results enter the agent context. It does not replace tools or change how commands run; it adds an optional result-processing layer after the tool has returned its real output.
 
+## Install
+
+```bash
+pi install npm:pi-distill
+```
+
+Reload Pi after installation:
+
+```text
+/reload
+```
+
+Open the interactive configuration command with:
+
+```text
+/pi-distill
+```
+
 ## The idea
 
 We are not trying to make the agent see less information. We are trying to avoid making it carry thousands of log lines into context just to find one conclusion.
@@ -86,24 +104,6 @@ The distillation prompt strictly follows the locale selected by `/pi-language`:
 - Non-text results are a completeness boundary: images, audio, binary data, and mixed content bypass text distillation.
 - Oversized distilled or final text is written to a temporary file and represented by its path, preventing unbounded context growth.
 - If no model is available, distillation fails open: the original result is retained and Pi can continue running.
-
-## Install
-
-```bash
-pi install npm:pi-distill
-```
-
-Reload Pi after installation:
-
-```text
-/reload
-```
-
-Open the interactive configuration command with:
-
-```text
-/pi-distill
-```
 
 ## Configuration
 
