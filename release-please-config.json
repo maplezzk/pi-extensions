@@ -1,5 +1,10 @@
 {
-  "plugins": ["node-workspace"],
+  "plugins": [
+    {
+      "type": "node-workspace",
+      "updatePeerDependencies": true
+    }
+  ],
   "packages": {
     "packages/pi-extensions-i18n": {},
     "packages/pi-distill": {},
