@@ -7,13 +7,15 @@
 
 > English documentation: [README.md](./README.md)
 
-仓库中的扩展主要解决工具调用型编码流程中的常见问题：
+## 包清单
 
-- 在超长工具结果占满上下文前进行提炼；
-- 根据项目规则审查 `edit` 和 `write` 产生的文件变更；
-- 为独立发布的扩展提供一致的中英文运行时文案。
+每个包都可以独立安装；具体行为、配置、示例和测试请查看对应包内的 README。
 
-每个扩展都是 `packages/` 下的独立包，具体行为、配置、示例和测试请查看对应包内的 README。
+| 包 | 说明 | 文档 |
+| --- | --- | --- |
+| [`pi-distill`](./packages/pi-distill) | 在超长 `bash`、`read`、`grep`、`find` 输出占满上下文前进行提炼。 | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
+| [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配的项目规则审查 `edit` 和 `write` 变更，并返回结构化结果。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
+| [`pi-extensions-i18n`](./packages/pi-extensions-i18n) | 提供共享的语言选择、catalog 加载、插值和 `/pi-language` 命令。 | [English](./packages/pi-extensions-i18n/README.md) · [中文](./packages/pi-extensions-i18n/README.zh-CN.md) |
 
 ## 一键安装全部扩展
 

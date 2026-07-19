@@ -7,13 +7,15 @@ A small collection of composable extensions for the [Pi coding agent](https://gi
 
 > 中文文档：[README.zh-CN.md](./README.zh-CN.md)
 
-The extensions in this repository help with common tool-heavy coding workflows:
+## Packages
 
-- compacting verbose tool output before it consumes the context window;
-- reviewing `edit` and `write` changes against project rules;
-- sharing consistent bilingual runtime messages across independently shipped extensions.
+Each package is independently installable and keeps its detailed behavior, configuration, examples, and tests in its own README.
 
-Each extension is maintained as an independent package under [`packages/`](./packages). Package-specific behavior, configuration, examples, and tests are documented in that package's README.
+| Package | Description | Documentation |
+| --- | --- | --- |
+| [`pi-distill`](./packages/pi-distill) | Compacts verbose `bash`, `read`, `grep`, and `find` output before it consumes the context window. | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
+| [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | Reviews `edit` and `write` changes against matching project rules and returns structured findings. | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
+| [`pi-extensions-i18n`](./packages/pi-extensions-i18n) | Provides shared locale selection, catalog loading, interpolation, and the `/pi-language` command. | [English](./packages/pi-extensions-i18n/README.md) · [中文](./packages/pi-extensions-i18n/README.zh-CN.md) |
 
 ## Install everything
 
