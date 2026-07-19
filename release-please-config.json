@@ -1,0 +1,7 @@
+{
+  "packages": {
+    "packages/pi-extensions-i18n": {},
+    "packages/pi-distill": {},
+    "packages/pi-tool-supervisor": {}
+  }
+}
