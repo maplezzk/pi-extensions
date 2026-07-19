@@ -1,0 +1,146 @@
+{
+  "positiveInteger": {
+    "zh-CN": "请输入大于 0 的整数。",
+    "en-US": "Enter a positive integer."
+  },
+  "modelInput": {
+    "zh-CN": "审查模型（provider/model）",
+    "en-US": "Review model (provider/model)"
+  },
+  "modelInvalid": {
+    "zh-CN": "模型格式应为 provider/model。",
+    "en-US": "The model must use the provider/model format."
+  },
+  "listInput": {
+    "zh-CN": "规则文件（逗号分隔）",
+    "en-US": "Rule files (comma-separated)"
+  },
+  "listInputOptional": {
+    "zh-CN": "文件匹配模式（逗号分隔，留空匹配全部）",
+    "en-US": "File patterns (comma-separated; empty matches all)"
+  },
+  "listRequired": {
+    "zh-CN": "至少需要填写一项。",
+    "en-US": "Enter at least one item."
+  },
+  "enabled": {
+    "zh-CN": "已启用",
+    "en-US": "Enabled"
+  },
+  "disabled": {
+    "zh-CN": "已禁用",
+    "en-US": "Disabled"
+  },
+  "allFiles": {
+    "zh-CN": "全部文件（由规则 front matter 决定）",
+    "en-US": "All files (determined by rule front matter)"
+  },
+  "editReviewer": {
+    "zh-CN": "编辑审查器：{name}",
+    "en-US": "Edit reviewer: {name}"
+  },
+  "status": {
+    "zh-CN": "状态：{value}",
+    "en-US": "Status: {value}"
+  },
+  "name": {
+    "zh-CN": "名称：{value}",
+    "en-US": "Name: {value}"
+  },
+  "model": {
+    "zh-CN": "模型：{value}",
+    "en-US": "Model: {value}"
+  },
+  "rules": {
+    "zh-CN": "规则文件：{value}",
+    "en-US": "Rule files: {value}"
+  },
+  "patterns": {
+    "zh-CN": "文件匹配：{value}",
+    "en-US": "File patterns: {value}"
+  },
+  "deleteReviewer": {
+    "zh-CN": "删除此审查器",
+    "en-US": "Delete this reviewer"
+  },
+  "back": {
+    "zh-CN": "返回",
+    "en-US": "Back"
+  },
+  "reviewerName": {
+    "zh-CN": "审查器名称",
+    "en-US": "Reviewer name"
+  },
+  "deleteTitle": {
+    "zh-CN": "删除审查器？",
+    "en-US": "Delete reviewer?"
+  },
+  "deleteMessage": {
+    "zh-CN": "将删除「{name}」的配置。",
+    "en-US": "This will delete the configuration for \"{name}\"."
+  },
+  "addReviewer": {
+    "zh-CN": "添加审查器",
+    "en-US": "Add reviewer"
+  },
+  "savedWarnings": {
+    "zh-CN": "文件评审配置已保存，但有警告：{warnings}",
+    "en-US": "File review configuration saved with warnings: {warnings}"
+  },
+  "saved": {
+    "zh-CN": "文件评审配置已保存，下一次 edit/write 生效。",
+    "en-US": "File review configuration saved; changes apply to the next edit/write."
+  },
+  "configWarnings": {
+    "zh-CN": "当前配置有警告，将以可用值打开：{warnings}",
+    "en-US": "The current configuration has warnings; opening with usable values: {warnings}"
+  },
+  "configTitle": {
+    "zh-CN": "pi-tool-supervisor 配置",
+    "en-US": "pi-tool-supervisor settings"
+  },
+  "enabledConfig": {
+    "zh-CN": "总开关：{value}",
+    "en-US": "Enabled: {value}"
+  },
+  "timeoutConfig": {
+    "zh-CN": "超时时间：{value} 秒",
+    "en-US": "Timeout: {value} seconds"
+  },
+  "timeoutInput": {
+    "zh-CN": "审查超时时间（秒）",
+    "en-US": "Review timeout (seconds)"
+  },
+  "outputInput": {
+    "zh-CN": "最终返回最大字符数",
+    "en-US": "Maximum final output characters"
+  },
+  "rulesInput": {
+    "zh-CN": "规则文件最大行数",
+    "en-US": "Maximum rule file lines"
+  },
+  "outputConfig": {
+    "zh-CN": "最终返回上限：{value} 字符",
+    "en-US": "Final output limit: {value} chars"
+  },
+  "rulesConfig": {
+    "zh-CN": "规则最大行数：{value}",
+    "en-US": "Maximum rule lines: {value}"
+  },
+  "saveExit": {
+    "zh-CN": "保存并退出",
+    "en-US": "Save and exit"
+  },
+  "discard": {
+    "zh-CN": "放弃修改",
+    "en-US": "Discard changes"
+  },
+  "commandDescription": {
+    "zh-CN": "通过交互式菜单配置 edit/write 文件评审",
+    "en-US": "Configure edit/write file review through an interactive menu"
+  },
+  "interactiveOnly": {
+    "zh-CN": "当前模式不支持交互式配置，请使用有 UI 的 Pi 会话。",
+    "en-US": "Interactive configuration is not supported in this mode; use a Pi session with a UI."
+  }
+}

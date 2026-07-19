@@ -1,0 +1,54 @@
+{
+  "passed": {
+    "zh-CN": "已通过",
+    "en-US": "Passed"
+  },
+  "rejected": {
+    "zh-CN": "未通过",
+    "en-US": "Rejected"
+  },
+  "failed": {
+    "zh-CN": "审查失败·已放行",
+    "en-US": "Review failed · allowed"
+  },
+  "skipped": {
+    "zh-CN": "已跳过",
+    "en-US": "Skipped"
+  },
+  "disabled": {
+    "zh-CN": "未启用",
+    "en-US": "Disabled"
+  },
+  "reviewerCount": {
+    "zh-CN": "{count} 个审查器",
+    "en-US": "{count} reviewers"
+  },
+  "file": {
+    "zh-CN": "  文件：{path}",
+    "en-US": "  File: {path}"
+  },
+  "reviewerPassed": {
+    "zh-CN": "✓ 通过",
+    "en-US": "✓ Passed"
+  },
+  "reviewerRejected": {
+    "zh-CN": "✗ 不通过",
+    "en-US": "✗ Rejected"
+  },
+  "reviewerFailed": {
+    "zh-CN": "! 失败·已放行",
+    "en-US": "! Failed · allowed"
+  },
+  "reviewerSkipped": {
+    "zh-CN": "- 跳过",
+    "en-US": "- Skipped"
+  },
+  "reviewer": {
+    "zh-CN": "reviewer",
+    "en-US": "reviewer"
+  },
+  "title": {
+    "zh-CN": "✦ supervisor",
+    "en-US": "✦ supervisor"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "timeoutSeconds": 10,
+  "maxOutputChars": 10000,
+  "maxRuleLines": 100,
+  "reviewers": [
+    {
+      "name": "java-safety-local",
+      "model": "provider/model",
+      "rulesFiles": [
+        "/absolute/path/to/rules.md"
+      ]
+    }
+  ]
+}
