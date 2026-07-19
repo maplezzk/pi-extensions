@@ -1,32 +1,108 @@
 # pi-tool-supervisor
 
-Pi 工具监督扩展。当前在 `edit` / `write` 执行完成后读取实际文件变化，并将 diff 发送给配置的侧边评审模型；后续可在同一包中增加其他工具监督能力。
+`pi-tool-supervisor` is a post-edit review extension for Pi. It checks the actual file change produced by `edit` or `write` against project rules and returns a structured review audit to the agent.
 
-## 安装
+## What it solves
 
-该包通过 Pi 原生 `tool_call` / `tool_result` 事件接入 `edit` / `write`，不依赖 `pi-tool-display`，也不会注册同名工具。未安装、未启用或未接管对应工具时，会显示 UI-only 审查状态；可用时则通过通用 result render middleware 把审查卡片追加到对应工具结果。`pi-tool-display` 不读取或解释 supervisor 字段。
+An edit tool can complete successfully while the resulting file still violates local conventions, architecture constraints, security rules, or task-specific instructions. Reviewing the actual before/after diff gives a model-based reviewer the information needed to catch those issues immediately, while keeping the review policy configurable per project.
 
-通过 npm 安装：
+## How it works
+
+- Captures the file state before `edit` / `write` and the actual file state after the tool result.
+- Builds a diff and selects only reviewers whose rule files match the changed file.
+- Supports multiple reviewers running in parallel, each with its own model and one or more rule files.
+- Reads optional front matter from rule files for `enabled`, `filePatterns`, `complexity`, and `consumers`.
+- Returns `passed`, `rejected`, `failed`, or `skipped` status with summaries, findings, rule groups, and durations.
+- Re-reads the configuration for every edit/write, so configuration changes apply to the next operation.
+- Shows an audit card through Pi's display middleware or a fallback renderer.
+
+It observes Pi's native events and does not register a replacement `edit` or `write` tool.
+
+## Install
 
 ```bash
 pi install npm:pi-tool-supervisor
 ```
 
-安装后用 `/reload` 重新加载扩展。
+Reload Pi after installation:
 
-## 配置
+```text
+/reload
+```
 
-交互式配置命令：
+Use the interactive configuration command:
 
 ```text
 /pi-tool-supervisor
 ```
 
-配置文件保存在 Pi 全局扩展目录下，文件名为 `config.json`（设置 `PI_CODING_AGENT_DIR` 时使用该环境变量下的对应路径）。可通过 `/pi-tool-supervisor` 交互命令查看或修改。
+## Configuration
 
-命令会打开交互式配置菜单，支持配置总开关、超时（秒）、最终返回字符上限、规则行数、Reviewer 增删改、模型和规则文件。默认最长等待 `10` 秒、最终返回上限 `10000` 字符。规则文件仍可以通过 front matter 声明
-`enabled`、`filePatterns`、`complexity` 和 `consumers`。
+The default configuration path is:
 
-配置文件会在每次 `edit` / `write` 前重新读取，保存后立即生效。无论审查是否启用，最终返回内容超过 `maxOutputChars` 时都会写入 `/tmp/pi-tool-supervisor/` 临时文件。旧配置中的 `timeoutMs` 和 `maxChars` 仍兼容，会自动转换为新字段。
+```text
+~/.pi/agent/extensions/pi-tool-supervisor/config.json
+```
 
-从 `pi-file-edit-review` 升级时，如果新目录尚无配置，扩展会继续读取旧的 `extensions/pi-file-edit-review/config.json`；通过 `/pi-tool-supervisor` 保存后，配置会写入新的 `extensions/pi-tool-supervisor/config.json`。
+Start from [`config.example.json`](./config.example.json):
+
+```json
+{
+  "enabled": true,
+  "timeoutSeconds": 10,
+  "maxOutputChars": 10000,
+  "maxRuleLines": 100,
+  "reviewers": [
+    {
+      "name": "project-rules",
+      "model": "provider/model",
+      "rulesFiles": [
+        "/absolute/path/to/rules.md"
+      ]
+    }
+  ]
+}
+```
+
+Each reviewer must have a `provider/model` reference and either `rulesFile` or `rulesFiles`. Relative rule-file paths are resolved from the current project working directory.
+
+| Setting | Meaning |
+| --- | --- |
+| `enabled` | Enables or disables the review layer. |
+| `timeoutSeconds` | Maximum time allowed for each reviewer model call. |
+| `maxOutputChars` | Maximum size of the returned tool result; larger output is written to a temporary file. |
+| `maxRuleLines` | Maximum rule-file size accepted for a single review rule. |
+| `reviewers` | Reviewer name, model, rule files, and optional matching behavior. |
+
+Rule-file front matter can scope a rule to particular files or consumers:
+
+```yaml
+---
+name: TypeScript safety
+enabled: true
+filePatterns:
+  - "**/*.ts"
+complexity: local
+consumers:
+  - editor-review
+---
+```
+
+## Review semantics
+
+- A rejected review is appended to the tool result with findings; the agent is expected to address it before continuing.
+- A reviewer failure is reported as an incomplete review and the original edit result is allowed through.
+- A failed tool call or an unchanged file is skipped.
+- The extension does not roll back edits, block the operating system, or replace Pi's permission and sandbox controls.
+
+When upgrading from `pi-file-edit-review`, the extension reads the legacy configuration if the new configuration does not exist. Saving through `/pi-tool-supervisor` writes the new configuration path.
+
+## Requirements
+
+- Node.js 22 or newer.
+- A configured Pi model for each enabled reviewer.
+- Rule files that describe the project-specific checks the reviewer should apply.
+
+## License
+
+[MIT](../../LICENSE)

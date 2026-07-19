@@ -1,42 +1,89 @@
 # pi-extensions-i18n
 
-Shared i18n runtime for pi extensions, with bilingual (zh-CN / en-US) support.
+Shared localization runtime for Pi extensions. It provides a small, catalog-backed API for `zh-CN`, `en-US`, and automatic locale selection.
 
-pi 扩展的公共中英文运行时。提供：
+## Why a shared package
 
-- `zh-CN`、`en-US` 和 `auto` 三种语言偏好；
-- 统一读取 `~/.pi/agent/extensions/pi-extensions-i18n/config.json`；
-- `/pi-language` 终端交互式语言配置命令；
-- `PI_EXTENSIONS_LOCALE` 环境变量覆盖配置；
-- 面向 UI、命令描述和 agent prompt 的翻译器，以及外部 JSON catalog 加载和校验。
+Independent Pi extensions still need the same operational pieces: a portable configuration path, locale precedence, fallback behavior, catalog validation, and parameter interpolation. Keeping those pieces here lets feature packages concentrate on their own behavior while keeping user-facing messages consistent.
 
-## Install / 安装
+## Features
+
+- `zh-CN`, `en-US`, and `auto` locale preferences.
+- Persistent setting at `~/.pi/agent/extensions/pi-extensions-i18n/config.json`.
+- `PI_EXTENSIONS_LOCALE` environment-variable override.
+- `/pi-language` interactive command, plus `/pi-language en-US` direct selection.
+- Catalog loading and validation requiring both language entries for every message key.
+- Translator interpolation for user-facing UI, command descriptions, and agent prompts.
+
+## Install
 
 ```bash
 pi install npm:pi-extensions-i18n
 ```
 
-本包是共享 peer dependency，依赖它的扩展（如 `pi-distill`、`pi-tool-supervisor`）会自动引用，不会把配置复制到每个插件目录。
+Feature packages such as `pi-distill` and `pi-tool-supervisor` use it as a shared dependency. Install it explicitly when you want the locale command by itself.
 
-## Locale priority / 语言优先级
+Reload Pi after installation:
 
 ```text
-PI_EXTENSIONS_LOCALE 环境变量 > 持久化配置 > 默认 zh-CN
+/reload
 ```
 
-`PI_EXTENSIONS_LOCALE` 和配置文件支持 `zh-CN`、`en-US`、`auto`，也接受 `zh`、`en` 简写。`auto` 根据 `LC_ALL`、`LC_MESSAGES` 或 `LANG` 判断系统语言。
+## Locale precedence
+
+```text
+PI_EXTENSIONS_LOCALE environment variable
+    > persisted config
+    > default zh-CN
+```
+
+The `auto` preference checks `LC_ALL`, `LC_MESSAGES`, and `LANG`; Chinese system locales resolve to `zh-CN`, and other locales resolve to `en-US`. `zh` and `en` are accepted as short aliases.
+
+Examples:
 
 ```bash
 PI_EXTENSIONS_LOCALE=en-US pi
 ```
 
-在 pi 中执行 `/pi-language` 可通过 select 菜单保存语言；也可以直接执行 `/pi-language en-US`。
+```text
+/pi-language en-US
+```
 
-## Catalog layout / 翻译资源约定
+## Extension author API
 
-扩展自己的翻译资源保留在对应包的 `locales/` 目录中，按源码模块拆分为 JSON 文件，例如 `pi-distill/locales/summary-utils.json`；本包自身的 `/pi-language` 文案位于 `locales/command.json`。
+The package exports the locale and catalog primitives used by the feature packages:
 
-每个 catalog 条目必须同时包含 `zh-CN` 与 `en-US` 两个语言键（CI 强制检查）。运行时只共享语言解析、配置存储、catalog 校验和插值规则，避免各插件重复实现配置路径和 fallback。
+```ts
+import {
+  createTranslator,
+  getLocale,
+  loadCatalog,
+} from "pi-extensions-i18n";
+
+const messages = loadCatalog(new URL("../locales/messages.json", import.meta.url));
+const i18n = createTranslator(messages);
+
+i18n.t("description");
+getLocale();
+```
+
+Catalog entries must contain both locale keys:
+
+```json
+{
+  "description": {
+    "zh-CN": "扩展描述",
+    "en-US": "Extension description"
+  }
+}
+```
+
+Invalid catalogs fail during loading, which makes missing translations visible in tests and CI instead of silently leaking a single-language message to users.
+
+## Requirements
+
+- Node.js 22 or newer.
+- Pi's extension runtime when using the `/pi-language` command.
 
 ## License
 

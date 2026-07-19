@@ -12,6 +12,7 @@
     "src",
     "locales",
     "README.md",
+    "README.zh-CN.md",
     "tsconfig.json"
   ],
   "scripts": {
