@@ -1,4 +1,5 @@
 {
+  "plugins": ["node-workspace"],
   "packages": {
     "packages/pi-extensions-i18n": {},
     "packages/pi-distill": {},

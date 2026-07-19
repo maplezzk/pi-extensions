@@ -18,7 +18,13 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        # Release PR 分支上 lock 可能与 bump 后的 package.json 不同步：PR 用 install 容忍漂移，main 用 ci 保持严格
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            npm install
+          else
+            npm ci
+          fi
 
       - name: Type check
         run: npm run typecheck
