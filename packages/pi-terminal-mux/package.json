@@ -1,0 +1,63 @@
+{
+  "name": "pi-terminal-mux",
+  "version": "0.1.0",
+  "description": "Terminal multiplexer abstraction for pi extensions — unified surface API across muxy, cmux, tmux, zellij, wezterm, herdr and otty, with headless fallback",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./mux": "./src/mux.ts",
+    "./herdr": "./src/herdr.ts",
+    "./otty": "./src/otty.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "locales",
+    "README.md",
+    "README.zh-CN.md",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "maplezzk",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-terminal-mux",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-terminal-mux"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "terminal",
+    "multiplexer",
+    "tmux",
+    "zellij",
+    "wezterm",
+    "coding-agent"
+  ],
+  "peerDependencies": {
+    "pi-extensions-i18n": ">=0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.4",
+    "pi-extensions-i18n": "^0.3.0",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  }
+}
