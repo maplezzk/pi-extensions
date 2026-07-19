@@ -1,17 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import {
-  createTranslator,
-  getLocale,
-  loadCatalog,
-  type Locale,
-} from "pi-extensions-i18n";
+import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 
-const summaryMessages = loadCatalog(new URL("../locales/summary-utils.json", import.meta.url));
-
-const HAN_PATTERN = /\p{Script=Han}/u;
-const LATIN_PATTERN = /[A-Za-z]/;
+const i18n = createTranslator(loadCatalog(new URL("../locales/summary-utils.json", import.meta.url)));
 
 const DEFAULT_MIN_CHARS = 200;
 const DEFAULT_MAX_CHARS = 100_000;
@@ -395,8 +387,6 @@ export function buildSummaryPrompt(
   output: string,
   originalUserPrompt?: string,
 ): string {
-  const promptLocale = inferPromptLocale(originalUserPrompt, prompt);
-  const i18n = createTranslator(summaryMessages, () => promptLocale);
   const languageContext = originalUserPrompt?.trim()
     ? [
         i18n.t("languageContext"),
@@ -421,15 +411,4 @@ export function buildSummaryPrompt(
     output,
     "</tool-output>",
   ].join("\n");
-}
-
-/** 根据原始用户消息选择提炼 prompt 语言；没有自然语言时回退到扩展 locale。 */
-export function inferPromptLocale(
-  originalUserPrompt?: string,
-  distillationPrompt?: string,
-): Locale {
-  const text = originalUserPrompt?.trim() || distillationPrompt?.trim() || "";
-  if (HAN_PATTERN.test(text)) return "zh-CN";
-  if (LATIN_PATTERN.test(text)) return "en-US";
-  return getLocale();
 }

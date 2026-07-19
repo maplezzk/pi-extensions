@@ -23,7 +23,6 @@ export interface LocaleConfig {
 export type MessageCatalog = Record<string, Record<Locale, string>>;
 export type MessageKey<Catalog extends MessageCatalog> = keyof Catalog & string;
 export type MessageParams = Record<string, string | number>;
-export type LocaleResolver = () => Locale;
 
 interface Translator<Catalog extends MessageCatalog> {
   locale(): Locale;
@@ -93,10 +92,12 @@ export function getLocalePreference(): LocalePreference {
     return DEFAULT_LOCALE_PREFERENCE;
   }
 
-  if (runtimePreference) return runtimePreference;
-  runtimePreference =
-    readPersistedPreference(resolveAgentDir()) ?? DEFAULT_LOCALE_PREFERENCE;
-  return runtimePreference;
+  const persisted = readPersistedPreference(resolveAgentDir());
+  if (persisted) {
+    runtimePreference = persisted;
+    return persisted;
+  }
+  return runtimePreference ?? DEFAULT_LOCALE_PREFERENCE;
 }
 
 function detectSystemLocale(): Locale {
@@ -167,16 +168,15 @@ function interpolate(template: string, params: MessageParams | undefined): strin
 
 export function createTranslator<Catalog extends MessageCatalog>(
   catalog: Catalog,
-  localeResolver: LocaleResolver = getLocale,
 ): Translator<Catalog> {
   return {
-    locale: localeResolver,
+    locale: getLocale,
     t(key, params) {
       const entry = catalog[key];
       if (!entry) {
         throw new Error(`Unknown i18n message key: ${String(key)}`);
       }
-      const locale = localeResolver();
+      const locale = getLocale();
       const message = entry[locale];
       if (message === undefined) {
         throw new Error(`Missing ${locale} translation for message key: ${String(key)}`);

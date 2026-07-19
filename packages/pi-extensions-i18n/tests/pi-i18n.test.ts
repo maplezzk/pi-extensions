@@ -39,6 +39,11 @@ resetLocaleState();
 assert.equal(getLocale(), "zh-CN");
 delete process.env.PI_EXTENSIONS_LOCALE;
 
+writeFileSync(configPath, JSON.stringify({ locale: "zh-CN" }));
+assert.equal(getLocale(), "zh-CN");
+writeFileSync(configPath, JSON.stringify({ locale: "en-US" }));
+assert.equal(getLocale(), "en-US");
+
 let registeredCommand: any;
 piI18n({
   registerCommand(name: string, options: unknown) {

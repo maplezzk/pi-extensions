@@ -22,7 +22,7 @@ The screenshot reports character reduction, not an exact tokenizer measurement. 
 
 ## Prompt language
 
-The distillation prompt now follows the language of the original user message when it is available. If the original message is unavailable, it falls back to the language of `outputPrompt`, then to `PI_EXTENSIONS_LOCALE` or the persisted extension locale. The tool output itself is still treated as untrusted data, and the original user message is included only as language context.
+The distillation prompt strictly follows the current locale selected by `/pi-language`. Changing the persisted locale is picked up on the next tool call, including when the language command and `pi-distill` are loaded from separate package instances. `PI_EXTENSIONS_LOCALE` remains the explicit environment-variable override. The original user message is included only as language context and never overrides the selected locale.
 
 ## How it works
 
