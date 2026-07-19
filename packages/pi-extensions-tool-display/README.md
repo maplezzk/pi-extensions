@@ -1,6 +1,6 @@
-# pi-tool-display
+# pi-extensions-tool-display
 
-`pi-tool-display` provides the shared tool-result rendering protocol and component helpers used by Pi extensions.
+`pi-extensions-tool-display` provides the shared tool-result rendering protocol and component helpers used by Pi extensions.
 
 It provides:
 

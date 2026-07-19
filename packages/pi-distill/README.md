@@ -34,7 +34,7 @@ The distillation prompt strictly follows the current locale selected by `/pi-lan
 - Uses the current session model by default, or a configured `provider/model` override.
 - Keeps diagnostic metadata such as status, character counts, compression ratio, duration, and anomalies in the tool result details.
 - Writes oversized distilled output or final output to a temporary file and returns its path instead of overflowing the tool result.
-- Adds a compact audit card when the active Pi display middleware is available, with a fallback renderer otherwise. The shared display protocol is provided by `pi-tool-display`.
+- Adds a compact audit card when the active Pi display middleware is available, with a fallback renderer otherwise. The shared display protocol is provided by `pi-extensions-tool-display`.
 
 It does not register a second `bash`, `read`, `grep`, or `find` tool.
 
@@ -133,7 +133,7 @@ The distillation prompt strictly follows the locale selected by `/pi-language`:
 ## Scope and boundaries
 
 - Handles every active tool with an object parameter schema; whether `outputPrompt` can be injected is determined by the tool schema, not a fixed allowlist.
-- Registers no replacement tools, does not change tool execution semantics, and does not depend on `pi-tool-display`.
+- Registers no replacement tools, does not change tool execution semantics, and does not depend on the unrelated npm package `pi-tool-display`.
 - Text distillation is lossy; use `RAW` when completeness matters.
 - Non-text results are a completeness boundary: images, audio, binary data, and mixed content bypass text distillation.
 - Oversized distilled or final text is written to a temporary file and represented by its path, preventing unbounded context growth.

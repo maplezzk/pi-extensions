@@ -16,7 +16,7 @@
 | [`pi-distill`](./packages/pi-distill) | 在所有已启用 object-schema 工具的超长输出占满上下文前进行提炼。 | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配的项目规则审查 `edit` 和 `write` 变更，并返回结构化结果。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
 | [`pi-extensions-i18n`](./packages/pi-extensions-i18n) | 提供共享的语言选择、catalog 加载、插值和 `/pi-language` 命令。 | [English](./packages/pi-extensions-i18n/README.md) · [中文](./packages/pi-extensions-i18n/README.zh-CN.md) |
-| [`pi-tool-display`](./packages/pi-tool-display) | 为扩展提供共享的工具结果展示协议和组件组合工具；不是独立 Pi 扩展。 | [English](./packages/pi-tool-display/README.md) · [中文](./packages/pi-tool-display/README.zh-CN.md) |
+| [`pi-extensions-tool-display`](./packages/pi-extensions-tool-display) | 为扩展提供共享的工具结果展示协议和组件组合工具；不是独立 Pi 扩展。 | [English](./packages/pi-extensions-tool-display/README.md) · [中文](./packages/pi-extensions-tool-display/README.zh-CN.md) |
 
 ## 一键安装全部扩展
 

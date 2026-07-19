@@ -1,6 +1,6 @@
-# pi-tool-display
+# pi-extensions-tool-display
 
-`pi-tool-display` 是 Pi 扩展共享的工具结果展示协议和组件工具包。
+`pi-extensions-tool-display` 是 Pi 扩展共享的工具结果展示协议和组件工具包。
 
 它提供：
 

@@ -32,7 +32,7 @@ jobs:
           - dir: packages/pi-extensions-i18n
           - dir: packages/pi-distill
           - dir: packages/pi-tool-supervisor
-          - dir: packages/pi-tool-display
+          - dir: packages/pi-extensions-tool-display
     steps:
       - uses: actions/checkout@v4
 

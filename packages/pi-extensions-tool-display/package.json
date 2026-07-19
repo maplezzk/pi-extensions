@@ -1,5 +1,5 @@
 {
-  "name": "pi-tool-display",
+  "name": "pi-extensions-tool-display",
   "version": "0.1.0",
   "description": "Shared result-rendering protocol and component helpers for Pi extensions",
   "type": "module",
@@ -24,12 +24,12 @@
   },
   "license": "MIT",
   "author": "maplezzk",
-  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-tool-display",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-extensions-tool-display",
   "bugs": "https://github.com/maplezzk/pi-extensions/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maplezzk/pi-extensions.git",
-    "directory": "packages/pi-tool-display"
+    "directory": "packages/pi-extensions-tool-display"
   },
   "publishConfig": {
     "access": "public",
