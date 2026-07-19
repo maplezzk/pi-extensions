@@ -1,39 +1,35 @@
 {
-  "name": "pi-distill",
-  "version": "0.3.0",
-  "description": "Pi tool-output distillation with file-first configuration",
+  "name": "pi-tool-display",
+  "version": "0.1.0",
+  "description": "Shared result-rendering protocol and component helpers for Pi extensions",
   "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "files": [
-    "index.ts",
     "src",
-    "locales",
-    "assets",
-    "config.example.json",
     "README.md",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "tsconfig.json"
   ],
   "scripts": {
-    "test": "tsx --test tests/bash-output-summary.test.ts",
+    "test": "tsx --test tests/tool-display.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
-  },
-  "pi": {
-    "extensions": [
-      "./index.ts"
-    ]
   },
   "engines": {
     "node": ">=22"
   },
   "license": "MIT",
   "author": "maplezzk",
-  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-distill",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-tool-display",
   "bugs": "https://github.com/maplezzk/pi-extensions/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maplezzk/pi-extensions.git",
-    "directory": "packages/pi-distill"
+    "directory": "packages/pi-tool-display"
   },
   "publishConfig": {
     "access": "public",
@@ -43,20 +39,13 @@
     "pi-package",
     "pi",
     "pi-extension",
-    "coding-agent"
+    "coding-agent",
+    "tool-display"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
-    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
-    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0",
-    "pi-extensions-i18n": "^0.3.0"
-  },
-  "dependencies": {
-    "pi-tool-display": "^0.1.0"
+    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.80.10",
-    "@earendil-works/pi-coding-agent": "0.80.10",
     "@earendil-works/pi-tui": "0.80.10",
     "@types/node": "24.12.4",
     "tsx": "4.23.1",

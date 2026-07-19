@@ -4,6 +4,40 @@
 
 `pi-distill` is a Pi extension that controls how tool results enter the agent context. It does not replace tools or change how commands run; it adds an optional result-processing layer after the tool has returned its real output.
 
+## What it solves
+
+Coding agents often need only the important lines from a command, search, or file read. Passing every byte of a large result into the next turn increases context usage and can hide the signal in logs or generated files. `pi-distill` adds a result-level distillation layer without replacing Pi's built-in tools.
+
+## Context savings in practice
+
+Build logs, diff output, and test reports often contain repeated status lines, unchanged context, stack-trace noise, and details that are not needed for the next decision. Those are strong candidates for high compression. In one real Pi session, the result below went from 51,215 characters to 240 characters: **213.40× compression and 99.5% fewer output characters**.
+
+![pi-distill context savings example](./assets/context-savings-example.png)
+
+The screenshot reports character reduction, not an exact tokenizer measurement. In practice this usually removes a similar order of magnitude of context tokens, but the exact token saving depends on the language, content, and model tokenizer. Treat 90%+ as an observed outcome for suitable verbose outputs, not a guarantee for every command; use `RAW` whenever the complete output is needed.
+
+| Scenario | Typical noise | What the distill result keeps |
+| --- | --- | --- |
+| Build / compile | Repeated progress, warnings, and unchanged setup lines | Pass/fail, first actionable errors, affected files, and next steps |
+| Diff inspection | Large unchanged hunks and formatting noise | Changed files, relevant hunks, and review-relevant facts |
+| Tests | Per-test verbosity, snapshots, and framework boilerplate | Totals, failed cases, key assertions, and useful diagnostics |
+
+## Prompt language
+
+The distillation prompt strictly follows the current locale selected by `/pi-language`. Changing the persisted locale is picked up on the next tool call, including when the language command and `pi-distill` are loaded from separate package instances. `PI_EXTENSIONS_LOCALE` remains the explicit environment-variable override. The original user message is included only as language context and never overrides the selected locale.
+
+## How it works
+
+- Observes `bash`, `read`, `grep`, and `find` through Pi's native `tool_call` / `tool_result` events.
+- Uses the tool's `outputPrompt` as the source of truth for whether and how to distill a result.
+- Treats a prompt containing only `RAW` as an explicit request for the original output.
+- Uses the current session model by default, or a configured `provider/model` override.
+- Keeps diagnostic metadata such as status, character counts, compression ratio, duration, and anomalies in the tool result details.
+- Writes oversized distilled output or final output to a temporary file and returns its path instead of overflowing the tool result.
+- Adds a compact audit card when the active Pi display middleware is available, with a fallback renderer otherwise. The shared display protocol is provided by `pi-tool-display`.
+
+It does not register a second `bash`, `read`, `grep`, or `find` tool.
+
 ## Install
 
 ```bash

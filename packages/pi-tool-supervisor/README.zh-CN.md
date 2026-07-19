@@ -14,7 +14,7 @@
 - 读取规则文件可选的 front matter：`enabled`、`filePatterns`、`complexity` 和 `consumers`。
 - 返回 `passed`、`rejected`、`failed` 或 `skipped` 状态，以及结论、发现、规则组和耗时。
 - 每次 edit/write 都重新读取配置，因此配置修改会在下一次操作立即生效。
-- 当前 Pi 展示中间件可用时显示审计卡片，否则使用 fallback renderer。
+- 当前 Pi 展示中间件可用时显示审计卡片，否则使用 fallback renderer。展示协议由公共运行库 `pi-tool-display` 提供。
 
 它监听 Pi 原生事件，不会注册替代版 `edit` 或 `write` 工具。
 

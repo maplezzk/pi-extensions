@@ -14,7 +14,7 @@ An edit tool can complete successfully while the resulting file still violates l
 - Reads optional front matter from rule files for `enabled`, `filePatterns`, `complexity`, and `consumers`.
 - Returns `passed`, `rejected`, `failed`, or `skipped` status with summaries, findings, rule groups, and durations.
 - Re-reads the configuration for every edit/write, so configuration changes apply to the next operation.
-- Shows an audit card through Pi's display middleware or a fallback renderer.
+- Shows an audit card through Pi's display middleware or a fallback renderer. The shared display protocol is provided by `pi-tool-display`.
 
 It observes Pi's native events and does not register a replacement `edit` or `write` tool.
 
