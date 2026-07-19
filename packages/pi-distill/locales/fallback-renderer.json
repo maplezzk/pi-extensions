@@ -23,6 +23,10 @@
     "zh-CN": "– 低于阈值",
     "en-US": "– Below threshold"
   },
+  "nonTextOutput": {
+    "zh-CN": "非文本结果",
+    "en-US": "Non-text output"
+  },
   "readFailed": {
     "zh-CN": "! 读取失败",
     "en-US": "! Read failed"
