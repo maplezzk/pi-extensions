@@ -9,6 +9,6 @@
     "packages/pi-extensions-i18n": {},
     "packages/pi-distill": {},
     "packages/pi-tool-supervisor": {},
-    "packages/pi-tool-display": {}
+    "packages/pi-extensions-tool-display": {}
   }
 }

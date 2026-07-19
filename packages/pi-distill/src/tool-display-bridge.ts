@@ -3,7 +3,7 @@ import {
   isResultRenderMiddlewareActive,
   registerResultRenderMiddleware,
   type ResultMiddleware,
-} from "pi-tool-display";
+} from "pi-extensions-tool-display";
 import { buildDistillAuditLines, createDistillAuditComponent, resolveDistillRenderConfig } from "./fallback-renderer.ts";
 import { loadDistillConfig } from "./summary-utils.ts";
 

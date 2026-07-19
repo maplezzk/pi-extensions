@@ -4,7 +4,7 @@ import {
   isResultRenderMiddlewareActive,
   registerResultRenderMiddleware,
   type ResultMiddleware,
-} from "pi-tool-display";
+} from "pi-extensions-tool-display";
 import { buildSupervisorAuditLines } from "./fallback-renderer.ts";
 
 const SUPERVISOR_MIDDLEWARE_ID = "pi-tool-supervisor.result-renderer.v1";
