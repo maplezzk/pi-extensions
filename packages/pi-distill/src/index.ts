@@ -36,7 +36,7 @@ import {
   isDistillToolDisplayMiddlewareActive,
   registerDistillToolDisplayMiddleware,
 } from "./tool-display-bridge.ts";
-import { getTextContent, limitReturnedToolResult } from "./output-limit.ts";
+import { getTextContent, hasNonTextContent, limitReturnedToolResult } from "./output-limit.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -330,6 +330,15 @@ async function processToolResult(
     limitReturnedToolResult(candidate, maxReturnedChars);
   if (loaded.warnings.length > 0) {
     console.warn(`[pi-distill] ${loaded.warnings.join(" | ")}`);
+  }
+
+  if (hasNonTextContent(result)) {
+    return attachDiagnostics(result, {
+      toolExecutionMs,
+      outputSummaryPrompt: prompt || undefined,
+      outputSummaryRender,
+      outputSummaryStatus: "non-text-output",
+    });
   }
 
   if (!config || !loaded.enabled) {

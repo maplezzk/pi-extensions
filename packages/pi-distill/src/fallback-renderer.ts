@@ -179,6 +179,7 @@ export function buildDistillAuditLines(
     "not-requested": { label: i18n.t("original"), tone: "muted" },
     "full-output": { label: i18n.t("raw"), tone: "warning" },
     "below-threshold": { label: i18n.t("belowThreshold"), tone: "dim" },
+    "non-text-output": { label: i18n.t("nonTextOutput"), tone: "muted" },
     "diagnostic-failed": { label: i18n.t("readFailed"), tone: "warning" },
     "summary-failed": { label: i18n.t("summaryFailed"), tone: "error" },
   };

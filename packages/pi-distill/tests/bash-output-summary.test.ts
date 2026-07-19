@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { limitReturnedToolResult } from "../src/output-limit.ts";
+import { hasNonTextContent, limitReturnedToolResult } from "../src/output-limit.ts";
 import {
   appendDistillFallbackAudit,
   buildDistillAuditLines,
@@ -284,6 +284,18 @@ test("最终 content 未超限时不因原文长度写入临时文件", async ()
   assert.equal(result.details?.outputTruncated, undefined);
   assert.equal(result.details?.fullOutputPath, undefined);
   assert.equal(result.content[0]?.text, "总结后的短结果");
+});
+
+test("包含图片等非文本内容时保留原结果，不做长度截断", async () => {
+  const result = {
+    content: [
+      { type: "image", data: "encoded-image" },
+      { type: "text", text: "x".repeat(10_001) },
+    ],
+  } as any;
+
+  assert.equal(hasNonTextContent(result), true);
+  assert.strictEqual(await limitReturnedToolResult(result, 10_000), result);
 });
 
 test("最终 content 超过限制时写入临时文件并返回路径", async () => {

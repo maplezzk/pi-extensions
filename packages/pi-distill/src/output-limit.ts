@@ -16,6 +16,10 @@ export function getTextContent(result: OutputLimitToolResult): string {
     .join("\n");
 }
 
+export function hasNonTextContent(result: OutputLimitToolResult): boolean {
+  return result.content.some((content) => content.type !== "text" || typeof content.text !== "string");
+}
+
 async function writeSummaryFile(summary: string): Promise<string> {
   const directory = join(tmpdir(), "pi-distill");
   await mkdir(directory, { recursive: true });
@@ -31,6 +35,8 @@ export async function limitReturnedToolResult(
   result: OutputLimitToolResult,
   maxChars: number,
 ): Promise<OutputLimitToolResult> {
+  if (hasNonTextContent(result)) return result;
+
   const text = getTextContent(result);
   if (text.length <= maxChars) return result;
 
