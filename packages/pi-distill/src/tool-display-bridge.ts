@@ -8,7 +8,6 @@ import { buildDistillAuditLines, createDistillAuditComponent, resolveDistillRend
 import { loadDistillConfig } from "./summary-utils.ts";
 
 const DISTILL_MIDDLEWARE_ID = "pi-distill.result-renderer.v1";
-const SUPPORTED_TOOLS = new Set(["bash", "read", "grep", "find"]);
 
 function getDetails(result: unknown): Record<string, unknown> | undefined {
   if (!result || typeof result !== "object" || Array.isArray(result)) return undefined;
@@ -19,7 +18,6 @@ function getDetails(result: unknown): Record<string, unknown> | undefined {
 }
 
 const distillMiddleware: ResultMiddleware = (context, next) => {
-  if (!SUPPORTED_TOOLS.has(context.toolName)) return next();
   const details = getDetails(context.result);
   if (!details) return next();
   const render = resolveDistillRenderConfig(details, loadDistillConfig().render);
