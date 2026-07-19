@@ -1,0 +1,130 @@
+{
+  "bashPromptDescription": {
+    "zh-CN": "必须提供 Bash 输出处理指令。要保留原始输出，值必须严格为 RAW（不区分大小写的三个 ASCII 字母）；不要使用“完整输出”等自然语言，否则会调用提炼模型。其他非空值会作为 outputPrompt 发送给提炼模型。若只需要编译或测试的通过/失败和错误摘要，请使用描述性 prompt；只有需要完整日志或逐行调试时才使用 RAW。该值不会传给 Bash。",
+    "en-US": "Required Bash output handling instruction. To preserve the exact original, the value must be exactly RAW (the three ASCII letters, case-insensitive); do not use natural-language phrases such as \"full output\", or the summarizer will be called. Any other non-empty value is sent to the summarizer as outputPrompt. For compile or test commands, use a descriptive prompt when you only need pass/fail and an error summary; use RAW only for full logs or line-by-line debugging. This value is not passed to Bash."
+  },
+  "outputPromptDescription": {
+    "zh-CN": "必须提供输出处理指令。要保留原始输出，值必须严格为 RAW（不区分大小写的三个 ASCII 字母）；不要使用“完整输出”等自然语言，否则会调用提炼模型。其他非空值会作为 outputPrompt 发送给提炼模型。需要复制的精确常量、代码值、字段声明、注解或 SQL 使用 RAW；询问字段或方法时使用描述性 prompt。",
+    "en-US": "Required output handling instruction. To preserve the exact original, the value must be exactly RAW (the three ASCII letters, case-insensitive); do not use natural-language phrases such as \"full output\", or the summarizer will be called. Any other non-empty value is sent to the summarizer as outputPrompt. Use RAW for exact constants, code values, field declarations, annotations, SQL, or other text needed for copying; use a descriptive prompt for high-level questions about fields or methods."
+  },
+  "positiveInteger": {
+    "zh-CN": "请输入大于 0 的整数。",
+    "en-US": "Enter a positive integer."
+  },
+  "modelInput": {
+    "zh-CN": "模型（provider/model；留空使用当前会话模型）",
+    "en-US": "Model (provider/model; leave empty to use the current session model)"
+  },
+  "modelInvalid": {
+    "zh-CN": "请输入 provider/model，或留空使用当前会话模型。",
+    "en-US": "Use provider/model, or leave empty to use the current session model."
+  },
+  "configWarnings": {
+    "zh-CN": "配置有警告，将以可用值打开：{warnings}",
+    "en-US": "Configuration warnings; opening with usable values: {warnings}"
+  },
+  "savedWarnings": {
+    "zh-CN": "Distill 已保存，但有警告：{warnings}",
+    "en-US": "Distill saved with warnings: {warnings}"
+  },
+  "saved": {
+    "zh-CN": "Distill 设置已保存；下一次工具调用生效。",
+    "en-US": "Distill settings saved; changes apply to the next tool call."
+  },
+  "interactiveOnly": {
+    "zh-CN": "交互式设置需要在带 UI 的 Pi 会话中运行。",
+    "en-US": "Interactive settings require a Pi session with UI."
+  },
+  "settingsTitle": {
+    "zh-CN": "Distill 设置",
+    "en-US": "Distill settings"
+  },
+  "on": {
+    "zh-CN": "开",
+    "en-US": "On"
+  },
+  "off": {
+    "zh-CN": "关",
+    "en-US": "Off"
+  },
+  "currentModel": {
+    "zh-CN": "当前会话模型",
+    "en-US": "Current session model"
+  },
+  "status": {
+    "zh-CN": "状态：{value}",
+    "en-US": "Status: {value}"
+  },
+  "model": {
+    "zh-CN": "模型：{value}",
+    "en-US": "Model: {value}"
+  },
+  "minOutput": {
+    "zh-CN": "最小输出：{value} 字符",
+    "en-US": "Min output: {value} chars"
+  },
+  "summaryLimit": {
+    "zh-CN": "摘要上限：{value} 字符",
+    "en-US": "Summary limit: {value} chars"
+  },
+  "finalLimit": {
+    "zh-CN": "最终输出上限：{value} 字符",
+    "en-US": "Final output limit: {value} chars"
+  },
+  "timeout": {
+    "zh-CN": "超时：{value}s",
+    "en-US": "Timeout: {value}s"
+  },
+  "threshold": {
+    "zh-CN": "长输出阈值：{value}x",
+    "en-US": "Long-output threshold: {value}x"
+  },
+  "summarizeErrors": {
+    "zh-CN": "提炼错误：{value}",
+    "en-US": "Summarize errors: {value}"
+  },
+  "auditRenderer": {
+    "zh-CN": "审计渲染器：{value}",
+    "en-US": "Audit renderer: {value}"
+  },
+  "showPrompt": {
+    "zh-CN": "显示 outputPrompt：{value}",
+    "en-US": "Show outputPrompt: {value}"
+  },
+  "showSummary": {
+    "zh-CN": "显示摘要：{value}",
+    "en-US": "Show summary: {value}"
+  },
+  "saveExit": {
+    "zh-CN": "保存并退出",
+    "en-US": "Save and exit"
+  },
+  "discard": {
+    "zh-CN": "放弃修改",
+    "en-US": "Discard changes"
+  },
+  "minOutputTitle": {
+    "zh-CN": "最小输出字符数",
+    "en-US": "Minimum output chars"
+  },
+  "summaryLimitTitle": {
+    "zh-CN": "摘要字符上限",
+    "en-US": "Summary character limit"
+  },
+  "finalLimitTitle": {
+    "zh-CN": "最终输出字符上限",
+    "en-US": "Final output character limit"
+  },
+  "timeoutTitle": {
+    "zh-CN": "提炼模型超时（秒）",
+    "en-US": "Summarizer timeout (seconds)"
+  },
+  "thresholdTitle": {
+    "zh-CN": "长输出阈值",
+    "en-US": "Long-output threshold"
+  },
+  "commandDescription": {
+    "zh-CN": "交互式配置工具输出提炼",
+    "en-US": "Configure tool-output distillation interactively"
+  }
+}

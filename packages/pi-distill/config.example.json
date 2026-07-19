@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "model": "",
+  "minChars": 200,
+  "maxChars": 100000,
+  "maxOutputChars": 10000,
+  "timeoutSeconds": 10,
+  "missedCompressionRatio": 10,
+  "summarizeErrors": true,
+  "render": {
+    "enabled": true,
+    "showPrompt": true,
+    "showResult": true
+  }
+}

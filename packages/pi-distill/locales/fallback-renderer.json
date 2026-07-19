@@ -1,0 +1,74 @@
+{
+  "summarized": {
+    "zh-CN": "✓ 已提炼",
+    "en-US": "✓ Summarized"
+  },
+  "disabled": {
+    "zh-CN": "○ 已禁用",
+    "en-US": "○ Disabled"
+  },
+  "off": {
+    "zh-CN": "○ 关闭",
+    "en-US": "○ Off"
+  },
+  "original": {
+    "zh-CN": "○ 原始输出",
+    "en-US": "○ Original"
+  },
+  "raw": {
+    "zh-CN": "↺ RAW",
+    "en-US": "↺ RAW"
+  },
+  "belowThreshold": {
+    "zh-CN": "– 低于阈值",
+    "en-US": "– Below threshold"
+  },
+  "readFailed": {
+    "zh-CN": "! 读取失败",
+    "en-US": "! Read failed"
+  },
+  "summaryFailed": {
+    "zh-CN": "✕ 提炼失败",
+    "en-US": "✕ Summary failed"
+  },
+  "chars": {
+    "zh-CN": "字符",
+    "en-US": "chars"
+  },
+  "tool": {
+    "zh-CN": "工具",
+    "en-US": "Tool"
+  },
+  "distill": {
+    "zh-CN": "提炼",
+    "en-US": "Distill"
+  },
+  "expand": {
+    "zh-CN": " • Ctrl+O 展开",
+    "en-US": " • Ctrl+O to expand"
+  },
+  "header": {
+    "zh-CN": "◆ Distill  {status}",
+    "en-US": "◆ Distill  {status}"
+  },
+  "prompt": {
+    "zh-CN": "Prompt",
+    "en-US": "Prompt"
+  },
+  "summary": {
+    "zh-CN": "摘要",
+    "en-US": "Summary"
+  },
+  "file": {
+    "zh-CN": "文件",
+    "en-US": "File"
+  },
+  "warning": {
+    "zh-CN": "警告",
+    "en-US": "Warning"
+  },
+  "error": {
+    "zh-CN": "错误",
+    "en-US": "Error"
+  }
+}
