@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.2.0...pi-tool-supervisor-v0.2.1) (2026-07-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * peerDependencies
+    * pi-extensions-i18n bumped from ^0.2.0 to ^0.3.0
+
 ## [0.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.1.0...pi-tool-supervisor-v0.2.0) (2026-07-19)
 
 
