@@ -16,6 +16,7 @@ Each package is independently installable and keeps its detailed behavior, confi
 | [`pi-distill`](./packages/pi-distill) | Compacts verbose `bash`, `read`, `grep`, and `find` output before it consumes the context window. | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | Reviews `edit` and `write` changes against matching project rules and returns structured findings. | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
 | [`pi-extensions-i18n`](./packages/pi-extensions-i18n) | Provides shared locale selection, catalog loading, interpolation, and the `/pi-language` command. | [English](./packages/pi-extensions-i18n/README.md) · [中文](./packages/pi-extensions-i18n/README.zh-CN.md) |
+| [`pi-tool-display`](./packages/pi-tool-display) | Provides the shared tool-result display protocol and component helpers; it is not a standalone Pi extension. | [English](./packages/pi-tool-display/README.md) · [中文](./packages/pi-tool-display/README.zh-CN.md) |
 
 ## Install everything
 

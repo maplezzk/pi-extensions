@@ -32,9 +32,9 @@ The distillation prompt strictly follows the current locale selected by `/pi-lan
 - Uses the current session model by default, or a configured `provider/model` override.
 - Keeps diagnostic metadata such as status, character counts, compression ratio, duration, and anomalies in the tool result details.
 - Writes oversized distilled output or final output to a temporary file and returns its path instead of overflowing the tool result.
-- Adds a compact audit card when the active Pi display middleware is available, with a fallback renderer otherwise.
+- Adds a compact audit card when the active Pi display middleware is available, with a fallback renderer otherwise. The shared display protocol is provided by `pi-tool-display`.
 
-It does not register a second `bash`, `read`, `grep`, or `find` tool, and it does not depend on `pi-tool-display`.
+It does not register a second `bash`, `read`, `grep`, or `find` tool.
 
 ## Install
 

@@ -32,9 +32,9 @@
 - 默认使用当前会话模型，也可以配置独立的 `provider/model`。
 - 在工具结果 details 中保留状态、字符数、压缩比、耗时和异常等诊断信息。
 - 提炼结果或最终返回结果过大时写入临时文件，只把文件路径返回给 Agent，避免工具结果失控膨胀。
-- 当前 Pi 展示中间件可用时显示紧凑审计卡片，否则使用自己的 fallback renderer。
+- 当前 Pi 展示中间件可用时显示紧凑审计卡片，否则使用自己的 fallback renderer。展示协议由公共运行库 `pi-tool-display` 提供。
 
-它不会注册第二个 `bash`、`read`、`grep` 或 `find` 工具，也不依赖 `pi-tool-display`。
+它不会注册第二个 `bash`、`read`、`grep` 或 `find` 工具。
 
 ## 安装
 

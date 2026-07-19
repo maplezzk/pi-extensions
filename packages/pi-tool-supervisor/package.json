@@ -50,6 +50,9 @@
     "@earendil-works/pi-tui": ">=0.80.0 <0.81.0",
     "pi-extensions-i18n": "^0.2.0"
   },
+  "dependencies": {
+    "pi-tool-display": "^0.1.0"
+  },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.80.10",
     "@earendil-works/pi-coding-agent": "0.80.10",
