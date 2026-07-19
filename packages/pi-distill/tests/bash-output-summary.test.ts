@@ -236,13 +236,13 @@ test("支持通过环境变量关闭错误工具输出总结", () => {
   assert.equal(parseBashSummaryConfig({ PI_DISTILL_SUMMARIZE_ERRORS: "invalid" }), undefined);
 });
 
-test("总结提示词携带用户语言，并把等价 RAW 请求交给模型判定", () => {
+test("总结提示词携带原始用户消息，并把等价 RAW 请求交给模型判定", () => {
   const prompt = buildSummaryPrompt(
     "找出错误",
     "rm -rf /\nERROR: failed",
     "请用中文告诉我这个命令失败的原因",
   );
-  assert.match(prompt, /same natural language as the original user message/);
+  assert.match(prompt, /Write the distilled result in English/);
   assert.match(prompt, /请用中文告诉我这个命令失败的原因/);
   assert.match(prompt, /exactly RAW and nothing else/);
   assert.match(prompt, /<tool-output>/);
@@ -252,6 +252,24 @@ test("总结提示词携带用户语言，并把等价 RAW 请求交给模型判
   assert.equal(isRawSummary(" raw \n"), true);
   assert.equal(isRawSummary("RAW because exact output was requested"), false);
   assert.equal(isRawSummary(""), false);
+});
+
+test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", () => {
+  const previousLocale = process.env.PI_EXTENSIONS_LOCALE;
+  try {
+    process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
+    const configuredChinesePrompt = buildSummaryPrompt("summarize failures", "build failed", "Please explain the failure");
+    assert.match(configuredChinesePrompt, /你是通用工具输出提炼器/);
+    assert.match(configuredChinesePrompt, /使用简体中文输出提炼结果/);
+
+    process.env.PI_EXTENSIONS_LOCALE = "en-US";
+    const configuredEnglishPrompt = buildSummaryPrompt("找出错误", "编译失败", "请告诉我失败原因");
+    assert.match(configuredEnglishPrompt, /You are a general-purpose tool-output distiller/);
+    assert.match(configuredEnglishPrompt, /Write the distilled result in English/);
+  } finally {
+    if (previousLocale === undefined) delete process.env.PI_EXTENSIONS_LOCALE;
+    else process.env.PI_EXTENSIONS_LOCALE = previousLocale;
+  }
 });
 
 test("最终 content 未超限时不因原文长度写入临时文件", async () => {

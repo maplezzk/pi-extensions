@@ -92,10 +92,12 @@ export function getLocalePreference(): LocalePreference {
     return DEFAULT_LOCALE_PREFERENCE;
   }
 
-  if (runtimePreference) return runtimePreference;
-  runtimePreference =
-    readPersistedPreference(resolveAgentDir()) ?? DEFAULT_LOCALE_PREFERENCE;
-  return runtimePreference;
+  const persisted = readPersistedPreference(resolveAgentDir());
+  if (persisted) {
+    runtimePreference = persisted;
+    return persisted;
+  }
+  return runtimePreference ?? DEFAULT_LOCALE_PREFERENCE;
 }
 
 function detectSystemLocale(): Locale {
@@ -174,9 +176,10 @@ export function createTranslator<Catalog extends MessageCatalog>(
       if (!entry) {
         throw new Error(`Unknown i18n message key: ${String(key)}`);
       }
-      const message = entry[getLocale()];
+      const locale = getLocale();
+      const message = entry[locale];
       if (message === undefined) {
-        throw new Error(`Missing ${getLocale()} translation for message key: ${String(key)}`);
+        throw new Error(`Missing ${locale} translation for message key: ${String(key)}`);
       }
       return interpolate(message, params);
     },
