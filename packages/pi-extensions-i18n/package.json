@@ -1,0 +1,59 @@
+{
+  "name": "pi-extensions-i18n",
+  "version": "0.1.0",
+  "description": "Shared i18n catalog loader & translator for pi extensions",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "locales",
+    "README.md",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "test": "tsx --test tests/pi-i18n.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "maplezzk",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-extensions-i18n",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-extensions-i18n"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "i18n",
+    "coding-agent"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@types/node": "24.12.4",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  }
+}

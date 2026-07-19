@@ -1,0 +1,42 @@
+{
+  "description": {
+    "zh-CN": "配置 PiExtensions 的界面和 prompt 语言",
+    "en-US": "Configure the PiExtensions UI and prompt language"
+  },
+  "noUi": {
+    "zh-CN": "语言配置需要在带 UI 的 Pi 会话中运行。",
+    "en-US": "Language settings require a Pi session with a UI."
+  },
+  "title": {
+    "zh-CN": "PiExtensions 语言",
+    "en-US": "PiExtensions language"
+  },
+  "zh": {
+    "zh-CN": "简体中文 (zh-CN)",
+    "en-US": "Simplified Chinese (zh-CN)"
+  },
+  "en": {
+    "zh-CN": "English (en-US)",
+    "en-US": "English (en-US)"
+  },
+  "auto": {
+    "zh-CN": "跟随系统语言 (auto)",
+    "en-US": "Follow system language (auto)"
+  },
+  "saved": {
+    "zh-CN": "语言已保存为 {locale}，新的 UI 和 prompt 将使用该语言。",
+    "en-US": "Language saved as {locale}; new UI and prompts will use this language."
+  },
+  "invalid": {
+    "zh-CN": "不支持的语言设置：{value}。请选择 zh-CN、en-US 或 auto。",
+    "en-US": "Unsupported language setting: {value}. Choose zh-CN, en-US, or auto."
+  },
+  "failed": {
+    "zh-CN": "保存语言设置失败：{error}",
+    "en-US": "Failed to save language settings: {error}"
+  },
+  "envOverride": {
+    "zh-CN": "当前由 {env} 环境变量覆盖，持久化值将在移除环境变量后生效。",
+    "en-US": "The {env} environment variable currently overrides this value; the persisted setting will apply after it is removed."
+  }
+}
