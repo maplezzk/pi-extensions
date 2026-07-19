@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.2](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.2.1...pi-tool-supervisor-v0.2.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* use unique shared tool display package name ([0b49bc1](https://github.com/maplezzk/pi-extensions/commit/0b49bc12886d6fddfd59fad950156458085b2bb6))
+* use unique shared tool display package name ([913ba1e](https://github.com/maplezzk/pi-extensions/commit/913ba1e12946ba349d4062ca6781d497fbd84cfc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^0.1.0 to ^0.1.1
+
 ## [0.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.2.0...pi-tool-supervisor-v0.2.1) (2026-07-19)
 
 
