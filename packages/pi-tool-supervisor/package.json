@@ -1,6 +1,6 @@
 {
   "name": "pi-tool-supervisor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi tool supervisor extension with edit/write review and interactive configuration",
   "type": "module",
   "files": [
