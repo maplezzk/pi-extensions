@@ -24,7 +24,7 @@
 pi install npm:pi-tool-supervisor
 ```
 
-共享依赖 `pi-extensions-tool-display` 会自动初始化展示宿主，不需要额外安装宿主包。
+包清单会把共享依赖 `pi-extensions-tool-display` 作为一个扩展入口加载，不需要额外安装宿主包。
 
 安装后重新加载 Pi：
 

@@ -16,7 +16,6 @@ import type {
   ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { performance } from "node:perf_hooks";
-import { ensureToolDisplayHost } from "pi-extensions-tool-display";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -614,7 +613,6 @@ function registerReviewConfigCommand(pi: ExtensionAPI): void {
 }
 
 export default function piSupervisorExtension(pi: ExtensionAPI) {
-  ensureToolDisplayHost(pi);
   const pendingCalls = new Map<string, PendingFileReviewCall>();
   const disposeToolDisplayMiddleware = registerSupervisorToolDisplayMiddleware();
   registerSupervisorFallbackRenderer(pi);
