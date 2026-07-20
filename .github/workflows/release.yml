@@ -33,6 +33,7 @@ jobs:
           - dir: packages/pi-distill
           - dir: packages/pi-tool-supervisor
           - dir: packages/pi-extensions-tool-display
+          - dir: packages/pi-terminal-mux
     steps:
       - uses: actions/checkout@v4
 
