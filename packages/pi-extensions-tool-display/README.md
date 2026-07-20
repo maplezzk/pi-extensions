@@ -8,7 +8,7 @@ It provides:
 - a pending registration queue for when the Pi display host loads later;
 - safe component detection and a helper for appending an audit panel to the original tool result.
 
-It is also a standalone Pi extension. Install or include this package in Pi's package list to load the actual tool-display host. Feature packages such as `pi-distill` and `pi-tool-supervisor` initialize the same host through this runtime dependency, so installing either feature package is sufficient and does not require a second host package.
+It is also a standalone Pi extension. Install or include this package in Pi's package list to load the actual tool-display host. Feature package manifests include this dependency's extension entry, so installing either feature package loads one shared host without requiring a second host package.
 
 ## Boundary
 
@@ -28,7 +28,7 @@ Install this package directly when you want only the tool-display host:
 pi install npm:pi-extensions-tool-display
 ```
 
-`pi-distill` and `pi-tool-supervisor` also initialize the host automatically when they are loaded.
+`pi-distill` and `pi-tool-supervisor` declare this host entry in their package manifests when they are installed.
 
 ## Development
 

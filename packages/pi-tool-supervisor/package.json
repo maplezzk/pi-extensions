@@ -19,7 +19,8 @@
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./index.ts",
+      "../pi-extensions-tool-display/index.ts"
     ]
   },
   "engines": {

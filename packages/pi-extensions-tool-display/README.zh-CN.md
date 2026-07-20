@@ -8,7 +8,7 @@
 - Pi 展示宿主尚未加载时的 pending 注册队列；
 - 安全识别组件，以及把审计面板追加到原始工具结果后的通用组件组合。
 
-它同时是一个独立的 Pi 扩展。可以把这个包直接加入 Pi 的 package 列表加载工具展示宿主；`pi-distill`、`pi-tool-supervisor` 等功能包加载时也会通过这个运行时依赖自动初始化同一个宿主，不需要额外安装第二份宿主包。
+它同时是一个独立的 Pi 扩展。可以把这个包直接加入 Pi 的 package 列表加载工具展示宿主；`pi-distill`、`pi-tool-supervisor` 的包清单也会声明这个依赖的扩展入口，因此安装功能包时只会加载一个公共宿主，不需要额外安装第二份宿主包。
 
 ## 设计边界
 
@@ -28,7 +28,7 @@
 pi install npm:pi-extensions-tool-display
 ```
 
-安装 `pi-distill` 或 `pi-tool-supervisor` 时，宿主也会由共享运行时自动初始化。
+安装 `pi-distill` 或 `pi-tool-supervisor` 时，它们的包清单会同时加载这个宿主扩展入口。
 
 ## 开发
 

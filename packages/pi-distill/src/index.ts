@@ -28,7 +28,6 @@ import type {
   ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { performance } from "node:perf_hooks";
-import { ensureToolDisplayHost } from "pi-extensions-tool-display";
 import {
   appendDistillFallbackAudit,
   registerDistillFallbackRenderer,
@@ -713,7 +712,6 @@ function registerDistillConfigCommand(pi: ExtensionAPI): void {
 }
 
 export default function piDistillExtension(pi: ExtensionAPI) {
-  ensureToolDisplayHost(pi);
   const pendingCalls = new Map<string, PendingDistillCall>();
   let originalUserPrompt = "";
   const disposeToolDisplayMiddleware = registerDistillToolDisplayMiddleware();
