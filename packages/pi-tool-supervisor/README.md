@@ -24,6 +24,8 @@ It observes Pi's native events and does not register a replacement `edit` or `wr
 pi install npm:pi-tool-supervisor
 ```
 
+The shared `pi-extensions-tool-display` dependency initializes the display host automatically; no separate host package is required.
+
 Reload Pi after installation:
 
 ```text

@@ -1,6 +1,6 @@
 # pi-extensions-tool-display
 
-`pi-extensions-tool-display` provides the shared tool-result rendering protocol and component helpers used by Pi extensions.
+`pi-extensions-tool-display` provides the Pi tool-display host plus the shared tool-result rendering protocol and component helpers used by Pi extensions.
 
 It provides:
 
@@ -8,7 +8,7 @@ It provides:
 - a pending registration queue for when the Pi display host loads later;
 - safe component detection and a helper for appending an audit panel to the original tool result.
 
-It is not a standalone Pi extension: it registers no tools, commands, or entry renderers. It is intended to be consumed as a runtime dependency by extensions such as `pi-distill` and `pi-tool-supervisor`.
+It is also a standalone Pi extension. Install or include this package in Pi's package list to load the actual tool-display host. Feature packages such as `pi-distill` and `pi-tool-supervisor` initialize the same host through this runtime dependency, so installing either feature package is sufficient and does not require a second host package.
 
 ## Boundary
 
@@ -18,7 +18,17 @@ This package owns the display protocol and generic component composition only. E
 
 The display integration is designed to work with the MIT-licensed [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display), the original full-featured Pi tool-display project. We thank MasuRii for that work.
 
-This package is a separate shared-runtime extraction from this repository's own extension bridges. It does not bundle or redistribute `pi-tool-display`'s implementation; the upstream project remains the reference for full tool rendering.
+The host implementation is based on the MIT-licensed upstream project and is now maintained in this package so consumers do not need a second separately installed host package.
+
+## Install
+
+Install this package directly when you want only the tool-display host:
+
+```bash
+pi install npm:pi-extensions-tool-display
+```
+
+`pi-distill` and `pi-tool-supervisor` also initialize the host automatically when they are loaded.
 
 ## Development
 

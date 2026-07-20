@@ -8,6 +8,7 @@ This repository contains small, independently installable extensions for the [Pi
 pi-extensions/
 ├── packages/
 │   ├── pi-extensions-i18n/      # Shared locale and catalog runtime
+│   ├── pi-extensions-tool-display/ # Tool-display host and shared rendering protocol
 │   ├── pi-distill/              # Tool-output distillation
 │   └── pi-tool-supervisor/      # Post-edit file review
 ├── scripts/                     # Repository checks and workspace helpers
@@ -24,6 +25,7 @@ Each package owns its entrypoint, tests, configuration example, localization res
 
 - `pi-distill` discovers active tools with object parameter schemas and observes their results through Pi's native `tool_call` and `tool_result` events. It does not register duplicate tools.
 - `pi-tool-supervisor` reviews the actual before/after diff of `edit` and `write` against configured rule files. It reports findings but is not an operating-system sandbox or an edit rollback mechanism.
+- `pi-extensions-tool-display` owns the actual Pi tool-display host, built-in tool renderer overrides, and the shared result-rendering middleware protocol. Feature packages register domain-specific panels through it.
 - `pi-extensions-i18n` owns locale selection, catalog validation, interpolation, and the `/pi-language` command. Feature packages use it instead of implementing separate locale runtimes.
 
 Keep packages composable and independently installable. Avoid coupling one extension to another extension's private implementation details or display state.
