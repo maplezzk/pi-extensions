@@ -201,6 +201,8 @@ test("只有明确需要摘要且输出达到阈值时才总结", () => {
   assert.equal(shouldSummarizeOutput("总结错误", "1234567890", config), true);
   assert.equal(shouldSummarizeOutput("列出所有相关匹配", "1234567890", config), true);
   assert.equal(shouldSummarizeOutput("列出所有相关匹配", "x".repeat(1000), config), true);
+  assert.equal(shouldSummarizeOutput("完整提取 mcps 工具的调用语法", "1234567890", config), true);
+  assert.equal(shouldSummarizeOutput("extract all syntax without omissions", "1234567890", config), true);
   assert.equal(shouldSummarizeOutput("请总结较长日志，不要逐行复述", "1234567890", config), true);
   assert.equal(shouldSummarizeOutput("按需处理", "1234567890", config), true);
   assert.equal(shouldSummarizeOutput("按需处理", "x".repeat(40), config), true);
@@ -252,6 +254,17 @@ test("总结提示词携带原始用户消息，并把等价 RAW 请求交给模
   assert.equal(isRawSummary(" raw \n"), true);
   assert.equal(isRawSummary("RAW because exact output was requested"), false);
   assert.equal(isRawSummary(""), false);
+});
+
+test("完整提取语法时明确要求总结模型返回 RAW", () => {
+  const prompt = buildSummaryPrompt(
+    "完整提取 mcps 工具的查询、发现和调用语法，特别是带字符串 SQL 参数的正确格式",
+    "query tool schema\ncall tool with sql=...",
+  );
+  assert.match(prompt, /complete extraction/);
+  assert.match(prompt, /extract all syntax without omissions/);
+  assert.match(prompt, /SQL/);
+  assert.match(prompt, /output exactly RAW and nothing else/);
 });
 
 test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", () => {
@@ -491,13 +504,20 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
 
     piDistillExtension(pi);
     await handlers.get("session_start")?.({ type: "session_start" }, {});
-    await handlers.get("before_agent_start")?.({ type: "before_agent_start" }, {});
+    const beforeAgentStartResult = await handlers.get("before_agent_start")?.({
+      type: "before_agent_start",
+      prompt: "grep for undefined",
+      systemPrompt: "base system prompt",
+    }, {});
+    assert.match(beforeAgentStartResult.systemPrompt, /MANDATORY tool-call rule/);
+    assert.match(beforeAgentStartResult.systemPrompt, /outputPrompt=RAW/);
 
     assert.equal(registeredToolCount, 0);
     for (const tool of tools) {
       const schema = tool.parameters as any;
       assert.equal(schema.required.filter((value: string) => value === "outputPrompt").length, 1);
       assert.equal(schema.properties.outputPrompt.type, "string");
+      assert.equal(schema.properties.outputPrompt.default, "RAW");
       assert.equal(
         schema.properties.outputPrompt.description,
         tool.name === "bash" ? BASH_OUTPUT_PROMPT_DESCRIPTION : OUTPUT_PROMPT_DESCRIPTION,

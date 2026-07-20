@@ -106,22 +106,22 @@ pi-distill uses the actual result and configuration to keep it, distill it, or w
 Agent consumes a result suited to the current decision, with auditable diagnostics
 ```
 
-1. At session start, the extension adds `outputPrompt` to every active tool whose parameter schema is an object. It does not hard-code `bash`, `read`, `grep`, or `find`.
+1. At session start, the extension adds required `outputPrompt` to every active tool whose parameter schema is an object. It does not hard-code `bash`, `read`, `grep`, or `find`.
 2. The `tool_call` handler captures the parameter and removes it before forwarding the call, so the underlying tool never receives the extension-only field.
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
-4. No prompt skips the model. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
+4. Every tool call must include a non-empty `outputPrompt`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
 5. If distillation fails, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card.
 
 ## Output contract
 
 | `outputPrompt` | Behavior | Use it when |
 | --- | --- | --- |
-| Omitted | Skip the distillation model and keep the original text; oversized text may still be written to a temporary file by the final size guard | The output is short or the tool should decide |
+| Omitted | Invalid tool call; Pi rejects the call before the underlying tool runs | Never omit it; use `RAW` when no compression is explicitly requested |
 | Exactly `RAW` (case-insensitive) | Skip the distillation model and keep the complete original text; oversized text is returned through a file path | You need to inspect, copy, or verify exact output |
 | Any non-empty value other than `RAW` | Call the model once the output reaches the threshold; the prompt defines what to retain | “Keep errors, warnings, and final status” workflows |
 | Any non-text content such as images or audio | Preserve the result as-is; do not send it to the distillation model or apply text truncation | Image reads, binary results, and mixed text/media results |
 
-`RAW` is the only explicit completeness signal. Natural-language phrases such as “完整输出” or “all matches” can be ambiguous and are not treated as control commands.
+`RAW` is the deterministic completeness signal. The distillation prompt tells the summarizer to return exactly `RAW` when the request clearly asks for complete extraction without omissions, especially for syntax, parameters, SQL, API calls, or other text that must be copied. Passing `RAW` directly remains the preferred option when the tool caller can control the parameter.
 
 ## Prompt language
 
