@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.2...pi-tool-supervisor-v0.3.3) (2026-07-20)
+
+
+### Bug Fixes
+
+* enforce outputPrompt tool-call contract ([#23](https://github.com/maplezzk/pi-extensions/issues/23)) ([40d2d12](https://github.com/maplezzk/pi-extensions/commit/40d2d12c879f8339f90b7689f4a6503ad65f002c))
+
 ## [0.3.2](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.1...pi-tool-supervisor-v0.3.2) (2026-07-20)
 
 

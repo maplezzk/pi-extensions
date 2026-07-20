@@ -1,6 +1,6 @@
 {
   "packages/pi-extensions-i18n": "0.3.0",
-  "packages/pi-distill": "0.4.2",
-  "packages/pi-tool-supervisor": "0.3.2",
+  "packages/pi-distill": "0.4.3",
+  "packages/pi-tool-supervisor": "0.3.3",
   "packages/pi-extensions-tool-display": "0.2.2"
 }

@@ -1,6 +1,6 @@
 {
   "name": "pi-distill",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Pi tool-output distillation with file-first configuration",
   "type": "module",
   "files": [
