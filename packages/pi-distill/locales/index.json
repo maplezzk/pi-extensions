@@ -1,11 +1,15 @@
 {
   "bashPromptDescription": {
-    "zh-CN": "必须提供 Bash 输出处理指令。要保留原始输出，值必须严格为 RAW（不区分大小写的三个 ASCII 字母）；不要使用“完整输出”等自然语言，否则会调用提炼模型。其他非空值会作为 outputPrompt 发送给提炼模型。若只需要编译或测试的通过/失败和错误摘要，请使用描述性 prompt；只有需要完整日志或逐行调试时才使用 RAW。该值不会传给 Bash。",
-    "en-US": "Required Bash output handling instruction. To preserve the exact original, the value must be exactly RAW (the three ASCII letters, case-insensitive); do not use natural-language phrases such as \"full output\", or the summarizer will be called. Any other non-empty value is sent to the summarizer as outputPrompt. For compile or test commands, use a descriptive prompt when you only need pass/fail and an error summary; use RAW only for full logs or line-by-line debugging. This value is not passed to Bash."
+    "zh-CN": "必须提供 Bash 输出处理指令。要保留原始输出，值必须严格为 RAW（不区分大小写的三个 ASCII 字母）；不要使用“完整输出”或“完整提取”等自然语言，否则会调用提炼模型。其他非空值会作为 outputPrompt 发送给提炼模型。若只需要编译或测试的通过/失败和错误摘要，请使用描述性 prompt；需要完整日志、完整提取语法/参数/SQL，或逐行调试时才使用 RAW。该值不会传给 Bash。",
+    "en-US": "Required Bash output handling instruction. To preserve the exact original, the value must be exactly RAW (the three ASCII letters, case-insensitive); do not use natural-language phrases such as \"full output\" or \"complete extraction\", or the summarizer will be called. Any other non-empty value is sent to the summarizer as outputPrompt. For compile or test commands, use a descriptive prompt when you only need pass/fail and an error summary; use RAW for full logs, complete syntax/parameter/SQL extraction, or line-by-line debugging. This value is not passed to Bash."
   },
   "outputPromptDescription": {
-    "zh-CN": "必须提供输出处理指令。要保留原始输出，值必须严格为 RAW（不区分大小写的三个 ASCII 字母）；不要使用“完整输出”等自然语言，否则会调用提炼模型。其他非空值会作为 outputPrompt 发送给提炼模型。需要复制的精确常量、代码值、字段声明、注解或 SQL 使用 RAW；询问字段或方法时使用描述性 prompt。",
-    "en-US": "Required output handling instruction. To preserve the exact original, the value must be exactly RAW (the three ASCII letters, case-insensitive); do not use natural-language phrases such as \"full output\", or the summarizer will be called. Any other non-empty value is sent to the summarizer as outputPrompt. Use RAW for exact constants, code values, field declarations, annotations, SQL, or other text needed for copying; use a descriptive prompt for high-level questions about fields or methods."
+    "zh-CN": "强制字段：每次工具调用都必须提供 outputPrompt；绝不能省略、传 null 或空字符串。需要原始结果时严格传 RAW（不区分大小写的三个 ASCII 字母）；普通 grep/read/find/ls 若用户未明确要求摘要，也传 RAW。只有明确需要压缩时才传描述性 prompt。不要使用“完整输出”或“完整提取”等自然语言作为值；该字段不会传给底层工具。",
+    "en-US": "MANDATORY: Include outputPrompt in every tool call; never omit it, use null, or use an empty string. Use exactly RAW (the three ASCII letters, case-insensitive) when the original result is needed; for ordinary grep/read/find/ls calls, use RAW unless the user explicitly asks for a summary. Use a descriptive prompt only when compression is explicitly wanted. Do not use natural-language values such as \"full output\" or \"complete extraction\"; this field is removed before the underlying tool runs."
+  },
+  "outputPromptSystemGuideline": {
+    "zh-CN": "强制工具调用规则：每次调用任何带有 outputPrompt 的工具时，都必须在 arguments 中包含 outputPrompt。绝不能省略、传 null 或空字符串。普通 grep/read/find/ls 调用默认使用 outputPrompt=RAW；只有用户明确要求摘要或压缩时，才传描述性 outputPrompt。RAW 必须是严格的三个 ASCII 字母。",
+    "en-US": "MANDATORY tool-call rule: Whenever a tool exposes outputPrompt, include outputPrompt in the arguments of every call. Never omit it, use null, or use an empty string. For ordinary grep/read/find/ls calls, default to outputPrompt=RAW; use a descriptive outputPrompt only when the user explicitly asks for summarization or compression. RAW must be exactly the three ASCII letters."
   },
   "positiveInteger": {
     "zh-CN": "请输入大于 0 的整数。",

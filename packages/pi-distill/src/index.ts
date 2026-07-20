@@ -87,6 +87,7 @@ type ToolResultEventPatch = {
 
 export const BASH_OUTPUT_PROMPT_DESCRIPTION = i18n.t("bashPromptDescription");
 export const OUTPUT_PROMPT_DESCRIPTION = i18n.t("outputPromptDescription");
+const OUTPUT_PROMPT_SYSTEM_GUIDELINE = i18n.t("outputPromptSystemGuideline");
 
 type SummaryResult = {
   text: string;
@@ -549,6 +550,7 @@ function extendOutputPromptParameter(tool: ToolInfo): boolean {
 
   (parameters.properties as Record<string, unknown>).outputPrompt = {
     type: "string",
+    default: "RAW",
     description: tool.name === "bash"
       ? BASH_OUTPUT_PROMPT_DESCRIPTION
       : OUTPUT_PROMPT_DESCRIPTION,
@@ -752,6 +754,12 @@ export default function piDistillExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", (event) => {
     originalUserPrompt = typeof event.prompt === "string" ? event.prompt : "";
     extendParameters();
+    return {
+      systemPrompt: [
+        typeof event.systemPrompt === "string" ? event.systemPrompt : "",
+        `<output-prompt-contract>\n${OUTPUT_PROMPT_SYSTEM_GUIDELINE}\n</output-prompt-contract>`,
+      ].filter((value) => value.length > 0).join("\n\n"),
+    };
   });
   pi.on("tool_call", (event) => {
     pendingCalls.set(event.toolCallId, {
