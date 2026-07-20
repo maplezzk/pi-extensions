@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v0.2.1...pi-extensions-tool-display-v0.2.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* load tool display as a dependency extension ([#18](https://github.com/maplezzk/pi-extensions/issues/18)) ([d50b392](https://github.com/maplezzk/pi-extensions/commit/d50b392a44181328d2446182ecfe67d11b650061))
+
 ## [0.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v0.2.0...pi-extensions-tool-display-v0.2.1) (2026-07-20)
 
 

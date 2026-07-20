@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.4.1...pi-distill-v0.4.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* load tool display as a dependency extension ([#18](https://github.com/maplezzk/pi-extensions/issues/18)) ([d50b392](https://github.com/maplezzk/pi-extensions/commit/d50b392a44181328d2446182ecfe67d11b650061))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^0.2.1 to ^0.2.2
+
 ## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.4.0...pi-distill-v0.4.1) (2026-07-20)
 
 
