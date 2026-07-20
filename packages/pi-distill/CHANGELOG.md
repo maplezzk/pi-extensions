@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.3](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.4.2...pi-distill-v0.4.3) (2026-07-20)
+
+
+### Bug Fixes
+
+* **distill:** enforce RAW output handling contract ([#22](https://github.com/maplezzk/pi-extensions/issues/22)) ([043f26b](https://github.com/maplezzk/pi-extensions/commit/043f26bba7693f7a33b2a055c776a7838012982f))
+* enforce outputPrompt tool-call contract ([#23](https://github.com/maplezzk/pi-extensions/issues/23)) ([40d2d12](https://github.com/maplezzk/pi-extensions/commit/40d2d12c879f8339f90b7689f4a6503ad65f002c))
+
 ## [0.4.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.4.1...pi-distill-v0.4.2) (2026-07-20)
 
 
