@@ -1,54 +1,82 @@
 {
   "passed": {
-    "zh-CN": "已通过",
-    "en-US": "Passed"
+    "zh-CN": "✓ 已通过",
+    "en-US": "✓ Passed"
   },
   "rejected": {
-    "zh-CN": "未通过",
-    "en-US": "Rejected"
+    "zh-CN": "✕ 未通过",
+    "en-US": "✕ Rejected"
   },
   "failed": {
-    "zh-CN": "审查失败·已放行",
-    "en-US": "Review failed · allowed"
+    "zh-CN": "! 审查失败·已放行",
+    "en-US": "! Review failed · allowed"
   },
   "skipped": {
-    "zh-CN": "已跳过",
-    "en-US": "Skipped"
+    "zh-CN": "– 已跳过",
+    "en-US": "– Skipped"
   },
   "disabled": {
-    "zh-CN": "未启用",
-    "en-US": "Disabled"
+    "zh-CN": "○ 未启用",
+    "en-US": "○ Disabled"
   },
   "reviewerCount": {
     "zh-CN": "{count} 个审查器",
     "en-US": "{count} reviewers"
   },
   "file": {
-    "zh-CN": "  文件：{path}",
-    "en-US": "  File: {path}"
+    "zh-CN": "文件",
+    "en-US": "File"
   },
   "reviewerPassed": {
-    "zh-CN": "✓ 通过",
+    "zh-CN": "✓ 已通过",
     "en-US": "✓ Passed"
   },
   "reviewerRejected": {
-    "zh-CN": "✗ 不通过",
-    "en-US": "✗ Rejected"
+    "zh-CN": "✕ 未通过",
+    "en-US": "✕ Rejected"
   },
   "reviewerFailed": {
     "zh-CN": "! 失败·已放行",
     "en-US": "! Failed · allowed"
   },
   "reviewerSkipped": {
-    "zh-CN": "- 跳过",
-    "en-US": "- Skipped"
+    "zh-CN": "– 已跳过",
+    "en-US": "– Skipped"
   },
   "reviewer": {
-    "zh-CN": "reviewer",
-    "en-US": "reviewer"
+    "zh-CN": "审查器",
+    "en-US": "Reviewer"
   },
   "title": {
-    "zh-CN": "✦ supervisor",
-    "en-US": "✦ supervisor"
+    "zh-CN": "⛨ Supervisor",
+    "en-US": "⛨ Supervisor"
+  },
+  "header": {
+    "zh-CN": "⛨ Supervisor  {status}",
+    "en-US": "⛨ Supervisor  {status}"
+  },
+  "expand": {
+    "zh-CN": " • Ctrl+O 展开",
+    "en-US": " • Ctrl+O to expand"
+  },
+  "summary": {
+    "zh-CN": "摘要",
+    "en-US": "Summary"
+  },
+  "rules": {
+    "zh-CN": "规则",
+    "en-US": "Rules"
+  },
+  "finding": {
+    "zh-CN": "发现",
+    "en-US": "Finding"
+  },
+  "warning": {
+    "zh-CN": "警告",
+    "en-US": "Warning"
+  },
+  "line": {
+    "zh-CN": "第 {line} 行",
+    "en-US": "line {line}"
   }
 }
