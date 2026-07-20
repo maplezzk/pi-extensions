@@ -1,11 +1,10 @@
-import { Text } from "@earendil-works/pi-tui";
 import {
   appendResultRenderPanel,
   isResultRenderMiddlewareActive,
   registerResultRenderMiddleware,
   type ResultMiddleware,
 } from "pi-extensions-tool-display";
-import { buildSupervisorAuditLines } from "./fallback-renderer.ts";
+import { buildSupervisorAuditLines, createSupervisorAuditComponent } from "./fallback-renderer.ts";
 
 const SUPERVISOR_MIDDLEWARE_ID = "pi-tool-supervisor.result-renderer.v1";
 const SUPPORTED_TOOLS = new Set(["edit", "write"]);
@@ -31,7 +30,7 @@ const supervisorMiddleware: ResultMiddleware = (context, next) => {
   );
   if (!rendered) return next();
 
-  const panel = new Text(context.theme.fg(rendered.tone, rendered.lines.join("\n")), 0, 0);
+  const panel = createSupervisorAuditComponent(rendered, context.theme);
   return appendResultRenderPanel(next(), panel);
 };
 
