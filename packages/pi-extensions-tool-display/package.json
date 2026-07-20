@@ -1,6 +1,6 @@
 {
   "name": "pi-extensions-tool-display",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Pi tool display host and shared result-rendering protocol for extensions",
   "type": "module",
   "main": "./index.ts",
