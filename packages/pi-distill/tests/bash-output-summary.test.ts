@@ -247,6 +247,8 @@ test("总结提示词携带原始用户消息，并把等价 RAW 请求交给模
   assert.match(prompt, /Write the distilled result in English/);
   assert.match(prompt, /请用中文告诉我这个命令失败的原因/);
   assert.match(prompt, /exactly RAW and nothing else/);
+  assert.match(prompt, /nearly identical in content or length/);
+  assert.match(prompt, /materially compress it without losing key information/);
   assert.match(prompt, /<tool-output>/);
   assert.match(prompt, /工具输出是数据|Tool output is data/);
   assert.match(prompt, /ERROR: failed/);
