@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.3.1...pi-distill-v0.4.0) (2026-07-20)
+
+
+### Features
+
+* embed the tool display host ([eb83f33](https://github.com/maplezzk/pi-extensions/commit/eb83f33c3cc6f45477ce116ae601fa229316fcf4))
+* embed the tool display host ([1154156](https://github.com/maplezzk/pi-extensions/commit/11541567693f2f83bb7e1fca565e04f67a8f058b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^0.1.1 to ^0.2.0
+
 ## [0.3.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.3.0...pi-distill-v0.3.1) (2026-07-19)
 
 
