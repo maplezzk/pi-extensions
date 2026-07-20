@@ -117,6 +117,25 @@ test("feature extensions can initialize one shared host idempotently", () => {
   assert.ok(sessionStartCountAfterFirstInit >= 1);
 });
 
+test("separate feature APIs do not duplicate the shared tool-display command", () => {
+  const sharedCommands: Array<{ name: string }> = [];
+  const first = createApiStub({
+    getCommands: () => sharedCommands,
+    registerCommand: (name) => sharedCommands.push({ name }),
+  });
+  const second = createApiStub({
+    getCommands: () => sharedCommands,
+    registerCommand: (name) => sharedCommands.push({ name }),
+  });
+
+  ensureToolDisplayHost(first.api);
+  ensureToolDisplayHost(second.api);
+
+  assert.equal(sharedCommands.filter((command) => command.name === "tool-display").length, 1);
+  assert.equal(first.capturedCommands.filter((command) => command.name === "tool-display").length, 1);
+  assert.equal(second.capturedCommands.filter((command) => command.name === "tool-display").length, 0);
+});
+
 test("entry point registers tool-display command", () => {
   const { api, capturedCommands } = createApiStub();
   toolDisplayExtension(api);

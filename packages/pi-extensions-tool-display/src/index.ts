@@ -44,6 +44,14 @@ export function toolDisplayReloadRequired(
 
 const initializedHosts = new WeakSet<ExtensionAPI>();
 
+function hasRegisteredToolDisplayCommand(pi: ExtensionAPI): boolean {
+  try {
+    return pi.getCommands().some((command) => command.name === "tool-display");
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Load the display host when a feature extension uses this package as a
  * dependency. Pi only auto-loads top-level packages, so relying on the
@@ -109,13 +117,18 @@ export function ensureToolDisplayHost(
     registerThinkingLabeling(pi);
   }
 
-  pi.registerCommand("tool-display", {
-    description: "Configure tool output rendering (OpenCode-style)",
-    handler: async (args, ctx) => {
-      const { runToolDisplayCommandHandler } = await import("./config-modal.js");
-      await runToolDisplayCommandHandler(args, ctx, { getConfig, setConfig, getCapabilities });
-    },
-  });
+  // Each Pi extension has its own registration map, while getCommands() sees
+  // the shared runtime. Check the latter so feature extensions do not expose
+  // duplicate /tool-display entries when they initialize this host separately.
+  if (!hasRegisteredToolDisplayCommand(pi)) {
+    pi.registerCommand("tool-display", {
+      description: "Configure tool output rendering (OpenCode-style)",
+      handler: async (args, ctx) => {
+        const { runToolDisplayCommandHandler } = await import("./config-modal.js");
+        await runToolDisplayCommandHandler(args, ctx, { getConfig, setConfig, getCapabilities });
+      },
+    });
+  }
 
   pi.on("session_start", async (_event, ctx) => {
     refreshCapabilities();
