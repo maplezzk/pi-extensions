@@ -1,98 +1,138 @@
-import { Container, type Component } from "@earendil-works/pi-tui";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
+import {
+  loadToolDisplayConfig,
+  normalizeToolDisplayConfig,
+  saveToolDisplayConfig,
+} from "./config-store.js";
+import {
+  applyCapabilityConfigGuards,
+  detectToolDisplayCapabilities,
+  type ToolDisplayCapabilities,
+} from "./capabilities.js";
+import { registerToolDisplayOverrides } from "./tool-overrides.js";
+import { disposeAll, resetDisposed } from "./disposable.js";
+import { registerThinkingLabeling } from "./thinking-label.js";
+import registerNativeUserMessageBox from "./user-message-box-native.js";
+import {
+  BUILT_IN_TOOL_OVERRIDE_NAMES,
+  type ConfigLoadResult,
+  type ToolDisplayConfig,
+} from "./types.js";
 
-export const TOOL_DISPLAY_API_KEY = Symbol.for("pi-tool-display.api.v1");
-export const PENDING_MIDDLEWARES_KEY = Symbol.for("pi-tool-display.pendingResultRenderMiddlewares.v1");
+export * from "./result-render-middleware.js";
 
-export type RenderTheme = {
-  fg(color: string, text: string): string;
-  bold(text: string): string;
-};
-
-export type ResultMiddlewareContext = {
-  toolName: string;
-  result: unknown;
-  options: { expanded?: boolean };
-  theme: RenderTheme;
-};
-
-export type ResultMiddleware = (
-  context: ResultMiddlewareContext,
-  next: () => unknown,
-) => unknown;
-
-export type MiddlewareRegistration = {
-  id: string;
-  toolName: string;
-  middleware: ResultMiddleware;
-};
-
-export type ToolDisplayApi = {
-  registerResultRenderMiddleware?(registration: MiddlewareRegistration): string;
-  unregisterResultRenderMiddleware?(id: string): boolean;
-  hasResultRenderMiddleware?(id: string): boolean;
-  isResultRenderPipelineActive?(toolName: string): boolean;
-};
-
-type GlobalProtocol = typeof globalThis & {
-  [TOOL_DISPLAY_API_KEY]?: ToolDisplayApi;
-  [PENDING_MIDDLEWARES_KEY]?: MiddlewareRegistration[];
-};
-
-function getApi(): ToolDisplayApi | undefined {
-  return (globalThis as GlobalProtocol)[TOOL_DISPLAY_API_KEY];
+function ownershipChanged(
+  previous: ToolDisplayConfig,
+  next: ToolDisplayConfig,
+): boolean {
+  return BUILT_IN_TOOL_OVERRIDE_NAMES.some(
+    (toolName) =>
+      previous.registerToolOverrides[toolName] !==
+      next.registerToolOverrides[toolName],
+  );
 }
 
-function queueRegistration(registration: MiddlewareRegistration): void {
-  const globalProtocol = globalThis as GlobalProtocol;
-  const queue = Array.isArray(globalProtocol[PENDING_MIDDLEWARES_KEY])
-    ? globalProtocol[PENDING_MIDDLEWARES_KEY]!
-    : [];
-  const index = queue.findIndex((entry) => entry?.id === registration.id);
-  if (index >= 0) queue[index] = registration;
-  else queue.push(registration);
-  globalProtocol[PENDING_MIDDLEWARES_KEY] = queue;
+export function toolDisplayReloadRequired(
+  previous: ToolDisplayConfig,
+  next: ToolDisplayConfig,
+): boolean {
+  return previous.enabled !== next.enabled || ownershipChanged(previous, next);
 }
 
-function removeQueuedRegistration(id: string): void {
-  const queue = (globalThis as GlobalProtocol)[PENDING_MIDDLEWARES_KEY];
-  if (!Array.isArray(queue)) return;
-  const index = queue.findIndex((entry) => entry?.id === id);
-  if (index >= 0) queue.splice(index, 1);
-}
+const initializedHosts = new WeakSet<ExtensionAPI>();
 
-export function registerResultRenderMiddleware(
-  registration: MiddlewareRegistration,
-): () => void {
-  const api = getApi();
-  if (typeof api?.registerResultRenderMiddleware === "function") {
-    api.registerResultRenderMiddleware(registration);
-  } else {
-    queueRegistration(registration);
+/**
+ * Load the display host when a feature extension uses this package as a
+ * dependency. Pi only auto-loads top-level packages, so relying on the
+ * dependency's `pi.extensions` metadata alone would leave the middleware
+ * queue undrained for users who install `pi-distill` or `pi-tool-supervisor`.
+ */
+export function ensureToolDisplayHost(
+  pi: ExtensionAPI,
+  initial: ConfigLoadResult = loadToolDisplayConfig(),
+): void {
+  if (initializedHosts.has(pi)) return;
+  initializedHosts.add(pi);
+
+  resetDisposed();
+
+  pi.on("session_shutdown", (event: { reason: string }) => {
+    if (event.reason === "reload") {
+      disposeAll();
+      initializedHosts.delete(pi);
+    }
+  });
+
+  let config: ToolDisplayConfig = initial.config;
+  let pendingLoadError = initial.error;
+  let capabilities: ToolDisplayCapabilities = {
+    hasMcpTooling: false,
+    hasRtkOptimizer: false,
+  };
+
+  const refreshCapabilities = (): void => {
+    capabilities = detectToolDisplayCapabilities(pi, process.cwd());
+  };
+
+  const getConfig = (): ToolDisplayConfig => config;
+  const getCapabilities = (): ToolDisplayCapabilities => capabilities;
+  const getEffectiveConfig = (): ToolDisplayConfig =>
+    applyCapabilityConfigGuards(config, capabilities);
+
+  const setConfig = (
+    next: ToolDisplayConfig,
+    ctx: ExtensionCommandContext,
+  ): void => {
+    const normalized = normalizeToolDisplayConfig(next);
+    const requiresReload = toolDisplayReloadRequired(config, normalized);
+    config = normalized;
+
+    const saved = saveToolDisplayConfig(normalized);
+    if (!saved.success && saved.error) {
+      ctx.ui.notify(saved.error, "error");
+    }
+
+    if (requiresReload) {
+      ctx.ui.notify(
+        "Global switch or tool ownership updates apply after /reload.",
+        "warning",
+      );
+    }
+  };
+
+  if (initial.config.enabled) {
+    registerToolDisplayOverrides(pi, getEffectiveConfig);
+    registerNativeUserMessageBox(pi, getConfig);
+    registerThinkingLabeling(pi);
   }
 
-  return () => {
-    getApi()?.unregisterResultRenderMiddleware?.(registration.id);
-    removeQueuedRegistration(registration.id);
-  };
+  pi.registerCommand("tool-display", {
+    description: "Configure tool output rendering (OpenCode-style)",
+    handler: async (args, ctx) => {
+      const { runToolDisplayCommandHandler } = await import("./config-modal.js");
+      await runToolDisplayCommandHandler(args, ctx, { getConfig, setConfig, getCapabilities });
+    },
+  });
+
+  pi.on("session_start", async (_event, ctx) => {
+    refreshCapabilities();
+    if (pendingLoadError) {
+      ctx.ui.notify(pendingLoadError, "warning");
+      pendingLoadError = undefined;
+    }
+  });
+
+  pi.on("before_agent_start", async () => {
+    refreshCapabilities();
+  });
 }
 
-export function isResultRenderMiddlewareActive(id: string, toolName: string): boolean {
-  const api = getApi();
-  return api?.hasResultRenderMiddleware?.(id) === true
-    && api.isResultRenderPipelineActive?.(toolName) === true;
-}
-
-export function asComponent(value: unknown): Component | undefined {
-  return value && typeof value === "object" && typeof (value as Component).render === "function"
-    ? value as Component
-    : undefined;
-}
-
-export function appendResultRenderPanel(baseValue: unknown, panel: Component): Component {
-  const base = asComponent(baseValue);
-  if (!base) return panel;
-  const container = new Container();
-  container.addChild(base);
-  container.addChild(panel);
-  return container;
+export default function toolDisplayExtension(
+  pi: ExtensionAPI,
+  initial: ConfigLoadResult = loadToolDisplayConfig(),
+): void {
+  ensureToolDisplayHost(pi, initial);
 }

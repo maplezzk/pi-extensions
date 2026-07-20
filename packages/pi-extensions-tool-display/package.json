@@ -1,20 +1,24 @@
 {
   "name": "pi-extensions-tool-display",
   "version": "0.1.1",
-  "description": "Shared result-rendering protocol and component helpers for Pi extensions",
+  "description": "Pi tool display host and shared result-rendering protocol for extensions",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./index.ts"
   },
   "files": [
+    "index.ts",
+    "tool-display-api-consumer.js",
+    "tool-display-api-consumer.d.ts",
     "src",
+    "config.example.json",
     "README.md",
     "README.zh-CN.md",
     "tsconfig.json"
   ],
   "scripts": {
-    "test": "tsx --test tests/tool-display.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
@@ -43,9 +47,16 @@
     "tool-display"
   ],
   "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
     "@earendil-works/pi-tui": ">=0.80.0 <0.81.0"
   },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
     "@earendil-works/pi-tui": "0.80.10",
     "@types/node": "24.12.4",
     "tsx": "4.23.1",

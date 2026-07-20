@@ -465,7 +465,7 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
   process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-distill-extension-"));
   try {
     const handlers = new Map<string, (...args: any[]) => any>();
-    const tools = ["bash", "read", "grep", "find", "ls", "custom-tool"].map((name) => ({
+    const tools = ["bash", "read", "grep", "find", "ls", "edit", "write", "custom-tool"].map((name) => ({
       name,
       description: `${name} tool`,
       parameters: {
@@ -473,7 +473,10 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
         properties: { value: { type: "string" } },
         required: ["value"],
       },
-      sourceInfo: { source: "builtin" },
+      // The shared display host is initialized by distill now. Mark these
+      // tools as externally owned so this test isolates distill's schema and
+      // event wiring instead of counting the host's tool registrations.
+      sourceInfo: { source: "pi-distill-test" },
     }));
     let registeredToolCount = 0;
     const appendedEntries: Array<{ type: string; data: unknown }> = [];

@@ -299,7 +299,13 @@ test("pi-tool-supervisor 通过 Pi 工具事件独立接入，不注册或依赖
     let registeredToolCount = 0;
     let registeredCommandName: string | undefined;
     const pi = {
-      getAllTools: () => [{ name: "write", sourceInfo: { path: "<builtin:write>" } }],
+      // The shared display host is initialized by the supervisor now. Mark all
+      // built-ins as externally owned so this test isolates supervisor wiring
+      // instead of counting the host's tool registrations.
+      getAllTools: () => ["read", "grep", "find", "ls", "bash", "edit", "write"].map((name) => ({
+        name,
+        sourceInfo: { source: "pi-tool-supervisor-test" },
+      })),
       registerTool: () => { registeredToolCount += 1; },
       registerCommand: (name: string) => { registeredCommandName = name; },
       registerEntryRenderer: () => undefined,

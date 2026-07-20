@@ -44,6 +44,8 @@ It does not register a second `bash`, `read`, `grep`, or `find` tool.
 pi install npm:pi-distill
 ```
 
+The shared `pi-extensions-tool-display` dependency initializes the display host automatically; no separate host package is required.
+
 Reload Pi after installation:
 
 ```text
@@ -133,7 +135,7 @@ The distillation prompt strictly follows the locale selected by `/pi-language`:
 ## Scope and boundaries
 
 - Handles every active tool with an object parameter schema; whether `outputPrompt` can be injected is determined by the tool schema, not a fixed allowlist.
-- Registers no replacement tools, does not change tool execution semantics, and does not depend on the unrelated npm package `pi-tool-display`.
+- Registers no replacement tools, does not change tool execution semantics, and does not require a separately installed `pi-tool-display` host package.
 - Text distillation is lossy; use `RAW` when completeness matters.
 - Non-text results are a completeness boundary: images, audio, binary data, and mixed content bypass text distillation.
 - Oversized distilled or final text is written to a temporary file and represented by its path, preventing unbounded context growth.
