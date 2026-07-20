@@ -18,8 +18,10 @@ import {
   getMuxBackend,
   isMuxAvailable,
   muxLog,
+  muxSetupHint,
   AGENT_MUXY_PANE_ID,
 } from "./detection.ts";
+import { i18n } from "./i18n.ts";
 import {
   isHeadlessSurface,
   isHeadlessMode,
@@ -69,8 +71,7 @@ const backendOps: Record<MuxBackend, BackendOps> = {
 function requireMuxBackend(): MuxBackend {
   const backend = getMuxBackend();
   if (!backend) {
-    const { muxSetupHint } = require("./detection.ts") as { muxSetupHint: () => string };
-    throw new Error(`No terminal multiplexer available. ${muxSetupHint()}`);
+    throw new Error(`${i18n.t("setupHint.none")} ${muxSetupHint()}`);
   }
   return backend;
 }
