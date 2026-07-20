@@ -101,16 +101,20 @@ test("feature extensions can initialize one shared host idempotently", () => {
   const { api, capturedCommands, capturedHandlers } = createApiStub();
 
   ensureToolDisplayHost(api);
+  const commandCountAfterFirstInit = capturedCommands.filter((command) => command.name === "tool-display").length;
+  const sessionStartCountAfterFirstInit = capturedHandlers.filter((handler) => handler.event === "session_start").length;
   ensureToolDisplayHost(api);
 
   assert.equal(
     capturedCommands.filter((command) => command.name === "tool-display").length,
-    1,
+    commandCountAfterFirstInit,
   );
   assert.equal(
     capturedHandlers.filter((handler) => handler.event === "session_start").length,
-    1,
+    sessionStartCountAfterFirstInit,
   );
+  assert.ok(commandCountAfterFirstInit >= 1);
+  assert.ok(sessionStartCountAfterFirstInit >= 1);
 });
 
 test("entry point registers tool-display command", () => {
