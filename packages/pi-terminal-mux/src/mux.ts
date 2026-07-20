@@ -1,113 +1,80 @@
-import { execSync, execFile, execFileSync, spawnSync, spawn, type ChildProcess } from "node:child_process";
+import { execSync, execFile, execFileSync, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync, statSync, createWriteStream, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import type { WriteStream } from "node:fs";
+import { dirname, join } from "node:path";
 import { i18n } from "./i18n.ts";
 
-/**
- * 分屏调试日志写入文件，避免污染 TUI 终端。
- * 日志路径: /tmp/pi-muxy-split.log
- *
- * 注意：必须用 /tmp/，不能用 os.tmpdir()。herdr 的日志已经写到
- * /tmp/pi-herdr-split.log，用户排查问题时只看 /tmp/ 即可。
- * 之前用 tmpdir() 导致 macOS 上日志落到 /var/folders/.../T/，与
- * /tmp/ 分裂，用户 grep /tmp 找不到，调试时被坑过。
- */
-const MUXY_SPLIT_LOG = "/tmp/pi-muxy-split.log";
+// ── 共享基础设施模块 —— 公开 API re-export ──
+// 每个符号只能有一个 re-export 路径，不能同时出现在 export {} from 和 import+export {} 中。
+// 规则：仅透传的用 export {} from；同时本地使用的用 import + export {}（无 from）。
 
-export function muxLog(msg: string): void {
-  try {
-    appendFileSync(MUXY_SPLIT_LOG, `[${new Date().toISOString()}] ${msg}`);
-  } catch {
-    // 写日志失败不影响主流程
-  }
-}
+// detection.ts：仅透传（不在 mux.ts 本地使用）
+export {
+  type MuxBackend,
+  isCmuxAvailable,
+  isTmuxAvailable,
+  isZellijAvailable,
+  isWezTermAvailable,
+  isHerdrAvailable,
+  isOttyAvailable,
+} from "./detection.ts";
 
-const execFileAsync = promisify(execFile);
+// detection.ts：本地使用 + re-export
+import {
+  getMuxBackend,
+  isMuxAvailable,
+  muxSetupHint,
+  muxLog,
+  AGENT_MUXY_PANE_ID,
+  type MuxBackend,
+} from "./detection.ts";
+export { getMuxBackend, isMuxAvailable, muxSetupHint, muxLog, AGENT_MUXY_PANE_ID };
 
-/**
- * Agent's own pane ID in Muxy, captured at module load time.
- * Unlike reading process.env.MUXY_PANE_ID dynamically (which may reflect
- * the user's currently focused pane after switching projects in Muxy),
- * this constant always points to the pane where the agent/pi was launched.
- */
-export const AGENT_MUXY_PANE_ID = process.env.MUXY_PANE_ID;
+// headless.ts：全部在 mux.ts 本地使用，一个 import + export {} 搞定
+import {
+  createHeadlessSurface,
+  spawnHeadlessProcess,
+  closeHeadlessSurface,
+  sendHeadlessEscape,
+  readHeadlessScreen,
+  readHeadlessScreenAsync,
+  isHeadlessSurface,
+  isHeadlessMode,
+  cleanupHeadlessProcesses,
+  getHeadlessProcessExit,
+  drainHeadlessProcess,
+} from "./headless.ts";
+export {
+  createHeadlessSurface,
+  spawnHeadlessProcess,
+  closeHeadlessSurface,
+  sendHeadlessEscape,
+  readHeadlessScreen,
+  readHeadlessScreenAsync,
+  isHeadlessSurface,
+  isHeadlessMode,
+  cleanupHeadlessProcesses,
+  getHeadlessProcessExit,
+  drainHeadlessProcess,
+};
 
-export type MuxBackend = "cmux" | "muxy" | "tmux" | "zellij" | "wezterm" | "herdr" | "otty";
-
-const commandAvailability = new Map<string, boolean>();
-
-function hasCommand(command: string): boolean {
-  if (commandAvailability.has(command)) {
-    return commandAvailability.get(command)!;
-  }
-
-  let available = false;
-  if (process.platform === "win32") {
-    try {
-      execFileSync("where.exe", [command], { stdio: "ignore" });
-      available = true;
-    } catch {
-      try {
-        execSync(`command -v ${command}`, { stdio: "ignore" });
-        available = true;
-      } catch {
-        available = false;
-      }
-    }
-  } else {
-    try {
-      execSync(`command -v ${command}`, { stdio: "ignore" });
-      available = true;
-    } catch {
-      available = false;
-    }
-  }
-
-  commandAvailability.set(command, available);
-  return available;
-}
-
-function muxPreference(): MuxBackend | null {
-  // PI_TERMINAL_MUX 为通用包的首选变量；PI_SUBAGENT_MUX 保留向后兼容。
-  const pref = (process.env.PI_TERMINAL_MUX ?? process.env.PI_SUBAGENT_MUX ?? "").trim().toLowerCase();
-  if (
-    pref === "cmux" ||
-    pref === "muxy" ||
-    pref === "tmux" ||
-    pref === "zellij" ||
-    pref === "wezterm" ||
-    pref === "herdr" ||
-    pref === "otty"
-  )
-    return pref;
-  return null;
-}
-
-function isCmuxRuntimeAvailable(): boolean {
-  return !!process.env.CMUX_SOCKET_PATH && hasCommand("cmux");
-}
-
-function isMuxyRuntimeAvailable(): boolean {
-  return !!process.env.MUXY_SOCKET_PATH && hasCommand("muxy");
-}
-
-function isTmuxRuntimeAvailable(): boolean {
-  return !!process.env.TMUX && hasCommand("tmux");
-}
-
-function isZellijRuntimeAvailable(): boolean {
-  return !!(process.env.ZELLIJ || process.env.ZELLIJ_SESSION_NAME) && hasCommand("zellij");
-}
-
-function isWezTermRuntimeAvailable(): boolean {
-  return !!process.env.WEZTERM_UNIX_SOCKET && hasCommand("wezterm");
-}
+// shell.ts：公开符号 re-export + 内部工具 import
+export { isFishShell } from "./shell.ts";
 
 import {
-  isHerdrRuntimeAvailable,
+  exitStatusVar,
+  shellEscape,
+  tailLines,
+  sleepSync,
+  envPositiveInteger,
+} from "./shell.ts";
+export { exitStatusVar, shellEscape };
+// tailLines / sleepSync / envPositiveInteger 为非公开内部工具，不 re-export
+
+// ── herdr / otty 后端原生函数（仅保留 mux.ts 本地使用的符号） ──
+
+import {
   createHerdrSurface,
   splitHerdrPane,
   renameHerdrPane,
@@ -121,205 +88,18 @@ import {
   AGENT_HERDR_PANE_ID,
 } from "./herdr.ts";
 import {
-  isOttyRuntimeAvailable,
   createOttySurface,
   sendOttyCommand,
   sendOttyEscape,
   readOttyScreen,
   closeOttySurface,
   renameOttyTab,
-  ottySetupHint,
   AGENT_OTTY_PANE_ID,
 } from "./otty.ts";
 
-export function isCmuxAvailable(): boolean {
-  return isCmuxRuntimeAvailable();
-}
+const execFileAsync = promisify(execFile);
 
-export function isTmuxAvailable(): boolean {
-  return isTmuxRuntimeAvailable();
-}
-
-export function isZellijAvailable(): boolean {
-  return isZellijRuntimeAvailable();
-}
-
-export function isWezTermAvailable(): boolean {
-  return isWezTermRuntimeAvailable();
-}
-
-export function isHerdrAvailable(): boolean {
-  return isHerdrRuntimeAvailable();
-}
-
-export function isOttyAvailable(): boolean {
-  return isOttyRuntimeAvailable();
-}
-
-export function getMuxBackend(): MuxBackend | null {
-  const pref = muxPreference();
-  if (pref === "cmux") return isCmuxRuntimeAvailable() ? "cmux" : null;
-  if (pref === "muxy") return isMuxyRuntimeAvailable() ? "muxy" : null;
-  if (pref === "tmux") return isTmuxRuntimeAvailable() ? "tmux" : null;
-  if (pref === "zellij") return isZellijRuntimeAvailable() ? "zellij" : null;
-  if (pref === "wezterm") return isWezTermRuntimeAvailable() ? "wezterm" : null;
-  if (pref === "herdr") return isHerdrRuntimeAvailable() ? "herdr" : null;
-  if (pref === "otty") return isOttyRuntimeAvailable() ? "otty" : null;
-
-  if (isMuxyRuntimeAvailable()) return "muxy";
-  if (isCmuxRuntimeAvailable()) return "cmux";
-  if (isTmuxRuntimeAvailable()) return "tmux";
-  if (isZellijRuntimeAvailable()) return "zellij";
-  if (isWezTermRuntimeAvailable()) return "wezterm";
-  if (isHerdrRuntimeAvailable()) return "herdr";
-  if (isOttyRuntimeAvailable()) return "otty";
-  return null;
-}
-
-export function isMuxAvailable(): boolean {
-  return getMuxBackend() !== null;
-}
-
-export function muxSetupHint(): string {
-  const pref = muxPreference();
-  if (pref) {
-    const hint = i18n.t(`setupHint.${pref}`);
-    // otty 在 send-keys 未启用时补充更具体的提示
-    if (pref === "otty") {
-      return ottySetupHint() || hint;
-    }
-    return hint;
-  }
-  return i18n.t("setupHint.generic");
-}
-
-// ── Headless mode (no terminal multiplexer available) ──
-
-const HEADLESS_SURFACE_PREFIX = "headless:";
-
-interface HeadlessProcess {
-  child: ChildProcess;
-  exitPromise: Promise<{ exitCode: number }>;
-  resolveExit: ((value: { exitCode: number }) => void) | null;
-  logStream: WriteStream;
-  logFile: string;
-}
-
-const headlessProcesses = new Map<string, HeadlessProcess>();
-
-export function createHeadlessSurface(name: string): string {
-  const id = `${HEADLESS_SURFACE_PREFIX}${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-  return id;
-}
-
-export function spawnHeadlessProcess(
-  surface: string,
-  name: string,
-  command: string,
-  options?: { cwd?: string; env?: Record<string, string> },
-): { logFile: string } {
-  const safeId = surface.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const logFile = join(tmpdir(), `pi-subagent-${safeId}.log`);
-  const logStream = createWriteStream(logFile, { flags: "w" });
-
-  const env = { ...process.env };
-  if (options?.env) {
-    Object.assign(env, options.env);
-  }
-  env.PI_SUBAGENT_HEADLESS = "1";
-
-  const child = spawn("bash", ["-c", command], {
-    cwd: options?.cwd || process.cwd(),
-    stdio: ["ignore", "pipe", "pipe"],
-    env,
-  });
-
-  child.stdout.pipe(logStream);
-  child.stderr.pipe(logStream);
-  child.stdout.resume();
-  child.stderr.resume();
-
-  let resolveExit: ((value: { exitCode: number }) => void) | null = null;
-  const exitPromise = new Promise<{ exitCode: number }>((resolve) => {
-    resolveExit = resolve;
-    child.on("exit", (code) => {
-      logStream.end();
-      resolve({ exitCode: code ?? 1 });
-    });
-    child.on("error", () => {
-      logStream.end();
-      resolve({ exitCode: 1 });
-    });
-  });
-
-  headlessProcesses.set(surface, { child, exitPromise, resolveExit, logStream, logFile });
-
-  return { logFile };
-}
-
-export function closeHeadlessSurface(surface: string): void {
-  const proc = headlessProcesses.get(surface);
-  if (!proc) return;
-  try {
-    proc.child.kill("SIGTERM");
-  } catch {}
-  setTimeout(() => {
-    try {
-      proc.child.kill("SIGKILL");
-    } catch {}
-    headlessProcesses.delete(surface);
-  }, 3000).unref();
-}
-
-export function sendHeadlessEscape(surface: string): void {
-  const proc = headlessProcesses.get(surface);
-  if (!proc) return;
-  try {
-    proc.child.kill("SIGINT");
-  } catch {}
-}
-
-export function readHeadlessScreen(surface: string, lines = 50): string {
-  const proc = headlessProcesses.get(surface);
-  if (!proc) return "";
-  try {
-    const content = readFileSync(proc.logFile, "utf8");
-    const split = content.split("\n");
-    return split.slice(-lines).join("\n");
-  } catch {
-    return "";
-  }
-}
-
-export async function readHeadlessScreenAsync(surface: string, lines = 50): Promise<string> {
-  return readHeadlessScreen(surface, lines);
-}
-
-export function isHeadlessSurface(surface: string): boolean {
-  return surface.startsWith(HEADLESS_SURFACE_PREFIX) || headlessProcesses.has(surface);
-}
-
-export function isHeadlessMode(): boolean {
-  return !isMuxAvailable();
-}
-
-export function cleanupHeadlessProcesses(): void {
-  for (const [surface, proc] of headlessProcesses) {
-    try {
-      proc.child.kill("SIGTERM");
-    } catch {}
-  }
-  headlessProcesses.clear();
-}
-
-export function getHeadlessProcessExit(surface: string): Promise<{ exitCode: number }> | null {
-  const proc = headlessProcesses.get(surface);
-  return proc?.exitPromise ?? null;
-}
-
-export function drainHeadlessProcess(surface: string): void {
-  headlessProcesses.delete(surface);
-}
+// ── 后端探测的本地包装 ──
 
 function requireMuxBackend(): MuxBackend {
   const backend = getMuxBackend();
@@ -327,32 +107,6 @@ function requireMuxBackend(): MuxBackend {
     throw new Error(`${i18n.t("setupHint.none")} ${muxSetupHint()}`);
   }
   return backend;
-}
-
-/**
- * Detect if the user's default shell is fish.
- * Fish uses $status instead of $? for exit codes.
- */
-export function isFishShell(): boolean {
-  const shell = process.env.SHELL ?? "";
-  return basename(shell) === "fish";
-}
-
-/**
- * Return the shell-appropriate exit status variable ($? for bash/zsh, $status for fish).
- */
-export function exitStatusVar(): string {
-  return isFishShell() ? "$status" : "$?";
-}
-
-export function shellEscape(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
-}
-
-function tailLines(text: string, lines: number): string {
-  const split = text.split("\n");
-  if (split.length <= lines) return text;
-  return split.slice(-lines).join("\n");
 }
 
 function zellijPaneId(surface: string): string {
@@ -665,15 +419,6 @@ function createZellijTab(name: string): string {
     }
     throw error;
   }
-}
-
-function envPositiveInteger(name: string, fallback: number): number {
-  const value = Number(process.env[name]);
-  return Number.isInteger(value) && value > 0 ? value : fallback;
-}
-
-function sleepSync(milliseconds: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
 function zellijSurfaceLockPath(): string {
