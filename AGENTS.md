@@ -10,7 +10,8 @@ pi-extensions/
 │   ├── pi-extensions-i18n/      # Shared locale and catalog runtime
 │   ├── pi-extensions-tool-display/ # Tool-display host and shared rendering protocol
 │   ├── pi-distill/              # Tool-output distillation
-│   └── pi-tool-supervisor/      # Post-edit file review
+│   ├── pi-tool-supervisor/      # Post-edit file review
+│   └── pi-terminal-mux/         # Terminal multiplexer abstraction (muxy/cmux/tmux/zellij/wezterm/herdr/otty + headless fallback)
 ├── scripts/                     # Repository checks and workspace helpers
 ├── .github/workflows/           # CI and release automation
 ├── README.md                    # English project documentation
@@ -27,6 +28,7 @@ Each package owns its entrypoint, tests, configuration example, localization res
 - `pi-tool-supervisor` reviews the actual before/after diff of `edit` and `write` against configured rule files. It reports findings but is not an operating-system sandbox or an edit rollback mechanism.
 - `pi-extensions-tool-display` owns the actual Pi tool-display host, built-in tool renderer overrides, and the shared result-rendering middleware protocol. Feature packages register domain-specific panels through it.
 - `pi-extensions-i18n` owns locale selection, catalog validation, interpolation, and the `/pi-language` command. Feature packages use it instead of implementing separate locale runtimes.
+- `pi-terminal-mux` owns terminal multiplexer detection and pane/surface operations. Extensions that need terminal interaction depend on it instead of re-implementing backend detection.
 
 Keep packages composable and independently installable. Avoid coupling one extension to another extension's private implementation details or display state.
 

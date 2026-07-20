@@ -1,0 +1,46 @@
+{
+  "setupHint.none": {
+    "zh-CN": "未检测到可用的终端多路复用器。",
+    "en-US": "No supported terminal multiplexer found."
+  },
+  "setupHint.cmux": {
+    "zh-CN": "请在 cmux 中启动 pi（`cmux pi`）。",
+    "en-US": "Start pi inside cmux (`cmux pi`)."
+  },
+  "setupHint.muxy": {
+    "zh-CN": "请在 Muxy 终端中启动 pi。",
+    "en-US": "Start pi inside Muxy terminal."
+  },
+  "setupHint.tmux": {
+    "zh-CN": "请在 tmux 中启动 pi（`tmux new -A -s pi 'pi'`）。",
+    "en-US": "Start pi inside tmux (`tmux new -A -s pi 'pi'`)."
+  },
+  "setupHint.zellij": {
+    "zh-CN": "请在 zellij 中启动 pi（`zellij --session pi`，然后运行 `pi`）。",
+    "en-US": "Start pi inside zellij (`zellij --session pi`, then run `pi`)."
+  },
+  "setupHint.wezterm": {
+    "zh-CN": "请在 WezTerm 中启动 pi。",
+    "en-US": "Start pi inside WezTerm."
+  },
+  "setupHint.herdr": {
+    "zh-CN": "请在终端中运行 herdr（`herdr`），拆分一个 pane（prefix+v 或 prefix+-），然后在该 pane 中运行 `pi`。herdr 会自动注入 HERDR_ENV=1 和 HERDR_PANE_ID 供 pi 检测。",
+    "en-US": "Start herdr in your terminal (`herdr`), split a pane (prefix+v or prefix+-), then run `pi` in that pane. herdr auto-injects HERDR_ENV=1 + HERDR_PANE_ID for pi to detect."
+  },
+  "setupHint.otty": {
+    "zh-CN": "请在 Otty 中运行 pi（Otty 会自动设置 TERM_PROGRAM=otty）。",
+    "en-US": "Run pi inside Otty (Otty sets TERM_PROGRAM=otty automatically)."
+  },
+  "setupHint.generic": {
+    "zh-CN": "请在 Muxy、cmux（`cmux pi`）、tmux（`tmux new -A -s pi 'pi'`）、zellij（`zellij --session pi`，然后运行 `pi`）、WezTerm、herdr（运行 `herdr`，拆分 pane 后在其中运行 `pi`）或 Otty（Otty 会自动设置 TERM_PROGRAM=otty）中启动 pi。",
+    "en-US": "Start pi inside Muxy, cmux (`cmux pi`), tmux (`tmux new -A -s pi 'pi'`), zellij (`zellij --session pi`, then run `pi`), WezTerm, herdr (run `herdr`, split a pane, then run `pi` in it), or Otty (Otty sets TERM_PROGRAM=otty automatically)."
+  },
+  "setupHint.herdrPreferred": {
+    "zh-CN": "请在 herdr 中启动 pi（必须设置 HERDR_ENV=1；先运行 herdr，再在 pane 中启动 pi）。",
+    "en-US": "Start pi inside herdr (HERDR_ENV=1 must be set; run herdr, then start pi in a pane)."
+  },
+  "setupHint.ottySendKeys": {
+    "zh-CN": "Otty 的 `ipc-allow-send-keys` 未启用。如需让 pi 驱动子 agent 分屏，请在 ~/.config/otty/config.toml 中添加 `ipc-allow-send-keys = true` 并重新加载 Otty。",
+    "en-US": "Otty's `ipc-allow-send-keys` is disabled. To let pi drive subagent panes, add `ipc-allow-send-keys = true` to ~/.config/otty/config.toml and reload Otty."
+  }
+}
