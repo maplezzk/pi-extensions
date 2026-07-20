@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.4.0...pi-distill-v0.4.1) (2026-07-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^0.2.0 to ^0.2.1
+
 ## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.3.1...pi-distill-v0.4.0) (2026-07-20)
 
 

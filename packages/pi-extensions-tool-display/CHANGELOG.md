@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v0.2.0...pi-extensions-tool-display-v0.2.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* deduplicate shared tool display command ([d4c7588](https://github.com/maplezzk/pi-extensions/commit/d4c75886279eb8747af0ae77c0a23e77017dae49))
+
 ## [0.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v0.1.1...pi-extensions-tool-display-v0.2.0) (2026-07-20)
 
 

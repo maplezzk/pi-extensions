@@ -1,6 +1,6 @@
 {
   "name": "pi-tool-supervisor",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Pi tool supervisor extension with edit/write review and interactive configuration",
   "type": "module",
   "files": [
@@ -51,7 +51,7 @@
     "pi-extensions-i18n": "^0.3.0"
   },
   "dependencies": {
-    "pi-extensions-tool-display": "^0.2.0"
+    "pi-extensions-tool-display": "^0.2.1"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.80.10",
