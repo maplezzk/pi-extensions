@@ -71,12 +71,12 @@ function renderDistillAuditLine(audit: DistillAuditView, line: string, index: nu
   if (section) {
     const [, branch, label, gap, content] = section;
     const labelTone = label === "Summary" ? "success" : label === "Error" ? "error" : label === "Warning" ? "warning" : "accent";
-    return `${theme.fg("dim", branch ?? "")}${theme.fg(labelTone, label ?? "")}${gap ?? ""}${theme.fg("text", content ?? "")}`;
+    return `${theme.fg("dim", branch ?? "")}${theme.fg(labelTone, label ?? "")}${gap ?? ""}${content ?? ""}`;
   }
 
   const continuation = line.match(/^(│       |        )(.*)$/);
   if (continuation) {
-    return `${theme.fg("dim", continuation[1] ?? "")}${theme.fg("text", continuation[2] ?? "")}`;
+    return `${theme.fg("dim", continuation[1] ?? "")}${continuation[2] ?? ""}`;
   }
   return theme.fg("muted", line);
 }
@@ -103,7 +103,7 @@ function wrapDistillAuditLine(
     const renderedPrefix = `${theme.fg("dim", branch)}${theme.fg(labelTone, label)}${gap}`;
     const renderedContinuation = theme.fg("dim", branch.startsWith("├") ? "│       " : "        ");
     const contentWidth = Math.max(1, width - visibleWidth(renderedPrefix));
-    const wrappedContent = wrapTextWithAnsi(theme.fg("text", content), contentWidth);
+    const wrappedContent = wrapTextWithAnsi(content, contentWidth);
     return wrappedContent.map((part, partIndex) => padLine(
       `${partIndex === 0 ? renderedPrefix : renderedContinuation}${part}`,
       width,
@@ -115,7 +115,7 @@ function wrapDistillAuditLine(
     const [, prefix = "", content = ""] = continuation;
     const renderedPrefix = theme.fg("dim", prefix);
     const contentWidth = Math.max(1, width - visibleWidth(renderedPrefix));
-    const wrappedContent = wrapTextWithAnsi(theme.fg("text", content), contentWidth);
+    const wrappedContent = wrapTextWithAnsi(content, contentWidth);
     return wrappedContent.map((part) => padLine(`${renderedPrefix}${part}`, width));
   }
 

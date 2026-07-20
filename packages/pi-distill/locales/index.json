@@ -27,10 +27,6 @@
     "zh-CN": "Distill 已保存，但有警告：{warnings}",
     "en-US": "Distill saved with warnings: {warnings}"
   },
-  "saved": {
-    "zh-CN": "Distill 设置已保存；下一次工具调用生效。",
-    "en-US": "Distill settings saved; changes apply to the next tool call."
-  },
   "interactiveOnly": {
     "zh-CN": "交互式设置需要在带 UI 的 Pi 会话中运行。",
     "en-US": "Interactive settings require a Pi session with UI."
@@ -94,14 +90,6 @@
   "showSummary": {
     "zh-CN": "显示摘要：{value}",
     "en-US": "Show summary: {value}"
-  },
-  "saveExit": {
-    "zh-CN": "保存并退出",
-    "en-US": "Save and exit"
-  },
-  "discard": {
-    "zh-CN": "放弃修改",
-    "en-US": "Discard changes"
   },
   "minOutputTitle": {
     "zh-CN": "最小输出字符数",

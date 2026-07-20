@@ -87,10 +87,6 @@
     "zh-CN": "文件评审配置已保存，但有警告：{warnings}",
     "en-US": "File review configuration saved with warnings: {warnings}"
   },
-  "saved": {
-    "zh-CN": "文件评审配置已保存，下一次 edit/write 生效。",
-    "en-US": "File review configuration saved; changes apply to the next edit/write."
-  },
   "configWarnings": {
     "zh-CN": "当前配置有警告，将以可用值打开：{warnings}",
     "en-US": "The current configuration has warnings; opening with usable values: {warnings}"
@@ -126,14 +122,6 @@
   "rulesConfig": {
     "zh-CN": "规则最大行数：{value}",
     "en-US": "Maximum rule lines: {value}"
-  },
-  "saveExit": {
-    "zh-CN": "保存并退出",
-    "en-US": "Save and exit"
-  },
-  "discard": {
-    "zh-CN": "放弃修改",
-    "en-US": "Discard changes"
   },
   "commandDescription": {
     "zh-CN": "通过交互式菜单配置 edit/write 文件评审",

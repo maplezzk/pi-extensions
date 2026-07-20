@@ -147,7 +147,7 @@ function renderSupervisorAuditLine(audit: SupervisorAuditView, line: string, ind
   const section = line.match(/^([├└]─ )([^ ]+)(  )(.*)$/);
   if (section) {
     const [, branch = "", label = "", gap = "  ", content = ""] = section;
-    return `${theme.fg("dim", branch)}${theme.fg(sectionLabelTone(label), label)}${gap}${theme.fg("text", content)}`;
+    return `${theme.fg("dim", branch)}${theme.fg(sectionLabelTone(label), label)}${gap}${content}`;
   }
 
   const continuation = line.match(/^(│       |        )(.*)$/);
@@ -155,9 +155,9 @@ function renderSupervisorAuditLine(audit: SupervisorAuditView, line: string, ind
     const [, prefix = "", content = ""] = continuation;
     const nested = content.match(/^([^ ]+)(  )(.*)$/);
     if (nested && [i18n.t("summary"), i18n.t("finding"), i18n.t("rules")].includes(nested[1] ?? "")) {
-      return `${theme.fg("dim", prefix)}${theme.fg(sectionLabelTone(nested[1] ?? ""), nested[1] ?? "")}${nested[2] ?? "  "}${theme.fg("text", nested[3] ?? "")}`;
+      return `${theme.fg("dim", prefix)}${theme.fg(sectionLabelTone(nested[1] ?? ""), nested[1] ?? "")}${nested[2] ?? "  "}${nested[3] ?? ""}`;
     }
-    return `${theme.fg("dim", prefix)}${theme.fg("text", content)}`;
+    return `${theme.fg("dim", prefix)}${content}`;
   }
   return theme.fg("muted", line);
 }
@@ -183,7 +183,7 @@ function wrapSupervisorAuditLine(
     const renderedPrefix = `${theme.fg("dim", branch)}${theme.fg(sectionLabelTone(label), label)}${gap}`;
     const renderedContinuation = theme.fg("dim", branch.startsWith("├") ? "│       " : "        ");
     const contentWidth = Math.max(1, width - visibleWidth(renderedPrefix));
-    const wrappedContent = wrapTextWithAnsi(theme.fg("text", content), contentWidth);
+    const wrappedContent = wrapTextWithAnsi(content, contentWidth);
     return wrappedContent.map((part, partIndex) => padLine(
       `${partIndex === 0 ? renderedPrefix : renderedContinuation}${part}`,
       width,
@@ -195,7 +195,7 @@ function wrapSupervisorAuditLine(
     const [, prefix = "", content = ""] = continuation;
     const renderedPrefix = theme.fg("dim", prefix);
     const contentWidth = Math.max(1, width - visibleWidth(renderedPrefix));
-    const wrappedContent = wrapTextWithAnsi(theme.fg("text", content), contentWidth);
+    const wrappedContent = wrapTextWithAnsi(content, contentWidth);
     return wrappedContent.map((part) => padLine(`${renderedPrefix}${part}`, width));
   }
 

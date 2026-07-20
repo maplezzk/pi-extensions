@@ -630,6 +630,19 @@ async function editDistillModel(
   return normalized;
 }
 
+async function saveDistillConfigFile(
+  ctx: ExtensionCommandContext,
+  config: DistillUiConfig,
+  configPath: string,
+): Promise<void> {
+  await mkdir(dirname(configPath), { recursive: true });
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const saved = loadDistillConfig();
+  if (saved.warnings.length > 0) {
+    ctx.ui.notify(i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
+  }
+}
+
 async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: string): Promise<void> {
   const loaded = loadDistillConfig();
   if (loaded.warnings.length > 0) {
@@ -650,50 +663,61 @@ async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: stri
       i18n.t("auditRenderer", { value: config.render.enabled ? i18n.t("on") : i18n.t("off") }),
       i18n.t("showPrompt", { value: config.render.showPrompt ? i18n.t("on") : i18n.t("off") }),
       i18n.t("showSummary", { value: config.render.showResult ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("saveExit"),
-      i18n.t("discard"),
     ];
     const choice = await ctx.ui.select(i18n.t("settingsTitle"), choices);
-    if (choice === undefined || choice === i18n.t("discard")) return;
+    if (choice === undefined) return;
 
     if (choice === choices[0]) {
       config.enabled = !config.enabled;
+      await saveDistillConfigFile(ctx, config, configPath);
     } else if (choice === choices[1]) {
       const value = await editDistillModel(ctx, config.model);
-      if (value !== undefined) config.model = value;
+      if (value !== undefined) {
+        config.model = value;
+        await saveDistillConfigFile(ctx, config, configPath);
+      }
     } else if (choice === choices[2]) {
       const value = await editDistillNumber(ctx, i18n.t("minOutputTitle"), config.minChars);
-      if (value !== undefined) config.minChars = value;
+      if (value !== undefined) {
+        config.minChars = value;
+        await saveDistillConfigFile(ctx, config, configPath);
+      }
     } else if (choice === choices[3]) {
       const value = await editDistillNumber(ctx, i18n.t("summaryLimitTitle"), config.maxChars);
-      if (value !== undefined) config.maxChars = value;
+      if (value !== undefined) {
+        config.maxChars = value;
+        await saveDistillConfigFile(ctx, config, configPath);
+      }
     } else if (choice === choices[4]) {
       const value = await editDistillNumber(ctx, i18n.t("finalLimitTitle"), config.maxOutputChars);
-      if (value !== undefined) config.maxOutputChars = value;
+      if (value !== undefined) {
+        config.maxOutputChars = value;
+        await saveDistillConfigFile(ctx, config, configPath);
+      }
     } else if (choice === choices[5]) {
       const value = await editDistillNumber(ctx, i18n.t("timeoutTitle"), config.timeoutSeconds);
-      if (value !== undefined) config.timeoutSeconds = value;
+      if (value !== undefined) {
+        config.timeoutSeconds = value;
+        await saveDistillConfigFile(ctx, config, configPath);
+      }
     } else if (choice === choices[6]) {
       const value = await editDistillNumber(ctx, i18n.t("thresholdTitle"), config.missedCompressionRatio);
-      if (value !== undefined) config.missedCompressionRatio = value;
+      if (value !== undefined) {
+        config.missedCompressionRatio = value;
+        await saveDistillConfigFile(ctx, config, configPath);
+      }
     } else if (choice === choices[7]) {
       config.summarizeErrors = !config.summarizeErrors;
+      await saveDistillConfigFile(ctx, config, configPath);
     } else if (choice === choices[8]) {
       config.render.enabled = !config.render.enabled;
+      await saveDistillConfigFile(ctx, config, configPath);
     } else if (choice === choices[9]) {
       config.render.showPrompt = !config.render.showPrompt;
+      await saveDistillConfigFile(ctx, config, configPath);
     } else if (choice === choices[10]) {
       config.render.showResult = !config.render.showResult;
-    } else if (choice === choices[11]) {
-      await mkdir(dirname(configPath), { recursive: true });
-      await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-      const saved = loadDistillConfig();
-      if (saved.warnings.length > 0) {
-        ctx.ui.notify(i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
-      } else {
-        ctx.ui.notify(i18n.t("saved"), "info");
-      }
-      return;
+      await saveDistillConfigFile(ctx, config, configPath);
     }
   }
 }
