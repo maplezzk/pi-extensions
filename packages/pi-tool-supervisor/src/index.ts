@@ -529,14 +529,31 @@ async function editReviewer(
   }
 }
 
-async function addReviewer(ctx: ExtensionCommandContext, reviewers: FileEditReviewReviewerConfig[]): Promise<void> {
+async function saveFileEditReviewConfig(
+  ctx: ExtensionCommandContext,
+  config: FileEditReviewConfig,
+  configPath: string,
+): Promise<void> {
+  await mkdir(dirname(configPath), { recursive: true });
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const saved = loadFileEditReviewConfig(configPath);
+  if (saved.warnings.length > 0) {
+    ctx.ui.notify(i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
+  }
+}
+
+async function addReviewer(
+  ctx: ExtensionCommandContext,
+  reviewers: FileEditReviewReviewerConfig[],
+): Promise<boolean> {
   const name = await ctx.ui.input(i18n.t("reviewerName"), `reviewer-${reviewers.length + 1}`);
-  if (!name?.trim()) return;
+  if (!name?.trim()) return false;
   const model = await inputModel(ctx, "llm-proxy/LOW");
-  if (!model) return;
+  if (!model) return false;
   const rulesFiles = await inputList(ctx, i18n.t("listInput"), [], true);
-  if (!rulesFiles) return;
+  if (!rulesFiles) return false;
   reviewers.push({ name: name.trim(), model, rulesFiles, enabled: true });
+  return true;
 }
 
 async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: string): Promise<void> {
@@ -560,40 +577,40 @@ async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: strin
       i18n.t("rulesConfig", { value: config.maxRuleLines }),
       ...reviewerChoices,
       i18n.t("addReviewer"),
-      i18n.t("saveExit"),
-      i18n.t("discard"),
     ];
     const choice = await ctx.ui.select(i18n.t("configTitle"), choices);
-    if (choice === undefined || choice === i18n.t("discard")) return;
+    if (choice === undefined) return;
 
     if (choice === choices[0]) {
       config.enabled = !config.enabled;
+      await saveFileEditReviewConfig(ctx, config, configPath);
     } else if (choice === choices[1]) {
       const value = await inputPositiveInteger(ctx, i18n.t("timeoutInput"), config.timeoutSeconds);
-      if (value !== undefined) config.timeoutSeconds = value;
+      if (value !== undefined) {
+        config.timeoutSeconds = value;
+        await saveFileEditReviewConfig(ctx, config, configPath);
+      }
     } else if (choice === choices[2]) {
       const value = await inputPositiveInteger(ctx, i18n.t("outputInput"), config.maxOutputChars);
-      if (value !== undefined) config.maxOutputChars = value;
+      if (value !== undefined) {
+        config.maxOutputChars = value;
+        await saveFileEditReviewConfig(ctx, config, configPath);
+      }
     } else if (choice === choices[3]) {
       const value = await inputPositiveInteger(ctx, i18n.t("rulesInput"), config.maxRuleLines);
-      if (value !== undefined) config.maxRuleLines = value;
-    } else if (choice === choices[4 + config.reviewers.length]) {
-      await addReviewer(ctx, config.reviewers);
-    } else if (choice === choices[5 + config.reviewers.length]) {
-      await mkdir(dirname(configPath), { recursive: true });
-      await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-      const saved = loadFileEditReviewConfig(configPath);
-      if (saved.warnings.length > 0) {
-        ctx.ui.notify(i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
-      } else {
-        ctx.ui.notify(i18n.t("saved"), "info");
+      if (value !== undefined) {
+        config.maxRuleLines = value;
+        await saveFileEditReviewConfig(ctx, config, configPath);
       }
-      return;
+    } else if (choice === choices[4 + config.reviewers.length]) {
+      const added = await addReviewer(ctx, config.reviewers);
+      if (added) await saveFileEditReviewConfig(ctx, config, configPath);
     } else if (choice.startsWith("● ") || choice.startsWith("○ ")) {
       const index = reviewerChoices.indexOf(choice);
       if (index >= 0) {
         const result = await editReviewer(ctx, config.reviewers[index]);
         if (result === "deleted") config.reviewers.splice(index, 1);
+        await saveFileEditReviewConfig(ctx, config, configPath);
       }
     }
   }
