@@ -549,7 +549,6 @@ function extendOutputRequestParameter(tool: ToolInfo): boolean {
 
   (parameters.properties as Record<string, unknown>).outputRequest = {
     type: "string",
-    default: "RAW",
     description: OUTPUT_REQUEST_DESCRIPTION,
   };
   const required = Array.isArray(parameters.required)

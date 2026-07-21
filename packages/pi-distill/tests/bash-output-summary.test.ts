@@ -512,14 +512,13 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
       systemPrompt: "base system prompt",
     }, {});
     assert.match(beforeAgentStartResult.systemPrompt, /MANDATORY tool-call rule/);
-    assert.match(beforeAgentStartResult.systemPrompt, /outputRequest=RAW/);
+    assert.match(beforeAgentStartResult.systemPrompt, /RAW must be exactly the three ASCII letters/);
 
     assert.equal(registeredToolCount, 0);
     for (const tool of tools) {
       const schema = tool.parameters as any;
       assert.equal(schema.required.filter((value: string) => value === "outputRequest").length, 1);
       assert.equal(schema.properties.outputRequest.type, "string");
-      assert.equal(schema.properties.outputRequest.default, "RAW");
       assert.equal(
         schema.properties.outputRequest.description,
         OUTPUT_REQUEST_DESCRIPTION,
