@@ -1,6 +1,6 @@
 {
   "name": "pi-distill",
-  "version": "0.4.3",
+  "version": "1.0.0",
   "description": "Pi tool-output distillation with file-first configuration",
   "type": "module",
   "files": [
@@ -53,7 +53,7 @@
     "pi-extensions-i18n": "^0.3.0"
   },
   "dependencies": {
-    "pi-extensions-tool-display": "^0.2.2"
+    "pi-extensions-tool-display": "^1.0.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.80.10",

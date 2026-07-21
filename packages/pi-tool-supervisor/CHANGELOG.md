@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.4](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.3...pi-tool-supervisor-v0.3.4) (2026-07-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^0.2.2 to ^1.0.0
+
 ## [0.3.3](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.2...pi-tool-supervisor-v0.3.3) (2026-07-20)
 
 
