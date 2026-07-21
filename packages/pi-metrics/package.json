@@ -1,7 +1,7 @@
 {
-  "name": "pi-hud",
+  "name": "pi-metrics",
   "version": "0.2.0",
-  "description": "Pi HUD extension: live session elapsed timer with per-turn and total run summaries",
+  "description": "Pi metrics extension: live session elapsed timer with per-turn and total run summaries",
   "type": "module",
   "main": "./index.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "README.zh-CN.md"
   ],
   "scripts": {
-    "test": "tsx --test tests/pi-hud.test.ts",
+    "test": "tsx --test tests/pi-metrics.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
@@ -30,12 +30,12 @@
   },
   "license": "MIT",
   "author": "maplezzk",
-  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-hud",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-metrics",
   "bugs": "https://github.com/maplezzk/pi-extensions/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maplezzk/pi-extensions.git",
-    "directory": "packages/pi-hud"
+    "directory": "packages/pi-metrics"
   },
   "publishConfig": {
     "access": "public",
