@@ -29,7 +29,7 @@ The distillation prompt strictly follows the current locale selected by `/pi-lan
 ## How it works
 
 - Observes `bash`, `read`, `grep`, and `find` through Pi's native `tool_call` / `tool_result` events.
-- Uses the tool's `outputPrompt` as the source of truth for whether and how to distill a result.
+- Uses the tool's `outputRequest` as the source of truth for whether and how to distill a result.
 - Treats a prompt containing only `RAW` as an explicit request for the original output.
 - Uses the current session model by default, or a configured `provider/model` override.
 - Keeps diagnostic metadata such as status, character counts, compression ratio, duration, and anomalies in the tool result details.
@@ -65,7 +65,7 @@ We are not trying to make the agent see less information. We are trying to avoid
 The execution layer should preserve facts. The consumption layer should control context cost. `pi-distill` connects the two:
 
 - the tool executes and returns facts;
-- the agent states what it cares about through `outputPrompt`;
+- the agent states what it cares about through `outputRequest`;
 - the extension reads the actual result before deciding whether to call a distillation model;
 - the model compresses the consumption path without changing the tool's semantics;
 - diagnostics show whether the transformation actually saved context.
@@ -98,7 +98,7 @@ Savings are not the only metric. The extension records duration, original and re
 
 ```text
 Agent states a handling goal
-        ↓ through outputPrompt
+        ↓ through outputRequest
 Tool runs the real operation and returns stdout / stderr / files / media
         ↓
 pi-distill uses the actual result and configuration to keep it, distill it, or write it to a file
@@ -106,15 +106,15 @@ pi-distill uses the actual result and configuration to keep it, distill it, or w
 Agent consumes a result suited to the current decision, with auditable diagnostics
 ```
 
-1. At session start, the extension adds required `outputPrompt` to every active tool whose parameter schema is an object. It does not hard-code `bash`, `read`, `grep`, or `find`.
+1. At session start, the extension adds required `outputRequest` to every active tool whose parameter schema is an object. It does not hard-code `bash`, `read`, `grep`, or `find`.
 2. The `tool_call` handler captures the parameter and removes it before forwarding the call, so the underlying tool never receives the extension-only field.
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
-4. Every tool call must include a non-empty `outputPrompt`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
+4. Every tool call must include a non-empty `outputRequest`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
 5. If distillation fails, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card.
 
 ## Output contract
 
-| `outputPrompt` | Behavior | Use it when |
+| `outputRequest` | Behavior | Use it when |
 | --- | --- | --- |
 | Omitted | Invalid tool call; Pi rejects the call before the underlying tool runs | Never omit it; use `RAW` when no compression is explicitly requested |
 | Exactly `RAW` (case-insensitive) | Skip the distillation model and keep the complete original text; oversized text is returned through a file path | You need to inspect, copy, or verify exact output |
@@ -134,7 +134,7 @@ The distillation prompt strictly follows the locale selected by `/pi-language`:
 
 ## Scope and boundaries
 
-- Handles every active tool with an object parameter schema; whether `outputPrompt` can be injected is determined by the tool schema, not a fixed allowlist.
+- Handles every active tool with an object parameter schema; whether `outputRequest` can be injected is determined by the tool schema, not a fixed allowlist.
 - Registers no replacement tools, does not change tool execution semantics, and does not require a separately installed `pi-tool-display` host package.
 - Text distillation is lossy; use `RAW` when completeness matters.
 - Non-text results are a completeness boundary: images, audio, binary data, and mixed content bypass text distillation.

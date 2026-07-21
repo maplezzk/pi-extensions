@@ -55,10 +55,6 @@
     "zh-CN": "◆ Distill  {status}",
     "en-US": "◆ Distill  {status}"
   },
-  "prompt": {
-    "zh-CN": "Prompt",
-    "en-US": "Prompt"
-  },
   "summary": {
     "zh-CN": "摘要",
     "en-US": "Summary"
@@ -74,5 +70,9 @@
   "error": {
     "zh-CN": "错误",
     "en-US": "Error"
+  },
+  "outputRequest": {
+    "zh-CN": "outputRequest",
+    "en-US": "outputRequest"
   }
 }
