@@ -10,6 +10,7 @@
     "packages/pi-distill": {},
     "packages/pi-tool-supervisor": {},
     "packages/pi-extensions-tool-display": {},
-    "packages/pi-terminal-mux": {}
+    "packages/pi-terminal-mux": {},
+    "packages/pi-hud": {}
   }
 }
