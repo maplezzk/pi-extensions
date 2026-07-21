@@ -1,5 +1,5 @@
 {
-  "name": "pi-model-discovery",
+  "name": "pi-models-discovery",
   "version": "0.1.0",
   "description": "Pi extension: discover models from {baseUrl}/models for providers marked with discoverModels in models.json",
   "type": "module",
@@ -26,12 +26,12 @@
   },
   "license": "MIT",
   "author": "maplezzk",
-  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-model-discovery",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-models-discovery",
   "bugs": "https://github.com/maplezzk/pi-extensions/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maplezzk/pi-extensions.git",
-    "directory": "packages/pi-model-discovery"
+    "directory": "packages/pi-models-discovery"
   },
   "publishConfig": {
     "access": "public",

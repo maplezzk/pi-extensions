@@ -1,4 +1,4 @@
-# pi-model-discovery
+# pi-models-discovery
 
 通用模型发现插件：读取 `~/.pi/agent/models.json` 中带 `"discoverModels": true` 的 provider，请求 `GET {baseUrl}/models` 自动发现模型并注册，无需手写 `models` 数组。首次发现成功后模型列表持久化到本地缓存，之后每次启动直接读缓存，**不再请求网络**。
 
@@ -7,7 +7,7 @@
 ## 安装
 
 ```bash
-pi install npm:pi-model-discovery
+pi install npm:pi-models-discovery
 ```
 
 ## 配置
@@ -54,7 +54,7 @@ pi install npm:pi-model-discovery
 
 ## 行为
 
-- **启动（缓存优先）**：缓存命中时直接用持久化的模型列表注册，零网络请求；缓存文件位于 `~/.pi/agent/extensions/pi-model-discovery/cache.json`。provider 配置指纹（baseUrl+api+apiKey+headers+compat）变化时缓存自动失效，重新走网络发现。
+- **启动（缓存优先）**：缓存命中时直接用持久化的模型列表注册，零网络请求；缓存文件位于 `~/.pi/agent/extensions/pi-models-discovery/cache.json`。provider 配置指纹（baseUrl+api+apiKey+headers+compat）变化时缓存自动失效，重新走网络发现。
 - **在线刷新**：`/model-discovery-refresh` 或 `/model` 打开时触发的 `refreshModels` 在线重新发现，并同步更新缓存。
 - **离线 / 拉取失败**：保留 models.json 里手写的 `models`（如有，作为回退），并通过会话内 notify 显式警告，不静默降级；单个 provider 失败不影响其他 provider。
 - **apiKey 解析**（仅发现请求）：支持字面量与 `$ENV_VAR` / `${ENV_VAR}` 插值；`!command` 形式跳过发现并显式警告（聊天请求仍由 pi 自身解析执行，不受影响）。
@@ -64,7 +64,7 @@ pi install npm:pi-model-discovery
 ## 卸载
 
 ```bash
-pi remove pi-model-discovery
+pi remove pi-models-discovery
 ```
 
 卸载后 provider 回退为 models.json 中的静态配置（手写 `models` 或空）。
