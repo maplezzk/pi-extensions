@@ -1,4 +1,4 @@
-# pi-model-discovery
+# pi-models-discovery
 
 Generic model discovery extension: reads providers marked with `"discoverModels": true` in `~/.pi/agent/models.json`, requests `GET {baseUrl}/models`, and registers the discovered models automatically — no handwritten `models` array required. After the first successful discovery the model list is persisted to a local cache, so subsequent startups read the cache and **perform no network requests**.
 
@@ -7,7 +7,7 @@ Suitable for local/self-hosted LLM proxies (one gateway exposing many models), O
 ## Install
 
 ```bash
-pi install npm:pi-model-discovery
+pi install npm:pi-models-discovery
 ```
 
 ## Configuration
@@ -54,7 +54,7 @@ Forces a rediscovery of every discovery provider and updates the local cache, no
 
 ## Behavior
 
-- **Startup (cache-first)**: when the cache hits, models are registered directly from the persisted list with zero network requests. The cache lives at `~/.pi/agent/extensions/pi-model-discovery/cache.json`. The cache is invalidated automatically when the provider configuration fingerprint (baseUrl+api+apiKey+headers+compat) changes, triggering a fresh network discovery.
+- **Startup (cache-first)**: when the cache hits, models are registered directly from the persisted list with zero network requests. The cache lives at `~/.pi/agent/extensions/pi-models-discovery/cache.json`. The cache is invalidated automatically when the provider configuration fingerprint (baseUrl+api+apiKey+headers+compat) changes, triggering a fresh network discovery.
 - **Online refresh**: `/model-discovery-refresh`, or the `refreshModels` hook triggered when opening `/model`, rediscovers online and updates the cache.
 - **Offline / fetch failure**: handwritten `models` in models.json (if any) are kept as a fallback, and an explicit warning is surfaced via in-session notify — never a silent degradation. One provider failing does not affect the others.
 - **apiKey resolution** (discovery request only): supports literals and `$ENV_VAR` / `${ENV_VAR}` interpolation; `!command` values skip discovery with an explicit warning (chat requests are still resolved by pi itself and are unaffected).
@@ -64,7 +64,7 @@ Forces a rediscovery of every discovery provider and updates the local cache, no
 ## Uninstall
 
 ```bash
-pi remove pi-model-discovery
+pi remove pi-models-discovery
 ```
 
 After removal, providers fall back to the static configuration in models.json (handwritten `models`, or none).
