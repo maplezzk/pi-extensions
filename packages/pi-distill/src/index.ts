@@ -85,7 +85,6 @@ type ToolResultEventPatch = {
   isError?: boolean;
 };
 
-export const BASH_OUTPUT_REQUEST_DESCRIPTION = i18n.t("bashPromptDescription");
 export const OUTPUT_REQUEST_DESCRIPTION = i18n.t("outputRequestDescription");
 const OUTPUT_REQUEST_SYSTEM_GUIDELINE = i18n.t("outputRequestSystemGuideline");
 
@@ -551,9 +550,7 @@ function extendOutputRequestParameter(tool: ToolInfo): boolean {
   (parameters.properties as Record<string, unknown>).outputRequest = {
     type: "string",
     default: "RAW",
-    description: tool.name === "bash"
-      ? BASH_OUTPUT_REQUEST_DESCRIPTION
-      : OUTPUT_REQUEST_DESCRIPTION,
+    description: OUTPUT_REQUEST_DESCRIPTION,
   };
   const required = Array.isArray(parameters.required)
     ? parameters.required.filter((value): value is string =>
