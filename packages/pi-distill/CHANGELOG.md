@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.0.0...pi-distill-v1.0.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* repair release pipeline, rename pi-hud → pi-metrics, add package config CI gate ([#37](https://github.com/maplezzk/pi-extensions/issues/37)) ([3aa4985](https://github.com/maplezzk/pi-extensions/commit/3aa49850dfc6200ea2e8186e85649ecf7e41d697))
+
 ## [1.0.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.4.3...pi-distill-v1.0.0) (2026-07-21)
 
 
