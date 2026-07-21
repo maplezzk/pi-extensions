@@ -583,6 +583,7 @@ function toToolResultEventResult(result: ToolResult): ToolResultEventPatch {
 }
 
 type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "maxOutputChars" | "timeoutSeconds" | "missedCompressionRatio" | "summarizeErrors">> & {
+  outputRequestTools: string[] | undefined;
   render: DistillRenderConfig;
 };
 
@@ -600,6 +601,7 @@ function getDistillUiConfig(): DistillUiConfig {
     timeoutSeconds: config?.timeoutSeconds ?? 10,
     missedCompressionRatio: config?.missedCompressionRatio ?? 10,
     summarizeErrors: config?.summarizeErrors ?? true,
+    outputRequestTools: loaded.outputRequestTools,
     render: { ...loaded.render },
   };
 }
@@ -635,6 +637,31 @@ async function editDistillModel(
   return normalized;
 }
 
+/**
+ * Edit the list of tools that receive the outputRequest parameter.
+ * Returns `undefined` when the user leaves the input empty, which restores
+ * the default rule (all object-schema tools except write and edit).
+ */
+async function editDistillOutputRequestTools(
+  ctx: ExtensionCommandContext,
+  current: string[] | undefined,
+): Promise<string[] | undefined> {
+  const currentValue = current === undefined ? "" : current.join(", ");
+  const value = await ctx.ui.input(i18n.t("outputRequestToolsInput"), currentValue);
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  const tools = trimmed
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  if (tools.length === 0) {
+    ctx.ui.notify(i18n.t("outputRequestToolsInvalid"), "error");
+    return undefined;
+  }
+  return tools;
+}
+
 async function saveDistillConfigFile(
   ctx: ExtensionCommandContext,
   config: DistillUiConfig,
@@ -665,6 +692,7 @@ async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: stri
       i18n.t("timeout", { value: config.timeoutSeconds }),
       i18n.t("threshold", { value: config.missedCompressionRatio }),
       i18n.t("summarizeErrors", { value: config.summarizeErrors ? i18n.t("on") : i18n.t("off") }),
+      i18n.t("outputRequestTools", { value: config.outputRequestTools === undefined ? i18n.t("default") : config.outputRequestTools.join(", ") }),
       i18n.t("auditRenderer", { value: config.render.enabled ? i18n.t("on") : i18n.t("off") }),
       i18n.t("showOutputRequest", { value: config.render.showPrompt ? i18n.t("on") : i18n.t("off") }),
       i18n.t("showSummary", { value: config.render.showResult ? i18n.t("on") : i18n.t("off") }),
@@ -715,12 +743,18 @@ async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: stri
       config.summarizeErrors = !config.summarizeErrors;
       await saveDistillConfigFile(ctx, config, configPath);
     } else if (choice === choices[8]) {
+      const value = await editDistillOutputRequestTools(ctx, config.outputRequestTools);
+      if (value !== undefined) {
+        config.outputRequestTools = value;
+        await saveDistillConfigFile(ctx, config, configPath);
+      }
+    } else if (choice === choices[9]) {
       config.render.enabled = !config.render.enabled;
       await saveDistillConfigFile(ctx, config, configPath);
-    } else if (choice === choices[9]) {
+    } else if (choice === choices[10]) {
       config.render.showPrompt = !config.render.showPrompt;
       await saveDistillConfigFile(ctx, config, configPath);
-    } else if (choice === choices[10]) {
+    } else if (choice === choices[11]) {
       config.render.showResult = !config.render.showResult;
       await saveDistillConfigFile(ctx, config, configPath);
     }

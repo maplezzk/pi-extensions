@@ -118,5 +118,21 @@
   "outputRequest": {
     "zh-CN": "outputRequest",
     "en-US": "outputRequest"
+  },
+  "outputRequestTools": {
+    "zh-CN": "outputRequest 工具：{value}",
+    "en-US": "outputRequest tools: {value}"
+  },
+  "outputRequestToolsInput": {
+    "zh-CN": "outputRequest 工具（逗号分隔；留空使用默认规则）",
+    "en-US": "outputRequest tools (comma-separated; leave empty for default rule)"
+  },
+  "outputRequestToolsInvalid": {
+    "zh-CN": "工具名必须是逗号分隔的非空字符串。",
+    "en-US": "Tool names must be comma-separated non-empty strings."
+  },
+  "default": {
+    "zh-CN": "默认",
+    "en-US": "Default"
   }
 }
