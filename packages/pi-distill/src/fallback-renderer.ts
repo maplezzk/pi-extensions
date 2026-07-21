@@ -195,7 +195,7 @@ export function buildDistillAuditLines(
   const toolExecutionMs = getFiniteNumber(details.toolExecutionMs);
   const summaryDurationMs = getFiniteNumber(details.summaryDurationMs);
   const fullOutputPath = getString(details.fullOutputPath);
-  const outputPrompt = getString(details.outputSummaryPrompt);
+  const outputRequest = getString(details.outputSummaryPrompt);
   const summaryText = getString(details.summaryText);
   const statusView = statusViews[status] ?? { label: status, tone: "muted" as const };
   const metrics: string[] = [];
@@ -220,7 +220,7 @@ export function buildDistillAuditLines(
   ];
   if (expanded) {
     const sections: Array<{ label: string; text: string }> = [];
-    if (render.showPrompt && outputPrompt) sections.push({ label: i18n.t("prompt"), text: outputPrompt });
+    if (render.showPrompt && outputRequest) sections.push({ label: i18n.t("outputRequest"), text: outputRequest });
     if (render.showResult && summaryText) sections.push({ label: i18n.t("summary"), text: summaryText });
     if (fullOutputPath) sections.push({ label: i18n.t("file"), text: fullOutputPath });
     if (anomalies.length > 0) sections.push({ label: i18n.t("warning"), text: anomalies.join(", ") });

@@ -4,8 +4,8 @@
  * 通过 Pi 的工具事件处理所有可扩展工具的结果，并在会话启动时原地扩展
  * 最终生效工具的参数 schema。不注册同名工具，也不争夺工具所有权。
  *
- * 所有工具统一使用 outputPrompt：严格传入 RAW 时返回原始输出；其他非空
- * outputPrompt 表示调用提炼模型，具体保留内容由 outputPrompt 决定。
+ * 所有工具统一使用 outputRequest：严格传入 RAW 时返回原始输出；其他非空
+ * outputRequest 表示调用提炼模型，具体保留内容由 outputRequest 决定。
  * 提炼结果超过 maxChars 时写入临时文件，只返回文件路径。
  *
  * 配置文件优先；旧环境变量继续兼容：
@@ -74,7 +74,7 @@ type DistillExecutionContext = {
 };
 
 type PendingDistillCall = {
-  outputPrompt: string;
+  outputRequest: string;
   originalUserPrompt?: string;
   startedAt: number;
 };
@@ -85,9 +85,8 @@ type ToolResultEventPatch = {
   isError?: boolean;
 };
 
-export const BASH_OUTPUT_PROMPT_DESCRIPTION = i18n.t("bashPromptDescription");
-export const OUTPUT_PROMPT_DESCRIPTION = i18n.t("outputPromptDescription");
-const OUTPUT_PROMPT_SYSTEM_GUIDELINE = i18n.t("outputPromptSystemGuideline");
+export const OUTPUT_REQUEST_DESCRIPTION = i18n.t("outputRequestDescription");
+const OUTPUT_REQUEST_SYSTEM_GUIDELINE = i18n.t("outputRequestSystemGuideline");
 
 type SummaryResult = {
   text: string;
@@ -311,9 +310,9 @@ async function summarizeOutput(
   };
 }
 
-function getOutputPrompt(params: Record<string, unknown>): string {
-  return typeof params.outputPrompt === "string"
-    ? params.outputPrompt.trim()
+function getOutputRequest(params: Record<string, unknown>): string {
+  return typeof params.outputRequest === "string"
+    ? params.outputRequest.trim()
     : "";
 }
 
@@ -322,7 +321,7 @@ async function processToolResult(
   result: ToolResult,
   toolExecutionMs: number,
 ): Promise<ToolResult> {
-  const prompt = getOutputPrompt(context.params);
+  const prompt = getOutputRequest(context.params);
   const loaded = loadDistillConfig();
   const config = loaded.config;
   const outputSummaryRender = { ...loaded.render };
@@ -528,15 +527,15 @@ async function processToolResult(
   }
 }
 
-function extendOutputPromptParameter(tool: ToolInfo): boolean {
+function extendOutputRequestParameter(tool: ToolInfo): boolean {
   const parameters = tool.parameters as unknown as Record<string, unknown> | undefined;
   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
-    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputPrompt is unavailable.`);
+    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
     return false;
   }
 
   if (parameters.type !== "object") {
-    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputPrompt is unavailable.`);
+    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
     return false;
   }
 
@@ -544,29 +543,26 @@ function extendOutputPromptParameter(tool: ToolInfo): boolean {
   if (properties === undefined) {
     parameters.properties = {};
   } else if (typeof properties !== "object" || properties === null || Array.isArray(properties)) {
-    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputPrompt is unavailable.`);
+    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
     return false;
   }
 
-  (parameters.properties as Record<string, unknown>).outputPrompt = {
+  (parameters.properties as Record<string, unknown>).outputRequest = {
     type: "string",
-    default: "RAW",
-    description: tool.name === "bash"
-      ? BASH_OUTPUT_PROMPT_DESCRIPTION
-      : OUTPUT_PROMPT_DESCRIPTION,
+    description: OUTPUT_REQUEST_DESCRIPTION,
   };
   const required = Array.isArray(parameters.required)
     ? parameters.required.filter((value): value is string =>
-        typeof value === "string" && value !== "outputPrompt")
+        typeof value === "string" && value !== "outputRequest")
     : [];
-  parameters.required = [...required, "outputPrompt"];
+  parameters.required = [...required, "outputRequest"];
   return true;
 }
 
 export function extendDistillToolParameters(pi: Pick<ExtensionAPI, "getAllTools">): number {
   let extended = 0;
   for (const tool of pi.getAllTools()) {
-    if (extendOutputPromptParameter(tool)) extended += 1;
+    if (extendOutputRequestParameter(tool)) extended += 1;
   }
   return extended;
 }
@@ -663,7 +659,7 @@ async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: stri
       i18n.t("threshold", { value: config.missedCompressionRatio }),
       i18n.t("summarizeErrors", { value: config.summarizeErrors ? i18n.t("on") : i18n.t("off") }),
       i18n.t("auditRenderer", { value: config.render.enabled ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("showPrompt", { value: config.render.showPrompt ? i18n.t("on") : i18n.t("off") }),
+      i18n.t("showOutputRequest", { value: config.render.showPrompt ? i18n.t("on") : i18n.t("off") }),
       i18n.t("showSummary", { value: config.render.showResult ? i18n.t("on") : i18n.t("off") }),
     ];
     const choice = await ctx.ui.select(i18n.t("settingsTitle"), choices);
@@ -746,7 +742,7 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     try {
       extendDistillToolParameters(pi);
     } catch (error) {
-      console.warn(`[pi-distill] Failed to extend the outputPrompt parameter: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[pi-distill] Failed to extend the outputRequest parameter: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
@@ -757,28 +753,28 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     return {
       systemPrompt: [
         typeof event.systemPrompt === "string" ? event.systemPrompt : "",
-        `<output-prompt-contract>\n${OUTPUT_PROMPT_SYSTEM_GUIDELINE}\n</output-prompt-contract>`,
+        `<output-prompt-contract>\n${OUTPUT_REQUEST_SYSTEM_GUIDELINE}\n</output-prompt-contract>`,
       ].filter((value) => value.length > 0).join("\n\n"),
     };
   });
   pi.on("tool_call", (event) => {
     pendingCalls.set(event.toolCallId, {
-      outputPrompt: getOutputPrompt(event.input),
+      outputRequest: getOutputRequest(event.input),
       originalUserPrompt,
       startedAt: performance.now(),
     });
-    // outputPrompt 只控制结果处理，不能泄漏给底层内置工具。
-    delete (event.input as Record<string, unknown>).outputPrompt;
+    // outputRequest 只控制结果处理，不能泄漏给底层内置工具。
+    delete (event.input as Record<string, unknown>).outputRequest;
   });
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
     const pending = pendingCalls.get(event.toolCallId);
     pendingCalls.delete(event.toolCallId);
-    const outputPrompt = pending?.outputPrompt ?? getOutputPrompt(event.input);
+    const outputRequest = pending?.outputRequest ?? getOutputRequest(event.input);
     const result = await processToolResult(
       {
         toolName: event.toolName,
         toolCallId: event.toolCallId,
-        params: { ...event.input, outputPrompt },
+        params: { ...event.input, outputRequest },
         originalUserPrompt: pending?.originalUserPrompt ?? originalUserPrompt,
         ctx,
       },
