@@ -20,7 +20,7 @@
  * }
  *
  * 行为约定：
- * - 首次发现成功后，模型列表持久化到 ~/.pi/agent/extensions/pi-model-discovery/cache.json；
+ * - 首次发现成功后，模型列表持久化到 ~/.pi/agent/extensions/pi-models-discovery/cache.json；
  *   之后每次启动直接读缓存注册，不请求网络。配置指纹
  *   （baseUrl+api+apiKey+headers+compat）变化时缓存自动失效，重新走网络发现。
  * - /model-discovery-refresh 强制重新拉取所有发现 provider 并更新缓存；
@@ -109,7 +109,7 @@ function modelsJsonPath(): string {
 }
 
 function cachePath(): string {
-	return join(getAgentDir(), "extensions", "pi-model-discovery", "cache.json");
+	return join(getAgentDir(), "extensions", "pi-models-discovery", "cache.json");
 }
 
 /** 缓存失效指纹：provider 配置中影响发现结果的字段 */
