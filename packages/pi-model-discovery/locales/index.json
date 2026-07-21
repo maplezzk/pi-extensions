@@ -1,0 +1,186 @@
+{
+  "commandDescription": {
+    "zh-CN": "交互式管理模型发现 provider（添加/删除/重新发现），写入 models.json 并立即生效",
+    "en-US": "Interactively manage model-discovery providers (add/remove/rediscover); changes are written to models.json and take effect immediately"
+  },
+  "refreshDescription": {
+    "zh-CN": "强制重新拉取所有模型发现 provider 的模型列表并更新本地缓存（启动时默认走缓存，不请求网络）",
+    "en-US": "Force rediscovery of all model-discovery providers and update the local cache (startup uses the cache and performs no network requests by default)"
+  },
+  "refreshEmpty": {
+    "zh-CN": "models.json 中没有标记 discoverModels 的 provider，可用 /model-discovery 添加",
+    "en-US": "No provider in models.json is marked with discoverModels; add one with /model-discovery"
+  },
+  "refreshDone": {
+    "zh-CN": "模型刷新完成：{ok}/{total} 个 provider 成功",
+    "en-US": "Model refresh finished: {ok}/{total} providers succeeded"
+  },
+  "readFailed": {
+    "zh-CN": "读取 models.json 失败：{reason}",
+    "en-US": "Failed to read models.json: {reason}"
+  },
+  "parseFailed": {
+    "zh-CN": "解析 models.json 失败：{reason}",
+    "en-US": "Failed to parse models.json: {reason}"
+  },
+  "backupFailed": {
+    "zh-CN": "备份 models.json 失败：{reason}",
+    "en-US": "Failed to back up models.json: {reason}"
+  },
+  "commandValueUnsupported": {
+    "zh-CN": "发现请求不支持 \"!command\" 形式的配置值",
+    "en-US": "Discovery requests do not support \"!command\" configuration values"
+  },
+  "envMissing": {
+    "zh-CN": "环境变量未设置：{names}",
+    "en-US": "Environment variables not set: {names}"
+  },
+  "missingBaseUrl": {
+    "zh-CN": "缺少 baseUrl",
+    "en-US": "Missing baseUrl"
+  },
+  "fetchFailed": {
+    "zh-CN": "请求 {url} 失败：{reason}",
+    "en-US": "Request to {url} failed: {reason}"
+  },
+  "fetchHttpError": {
+    "zh-CN": "请求 {url} 返回 HTTP {status}",
+    "en-US": "Request to {url} returned HTTP {status}"
+  },
+  "emptyModelList": {
+    "zh-CN": "{url} 返回的模型列表为空",
+    "en-US": "{url} returned an empty model list"
+  },
+  "headerSkipped": {
+    "zh-CN": "{id}: header \"{key}\" {reason}，该 header 未随发现请求发送",
+    "en-US": "{id}: header \"{key}\" {reason}; this header was not sent with the discovery request"
+  },
+  "missingConfig": {
+    "zh-CN": "缺少 {field}，无法注册模型发现",
+    "en-US": "Missing {field}; cannot register model discovery"
+  },
+  "discoveryFailed": {
+    "zh-CN": "{id}: 模型发现失败（{reason}），该 provider 暂用 models.json 手写 models 或无可用模型",
+    "en-US": "{id}: model discovery failed ({reason}); falling back to handwritten models in models.json, or no models available"
+  },
+  "discoveredInfo": {
+    "zh-CN": "{id}: 发现 {count} 个模型（{models}）",
+    "en-US": "{id}: discovered {count} models ({models})"
+  },
+  "offlineNoCache": {
+    "zh-CN": "尚无已发现的模型（上次发现失败），离线初始化跳过",
+    "en-US": "No discovered models yet (last discovery failed); skipping offline initialization"
+  },
+  "cacheReadFailed": {
+    "zh-CN": "模型缓存读取失败（已忽略，将重新发现）：{reason}",
+    "en-US": "Failed to read the model cache (ignored; will rediscover): {reason}"
+  },
+  "cacheWriteFailed": {
+    "zh-CN": "模型缓存写入失败：{reason}",
+    "en-US": "Failed to write the model cache: {reason}"
+  },
+  "add": {
+    "zh-CN": "➕ 添加 provider",
+    "en-US": "➕ Add provider"
+  },
+  "exit": {
+    "zh-CN": "退出",
+    "en-US": "Exit"
+  },
+  "title": {
+    "zh-CN": "模型发现 provider（共 {count} 个）",
+    "en-US": "Model-discovery providers ({count})"
+  },
+  "emptyTitle": {
+    "zh-CN": "模型发现 provider（暂无）",
+    "en-US": "Model-discovery providers (none)"
+  },
+  "providerId": {
+    "zh-CN": "provider id（小写字母/数字/中划线，如 my-proxy）",
+    "en-US": "Provider id (letters, numbers, hyphens; e.g. my-proxy)"
+  },
+  "invalidId": {
+    "zh-CN": "id 只能包含字母、数字、中划线，且不能以中划线开头",
+    "en-US": "The id may contain only letters, numbers, and hyphens, and cannot start with a hyphen"
+  },
+  "exists": {
+    "zh-CN": "provider \"{id}\" 已存在于 models.json",
+    "en-US": "Provider \"{id}\" already exists in models.json"
+  },
+  "baseUrl": {
+    "zh-CN": "baseUrl（如 http://127.0.0.1:9000/pi/v1）",
+    "en-US": "baseUrl (e.g. http://127.0.0.1:9000/pi/v1)"
+  },
+  "invalidUrl": {
+    "zh-CN": "baseUrl 必须以 http:// 或 https:// 开头",
+    "en-US": "baseUrl must start with http:// or https://"
+  },
+  "api": {
+    "zh-CN": "api 类型",
+    "en-US": "API type"
+  },
+  "apiKey": {
+    "zh-CN": "apiKey（可留空；支持 $ENV_VAR）",
+    "en-US": "apiKey (optional; supports $ENV_VAR)"
+  },
+  "displayName": {
+    "zh-CN": "显示名（可留空，默认 {id}）",
+    "en-US": "Display name (optional; defaults to {id})"
+  },
+  "noKey": {
+    "zh-CN": "（无）",
+    "en-US": "(none)"
+  },
+  "confirmAdd": {
+    "zh-CN": "确认添加并写入 models.json？",
+    "en-US": "Add this provider and write it to models.json?"
+  },
+  "summary": {
+    "zh-CN": "id: {id}\nbaseUrl: {baseUrl}\napi: {api}\napiKey: {apiKey}\nname: {name}",
+    "en-US": "id: {id}\nbaseUrl: {baseUrl}\napi: {api}\napiKey: {apiKey}\nname: {name}"
+  },
+  "written": {
+    "zh-CN": "已写入 models.json（备份：{backup}）",
+    "en-US": "Wrote models.json (backup: {backup})"
+  },
+  "discovered": {
+    "zh-CN": "{id}: 已发现并注册 {count} 个模型，/model 中即可选用",
+    "en-US": "{id}: discovered and registered {count} models; they are available in /model"
+  },
+  "firstFailed": {
+    "zh-CN": "{id}: 配置已保存，但首次发现失败；服务恢复后可在 /model-discovery 中重新发现",
+    "en-US": "{id}: configuration saved, but initial discovery failed; rediscover with /model-discovery after the service recovers"
+  },
+  "rediscover": {
+    "zh-CN": "🔄 重新发现模型",
+    "en-US": "🔄 Rediscover models"
+  },
+  "remove": {
+    "zh-CN": "🗑 删除该 provider",
+    "en-US": "🗑 Remove provider"
+  },
+  "back": {
+    "zh-CN": "返回",
+    "en-US": "Back"
+  },
+  "manageTitle": {
+    "zh-CN": "{id}\nbaseUrl: {baseUrl}\napi: {api}",
+    "en-US": "{id}\nbaseUrl: {baseUrl}\napi: {api}"
+  },
+  "rediscovered": {
+    "zh-CN": "{id}: 重新发现 {count} 个模型",
+    "en-US": "{id}: rediscovered {count} models"
+  },
+  "confirmRemove": {
+    "zh-CN": "删除 provider \"{id}\"？",
+    "en-US": "Remove provider \"{id}\"?"
+  },
+  "removeMessage": {
+    "zh-CN": "将从 models.json 移除该 provider 并注销其模型。此操作可重新添加恢复。",
+    "en-US": "This removes the provider and unregisters its models from models.json. It can be added again later."
+  },
+  "removed": {
+    "zh-CN": "已删除 {id}（备份：{backup}）",
+    "en-US": "Removed {id} (backup: {backup})"
+  }
+}
