@@ -108,7 +108,7 @@ pi-distill 根据真实结果和配置决定：原样返回、调用模型提炼
 Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 ```
 
-1. 扩展在会话启动时为所有已启用、参数 schema 为 object 的工具增加必填的 `outputRequest` 参数，不写死 `bash`、`read`、`grep` 或 `find`。
+1. 扩展在会话启动时为所有已启用、参数 schema 为 object 的工具增加必填的 `outputRequest` 参数，默认不包括 `write` 和 `edit`；可通过 `outputRequestTools` 配置覆盖。它不写死 `bash`、`read`、`grep` 或 `find`。
 2. `tool_call` 事件捕获这个参数，并在交给底层工具前移除它，因此原工具不会收到扩展专用字段。
 3. `tool_result` 事件拿到真实输出后再做判断，不依赖 Agent 对输出长度的预测。
 4. 每次工具调用都必须包含非空的 `outputRequest`；严格的 `RAW` 表示明确要求原文；其他非空 prompt 才允许进入提炼流程。
@@ -163,6 +163,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
   "timeoutSeconds": 10,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
+  "outputRequestTools": ["bash", "read", "grep", "find", "ls"],
   "render": {
     "enabled": true,
     "showPrompt": true,
@@ -181,6 +182,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `maxOutputChars` | 返回给 Agent 的最大文本长度，超出后写入文件。 |
 | `timeoutSeconds` | 提炼模型调用的最长等待时间。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
+| `outputRequestTools` | 接收 `outputRequest` 参数的工具名数组。未配置时，除 `write` 和 `edit` 外所有 object-schema 工具都会注入该参数。设为空数组 `[]` 可完全关闭 outputRequest 注入。 |
 | `summarizeErrors` | 工具返回错误时是否仍发送给提炼模型。 |
 | `render.*` | 控制审计卡片、prompt 预览和结果预览。 |
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hasNonTextContent, limitReturnedToolResult } from "../src/output-limit.ts";
@@ -517,7 +517,13 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.equal(registeredToolCount, 0);
     for (const tool of tools) {
       const schema = tool.parameters as any;
-      assert.equal(schema.required.filter((value: string) => value === "outputRequest").length, 1);
+      const hasOutputRequest = schema.required.includes("outputRequest");
+      if (tool.name === "write" || tool.name === "edit") {
+        assert.equal(hasOutputRequest, false, `${tool.name} should not have outputRequest by default`);
+        assert.equal(schema.properties.outputRequest, undefined, `${tool.name} should not have outputRequest property`);
+        continue;
+      }
+      assert.equal(hasOutputRequest, true, `${tool.name} should have outputRequest`);
       assert.equal(schema.properties.outputRequest.type, "string");
       assert.equal(
         schema.properties.outputRequest.description,
@@ -553,6 +559,56 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.equal(result.details.outputSummaryStatus, "full-output");
     assert.equal(result.content[0].text, "ok");
     assert.equal(appendedEntries[0]?.type, DISTILL_AUDIT_ENTRY_TYPE);
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("outputRequestTools 配置可覆盖默认启用规则", async () => {
+  const { default: piDistillExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-distill-outputrequest-tools-"));
+  try {
+    const configDir = join(process.env.PI_CODING_AGENT_DIR, "extensions", "pi-distill");
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, "config.json"),
+      JSON.stringify({ outputRequestTools: ["write", "edit"] }),
+    );
+
+    const handlers = new Map<string, (...args: any[]) => any>();
+    const tools = ["bash", "read", "write", "edit", "custom-tool"].map((name) => ({
+      name,
+      description: `${name} tool`,
+      parameters: {
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+      },
+      sourceInfo: { source: "pi-distill-test" },
+    }));
+    const pi = {
+      getAllTools: () => tools,
+      registerTool: () => undefined,
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: (...args: any[]) => any) => handlers.set(event, handler),
+    } as any;
+
+    piDistillExtension(pi);
+    await handlers.get("session_start")?.({ type: "session_start" }, {});
+
+    for (const tool of tools) {
+      const schema = tool.parameters as any;
+      const hasOutputRequest = schema.required?.includes("outputRequest");
+      if (tool.name === "write" || tool.name === "edit") {
+        assert.equal(hasOutputRequest, true, `${tool.name} should be enabled by config`);
+      } else {
+        assert.equal(hasOutputRequest, false, `${tool.name} should be disabled by config`);
+      }
+    }
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

@@ -106,7 +106,7 @@ pi-distill uses the actual result and configuration to keep it, distill it, or w
 Agent consumes a result suited to the current decision, with auditable diagnostics
 ```
 
-1. At session start, the extension adds required `outputRequest` to every active tool whose parameter schema is an object. It does not hard-code `bash`, `read`, `grep`, or `find`.
+1. At session start, the extension adds required `outputRequest` to every active tool whose parameter schema is an object, except `write` and `edit` by default. You can override this with `outputRequestTools` in the config. It does not hard-code `bash`, `read`, `grep`, or `find`.
 2. The `tool_call` handler captures the parameter and removes it before forwarding the call, so the underlying tool never receives the extension-only field.
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
 4. Every tool call must include a non-empty `outputRequest`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
@@ -161,6 +161,7 @@ Start from [`config.example.json`](./config.example.json):
   "timeoutSeconds": 10,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
+  "outputRequestTools": ["bash", "read", "grep", "find", "ls"],
   "render": {
     "enabled": true,
     "showPrompt": true,
@@ -179,6 +180,7 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | `maxOutputChars` | Maximum text size returned to the agent; larger results are written to a file. |
 | `timeoutSeconds` | Maximum time allowed for the distillation model call. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
+| `outputRequestTools` | Array of tool names that receive the `outputRequest` parameter. When omitted, every object-schema tool except `write` and `edit` gets it. Set to `[]` to disable the parameter entirely. |
 | `summarizeErrors` | Whether error results should still be sent to the distillation model. |
 | `render.*` | Controls the audit card, prompt preview, and result preview. |
 

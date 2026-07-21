@@ -53,8 +53,12 @@ export interface DistillConfigFile {
   timeoutSeconds?: number;
   missedCompressionRatio?: number;
   summarizeErrors?: boolean;
+  /** 启用 outputRequest 参数注入的工具名列表。未设置时默认启用除 write、edit 外的所有工具。 */
+  outputRequestTools?: string[];
   render?: Partial<DistillRenderConfig>;
 }
+
+export const DEFAULT_DISABLED_OUTPUT_REQUEST_TOOLS = ["write", "edit"] as const;
 
 export interface DistillConfigLoadResult {
   config?: BashSummaryConfig;
@@ -62,6 +66,8 @@ export interface DistillConfigLoadResult {
   render: DistillRenderConfig;
   configPath: string;
   warnings: string[];
+  /** 启用 outputRequest 参数注入的工具名列表；undefined 表示使用默认规则。 */
+  outputRequestTools: string[] | undefined;
 }
 
 export function resolvePiAgentDir(
@@ -215,6 +221,24 @@ function parseRenderConfig(
   return render;
 }
 
+function parseOutputRequestTools(
+  file: Record<string, unknown> | undefined,
+  warnings: string[],
+): string[] | undefined {
+  if (!file || !("outputRequestTools" in file)) return undefined;
+  const value = file.outputRequestTools;
+  if (!Array.isArray(value)) {
+    warnings.push("Config field outputRequestTools must be an array of strings.");
+    return undefined;
+  }
+  const tools: string[] = [];
+  for (const item of value) {
+    if (typeof item === "string" && item.length > 0) tools.push(item);
+    else warnings.push("Config field outputRequestTools must contain only non-empty strings.");
+  }
+  return tools.length > 0 ? tools : undefined;
+}
+
 function appendFileValueToEnv(
   env: NodeJS.ProcessEnv,
   file: Record<string, unknown>,
@@ -310,10 +334,11 @@ export function loadDistillConfig(
 
   const config = parseBashSummaryConfig(effectiveEnv);
   const render = parseRenderConfig(file, warnings);
+  const outputRequestTools = parseOutputRequestTools(file, warnings);
   if (!config && warnings.length === 0) {
     warnings.push("Distill config is invalid; output distillation is disabled.");
   }
-  return { config, enabled, render, configPath: configFile, warnings };
+  return { config, enabled, render, configPath: configFile, warnings, outputRequestTools };
 }
 
 export function defaultDistillConfigFile(): DistillConfigFile {

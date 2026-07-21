@@ -559,9 +559,16 @@ function extendOutputRequestParameter(tool: ToolInfo): boolean {
   return true;
 }
 
-export function extendDistillToolParameters(pi: Pick<ExtensionAPI, "getAllTools">): number {
+export function extendDistillToolParameters(
+  pi: Pick<ExtensionAPI, "getAllTools">,
+  outputRequestTools?: string[],
+): number {
   let extended = 0;
   for (const tool of pi.getAllTools()) {
+    const enabled = outputRequestTools === undefined
+      ? tool.name !== "write" && tool.name !== "edit"
+      : outputRequestTools.includes(tool.name);
+    if (!enabled) continue;
     if (extendOutputRequestParameter(tool)) extended += 1;
   }
   return extended;
@@ -740,7 +747,8 @@ export default function piDistillExtension(pi: ExtensionAPI) {
   registerDistillFallbackRenderer(pi);
   const extendParameters = () => {
     try {
-      extendDistillToolParameters(pi);
+      const { outputRequestTools } = loadDistillConfig();
+      extendDistillToolParameters(pi, outputRequestTools);
     } catch (error) {
       console.warn(`[pi-distill] Failed to extend the outputRequest parameter: ${error instanceof Error ? error.message : String(error)}`);
     }
