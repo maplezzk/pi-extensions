@@ -6,6 +6,7 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
+    "./package.json": "./package.json",
     "./mux": "./src/mux.ts",
     "./herdr": "./src/herdr.ts",
     "./otty": "./src/otty.ts"
