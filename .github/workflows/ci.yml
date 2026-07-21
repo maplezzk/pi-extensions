@@ -34,3 +34,9 @@ jobs:
 
       - name: Local-binding gate
         run: node scripts/check-no-local-bindings.mjs
+
+      - name: Package config gate
+        run: node scripts/check-package-config.mjs
+
+      - name: npm name ownership gate
+        run: node scripts/check-npm-names.mjs

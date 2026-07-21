@@ -130,5 +130,9 @@
   "interactiveOnly": {
     "zh-CN": "当前模式不支持交互式配置，请使用有 UI 的 Pi 会话。",
     "en-US": "Interactive configuration is not supported in this mode; use a Pi session with a UI."
+  },
+  "tempFileWriteFailed": {
+    "zh-CN": "超长工具结果写入临时文件失败，已截断返回：{message}",
+    "en-US": "Failed to write oversized tool result to temp file, truncated: {message}"
   }
 }

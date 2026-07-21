@@ -4,5 +4,5 @@
   "packages/pi-tool-supervisor": "0.3.4",
   "packages/pi-extensions-tool-display": "1.0.0",
   "packages/pi-terminal-mux": "0.2.1",
-  "packages/pi-hud": "0.2.0"
+  "packages/pi-metrics": "0.2.0"
 }
