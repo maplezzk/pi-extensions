@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.4.3...pi-distill-v1.0.0) (2026-07-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **pi-distill:** 工具 schema 中的 outputPrompt 字段已移除，请使用 outputRequest
+
+### Features
+
+* **pi-distill:** rename outputPrompt to outputRequest ([#29](https://github.com/maplezzk/pi-extensions/issues/29)) ([eeaa5a6](https://github.com/maplezzk/pi-extensions/commit/eeaa5a6964c0bb273c967e001dd4fb986c7f6227))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^0.2.2 to ^1.0.0
+
 ## [0.4.3](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v0.4.2...pi-distill-v0.4.3) (2026-07-20)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "pi-hud",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi HUD extension: live session elapsed timer with per-turn and total run summaries",
   "type": "module",
   "files": [
