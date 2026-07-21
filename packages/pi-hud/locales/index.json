@@ -1,0 +1,14 @@
+{
+  "elapsedWorking": {
+    "zh-CN": "⏱ {value}",
+    "en-US": "⏱ {value}"
+  },
+  "elapsedDone": {
+    "zh-CN": "⏱ 本轮耗时 {value}",
+    "en-US": "⏱ Turn elapsed {value}"
+  },
+  "elapsedTotal": {
+    "zh-CN": "⏱ 总耗时 {value}",
+    "en-US": "⏱ Total elapsed {value}"
+  }
+}
