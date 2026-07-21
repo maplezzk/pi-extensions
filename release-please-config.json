@@ -12,6 +12,6 @@
     "packages/pi-extensions-tool-display": {},
     "packages/pi-terminal-mux": {},
     "packages/pi-hud": {},
-    "packages/pi-model-discovery": {}
+    "packages/pi-models-discovery": {}
   }
 }

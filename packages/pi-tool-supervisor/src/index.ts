@@ -121,7 +121,7 @@ async function limitReturnedToolResult(result: ToolResult, maxChars: number): Pr
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[pi-tool-supervisor] 超长工具结果写入临时文件失败，已截断返回：${message}`);
+    console.warn(`[pi-tool-supervisor] ${i18n.t("tempFileWriteFailed", { message })}`);
     return {
       ...result,
       content: [{ type: "text", text: text.slice(0, maxChars) }],

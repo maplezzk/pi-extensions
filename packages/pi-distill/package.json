@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Pi tool-output distillation with file-first configuration",
   "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
   "files": [
     "index.ts",
     "src",
