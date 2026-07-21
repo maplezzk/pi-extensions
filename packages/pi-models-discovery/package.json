@@ -1,6 +1,6 @@
 {
   "name": "pi-models-discovery",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Pi extension: discover models from {baseUrl}/models for providers marked with discoverModels in models.json",
   "type": "module",
   "main": "./index.ts",
