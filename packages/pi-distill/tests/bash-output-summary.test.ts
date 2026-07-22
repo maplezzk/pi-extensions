@@ -922,11 +922,16 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.equal(result.content[0].text, "ok");
     assert.equal(appendedEntries[0]?.type, DISTILL_AUDIT_ENTRY_TYPE);
 
-    const selections: Array<string | undefined> = ["Tool outputRequest", "write: Off", "custom-tool: On", undefined];
+    const selections: Array<string | undefined> = ["__last__", "write", "custom-tool", undefined, undefined];
     await commandHandler?.("", {
       hasUI: true,
       ui: {
-        select: async () => selections.shift(),
+        select: async (_title: string, choices: string[]) => {
+          const target = selections.shift();
+          if (!target) return undefined;
+          if (target === "__last__") return choices.at(-1);
+          return choices.find((choice) => choice.startsWith(target));
+        },
         input: async () => undefined,
         notify: () => undefined,
       },
