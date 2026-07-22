@@ -33,7 +33,7 @@
 - 当提示词严格只有 `RAW` 时，视为明确要求返回原始输出。
 - 默认使用当前会话模型，也可以配置独立的 `provider/model`。
 - 在工具结果 details 中保留状态、字符数、压缩比、耗时和异常等诊断信息。
-- 提炼结果或最终返回结果过大时写入临时文件，只把文件路径返回给 Agent，避免工具结果失控膨胀。
+- 超长输出不再由 pi-distill 写文件或截断，统一交由 Pi 自身的输出限制机制处理。
 - 当前 Pi 展示中间件可用时显示紧凑审计卡片，否则使用自己的 fallback renderer。展示协议由公共运行库 `pi-extensions-tool-display` 提供。
 
 它不会注册第二个 `bash`、`read`、`grep` 或 `find` 工具。
@@ -103,7 +103,7 @@ Agent 提出处理目标
         ↓ 通过 outputRequest 传给工具
 工具执行真实操作，返回 stdout / stderr / 文件内容 / 多媒体结果
         ↓
-pi-distill 根据真实结果和配置决定：原样返回、调用模型提炼，或写入文件
+pi-distill 根据真实结果和配置决定：原样返回，或调用模型提炼
         ↓
 Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 ```
@@ -119,7 +119,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `outputRequest` | 行为 | 适用场景 |
 | --- | --- | --- |
 | 未提供 | 工具调用无效；Pi 会在底层工具执行前拒绝该调用 | 不要省略；未明确要求压缩时使用 `RAW` |
-| 严格为 `RAW`（大小写不敏感） | 不调用提炼模型，保留完整原始文本；如超出返回上限则返回原文文件路径 | 逐字核对、复制内容、需要完整日志时 |
+| 严格为 `RAW`（大小写不敏感） | 不调用提炼模型，保留完整原始文本；超长时由 Pi 自身的输出限制机制处理 | 逐字核对、复制内容、需要完整日志时 |
 | 任意非空且非 `RAW` | 输出达到阈值后调用模型，具体保留内容由 prompt 决定 | “只保留错误、警告和最终状态”等场景 |
 | 包含图片、音频或其他非文本内容 | 原样保留，不发送给提炼模型，不做文本长度截断 | 图片读取、二进制结果、混合文本与图片结果 |
 
@@ -140,7 +140,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 - 不注册替代工具，不改变原工具的执行语义，也不要求额外安装独立的 `pi-tool-display` 宿主包。
 - 文本提炼是有损操作；完整性要求应使用 `RAW`。
 - 非文本结果是完整性边界：图片、音频、二进制和混合 content 不进入文本提炼链路。
-- 提炼结果或最终文本过大时写入临时文件并返回路径，避免上下文无限膨胀。
+- 超长输出不再由 pi-distill 写临时文件或截断，统一交由 Pi 自身的输出限制机制处理，避免上下文无限膨胀。
 - 当前会话没有模型时，提炼会失败并保留原始结果，不阻止 Pi 启动。
 
 ## 配置
@@ -159,7 +159,6 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
   "model": "",
   "minChars": 200,
   "maxChars": 100000,
-  "maxOutputChars": 10000,
   "timeoutSeconds": 10,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
@@ -177,14 +176,13 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | --- | --- |
 | `model` | 可选的 `provider/model`；为空时使用当前 Pi 会话模型。 |
 | `minChars` | 达到此输出长度后才请求提炼。 |
-| `maxChars` | 模型提炼结果超过此长度时写入文件。 |
-| `maxOutputChars` | 返回给 Agent 的最大文本长度，超出后写入文件。 |
+| `maxChars` | 提炼模型的最大输出预算（约 `maxChars / 2` tokens），同时作为诊断参考；不再用于写文件。 |
 | `timeoutSeconds` | 提炼模型调用的最长等待时间。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
 | `summarizeErrors` | 工具返回错误时是否仍发送给提炼模型。 |
 | `render.*` | 控制审计卡片、prompt 预览和结果预览。 |
 
-主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_MAX_OUTPUT_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。
+主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。旧配置中的 `maxOutputChars` / `PI_DISTILL_MAX_OUTPUT_CHARS` 仍会被解析以兼容旧文件，但不再生效。
 
 ## 要求
 

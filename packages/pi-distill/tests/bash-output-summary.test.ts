@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasNonTextContent, limitReturnedToolResult } from "../src/output-limit.ts";
+import { hasNonTextContent } from "../src/output-limit.ts";
 import {
   appendDistillFallbackAudit,
   buildDistillAuditLines,
@@ -288,44 +288,18 @@ test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", 
   }
 });
 
-test("最终 content 未超限时不因原文长度写入临时文件", async () => {
-  const result = await limitReturnedToolResult(
-    {
-      content: [{ type: "text", text: "总结后的短结果" }],
-      details: { originalOutputChars: 50_000 },
-    },
-    10_000,
-  );
-
-  assert.equal(result.details?.outputTruncated, undefined);
-  assert.equal(result.details?.fullOutputPath, undefined);
-  assert.equal(result.content[0]?.text, "总结后的短结果");
-});
-
-test("包含图片等非文本内容时保留原结果，不做长度截断", async () => {
+test("包含图片等非文本内容时识别为非纯文本输出", () => {
   const result = {
     content: [
       { type: "image", data: "encoded-image" },
       { type: "text", text: "x".repeat(10_001) },
     ],
-  } as any;
+  } as unknown as Parameters<typeof hasNonTextContent>[0];
 
   assert.equal(hasNonTextContent(result), true);
-  assert.strictEqual(await limitReturnedToolResult(result, 10_000), result);
-});
-
-test("最终 content 超过限制时写入临时文件并返回路径", async () => {
-  const finalContent = "x".repeat(10_001);
-  const result = await limitReturnedToolResult(
-    { content: [{ type: "text", text: finalContent }] },
-    10_000,
-  );
-
-  assert.equal(result.details?.outputTruncated, true);
-  assert.match(result.content[0]?.text ?? "", /was written to/);
   assert.equal(
-    await readFile(result.details?.fullOutputPath as string, "utf8"),
-    finalContent,
+    hasNonTextContent({ content: [{ type: "text", text: "纯文本" }] }),
+    false,
   );
 });
 

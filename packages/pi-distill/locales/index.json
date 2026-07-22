@@ -63,10 +63,6 @@
     "zh-CN": "摘要上限：{value} 字符",
     "en-US": "Summary limit: {value} chars"
   },
-  "finalLimit": {
-    "zh-CN": "最终输出上限：{value} 字符",
-    "en-US": "Final output limit: {value} chars"
-  },
   "timeout": {
     "zh-CN": "超时：{value}s",
     "en-US": "Timeout: {value}s"
@@ -98,10 +94,6 @@
   "summaryLimitTitle": {
     "zh-CN": "摘要字符上限",
     "en-US": "Summary character limit"
-  },
-  "finalLimitTitle": {
-    "zh-CN": "最终输出字符上限",
-    "en-US": "Final output character limit"
   },
   "timeoutTitle": {
     "zh-CN": "提炼模型超时（秒）",
