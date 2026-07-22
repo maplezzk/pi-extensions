@@ -7,9 +7,13 @@
 
 import { execFileSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createBackendLogger } from "./shared.ts";
 import type { BackendOps } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
+
+/** Tmux 后端日志（统一格式，写入 /tmp/pi-mux-tmux.log） */
+const tmuxLog = createBackendLogger("tmux", "/tmp/pi-mux-tmux.log");
 
 export const ops: BackendOps = {
   create(_name: string): string {
@@ -40,6 +44,9 @@ export const ops: BackendOps = {
       throw new Error(`Unexpected tmux split-window output: ${pane}`);
     }
 
+    tmuxLog(
+      `[split] dir=${direction} from=${fromSurface ?? "<unset>"} new=${pane} name=${JSON.stringify(name)}`,
+    );
     return pane;
   },
 
@@ -71,6 +78,7 @@ export const ops: BackendOps = {
 
   close(surface: string): void {
     execFileSync("tmux", ["kill-pane", "-t", surface], { encoding: "utf8" });
+    tmuxLog(`[close] surface=${surface}`);
   },
 
   rename(surface: string, name: string): void {

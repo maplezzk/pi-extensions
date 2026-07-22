@@ -6,14 +6,13 @@
  *
  * 所有工具统一使用 outputRequest：严格传入 RAW 时返回原始输出；其他非空
  * outputRequest 表示调用提炼模型，具体保留内容由 outputRequest 决定。
- * 提炼结果超过 maxChars 时写入临时文件，只返回文件路径。
+ * 超长输出由 Pi 自身的 output-limit 机制处理，pi-distill 不再做文件转储或截断。
  *
  * 配置文件优先；旧环境变量继续兼容：
  * - ~/.pi/agent/extensions/pi-distill/config.json
  * - PI_DISTILL_MODEL=provider/model
  * - PI_DISTILL_MIN_CHARS=触发提炼的最小输出字符数，默认 200
- * - PI_DISTILL_MAX_CHARS=提炼结果超过此字符数时写入文件，默认 100000
- * - PI_DISTILL_MAX_OUTPUT_CHARS=最终返回内容超过此字符数时写入文件，默认 10000
+ * - PI_DISTILL_MAX_CHARS=提炼模型最大输出字符数，默认 100000
  * - PI_DISTILL_TIMEOUT_SECONDS=模型调用最长等待秒数，默认 10
  * - PI_DISTILL_MISSED_COMPRESSION_RATIO=长输出提醒倍数，默认 10
  * - 旧 PI_BASH_SUMMARY_* 变量作为兼容回退
@@ -36,10 +35,9 @@ import {
   isDistillToolDisplayMiddlewareActive,
   registerDistillToolDisplayMiddleware,
 } from "./tool-display-bridge.ts";
-import { getTextContent, hasNonTextContent, limitReturnedToolResult } from "./output-limit.ts";
+import { getTextContent, hasNonTextContent } from "./output-limit.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 import {
   buildSummaryPrompt,
@@ -91,7 +89,6 @@ const OUTPUT_REQUEST_SYSTEM_GUIDELINE = i18n.t("outputRequestSystemGuideline");
 type SummaryResult = {
   text: string;
   summaryChars: number;
-  summaryFilePath?: string;
   summaryModel: string;
 };
 
@@ -229,17 +226,6 @@ async function getCompleteOutput(result: ToolResult): Promise<string> {
   return getTextContent(result);
 }
 
-async function writeSummaryFile(summary: string): Promise<string> {
-  const directory = join(tmpdir(), "pi-distill");
-  await mkdir(directory, { recursive: true });
-  const filePath = join(
-    directory,
-    `summary-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`,
-  );
-  await writeFile(filePath, summary, "utf8");
-  return filePath;
-}
-
 async function summarizeOutput(
   prompt: string,
   output: string,
@@ -293,19 +279,9 @@ async function summarizeOutput(
     .trim();
 
   if (!summary) throw new Error("Summarizer returned no text");
-  if (summary.length <= config.maxChars) {
-    return {
-      text: summary,
-      summaryChars: summary.length,
-      summaryModel: `${model.provider}/${model.id}`,
-    };
-  }
-
-  const summaryFilePath = await writeSummaryFile(summary);
   return {
-    text: `Summary exceeded ${config.maxChars} chars and was written to: ${summaryFilePath}`,
+    text: summary,
     summaryChars: summary.length,
-    summaryFilePath,
     summaryModel: `${model.provider}/${model.id}`,
   };
 }
@@ -325,9 +301,6 @@ async function processToolResult(
   const loaded = loadDistillConfig();
   const config = loaded.config;
   const outputSummaryRender = { ...loaded.render };
-  const maxReturnedChars = config?.maxOutputChars ?? 10_000;
-  const finish = (candidate: ToolResult) =>
-    limitReturnedToolResult(candidate, maxReturnedChars);
   if (loaded.warnings.length > 0) {
     console.warn(`[pi-distill] ${loaded.warnings.join(" | ")}`);
   }
@@ -354,12 +327,12 @@ async function processToolResult(
           : "Distill is disabled by configuration.",
     };
     const agentDiagnostic = buildAgentDiagnosticText(diagnostics);
-    return finish({
+    return {
       ...attachDiagnostics(result, diagnostics),
       content: agentDiagnostic
         ? [...result.content, { type: "text", text: agentDiagnostic }]
         : result.content,
-    });
+    };
   }
 
   let output: string;
@@ -369,7 +342,7 @@ async function processToolResult(
     console.warn(
       `[tool-output-summary] ${context.toolName} could not read the full output; returning the original result: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return finish(attachDiagnostics(result, {
+    return attachDiagnostics(result, {
       toolExecutionMs,
       outputSummaryPrompt: prompt || undefined,
       outputSummaryRender,
@@ -378,7 +351,7 @@ async function processToolResult(
       summaryTriggerMaxChars: null,
       summaryResultMaxChars: config.maxChars,
       missedCompressionRatio: config.missedCompressionRatio,
-    }));
+    });
   }
 
   const decision = decideOutputSummary(prompt, output, config, result.isError === true);
@@ -404,7 +377,7 @@ async function processToolResult(
         ? [...result.content, { type: "text", text: agentDiagnostic }]
         : result.content,
     };
-    return finish(candidate);
+    return candidate;
   }
 
   const summaryStartedAt = performance.now();
@@ -451,7 +424,7 @@ async function processToolResult(
           ...(agentDiagnostic ? [{ type: "text", text: agentDiagnostic }] : []),
         ],
       };
-      return finish(candidate);
+      return candidate;
     }
     const compressionDiagnostics = getCompressionDiagnostics(
       decision.intent,
@@ -465,7 +438,7 @@ async function processToolResult(
     };
     const agentDiagnostic = buildAgentDiagnosticText(diagnostics);
 
-    return finish({
+    return {
       // 输出处理参数只影响结果上下文，不改变原工具的业务执行。
       // 异常诊断额外作为文本传给 Agent；普通成功总结不增加噪音。
       content: [
@@ -486,10 +459,9 @@ async function processToolResult(
         missedCompressionRatio: config.missedCompressionRatio,
         summaryModel: summarized.summaryModel,
         summaryText: summarized.text,
-        summaryFilePath: summarized.summaryFilePath,
         ...diagnostics,
       },
-    });
+    };
   } catch (error) {
     const summaryDurationMs = Math.round(performance.now() - summaryStartedAt);
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -520,7 +492,7 @@ async function processToolResult(
         ? [...result.content, { type: "text", text: agentDiagnostic }]
         : result.content,
     };
-    return finish(candidate);
+    return candidate;
   } finally {
     clearTimeout(timeout);
     context.signal?.removeEventListener("abort", abortFromParent);
@@ -575,7 +547,7 @@ function toToolResultEventResult(result: ToolResult): ToolResultEventPatch {
   };
 }
 
-type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "maxOutputChars" | "timeoutSeconds" | "missedCompressionRatio" | "summarizeErrors">> & {
+type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "timeoutSeconds" | "missedCompressionRatio" | "summarizeErrors">> & {
   render: DistillRenderConfig;
 };
 
@@ -589,7 +561,6 @@ function getDistillUiConfig(): DistillUiConfig {
       : "",
     minChars: config?.minChars ?? 200,
     maxChars: config?.maxChars ?? 100_000,
-    maxOutputChars: config?.maxOutputChars ?? 10_000,
     timeoutSeconds: config?.timeoutSeconds ?? 10,
     missedCompressionRatio: config?.missedCompressionRatio ?? 10,
     summarizeErrors: config?.summarizeErrors ?? true,
@@ -654,7 +625,6 @@ async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: stri
       i18n.t("model", { value: config.model || i18n.t("currentModel") }),
       i18n.t("minOutput", { value: config.minChars }),
       i18n.t("summaryLimit", { value: config.maxChars }),
-      i18n.t("finalLimit", { value: config.maxOutputChars }),
       i18n.t("timeout", { value: config.timeoutSeconds }),
       i18n.t("threshold", { value: config.missedCompressionRatio }),
       i18n.t("summarizeErrors", { value: config.summarizeErrors ? i18n.t("on") : i18n.t("off") }),
@@ -687,33 +657,27 @@ async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: stri
         await saveDistillConfigFile(ctx, config, configPath);
       }
     } else if (choice === choices[4]) {
-      const value = await editDistillNumber(ctx, i18n.t("finalLimitTitle"), config.maxOutputChars);
-      if (value !== undefined) {
-        config.maxOutputChars = value;
-        await saveDistillConfigFile(ctx, config, configPath);
-      }
-    } else if (choice === choices[5]) {
       const value = await editDistillNumber(ctx, i18n.t("timeoutTitle"), config.timeoutSeconds);
       if (value !== undefined) {
         config.timeoutSeconds = value;
         await saveDistillConfigFile(ctx, config, configPath);
       }
-    } else if (choice === choices[6]) {
+    } else if (choice === choices[5]) {
       const value = await editDistillNumber(ctx, i18n.t("thresholdTitle"), config.missedCompressionRatio);
       if (value !== undefined) {
         config.missedCompressionRatio = value;
         await saveDistillConfigFile(ctx, config, configPath);
       }
-    } else if (choice === choices[7]) {
+    } else if (choice === choices[6]) {
       config.summarizeErrors = !config.summarizeErrors;
       await saveDistillConfigFile(ctx, config, configPath);
-    } else if (choice === choices[8]) {
+    } else if (choice === choices[7]) {
       config.render.enabled = !config.render.enabled;
       await saveDistillConfigFile(ctx, config, configPath);
-    } else if (choice === choices[9]) {
+    } else if (choice === choices[8]) {
       config.render.showPrompt = !config.render.showPrompt;
       await saveDistillConfigFile(ctx, config, configPath);
-    } else if (choice === choices[10]) {
+    } else if (choice === choices[9]) {
       config.render.showResult = !config.render.showResult;
       await saveDistillConfigFile(ctx, config, configPath);
     }

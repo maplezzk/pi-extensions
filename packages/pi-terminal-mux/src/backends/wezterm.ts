@@ -7,9 +7,13 @@
 import { execFileSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tailLines } from "../shell.ts";
+import { createBackendLogger } from "./shared.ts";
 import type { BackendOps } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
+
+/** WezTerm 后端日志（统一格式，写入 /tmp/pi-mux-wezterm.log） */
+const weztermLog = createBackendLogger("wezterm", "/tmp/pi-mux-wezterm.log");
 
 export const ops: BackendOps = {
   create(name: string): string {
@@ -41,6 +45,9 @@ export const ops: BackendOps = {
     } catch {
       // Optional — tab title is cosmetic.
     }
+    weztermLog(
+      `[split] dir=${direction} from=${fromSurface ?? "<unset>"} new=${paneId} name=${JSON.stringify(name)}`,
+    );
     return paneId;
   },
 
@@ -80,6 +87,7 @@ export const ops: BackendOps = {
     execFileSync("wezterm", ["cli", "kill-pane", "--pane-id", surface], {
       encoding: "utf8",
     });
+    weztermLog(`[close] surface=${surface}`);
   },
 
   rename(surface: string, name: string): void {
