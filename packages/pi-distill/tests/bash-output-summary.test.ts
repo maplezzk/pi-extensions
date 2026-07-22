@@ -792,8 +792,8 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
       prompt: "grep for undefined",
       systemPrompt: "base system prompt",
     }, {});
-    assert.match(beforeAgentStartResult.systemPrompt, /MANDATORY tool-call rule/);
-    assert.match(beforeAgentStartResult.systemPrompt, /RAW must be exactly the three ASCII letters/);
+    assert.match(beforeAgentStartResult.systemPrompt, /MANDATORY tool-call rule|强制工具调用规则/);
+    assert.match(beforeAgentStartResult.systemPrompt, /RAW must be exactly the three ASCII letters|RAW 必须是严格的三个 ASCII 字母/);
 
     assert.equal(registeredToolCount, 0);
     for (const tool of tools) {
