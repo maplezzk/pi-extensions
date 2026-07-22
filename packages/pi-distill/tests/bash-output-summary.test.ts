@@ -17,6 +17,8 @@ import {
 } from "../src/tool-display-bridge.ts";
 import { Text } from "@earendil-works/pi-tui";
 import {
+  buildDecisionEvaluationPrompt,
+  buildSummaryEvaluationPrompt,
   buildSummaryPrompt,
   isRawSummary,
   loadDistillConfig,
@@ -321,6 +323,25 @@ test("支持通过环境变量关闭错误工具输出总结", () => {
   assert.equal(parseBashSummaryConfig({ PI_DISTILL_SUMMARIZE_ERRORS: "invalid" }), undefined);
 });
 
+test("decision 与 summary 评测 prompt 使用独立协议", () => {
+  const request = "提取错误和下一步";
+  const output = "PASS setup\nERROR E42\nnext: retry";
+  const decisionPrompt = buildDecisionEvaluationPrompt(request, output, "总结失败日志");
+  const summaryPrompt = buildSummaryEvaluationPrompt(request, output, "总结失败日志");
+
+  assert.match(decisionPrompt, /mode selection only/);
+  assert.match(decisionPrompt, /diagnostic evidence/);
+  assert.match(decisionPrompt, /therefore MODE/);
+  assert.doesNotMatch(decisionPrompt, /mode is already fixed to SUMMARY/);
+  assert.doesNotMatch(decisionPrompt, /minimum effective compression/);
+
+  assert.match(summaryPrompt, /mode is already fixed to SUMMARY/);
+  assert.match(summaryPrompt, /reduce tokens entering later context/);
+  assert.match(summaryPrompt, /preserving every fact requested/);
+  assert.doesNotMatch(summaryPrompt, /mode selection only/);
+  assert.doesNotMatch(summaryPrompt, /VERBATIM_REQUEST/);
+});
+
 test("总结提示词携带原始用户消息，并把等价 RAW 请求交给模型判定", () => {
   const prompt = buildSummaryPrompt(
     "找出错误",
@@ -425,6 +446,19 @@ test("真实使用场景数据集逐 case 验证 prompt 契约", async () => {
   }
   assert.equal(SUMMARY_PROMPT_CASES.filter((testCase) => testCase.expectedMode === "RAW").length, 6);
   assert.equal(SUMMARY_PROMPT_CASES.filter((testCase) => testCase.expectedMode === "SUMMARY").length, 15);
+  assert.equal(SUMMARY_PROMPT_CASES.filter((testCase) => testCase.corpusClass === "short-boundary").length, 3);
+  assert.equal(
+    SUMMARY_PROMPT_CASES.filter((testCase) => testCase.toolOutput.length < 200).every((testCase) => (
+      testCase.corpusClass === "short-boundary" && testCase.expectedMode === "RAW"
+    )),
+    true,
+  );
+  assert.equal(
+    SUMMARY_PROMPT_CASES.filter((testCase) => testCase.expectedMode === "SUMMARY").every((testCase) => (
+      testCase.corpusClass === "realistic" && testCase.toolOutput.length >= 1_000
+    )),
+    true,
+  );
 
   for (const testCase of SUMMARY_PROMPT_CASES) {
     const prompt = buildSummaryPrompt(testCase.outputRequest, testCase.toolOutput, testCase.userTask);

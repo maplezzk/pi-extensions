@@ -429,6 +429,40 @@ export function buildSummaryUserPrompt(
   ].join("\n");
 }
 
+/** 构造只评估 RAW/SUMMARY 分类及诊断理由的 prompt，不要求模型生成摘要。 */
+export function buildDecisionEvaluationPrompt(
+  prompt: string,
+  output: string,
+  originalUserPrompt?: string,
+): string {
+  return [
+    i18n.t("system"),
+    i18n.t("data"),
+    i18n.t("decisionOnlyProtocol"),
+    "",
+    buildSummaryUserPrompt(prompt, output, originalUserPrompt),
+  ].join("\n");
+}
+
+/** 构造固定为 SUMMARY 的压缩质量 prompt，不允许模型重新选择模式。 */
+export function buildSummaryEvaluationPrompt(
+  prompt: string,
+  output: string,
+  originalUserPrompt?: string,
+): string {
+  return [
+    i18n.t("system"),
+    i18n.t("purpose"),
+    i18n.t("data"),
+    i18n.t("preserve"),
+    i18n.t("languageMatch"),
+    i18n.t("sourceBoundary"),
+    i18n.t("summaryOnlyProtocol"),
+    "",
+    buildSummaryUserPrompt(prompt, output, originalUserPrompt),
+  ].join("\n");
+}
+
 export function buildSummaryPrompt(
   prompt: string,
   output: string,
