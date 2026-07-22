@@ -334,6 +334,8 @@ export function defaultDistillConfigFile(): DistillConfigFile {
   };
 }
 
+export const MIN_EFFECTIVE_COMPRESSION_RATIO = 1.4;
+
 export type OutputSummaryIntent = "none" | "full" | "summary";
 
 export type OutputSummaryDecision = {
@@ -352,6 +354,12 @@ export function classifyOutputSummaryIntent(prompt: string | undefined): OutputS
 /** 总结模型的保留原文哨兵，只接受不带其他内容的 RAW。 */
 export function isRawSummary(text: string | undefined): boolean {
   return typeof text === "string" && /^RAW$/i.test(text.trim());
+}
+
+/** 摘要没有达到最低压缩收益时，安全地恢复原始工具输出。 */
+export function shouldFallbackToOriginal(originalChars: number, summaryChars: number): boolean {
+  if (originalChars <= 0 || summaryChars <= 0) return false;
+  return originalChars / summaryChars < MIN_EFFECTIVE_COMPRESSION_RATIO;
 }
 
 export function decideOutputSummary(
@@ -382,7 +390,22 @@ export function shouldSummarizeOutput(
   return decideOutputSummary(prompt, output, config, isError).shouldSummarize;
 }
 
-export function buildSummaryPrompt(
+export function buildSummarySystemPrompt(): string {
+  return [
+    i18n.t("system"),
+    i18n.t("purpose"),
+    i18n.t("method"),
+    i18n.t("data"),
+    i18n.t("preserve"),
+    i18n.t("languageMatch"),
+    i18n.t("exactRaw"),
+    i18n.t("decisionProtocol"),
+    i18n.t("sourceBoundary"),
+    i18n.t("onlyResult"),
+  ].join("\n");
+}
+
+export function buildSummaryUserPrompt(
   prompt: string,
   output: string,
   originalUserPrompt?: string,
@@ -396,13 +419,6 @@ export function buildSummaryPrompt(
       ]
     : [];
   return [
-    i18n.t("system"),
-    i18n.t("data"),
-    i18n.t("preserve"),
-    i18n.t("languageMatch"),
-    i18n.t("exactRaw"),
-    i18n.t("onlyResult"),
-    "",
     i18n.t("request"),
     prompt,
     ...(languageContext.length > 0 ? ["", ...languageContext] : []),
@@ -410,5 +426,51 @@ export function buildSummaryPrompt(
     "<tool-output>",
     output,
     "</tool-output>",
+  ].join("\n");
+}
+
+/** 构造只评估 RAW/SUMMARY 分类及诊断理由的 prompt，不要求模型生成摘要。 */
+export function buildDecisionEvaluationPrompt(
+  prompt: string,
+  output: string,
+  originalUserPrompt?: string,
+): string {
+  return [
+    i18n.t("system"),
+    i18n.t("data"),
+    i18n.t("decisionOnlyProtocol"),
+    "",
+    buildSummaryUserPrompt(prompt, output, originalUserPrompt),
+  ].join("\n");
+}
+
+/** 构造固定为 SUMMARY 的压缩质量 prompt，不允许模型重新选择模式。 */
+export function buildSummaryEvaluationPrompt(
+  prompt: string,
+  output: string,
+  originalUserPrompt?: string,
+): string {
+  return [
+    i18n.t("system"),
+    i18n.t("purpose"),
+    i18n.t("data"),
+    i18n.t("preserve"),
+    i18n.t("languageMatch"),
+    i18n.t("sourceBoundary"),
+    i18n.t("summaryOnlyProtocol"),
+    "",
+    buildSummaryUserPrompt(prompt, output, originalUserPrompt),
+  ].join("\n");
+}
+
+export function buildSummaryPrompt(
+  prompt: string,
+  output: string,
+  originalUserPrompt?: string,
+): string {
+  return [
+    buildSummarySystemPrompt(),
+    "",
+    buildSummaryUserPrompt(prompt, output, originalUserPrompt),
   ].join("\n");
 }

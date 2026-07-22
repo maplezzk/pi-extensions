@@ -1,0 +1,8 @@
+FAIL test checkout
+ERROR at checkout.ts:8
+next: retry fixture
+
+resource api failed
+ERROR deployment timeout
+
+not-json: failed record id=a reason=invalid

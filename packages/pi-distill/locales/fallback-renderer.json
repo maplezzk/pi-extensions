@@ -3,6 +3,10 @@
     "zh-CN": "✓ 已提炼",
     "en-US": "✓ Summarized"
   },
+  "summaryFallback": {
+    "zh-CN": "↺ 已回退原文",
+    "en-US": "↺ Original restored"
+  },
   "disabled": {
     "zh-CN": "○ 已禁用",
     "en-US": "○ Disabled"
