@@ -87,6 +87,22 @@
     "zh-CN": "显示摘要：{value}",
     "en-US": "Show summary: {value}"
   },
+  "toolOverrides": {
+    "zh-CN": "工具 outputRequest",
+    "en-US": "Tool outputRequest"
+  },
+  "toolSettingsTitle": {
+    "zh-CN": "工具 outputRequest 设置",
+    "en-US": "Tool outputRequest settings"
+  },
+  "toolStatus": {
+    "zh-CN": "{tool}：{value}",
+    "en-US": "{tool}: {value}"
+  },
+  "noConfigurableTools": {
+    "zh-CN": "当前没有可配置的工具。",
+    "en-US": "No configurable tools are currently available."
+  },
   "minOutputTitle": {
     "zh-CN": "最小输出字符数",
     "en-US": "Minimum output chars"
