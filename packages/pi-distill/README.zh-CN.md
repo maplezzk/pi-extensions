@@ -179,7 +179,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `maxChars` | 提炼模型的最大输出预算（约 `maxChars / 2` tokens），同时作为诊断参考；不再用于写文件。 |
 | `timeoutSeconds` | 提炼模型调用的最长等待时间。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
-| `summarizeErrors` | 工具返回错误时是否仍发送给提炼模型。 |
+| `summarizeErrors` | 工具返回错误且达到 `minChars` 时，是否仍发送给提炼模型。 |
 | `render.*` | 控制审计卡片、prompt 预览和结果预览。 |
 
 主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。旧配置中的 `maxOutputChars` / `PI_DISTILL_MAX_OUTPUT_CHARS` 仍会被解析以兼容旧文件，但不再生效。

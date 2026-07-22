@@ -213,7 +213,7 @@ test("只有明确需要摘要且输出达到阈值时才总结", () => {
   assert.equal(shouldSummarizeOutput("总结错误", "1234567890", undefined), false);
 });
 
-test("错误工具输出默认绕过长度阈值进行总结，并支持关闭", () => {
+test("错误工具输出也遵守最小长度阈值，并支持关闭总结", () => {
   const config = {
     minChars: 100,
     maxChars: 1000,
@@ -223,11 +223,9 @@ test("错误工具输出默认绕过长度阈值进行总结，并支持关闭",
     summarizeErrors: true,
   };
 
-  assert.equal(shouldSummarizeOutput("总结错误", "短错误", config, true), true);
-  assert.equal(
-    shouldSummarizeOutput("总结错误", "短错误", { ...config, summarizeErrors: false }, true),
-    false,
-  );
+  assert.equal(shouldSummarizeOutput("总结错误", "短错误", config, true), false);
+  assert.equal(shouldSummarizeOutput("总结错误", "x".repeat(100), config, true), true);
+  assert.equal(shouldSummarizeOutput("总结错误", "短错误", { ...config, summarizeErrors: false }, true), false);
   assert.equal(shouldSummarizeOutput("RAW", "短错误", config, true), false);
   assert.equal(shouldSummarizeOutput(undefined, "短错误", config, true), false);
 });
