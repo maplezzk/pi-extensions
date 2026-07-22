@@ -1,6 +1,6 @@
 {
   "name": "pi-distill",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Pi tool-output distillation with file-first configuration",
   "type": "module",
   "main": "./index.ts",
