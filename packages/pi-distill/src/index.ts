@@ -97,6 +97,8 @@ type SummaryResult = {
   summaryModel: string;
 };
 
+type SummaryCompletion = (...args: Parameters<typeof complete>) => ReturnType<typeof complete>;
+
 type SummaryDiagnostics = {
   toolExecutionMs?: number;
   summaryDurationMs?: number;
@@ -248,6 +250,7 @@ async function summarizeOutput(
   config: BashSummaryConfig,
   context: DistillExecutionContext,
   signal: AbortSignal,
+  completion: SummaryCompletion = complete,
 ): Promise<SummaryResult> {
   const model = config.modelProvider && config.modelId
     ? context.ctx.modelRegistry.find(config.modelProvider, config.modelId)
@@ -261,7 +264,7 @@ async function summarizeOutput(
   const auth = await context.ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (auth.ok === false) throw new Error(`Summarizer authentication failed: ${auth.error}`);
 
-  const response = await complete(
+  const response = await completion(
     model,
     {
       messages: [
@@ -318,10 +321,11 @@ function getOutputRequest(params: Record<string, unknown>): string {
     : "";
 }
 
-async function processToolResult(
+export async function processToolResult(
   context: DistillExecutionContext,
   result: ToolResult,
   toolExecutionMs: number,
+  completion: SummaryCompletion = complete,
 ): Promise<ToolResult> {
   const prompt = getOutputRequest(context.params);
   const loaded = loadDistillConfig();
@@ -412,7 +416,14 @@ async function processToolResult(
   context.signal?.addEventListener("abort", abortFromParent, { once: true });
   const timeout = setTimeout(() => timeoutController.abort(), config.timeoutSeconds * 1000);
   try {
-    const summarized = await summarizeOutput(prompt, output, config, context, timeoutController.signal);
+    const summarized = await summarizeOutput(
+      prompt,
+      output,
+      config,
+      context,
+      timeoutController.signal,
+      completion,
+    );
     const summaryDurationMs = Math.round(performance.now() - summaryStartedAt);
     if (isRawSummary(summarized.text)) {
       // RAW 是总结模型的控制哨兵，不是要交给 Agent 的正文；原文仍通过同一条 final limiter。

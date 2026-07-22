@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hasNonTextContent, limitReturnedToolResult } from "../src/output-limit.ts";
@@ -25,8 +25,82 @@ import {
   shouldFallbackToOriginal,
   shouldSummarizeOutput,
 } from "../src/summary-utils.ts";
+import { processToolResult } from "../src/index.ts";
 
 process.env.PI_EXTENSIONS_LOCALE = "en-US";
+
+type TestContext = Parameters<typeof processToolResult>[0];
+type TestResult = Parameters<typeof processToolResult>[1];
+type TestCompletion = NonNullable<Parameters<typeof processToolResult>[3]>;
+type TestCompletionResult = Awaited<ReturnType<TestCompletion>>;
+
+/** 构造真实摘要处理链所需的最小扩展上下文。 */
+function fakeSummaryContext(): TestContext {
+  const model = { provider: "fake", id: "model" };
+  return {
+    toolName: "fake-tool",
+    toolCallId: "fake-call",
+    params: { outputRequest: "提取错误和下一步" },
+    ctx: {
+      model,
+      modelRegistry: {
+        find: () => model,
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: {}, env: {} }),
+      },
+    },
+  } as unknown as TestContext;
+}
+
+/** 构造包含单一文本输出的工具结果。 */
+function fakeToolResult(output: string, isError = false): TestResult {
+  return {
+    content: [{ type: "text", text: output }],
+    details: {},
+    isError,
+  } as unknown as TestResult;
+}
+
+/** 为摘要处理链创建隔离配置，避免测试读取用户配置。 */
+async function withFakeSummaryConfig<T>(action: () => Promise<T>): Promise<T> {
+  const keys = [
+    "PI_CODING_AGENT_DIR",
+    "PI_DISTILL_MODEL",
+    "PI_DISTILL_MIN_CHARS",
+    "PI_DISTILL_MAX_CHARS",
+    "PI_DISTILL_TIMEOUT_SECONDS",
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]] as const));
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-distill-summary-test-"));
+  const configDir = join(agentDir, "extensions", "pi-distill");
+  await mkdir(configDir, { recursive: true });
+  await writeFile(join(configDir, "config.json"), JSON.stringify({
+    enabled: true,
+    model: "fake/model",
+    minChars: 1,
+    maxChars: 10000,
+    timeoutSeconds: 1,
+  }));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  process.env.PI_DISTILL_MODEL = "fake/model";
+  process.env.PI_DISTILL_MIN_CHARS = "1";
+  process.env.PI_DISTILL_MAX_CHARS = "10000";
+  process.env.PI_DISTILL_TIMEOUT_SECONDS = "1";
+  try {
+    return await action();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+/** 构造返回指定文本的 fake completion provider。 */
+function fakeCompletion(text: string): TestCompletion {
+  return async () => ({
+    content: [{ type: "text", text }],
+  } as unknown as TestCompletionResult);
+}
 
 test("只配置总结模型时使用默认阈值", () => {
   assert.deepEqual(
@@ -359,6 +433,102 @@ test("真实使用场景数据集逐 case 验证 prompt 契约", async () => {
       );
     }
   }
+});
+
+test("fake provider 覆盖摘要链路的 RAW、有效摘要和低收益回退", async () => {
+  await withFakeSummaryConfig(async () => {
+    const context = fakeSummaryContext();
+    const output = "ERROR E42 at checkout.ts:8; next: retry fixture";
+
+    const raw = await processToolResult(
+      context,
+      fakeToolResult(output),
+      0,
+      fakeCompletion("RAW"),
+    );
+    assert.equal(raw.content[0]?.text, output);
+    assert.equal(raw.details?.outputSummaryStatus, "full-output");
+
+    const summarized = await processToolResult(
+      context,
+      fakeToolResult(output),
+      0,
+      fakeCompletion("E42 at checkout.ts:8; retry fixture"),
+    );
+    assert.equal(summarized.content[0]?.text, "E42 at checkout.ts:8; retry fixture");
+    assert.equal(summarized.details?.outputSummaryStatus, "summarized");
+
+    const fallback = await processToolResult(
+      context,
+      fakeToolResult("1234567890"),
+      0,
+      fakeCompletion("123456789"),
+    );
+    assert.equal(fallback.content[0]?.text, "1234567890");
+    assert.equal(fallback.details?.outputSummaryStatus, "summary-fallback");
+  });
+});
+
+test("fake provider 的空响应、非法响应和异常都保留原文", async () => {
+  await withFakeSummaryConfig(async () => {
+    const context = fakeSummaryContext();
+    const output = "FAIL checkout\nERROR at checkout.ts:8\nnext: retry";
+
+    const empty = await processToolResult(
+      context,
+      fakeToolResult(output),
+      0,
+      async () => ({ content: [] } as unknown as TestCompletionResult),
+    );
+    assert.equal(empty.content[0]?.text, output);
+    assert.equal(empty.details?.outputSummaryStatus, "summary-failed");
+
+    const invalid = await processToolResult(
+      context,
+      fakeToolResult(output),
+      0,
+      async () => ({
+        stopReason: "error",
+        errorMessage: "invalid provider response",
+        content: [],
+      } as unknown as TestCompletionResult),
+    );
+    assert.equal(invalid.content[0]?.text, output);
+    assert.equal(invalid.details?.outputSummaryStatus, "summary-failed");
+    assert.match(String(invalid.details?.outputSummaryError), /invalid provider response/);
+
+    const thrown = await processToolResult(
+      context,
+      fakeToolResult(output),
+      0,
+      async () => { throw new Error("fake provider failed"); },
+    );
+    assert.equal(thrown.content[0]?.text, output);
+    assert.equal(thrown.details?.outputSummaryStatus, "summary-failed");
+    assert.match(String(thrown.details?.outputSummaryError), /fake provider failed/);
+  });
+});
+
+test("fake provider 超时后保留原文并记录失败", async () => {
+  await withFakeSummaryConfig(async () => {
+    const context = fakeSummaryContext();
+    const output = "ERROR deployment timeout at api";
+    const timeoutCompletion: TestCompletion = async (_model, _request, options) => (
+      new Promise((_, reject) => {
+        const signal = options?.signal;
+        if (!signal) {
+          reject(new Error("test completion did not receive an abort signal"));
+          return;
+        }
+        signal.addEventListener("abort", () => reject(new Error("fake provider aborted")), { once: true });
+      })
+    );
+
+    const result = await processToolResult(context, fakeToolResult(output), 0, timeoutCompletion);
+    assert.equal(result.content[0]?.text, output);
+    assert.equal(result.details?.outputSummaryStatus, "summary-failed");
+    assert.match(String(result.details?.outputSummaryError), /fake provider aborted/);
+  });
 });
 
 test("fallback 审计显示为原文回退而非已提炼", async () => {
