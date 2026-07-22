@@ -1,0 +1,12 @@
+{
+  "total": 3,
+  "failed": 2,
+  "orders": [
+    {"id": "o-1", "status": "failed", "reason": "timeout"},
+    {"id": "o-2", "status": "ok"},
+    {"id": "o-3", "status": "failed", "reason": "quota"}
+  ],
+  "page": 2,
+  "pageSize": 50,
+  "totalPages": 3
+}

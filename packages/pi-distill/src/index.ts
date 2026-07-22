@@ -47,6 +47,8 @@ import {
   getDistillConfigPath,
   isRawSummary,
   loadDistillConfig,
+  MIN_EFFECTIVE_COMPRESSION_RATIO,
+  shouldFallbackToOriginal,
   type BashSummaryConfig,
   type DistillConfigFile,
   type DistillRenderConfig,
@@ -141,7 +143,7 @@ function getCompressionDiagnostics(
   if (intent === "full") {
     anomalies.push("unexpected-compression");
   }
-  if (compressionRatio !== undefined && compressionRatio < 1.2) {
+  if (compressionRatio !== undefined && compressionRatio < MIN_EFFECTIVE_COMPRESSION_RATIO) {
     anomalies.push("ineffective-compression");
   }
 
@@ -397,12 +399,9 @@ async function processToolResult(
       missedCompressionRatio: config.missedCompressionRatio,
       ...skippedDiagnostics,
     };
-    const agentDiagnostic = buildAgentDiagnosticText(diagnostics);
     const candidate = {
       ...attachDiagnostics(result, diagnostics),
-      content: agentDiagnostic
-        ? [...result.content, { type: "text", text: agentDiagnostic }]
-        : result.content,
+      content: result.content,
     };
     return finish(candidate);
   }
@@ -430,7 +429,6 @@ async function processToolResult(
         compressionSavedPercent: 0,
         ...rawDiagnostics,
       };
-      const agentDiagnostic = buildAgentDiagnosticText(diagnostics);
       const candidate = {
         ...attachDiagnostics(result, {
           toolExecutionMs,
@@ -446,10 +444,7 @@ async function processToolResult(
           summaryModel: summarized.summaryModel,
           ...diagnostics,
         }),
-        content: [
-          { type: "text", text: output },
-          ...(agentDiagnostic ? [{ type: "text", text: agentDiagnostic }] : []),
-        ],
+        content: [{ type: "text", text: output }],
       };
       return finish(candidate);
     }
@@ -458,12 +453,32 @@ async function processToolResult(
       output.length,
       summarized.summaryChars,
     );
-    const diagnostics: SummaryDiagnostics = {
+    const summaryDiagnostics: SummaryDiagnostics = {
       originalOutputChars: output.length,
       summaryChars: summarized.summaryChars,
       ...compressionDiagnostics,
     };
-    const agentDiagnostic = buildAgentDiagnosticText(diagnostics);
+    const agentDiagnostic = buildAgentDiagnosticText(summaryDiagnostics);
+
+    if (shouldFallbackToOriginal(output.length, summarized.summaryChars)) {
+      return finish({
+        ...attachDiagnostics(result, {
+          toolExecutionMs,
+          summaryDurationMs,
+          outputSummaryIntent: decision.intent,
+          outputSummaryPrompt: prompt || undefined,
+          outputSummaryRender,
+          outputSummaryStatus: "summary-fallback",
+          summaryTriggerMinChars: config.minChars,
+          summaryTriggerMaxChars: null,
+          summaryResultMaxChars: config.maxChars,
+          missedCompressionRatio: config.missedCompressionRatio,
+          summaryModel: summarized.summaryModel,
+          ...summaryDiagnostics,
+        }),
+        content: [{ type: "text", text: output }],
+      });
+    }
 
     return finish({
       // 输出处理参数只影响结果上下文，不改变原工具的业务执行。
@@ -487,7 +502,7 @@ async function processToolResult(
         summaryModel: summarized.summaryModel,
         summaryText: summarized.text,
         summaryFilePath: summarized.summaryFilePath,
-        ...diagnostics,
+        ...summaryDiagnostics,
       },
     });
   } catch (error) {

@@ -1,0 +1,16 @@
+# CI execution log
+
+PASS 19
+FAIL test payment
+ERROR E_TIMEOUT at payment.ts:42
+next: retry fixture
+
+compile 20%
+warning unused
+ERROR TS2345 src/a.ts:10
+ERROR TS2339 src/b.ts:22
+
+Deployment status: failed
+resource api-v2 failed
+reason health check timeout
+rollback available

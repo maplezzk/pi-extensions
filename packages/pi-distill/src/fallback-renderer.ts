@@ -174,6 +174,7 @@ export function buildDistillAuditLines(
 
   const statusViews: Record<string, { label: string; tone: AuditTone }> = {
     summarized: { label: i18n.t("summarized"), tone: "success" },
+    "summary-fallback": { label: i18n.t("summaryFallback"), tone: "warning" },
     disabled: { label: i18n.t("disabled"), tone: "dim" },
     "disabled-by-config": { label: i18n.t("off"), tone: "dim" },
     "not-requested": { label: i18n.t("original"), tone: "muted" },

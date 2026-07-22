@@ -334,6 +334,8 @@ export function defaultDistillConfigFile(): DistillConfigFile {
   };
 }
 
+export const MIN_EFFECTIVE_COMPRESSION_RATIO = 1.2;
+
 export type OutputSummaryIntent = "none" | "full" | "summary";
 
 export type OutputSummaryDecision = {
@@ -352,6 +354,12 @@ export function classifyOutputSummaryIntent(prompt: string | undefined): OutputS
 /** 总结模型的保留原文哨兵，只接受不带其他内容的 RAW。 */
 export function isRawSummary(text: string | undefined): boolean {
   return typeof text === "string" && /^RAW$/i.test(text.trim());
+}
+
+/** 摘要没有达到最低压缩收益时，安全地恢复原始工具输出。 */
+export function shouldFallbackToOriginal(originalChars: number, summaryChars: number): boolean {
+  if (originalChars <= 0 || summaryChars <= 0) return false;
+  return originalChars / summaryChars < MIN_EFFECTIVE_COMPRESSION_RATIO;
 }
 
 export function decideOutputSummary(
@@ -401,6 +409,8 @@ export function buildSummaryPrompt(
     i18n.t("preserve"),
     i18n.t("languageMatch"),
     i18n.t("exactRaw"),
+    i18n.t("decisionProtocol"),
+    i18n.t("sourceBoundary"),
     i18n.t("onlyResult"),
     "",
     i18n.t("request"),
