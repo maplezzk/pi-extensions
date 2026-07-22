@@ -14,6 +14,7 @@ const DEFAULT_SUMMARIZE_ERRORS = true;
 const DEFAULT_RENDER_ENABLED = true;
 const DEFAULT_RENDER_PROMPT = true;
 const DEFAULT_RENDER_RESULT = true;
+const DEFAULT_DISABLED_TOOL_NAMES = new Set(["edit", "write"]);
 const CONFIG_DIRECTORY = "pi-distill";
 const CONFIG_FILE_NAME = "config.json";
 
@@ -33,6 +34,8 @@ export interface BashSummaryConfig {
   missedCompressionRatio: number;
   /** 工具返回错误且达到最小长度时是否仍调用提炼模型。 */
   summarizeErrors: boolean;
+  /** 按工具覆盖是否注入 outputRequest；edit/write 未配置时默认关闭，其他工具默认开启。 */
+  tools?: DistillToolConfig;
 }
 
 export type DistillConfig = BashSummaryConfig;
@@ -42,6 +45,12 @@ export interface DistillRenderConfig {
   showPrompt: boolean;
   showResult: boolean;
 }
+
+export interface DistillToolOverride {
+  enabled: boolean;
+}
+
+export type DistillToolConfig = Record<string, DistillToolOverride>;
 
 export interface DistillConfigFile {
   enabled?: boolean;
@@ -53,6 +62,7 @@ export interface DistillConfigFile {
   timeoutSeconds?: number;
   missedCompressionRatio?: number;
   summarizeErrors?: boolean;
+  tools?: DistillToolConfig;
   render?: Partial<DistillRenderConfig>;
 }
 
@@ -215,6 +225,27 @@ function parseRenderConfig(
   return render;
 }
 
+function parseToolConfig(
+  file: Record<string, unknown> | undefined,
+  warnings: string[],
+): DistillToolConfig | undefined {
+  if (!file || !("tools" in file)) return undefined;
+  if (!isRecord(file.tools)) {
+    warnings.push("Config field tools must be an object.");
+    return {};
+  }
+
+  const tools: DistillToolConfig = {};
+  for (const [toolName, value] of Object.entries(file.tools)) {
+    if (!isRecord(value) || typeof value.enabled !== "boolean") {
+      warnings.push(`Config field tools.${toolName}.enabled must be boolean.`);
+      continue;
+    }
+    tools[toolName] = { enabled: value.enabled };
+  }
+  return tools;
+}
+
 function appendFileValueToEnv(
   env: NodeJS.ProcessEnv,
   file: Record<string, unknown>,
@@ -309,6 +340,8 @@ export function loadDistillConfig(
   }
 
   const config = parseBashSummaryConfig(effectiveEnv);
+  const tools = parseToolConfig(file, warnings);
+  if (config && tools !== undefined) config.tools = tools;
   const render = parseRenderConfig(file, warnings);
   if (!config && warnings.length === 0) {
     warnings.push("Distill config is invalid; output distillation is disabled.");
@@ -326,6 +359,7 @@ export function defaultDistillConfigFile(): DistillConfigFile {
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
     missedCompressionRatio: DEFAULT_MISSED_COMPRESSION_RATIO,
     summarizeErrors: DEFAULT_SUMMARIZE_ERRORS,
+    tools: {},
     render: {
       enabled: DEFAULT_RENDER_ENABLED,
       showPrompt: DEFAULT_RENDER_PROMPT,
@@ -335,6 +369,13 @@ export function defaultDistillConfigFile(): DistillConfigFile {
 }
 
 export const MIN_EFFECTIVE_COMPRESSION_RATIO = 1.4;
+
+export function isDistillToolEnabled(
+  config: { tools?: DistillToolConfig } | undefined,
+  toolName: string,
+): boolean {
+  return config?.tools?.[toolName]?.enabled ?? !DEFAULT_DISABLED_TOOL_NAMES.has(toolName);
+}
 
 export type OutputSummaryIntent = "none" | "full" | "summary";
 
