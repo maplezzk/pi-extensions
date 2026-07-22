@@ -7,10 +7,10 @@
 
 import { execFileSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { tailLines, sleepSync, envPositiveInteger } from "../shell.ts";
+import { withFileLock } from "./shared.ts";
 import type { BackendOps } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -25,13 +25,6 @@ const ZELLIJ_CURSOR_HEIGHT_WIDTH_RATIO = 4;
 /** Pi subagent 可用空间最小值（可通过环境变量调优） */
 const DEFAULT_ZELLIJ_SUBAGENT_MIN_COLUMNS = 50;
 const DEFAULT_ZELLIJ_SUBAGENT_MIN_ROWS = 10;
-
-/** Zellij surface 锁超时（毫秒） */
-const ZELLIJ_LOCK_TIMEOUT_MS = 10000;
-/** Zellij surface 锁陈旧阈值（毫秒），超此时间视为死锁 */
-const ZELLIJ_LOCK_STALE_MS = 30000;
-/** Zellij 锁重试间隔（毫秒） */
-const ZELLIJ_LOCK_RETRY_MS = 50;
 
 // ── Zellij 公开类型 ──
 
@@ -340,37 +333,12 @@ function zellijSurfaceLockPath(): string {
 }
 
 function withZellijSurfaceLock<T>(callback: () => T): T {
-  const lockPath = zellijSurfaceLockPath();
-  const deadline = Date.now() + ZELLIJ_LOCK_TIMEOUT_MS;
-
-  while (true) {
-    try {
-      mkdirSync(lockPath);
-      writeFileSync(join(lockPath, "owner"), `${process.pid}\n`);
-      break;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST") throw error;
-
-      try {
-        if (Date.now() - statSync(lockPath).mtimeMs > ZELLIJ_LOCK_STALE_MS) {
-          rmSync(lockPath, { recursive: true, force: true });
-          continue;
-        }
-      } catch {}
-
-      if (Date.now() > deadline) {
-        throw new Error(`Timed out waiting for zellij surface lock: ${lockPath}`);
-      }
-      sleepSync(ZELLIJ_LOCK_RETRY_MS);
-    }
-  }
-
-  try {
-    return callback();
-  } finally {
-    rmSync(lockPath, { recursive: true, force: true });
-  }
+  // 复用 shared.ts 的统一文件锁（mkdir 原子获取 + stale 检测 + finally 释放）
+  return withFileLock(
+    zellijSurfaceLockPath(),
+    { timeoutMs: 10000, retryMs: 50, staleMs: 30000 },
+    callback,
+  );
 }
 
 function createZellijSurfaceUnlocked(name: string): string {

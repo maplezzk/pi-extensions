@@ -8,7 +8,11 @@
 
 import { execSync, execFileSync, spawnSync } from "node:child_process";
 import { shellEscape } from "../shell.ts";
+import { createBackendLogger } from "./shared.ts";
 import type { BackendOps } from "./types.ts";
+
+/** Cmux 后端日志（统一格式，写入 /tmp/pi-mux-cmux.log） */
+const cmuxLog = createBackendLogger("cmux", "/tmp/pi-mux-cmux.log");
 
 // ── 内部辅助 ──
 
@@ -271,7 +275,11 @@ export const ops: BackendOps = {
       try {
         const tree = execSync(`cmux tree`, { encoding: "utf8" });
         if (tree.includes(cmuxSubagentPane)) {
-          return createSurfaceInPane(name, cmuxSubagentPane);
+          const surface = createSurfaceInPane(name, cmuxSubagentPane);
+          cmuxLog(
+            `[split] mode=tab-reuse pane=${cmuxSubagentPane} new=${surface} name=${JSON.stringify(name)}`,
+          );
+          return surface;
         }
       } catch {}
       // Pane 已消失 — fall through 创建新 split
@@ -280,11 +288,18 @@ export const ops: BackendOps = {
 
     const created = createCmuxSplitSurface(name, "right", process.env.CMUX_SURFACE_ID);
     cmuxSubagentPane = created.paneRef ?? null;
+    cmuxLog(
+      `[split] mode=first dir=right from=${process.env.CMUX_SURFACE_ID ?? "<unset>"} new=${created.surface} name=${JSON.stringify(name)}`,
+    );
     return created.surface;
   },
 
   createSplit(name: string, direction: "left" | "right" | "up" | "down", fromSurface?: string): string {
-    return createCmuxSplitSurface(name, direction, fromSurface).surface;
+    const surface = createCmuxSplitSurface(name, direction, fromSurface).surface;
+    cmuxLog(
+      `[split] mode=createSurfaceSplit dir=${direction} from=${fromSurface ?? "<unset>"} new=${surface} name=${JSON.stringify(name)}`,
+    );
+    return surface;
   },
 
   send(surface: string, command: string): void {
@@ -318,6 +333,7 @@ export const ops: BackendOps = {
     execSync(`cmux close-surface --surface ${shellEscape(surface)}`, {
       encoding: "utf8",
     });
+    cmuxLog(`[close] surface=${surface}`);
   },
 
   rename(surface: string, name: string): void {

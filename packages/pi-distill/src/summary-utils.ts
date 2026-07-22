@@ -31,7 +31,7 @@ export interface BashSummaryConfig {
   timeoutSeconds: number;
   /** 无 prompt 的长输出触发 missed-compression 提醒所需的倍数。 */
   missedCompressionRatio: number;
-  /** 工具返回错误结果时是否仍调用提炼模型。 */
+  /** 工具返回错误且达到最小长度时是否仍调用提炼模型。 */
   summarizeErrors: boolean;
 }
 
@@ -372,11 +372,11 @@ export function decideOutputSummary(
   if (!config) return { intent, shouldSummarize: false, reason: "disabled" };
   if (intent === "none") return { intent, shouldSummarize: false, reason: "not-requested" };
   if (intent === "full") return { intent, shouldSummarize: false, reason: "full-output" };
-  if (isError && config.summarizeErrors) {
-    return { intent, shouldSummarize: true, reason: "error-output" };
-  }
   if (output.length < config.minChars) {
     return { intent, shouldSummarize: false, reason: "below-threshold" };
+  }
+  if (isError && config.summarizeErrors) {
+    return { intent, shouldSummarize: true, reason: "error-output" };
   }
   return { intent, shouldSummarize: true, reason: "explicit-summary" };
 }

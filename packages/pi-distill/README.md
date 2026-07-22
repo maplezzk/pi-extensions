@@ -33,7 +33,7 @@ The distillation prompt strictly follows the current locale selected by `/pi-lan
 - Treats a prompt containing only `RAW` as an explicit request for the original output.
 - Uses the current session model by default, or a configured `provider/model` override.
 - Keeps diagnostic metadata such as status, character counts, compression ratio, duration, and anomalies in the tool result details.
-- Writes oversized distilled output or final output to a temporary file and returns its path instead of overflowing the tool result.
+- Oversized output is no longer written to a file or truncated by pi-distill; it is left to Pi's own output-limiting mechanism.
 - Adds a compact audit card when the active Pi display middleware is available, with a fallback renderer otherwise. The shared display protocol is provided by `pi-extensions-tool-display`.
 
 It does not register a second `bash`, `read`, `grep`, or `find` tool.
@@ -117,7 +117,7 @@ Agent consumes a result suited to the current decision, with auditable diagnosti
 | `outputRequest` | Behavior | Use it when |
 | --- | --- | --- |
 | Omitted | Invalid tool call; Pi rejects the call before the underlying tool runs | Never omit it; use `RAW` when no compression is explicitly requested |
-| Exactly `RAW` (case-insensitive) | Skip the distillation model and keep the complete original text; oversized text is returned through a file path | You need to inspect, copy, or verify exact output |
+| Exactly `RAW` (case-insensitive) | Skip the distillation model and keep the complete original text; oversized text is handled by Pi's own output-limiting mechanism | You need to inspect, copy, or verify exact output |
 | Any non-empty value other than `RAW` | Call the model once the output reaches the threshold; the prompt defines what to retain | “Keep errors, warnings, and final status” workflows |
 | Any non-text content such as images or audio | Preserve the result as-is; do not send it to the distillation model or apply text truncation | Image reads, binary results, and mixed text/media results |
 
@@ -138,7 +138,7 @@ The distillation prompt strictly follows the locale selected by `/pi-language`:
 - Registers no replacement tools, does not change tool execution semantics, and does not require a separately installed `pi-tool-display` host package.
 - Text distillation is lossy; use `RAW` when completeness matters.
 - Non-text results are a completeness boundary: images, audio, binary data, and mixed content bypass text distillation.
-- Oversized distilled or final text is written to a temporary file and represented by its path, preventing unbounded context growth.
+- Oversized distilled or final text is no longer written to a file or truncated by pi-distill; it is left to Pi's own output-limiting mechanism, preventing unbounded context growth.
 - If no model is available, distillation fails open: the original result is retained and Pi can continue running.
 
 ## Configuration
@@ -157,7 +157,6 @@ Start from [`config.example.json`](./config.example.json):
   "model": "",
   "minChars": 200,
   "maxChars": 100000,
-  "maxOutputChars": 10000,
   "timeoutSeconds": 10,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
@@ -175,14 +174,13 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | --- | --- |
 | `model` | Optional `provider/model`; empty uses the current Pi session model. |
 | `minChars` | Minimum output size before a summary is requested. |
-| `maxChars` | Maximum size of the model's distilled result before it is written to a file. |
-| `maxOutputChars` | Maximum text size returned to the agent; larger results are written to a file. |
+| `maxChars` | Maximum output budget for the distillation model (about `maxChars / 2` tokens) and a diagnostic reference; no longer used to write files. |
 | `timeoutSeconds` | Maximum time allowed for the distillation model call. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
-| `summarizeErrors` | Whether error results should still be sent to the distillation model. |
+| `summarizeErrors` | Whether error results that meet `minChars` should still be sent to the distillation model. |
 | `render.*` | Controls the audit card, prompt preview, and result preview. |
 
-The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_MAX_OUTPUT_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`.
+The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`. The legacy `maxOutputChars` / `PI_DISTILL_MAX_OUTPUT_CHARS` option is still parsed for backward compatibility but no longer has any effect.
 
 ## Requirements
 

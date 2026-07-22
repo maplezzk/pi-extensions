@@ -28,51 +28,18 @@
  *   - `otty tab list --json`                 列出所有 tab
  *   - `otty tab rename --tab <tab_id> <title>`
  *   - `otty tab close <tab_id>`
+ *
+ * 日志、文件锁、BFS 分屏状态机、命令检测复用 backends/shared.ts。
  */
 
-import {
-  execFileSync,
-  execSync,
-  spawnSync,
-} from "node:child_process";
-import {
-  appendFileSync,
-  existsSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { i18n } from "../i18n.ts";
+import { createBackendLogger, withFileLock, BfsSplitStateManager, hasCommand } from "./shared.ts";
 
-// ── 日志（otty 独立文件，便于区分后端） ──
-const OTTY_SPLIT_LOG = "/tmp/pi-otty-split.log";
-function ottyLog(msg: string): void {
-  try {
-    appendFileSync(OTTY_SPLIT_LOG, `[${new Date().toISOString()}] ${msg}`);
-  } catch {
-    /* 写日志失败不影响主流程 */
-  }
-}
-
-// ── 命令可用性缓存 ──
-
-const commandAvailability = new Map<string, boolean>();
-
-function hasCommand(command: string): boolean {
-  if (commandAvailability.has(command)) {
-    return commandAvailability.get(command)!;
-  }
-  let available = false;
-  try {
-    execFileSync("which", [command], { stdio: "ignore" });
-    available = true;
-  } catch {
-    available = false;
-  }
-  commandAvailability.set(command, available);
-  return available;
-}
+// ── 日志（统一格式，写入 /tmp/pi-mux-otty.log） ──
+const ottyLog = createBackendLogger("otty", "/tmp/pi-mux-otty.log");
 
 // ── Otty 检测 ──
 
@@ -90,7 +57,7 @@ export function isOttyRuntimeAvailable(): boolean {
   if (!hasCommand("otty")) return false;
 
   // 最后一道闸：otty 命令存在但 app 没启动时 `otty panes` 会失败。
-  // 提前 200ms 超时探一下，避免后续每次调用都等满 3s。
+  // 提前 500ms 超时探一下，避免后续每次调用都等满 3s。
   try {
     const result = spawnSync("otty", ["panes", "--json", "--timeout", "500"], {
       encoding: "utf8",
@@ -112,10 +79,7 @@ let sendKeysEnabledCache: boolean | null = null;
 export function isOttySendKeysEnabled(): boolean {
   if (sendKeysEnabledCache !== null) return sendKeysEnabledCache;
   try {
-    // 用一个无害的"noop"探针：给 agent 自己 pane 发一个不会执行的 key:End + Escape
-    // 序列的低成本命令，或者直接探测配置项。
-    // 优先用 ipc 命令问 otty 是否允许 send-keys，避免触发误判。
-    // 退路：直接试一次 `pane send-keys` 看错误信息。
+    // 用一个无害探针：给 agent 自己 pane 发 key:End，看 otty 是否允许 send-keys。
     const result = spawnSync(
       "otty",
       ["pane", "send-keys", "--pane", getOttyAgentPaneId(), "--", "key:End"],
@@ -125,15 +89,13 @@ export function isOttySendKeysEnabled(): boolean {
     sendKeysEnabledCache = enabled;
     if (!enabled) {
       ottyLog(
-        `[otty detect] send-keys DISABLED stderr=${JSON.stringify(
-          (result.stderr ?? "").trim().slice(0, 200),
-        )}\n`,
+        `[detect] send-keys DISABLED stderr=${JSON.stringify((result.stderr ?? "").trim().slice(0, 200))}`,
       );
     }
     return enabled;
   } catch (e) {
     sendKeysEnabledCache = false;
-    ottyLog(`[otty detect] send-keys probe failed: ${(e as Error).message}\n`);
+    ottyLog(`[detect] send-keys probe failed: ${(e as Error).message}`);
     return false;
   }
 }
@@ -143,8 +105,7 @@ export function isOttySendKeysEnabled(): boolean {
 /**
  * 捕获于模块加载时的 agent pane id。
  * Otty 不像 cmux 那样注入 surface id；需要在启动时通过 `otty panes --json`
- * 找 `active=true` 的 pane 并冻结到常量。模块加载后再查 env 可能反映
- * 用户切换焦点后的值（虽然这里走的是 IPC 而非 env，但为了一致性也冻结）。
+ * 找 `active=true` 的 pane 并冻结到常量。
  *
  * 如果暂时拿不到（Otty 刚启动、panes 还没列出来），返回 null，
  * 调用方在第一次 createSurface 时重试。
@@ -154,17 +115,13 @@ export const AGENT_OTTY_PANE_ID: string | null = (() => {
     const panes = readOttyPanes();
     // active=true 是当前 focus pane。但用户启动 pi 后焦点可能在 pi pane，
     // 也可能在另一个 pane —— 必须按 process 名称筛选。
-    const piPane = panes.find(
-      (p) =>
-        p.active &&
-        /(^|\s)(π|pi)($|\s|-)/i.test(p.process),
-    );
+    const piPane = panes.find((p) => p.active && /(^|\s)(π|pi)($|\s|-)/i.test(p.process));
     if (piPane) return piPane.id;
     // 退路：取 active=true 的 pane（不严谨，但能跑）
     const active = panes.find((p) => p.active);
     return active?.id ?? null;
   } catch (e) {
-    ottyLog(`[otty init] failed to capture agent pane id: ${(e as Error).message}\n`);
+    ottyLog(`[init] failed to capture agent pane id: ${(e as Error).message}`);
     return null;
   }
 })();
@@ -178,13 +135,12 @@ export function getOttyAgentPaneId(): string {
   if (AGENT_OTTY_PANE_ID && ottyPaneExists(AGENT_OTTY_PANE_ID)) {
     return AGENT_OTTY_PANE_ID;
   }
+
   // 重试一次
   const refreshed = (() => {
     try {
       const panes = readOttyPanes();
-      const piPane = panes.find(
-        (p) => p.active && /(^|\s)(π|pi)($|\s|-)/i.test(p.process),
-      );
+      const piPane = panes.find((p) => p.active && /(^|\s)(π|pi)($|\s|-)/i.test(p.process));
       if (piPane) return piPane.id;
       return panes.find((p) => p.active)?.id ?? null;
     } catch {
@@ -216,21 +172,21 @@ function ottyExec(args: string[]): string {
   const cmdline = `otty ${args
     .map((a) => (a.includes(" ") || a.includes('"') ? JSON.stringify(a) : a))
     .join(" ")}`;
-  ottyLog(`[otty exec] ${cmdline}\n`);
+  ottyLog(`[exec] ${cmdline}`);
   const result = spawnSync("otty", args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.error) {
-    ottyLog(`[otty exec] ERROR (spawn): ${result.error.message}\n`);
+    ottyLog(`[exec] ERROR (spawn): ${result.error.message}`);
     throw result.error;
   }
   if (result.status !== 0) {
     const stderr = (result.stderr ?? "").trim();
-    ottyLog(`[otty exec] ERROR status=${result.status} stderr=${JSON.stringify(stderr)}\n`);
+    ottyLog(`[exec] ERROR status=${result.status} stderr=${JSON.stringify(stderr)}`);
     throw new Error(`otty ${args[0]} failed (status=${result.status}): ${stderr}`);
   }
-  ottyLog(`[otty exec] -> ${JSON.stringify(result.stdout.trim().slice(0, 200))}\n`);
+  ottyLog(`[exec] -> ${JSON.stringify(result.stdout.trim().slice(0, 200))}`);
   return result.stdout;
 }
 
@@ -242,16 +198,16 @@ function ottyExecSilent(args: string[]): void {
   const cmdline = `otty ${args
     .map((a) => (a.includes(" ") || a.includes('"') ? JSON.stringify(a) : a))
     .join(" ")}`;
-  ottyLog(`[otty exec silent] ${cmdline}\n`);
+  ottyLog(`[exec silent] ${cmdline}`);
   const result = spawnSync("otty", args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.error || result.status !== 0) {
     ottyLog(
-      `[otty exec silent] ERROR status=${result.status} stderr=${JSON.stringify(
+      `[exec silent] ERROR status=${result.status} stderr=${JSON.stringify(
         (result.stderr ?? "").trim().slice(0, 200),
-      )}\n`,
+      )}`,
     );
   }
 }
@@ -282,7 +238,7 @@ export function parseOttyJson(output: string): unknown {
   try {
     return JSON.parse(trimmed);
   } catch (e) {
-    ottyLog(`[otty parse json] failed: ${(e as Error).message} raw=${JSON.stringify(trimmed.slice(0, 200))}\n`);
+    ottyLog(`[parse json] failed: ${(e as Error).message} raw=${JSON.stringify(trimmed.slice(0, 200))}`);
     return null;
   }
 }
@@ -297,13 +253,11 @@ export function readOttyPanes(): OttyPaneSnapshot[] {
 export function readOttyTabs(): Array<Record<string, unknown>> {
   try {
     const raw = ottyExec(["tab", "list", "--json"]);
-    const parsed = parseOttyJson(raw) as
-      | OttyListResponse<Array<Record<string, unknown>>>
-      | null;
+    const parsed = parseOttyJson(raw) as OttyListResponse<Array<Record<string, unknown>>> | null;
     if (!parsed?.ok || !Array.isArray(parsed.data)) return [];
     return parsed.data;
   } catch (e) {
-    ottyLog(`[otty tabs] list failed: ${(e as Error).message}\n`);
+    ottyLog(`[tabs] list failed: ${(e as Error).message}`);
     return [];
   }
 }
@@ -321,27 +275,10 @@ export function getTabIdForPane(paneId: string): string | null {
   }
 }
 
-// ── mux state 持久化 ──
+// ── BFS 分屏状态 marker 路径（复用 shared.ts 状态机） ──
 //
-// 与 muxy / herdr 同样的广度优先分屏策略：
-//   panes: 所有 subagent pane id 列表
-//   pos:   本轮下一个要 split 的索引
-//   base:  本轮开始时 pane 总数（本轮要分 base 个）
-//   dir:   当前方向（"right" | "down"）
-//
-// 第一轮：从 agent pane 向右分（pos=0, base=1）
-// 第二轮：从第一个 pane 向下分（pos=0, base=1）
-// 第三轮：第一个 pane 向右、第二个 pane 向右（pos=0, base=2）
-// ……
-// 每来一个 subagent：从 panes[pos] 拆 → 新 pane 追加到列表尾
-// pos 走完 base 个后 → 翻转方向，重置 pos，更新 base
-
-interface OttySplitState {
-  panes: string[];
-  pos: number;
-  base: number;
-  dir: "right" | "down";
-}
+// 与 muxy / herdr 同样的广度优先分屏策略。marker 文件落在 os.tmpdir()
+// （otty 历史路径，保持不动），锁与状态机逻辑由 shared.ts 提供。
 
 function ottyStateFile(): string {
   const agentId = AGENT_OTTY_PANE_ID ?? "default";
@@ -349,49 +286,8 @@ function ottyStateFile(): string {
   return `${tmpdir()}/otty-subagent-pane-${safe}.json`;
 }
 
-function ottyStateLockFile(): string {
-  return `${ottyStateFile()}.lock`;
-}
-
-function readOttyState(): OttySplitState {
-  try {
-    return JSON.parse(readFileSync(ottyStateFile(), "utf8"));
-  } catch {
-    return { panes: [], pos: 0, base: 0, dir: "right" };
-  }
-}
-
-function writeOttyState(state: OttySplitState): void {
-  writeFileSync(ottyStateFile(), JSON.stringify(state));
-}
-
-function acquireOttyLock(timeoutMs = 3000): boolean {
-  const lock = ottyStateLockFile();
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (!existsSync(lock)) {
-      try {
-        writeFileSync(lock, `${process.pid}`, { flag: "wx" });
-        return true;
-      } catch {
-        /* 竞争失败，继续等 */
-      }
-    }
-    spawnSync("sleep", ["0.05"]);
-  }
-  return false;
-}
-
-function releaseOttyLock(): void {
-  try {
-    rmSync(ottyStateLockFile());
-  } catch {
-    /* ignore */
-  }
-}
-
 /**
- * 找到 agent pane 之后的最新 pane id，用于 split 时作为父 pane。
+ * 找到 split 后的新 pane id。
  *
  * Otty 的 `pane split --pane <parent>` 把目标 pane 拆成两个，但返回的
  * stdout 在 v1.0.4 不会输出新 pane id —— 必须通过比较 split 前后的
@@ -411,14 +307,10 @@ function diffNewPane(before: Set<string>): string | null {
     if (newOnes.length === 0) return null;
     if (newOnes.length === 1) return newOnes[0]!.id;
     // 多于 1 个 → 取最后出现（split 后追加的通常在尾部）
-    ottyLog(
-      `[otty diff] multiple new panes after split: ${JSON.stringify(
-        newOnes.map((p) => p.id),
-      )}\n`,
-    );
+    ottyLog(`[diff] multiple new panes after split: ${JSON.stringify(newOnes.map((p) => p.id))}`);
     return newOnes[newOnes.length - 1]!.id;
   } catch (e) {
-    ottyLog(`[otty diff] failed: ${(e as Error).message}\n`);
+    ottyLog(`[diff] failed: ${(e as Error).message}`);
     return null;
   }
 }
@@ -428,9 +320,9 @@ function diffNewPane(before: Set<string>): string | null {
 /**
  * 创建一个新的 subagent pane。
  *
- * 实现：广度优先分屏（与 muxy / herdr 一致）。
+ * 实现：广度优先分屏（与 muxy / herdr 一致），锁与状态机复用 shared.ts。
  * 第一次 split：从 agent pane 向右拆（--no-focus 保持 agent 焦点不变）。
- * 后续 split：按 state 轮转 right/down，绕圈拆分已有 subagent pane。
+ * 后续 split：按状态机轮转 right/down，绕圈拆分已有 subagent pane。
  *
  * 已知问题：
  *   - `otty pane split` v1.0.4 不返回新 pane id，必须靠 panes --json 差集推断。
@@ -441,21 +333,18 @@ export function createOttySurface(name: string): string {
   const agentId = getOttyAgentPaneId();
 
   // send-keys 没开时无法在子 pane 里发送 Enter，必须改用 --command 注入启动命令。
-  // 见 sendOttyCommand 的注释。
   if (!isOttySendKeysEnabled()) {
-    ottyLog(`[otty create] send-keys disabled; createSurface will succeed but pane will be empty until otty config enables it\n`);
+    ottyLog(`[create] send-keys disabled; createSurface will succeed but pane will be empty until otty config enables it`);
   }
 
-  if (!acquireOttyLock()) {
-    ottyLog(`[otty create] failed to acquire lock\n`);
-    return "";
-  }
+  const markerFile = ottyStateFile();
+  const lockPath = `${markerFile}.lock`;
 
-  try {
-    const state = readOttyState();
+  return withFileLock(lockPath, { timeoutMs: 3000 }, () => {
+    let state = new BfsSplitStateManager(markerFile);
 
     // ── 首次 split ──
-    if (state.panes.length === 0) {
+    if (state.panes().length === 0) {
       const before = capturePaneIds();
       try {
         ottyExec([
@@ -470,48 +359,36 @@ export function createOttySurface(name: string): string {
           name,
         ]);
       } catch (e) {
-        ottyLog(`[otty create] first split failed: ${(e as Error).message}\n`);
+        ottyLog(`[create] first split failed: ${(e as Error).message}`);
         return "";
       }
       const newId = diffNewPane(before);
       if (!newId) {
-        ottyLog(`[otty create] first split produced no new pane id\n`);
+        ottyLog(`[create] first split produced no new pane id`);
         return "";
       }
-      state.panes = [newId];
-      state.pos = 0;
-      state.base = 1;
-      state.dir = "down";
-      writeOttyState(state);
-      // 改名 tab
+      state.add(newId);
       renameOttyTab(newId, name);
-      ottyLog(
-        `[otty create] mode=first dir=right from=${agentId} new=${newId} name=${JSON.stringify(name)}\n`,
-      );
+      ottyLog(`[create] mode=first dir=right from=${agentId} new=${newId} name=${JSON.stringify(name)}`);
       return newId;
     }
 
-    // ── 后续 split：先判断本轮是否结束 ──
-    if (state.pos >= state.base) {
-      state.pos = 0;
-      state.base = state.panes.length;
-      state.dir = state.dir === "right" ? "down" : "right";
-    }
+    // ── 后续 split ──
+    const next = state.next();
+    if (!next) return "";
 
-    let target = state.panes[state.pos];
-    if (!target) {
-      ottyLog(`[otty create] state.panes[${state.pos}] is undefined, fallback to agent\n`);
-      target = agentId;
-    }
+    let target = next.source;
+    const direction = next.direction;
 
     const before = capturePaneIds();
     let splitSucceeded = false;
+    let recovered = false;
     try {
       ottyExec([
         "pane",
         "split",
         "--direction",
-        state.dir,
+        direction,
         "--pane",
         target,
         "--no-focus",
@@ -521,14 +398,13 @@ export function createOttySurface(name: string): string {
       splitSucceeded = true;
     } catch (e) {
       // target 失效 → 重置 state，从 agent pane 重新拆
-      ottyLog(
-        `[otty create] pane ${target} gone (${(e as Error).message}), reset and retry from agent pane\n`,
-      );
+      ottyLog(`[create] pane ${target} gone (${(e as Error).message}), reset and retry from agent pane`);
       try {
-        rmSync(ottyStateFile());
+        rmSync(markerFile);
       } catch {
         /* ignore */
       }
+      state = new BfsSplitStateManager(markerFile); // marker 已删 → 空状态
       target = agentId;
       try {
         ottyExec([
@@ -543,8 +419,9 @@ export function createOttySurface(name: string): string {
           name,
         ]);
         splitSucceeded = true;
+        recovered = true;
       } catch (e2) {
-        ottyLog(`[otty create] reset split failed: ${(e2 as Error).message}\n`);
+        ottyLog(`[create] reset split failed: ${(e2 as Error).message}`);
         return "";
       }
     }
@@ -552,20 +429,17 @@ export function createOttySurface(name: string): string {
     if (!splitSucceeded) return "";
     const newId = diffNewPane(before);
     if (!newId) {
-      ottyLog(`[otty create] next split produced no new pane id\n`);
+      ottyLog(`[create] next split produced no new pane id`);
       return "";
     }
-    state.panes.push(newId);
-    state.pos++;
-    writeOttyState(state);
+    // 正常路径消费了状态机里的 source（advance）；recovery 路径用的是全新空状态，
+    // split 源是 agent pane（不在状态机里），只需 add。
+    if (!recovered) state.advance();
+    state.add(newId);
     renameOttyTab(newId, name);
-    ottyLog(
-      `[otty create] mode=next pos=${state.pos - 1} base=${state.base} dir=${state.dir} from=${target} new=${newId} name=${JSON.stringify(name)}\n`,
-    );
+    ottyLog(`[create] mode=next dir=${direction} from=${target} new=${newId} name=${JSON.stringify(name)}`);
     return newId;
-  } finally {
-    releaseOttyLock();
-  }
+  });
 }
 
 // ── 对外 API：pane 操作 ──
@@ -581,17 +455,13 @@ export function createOttySurface(name: string): string {
  */
 export function sendOttyCommand(paneId: string, command: string): void {
   if (!isOttySendKeysEnabled()) {
-    ottyLog(
-      `[otty send] pane=${paneId} cmd=${JSON.stringify(
-        command.slice(0, 80),
-      )} SKIPPED (send-keys disabled)\n`,
-    );
+    ottyLog(`[send] pane=${paneId} cmd=${JSON.stringify(command.slice(0, 80))} SKIPPED (send-keys disabled)`);
     return;
   }
   try {
     ottyExecSilent(["pane", "send-keys", "--pane", paneId, "--", command, "key:Enter"]);
   } catch (e) {
-    ottyLog(`[otty send] pane=${paneId} cmd failed: ${(e as Error).message}\n`);
+    ottyLog(`[send] pane=${paneId} cmd failed: ${(e as Error).message}`);
   }
 }
 
@@ -601,13 +471,13 @@ export function sendOttyCommand(paneId: string, command: string): void {
  */
 export function sendOttyEscape(paneId: string): void {
   if (!isOttySendKeysEnabled()) {
-    ottyLog(`[otty escape] pane=${paneId} SKIPPED (send-keys disabled)\n`);
+    ottyLog(`[escape] pane=${paneId} SKIPPED (send-keys disabled)`);
     return;
   }
   try {
     ottyExecSilent(["pane", "send-keys", "--pane", paneId, "--", "key:Escape"]);
   } catch (e) {
-    ottyLog(`[otty escape] pane=${paneId} failed: ${(e as Error).message}\n`);
+    ottyLog(`[escape] pane=${paneId} failed: ${(e as Error).message}`);
   }
 }
 
@@ -619,7 +489,7 @@ export function readOttyScreen(paneId: string, lines = 50): string {
   try {
     return ottyExec(["pane", "capture", "--pane", paneId, "--lines", String(lines)]);
   } catch (e) {
-    ottyLog(`[otty read] pane=${paneId} failed: ${(e as Error).message}\n`);
+    ottyLog(`[read] pane=${paneId} failed: ${(e as Error).message}`);
     return "";
   }
 }
@@ -648,7 +518,7 @@ export function closeOttySurface(paneId: string): void {
     ottyExecSilent(["pane", "close", "--pane", paneId, "--force"]);
     closed = true;
   } catch (e) {
-    ottyLog(`[otty close] pane close failed: ${(e as Error).message}\n`);
+    ottyLog(`[close] pane close failed: ${(e as Error).message}`);
   }
 
   // 2. 验证
@@ -656,7 +526,7 @@ export function closeOttySurface(paneId: string): void {
     spawnSync("sleep", ["0.1"]);
     const stillThere = capturePaneIds().has(paneId);
     if (!stillThere) {
-      ottyLog(`[otty close] pane ${paneId} closed via pane close --force\n`);
+      ottyLog(`[close] pane ${paneId} closed via pane close --force`);
       cleanupOttyStateForPane(paneId);
       return;
     }
@@ -664,7 +534,7 @@ export function closeOttySurface(paneId: string): void {
 
   // 3. fallback: 仅当 pane 是 tab 的唯一成员时才关整个 tab。
   // 否则关 tab 会把 agent pane 等其他 pane 也带走（实际事故）。
-  ottyLog(`[otty close] pane close ineffective, considering tab close fallback\n`);
+  ottyLog(`[close] pane close ineffective, considering tab close fallback`);
   const tabId = getTabIdForPane(paneId);
   if (tabId) {
     let panesInTab: OttyPaneSnapshot[] = [];
@@ -677,14 +547,14 @@ export function closeOttySurface(paneId: string): void {
     if (isLonelyTab) {
       try {
         ottyExecSilent(["tab", "close", tabId]);
-        ottyLog(`[otty close] tab ${tabId} closed (lonely tab, safe)\n`);
+        ottyLog(`[close] tab ${tabId} closed (lonely tab, safe)`);
       } catch (e) {
-        ottyLog(`[otty close] tab close failed: ${(e as Error).message}\n`);
+        ottyLog(`[close] tab close failed: ${(e as Error).message}`);
       }
     } else {
       ottyLog(
-        `[otty close] pane=${paneId} tab=${tabId} has ${panesInTab.length} panes; ` +
-          `skipping tab close to avoid clobbering other panes (agent pane is likely in this tab)\n`,
+        `[close] pane=${paneId} tab=${tabId} has ${panesInTab.length} panes; ` +
+          `skipping tab close to avoid clobbering other panes (agent pane is likely in this tab)`,
       );
     }
   }
@@ -693,56 +563,36 @@ export function closeOttySurface(paneId: string): void {
 
 /**
  * 重命名 pane 对应的 tab。
- * Otty 没有"pane -> tab id"的直接命令（pane id 包含 workspace:pane number 但
- * 没法直接拿 tab number），所以用 `panes --json` 反查 tab_id。
+ * Otty 没有"pane -> tab id"的直接命令，所以用 `panes --json` 反查 tab_id。
  */
 export function renameOttyTab(paneId: string, name: string): void {
   const tabId = getTabIdForPane(paneId);
   if (!tabId) {
-    ottyLog(`[otty rename] pane=${paneId} no tab id found\n`);
+    ottyLog(`[rename] pane=${paneId} no tab id found`);
     return;
   }
   try {
     ottyExecSilent(["tab", "rename", "--tab", tabId, name]);
   } catch (e) {
-    ottyLog(
-      `[otty rename] pane=${paneId} tab=${tabId} name=${JSON.stringify(name)} failed: ${
-        (e as Error).message
-      }\n`,
-    );
+    ottyLog(`[rename] pane=${paneId} tab=${tabId} name=${JSON.stringify(name)} failed: ${(e as Error).message}`);
   }
 }
 
 /**
- * 从 mux state marker 中清理已关闭的 pane。
+ * 从 BFS 状态 marker 中清理已关闭的 pane（复用 shared.ts 状态机）。
  * 与 muxy / herdr 的 close 行为一致：避免僵尸 ID 累积导致后续 split 走错目标。
  */
 function cleanupOttyStateForPane(paneId: string): void {
   try {
-    const parsed = readOttyState();
-    const idx = parsed.panes.indexOf(paneId);
-    if (idx < 0) return;
-    const beforePanes = [...parsed.panes];
-    const beforePos = parsed.pos;
-    parsed.panes.splice(idx, 1);
-    if (typeof parsed.pos === "number" && idx < parsed.pos) {
-      parsed.pos = Math.max(0, parsed.pos - 1);
-    }
-    if (parsed.panes.length === 0) {
-      try {
-        rmSync(ottyStateFile());
-      } catch {
-        /* ignore */
-      }
+    const state = new BfsSplitStateManager(ottyStateFile());
+    const beforePanes = state.panes();
+    state.remove(paneId);
+    const afterPanes = state.panes();
+    if (beforePanes.length !== afterPanes.length) {
       ottyLog(
-        `[otty close] pane=${paneId} panes=${JSON.stringify(beforePanes)} -> [] pos=${beforePos} -> <marker-removed>\n`,
-      );
-    } else {
-      writeOttyState(parsed);
-      ottyLog(
-        `[otty close] pane=${paneId} panes=${JSON.stringify(beforePanes)} -> ${JSON.stringify(
-          parsed.panes,
-        )} pos=${beforePos} -> ${parsed.pos}\n`,
+        `[close] pane=${paneId} panes=${JSON.stringify(beforePanes)} -> ${
+          afterPanes.length === 0 ? "<marker-removed>" : JSON.stringify(afterPanes)
+        }`,
       );
     }
   } catch {

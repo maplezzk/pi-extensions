@@ -36,7 +36,7 @@ import {
   isDistillToolDisplayMiddlewareActive,
   registerDistillToolDisplayMiddleware,
 } from "./tool-display-bridge.ts";
-import { getTextContent, hasNonTextContent, limitReturnedToolResult } from "./output-limit.ts";
+import { getTextContent, hasNonTextContent } from "./output-limit.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -409,9 +409,8 @@ export async function processToolResult(
   const loaded = loadDistillConfig();
   const config = loaded.config;
   const outputSummaryRender = { ...loaded.render };
-  const maxReturnedChars = config?.maxOutputChars ?? 10_000;
-  const finish = (candidate: ToolResult) =>
-    limitReturnedToolResult(candidate, maxReturnedChars);
+  // Merge with Pi's native output limiter; this extension must not truncate tool results itself.
+  const finish = (candidate: ToolResult) => candidate;
   if (loaded.warnings.length > 0) {
     console.warn(`[pi-distill] ${loaded.warnings.join(" | ")}`);
   }

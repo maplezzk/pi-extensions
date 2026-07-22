@@ -10,11 +10,11 @@
  * muxLog 被多模块使用，归此文件。
  */
 
-import { execSync, execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { i18n } from "./i18n.ts";
 import { isHerdrRuntimeAvailable } from "./herdr.ts";
 import { isOttyRuntimeAvailable, ottySetupHint } from "./otty.ts";
+import { hasCommand } from "./backends/shared.ts";
 
 // ── 分屏调试日志 ──
 
@@ -51,40 +51,7 @@ export const AGENT_MUXY_PANE_ID = process.env.MUXY_PANE_ID;
 
 export type MuxBackend = "cmux" | "muxy" | "tmux" | "zellij" | "wezterm" | "herdr" | "otty";
 
-// ── 命令可用性检测 ──
-
-const commandAvailability = new Map<string, boolean>();
-
-function hasCommand(command: string): boolean {
-  if (commandAvailability.has(command)) {
-    return commandAvailability.get(command)!;
-  }
-
-  let available = false;
-  if (process.platform === "win32") {
-    try {
-      execFileSync("where.exe", [command], { stdio: "ignore" });
-      available = true;
-    } catch {
-      try {
-        execSync(`command -v ${command}`, { stdio: "ignore" });
-        available = true;
-      } catch {
-        available = false;
-      }
-    }
-  } else {
-    try {
-      execSync(`command -v ${command}`, { stdio: "ignore" });
-      available = true;
-    } catch {
-      available = false;
-    }
-  }
-
-  commandAvailability.set(command, available);
-  return available;
-}
+// 命令可用性检测复用 backends/shared.ts 的 hasCommand（跨平台 + 缓存）。
 
 // ── 偏好解析 ──
 

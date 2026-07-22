@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasNonTextContent, limitReturnedToolResult } from "../src/output-limit.ts";
+import { hasNonTextContent } from "../src/output-limit.ts";
 import {
   appendDistillFallbackAudit,
   buildDistillAuditLines,
@@ -298,7 +298,7 @@ test("只有明确需要摘要且输出达到阈值时才总结", () => {
   assert.equal(shouldSummarizeOutput("总结错误", "1234567890", undefined), false);
 });
 
-test("错误工具输出默认绕过长度阈值进行总结，并支持关闭", () => {
+test("错误工具输出也遵守最小长度阈值，并支持关闭总结", () => {
   const config = {
     minChars: 100,
     maxChars: 1000,
@@ -308,7 +308,7 @@ test("错误工具输出默认绕过长度阈值进行总结，并支持关闭",
     summarizeErrors: true,
   };
 
-  assert.equal(shouldSummarizeOutput("总结错误", "短错误", config, true), true);
+  assert.equal(shouldSummarizeOutput("总结错误", "短错误", config, true), false);
   assert.equal(
     shouldSummarizeOutput("总结错误", "短错误", { ...config, summarizeErrors: false }, true),
     false,
@@ -610,47 +610,6 @@ test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", 
   }
 });
 
-test("最终 content 未超限时不因原文长度写入临时文件", async () => {
-  const result = await limitReturnedToolResult(
-    {
-      content: [{ type: "text", text: "总结后的短结果" }],
-      details: { originalOutputChars: 50_000 },
-    },
-    10_000,
-  );
-
-  assert.equal(result.details?.outputTruncated, undefined);
-  assert.equal(result.details?.fullOutputPath, undefined);
-  assert.equal(result.content[0]?.text, "总结后的短结果");
-});
-
-test("包含图片等非文本内容时保留原结果，不做长度截断", async () => {
-  const result = {
-    content: [
-      { type: "image", data: "encoded-image" },
-      { type: "text", text: "x".repeat(10_001) },
-    ],
-  } as any;
-
-  assert.equal(hasNonTextContent(result), true);
-  assert.strictEqual(await limitReturnedToolResult(result, 10_000), result);
-});
-
-test("最终 content 超过限制时写入临时文件并返回路径", async () => {
-  const finalContent = "x".repeat(10_001);
-  const result = await limitReturnedToolResult(
-    { content: [{ type: "text", text: finalContent }] },
-    10_000,
-  );
-
-  assert.equal(result.details?.outputTruncated, true);
-  assert.match(result.content[0]?.text ?? "", /was written to/);
-  assert.equal(
-    await readFile(result.details?.fullOutputPath as string, "utf8"),
-    finalContent,
-  );
-});
-
 test("pi-distill 可以追加 UI-only 保底审计", () => {
   const entries: Array<{ type: string; data: unknown }> = [];
   const builtinPi = {
@@ -681,14 +640,14 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
   assert.deepEqual(
     buildDistillAuditLines("bash", details, false, render)?.lines,
     [
-      "◆ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s • Ctrl+O to expand",
+      "⟡ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s • Ctrl+O to expand",
     ],
   );
 
   assert.deepEqual(
     buildDistillAuditLines("bash", details, true, render)?.lines,
     [
-      "◆ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s",
+      "⟡ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s",
       "├─ outputRequest  只保留计数范围和结论",
       "└─ Summary  计数器从 1 到 100，乘积从 2 到 200。",
     ],
@@ -697,7 +656,7 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
   assert.deepEqual(
     buildDistillAuditLines("bash", details, true, { ...render, showPrompt: false })?.lines,
     [
-      "◆ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s",
+      "⟡ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s",
       "└─ Summary  计数器从 1 到 100，乘积从 2 到 200。",
     ],
   );
@@ -707,7 +666,7 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
     fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
     bold: (text: string) => `<b>${text}</b>`,
   } as any);
-  assert.match(styled, /<accent><b>◆ Distill<\/b><\/accent>/);
+  assert.match(styled, /<accent><b>⟡ Distill<\/b><\/accent>/);
   assert.match(styled, /<success>✓ Summarized<\/success>/);
   assert.match(styled, /<accent>outputRequest<\/accent>/);
   assert.match(styled, /<success>Summary<\/success>/);
@@ -758,7 +717,7 @@ test("pi-distill 通过通用 tool-display result middleware 渲染且不重复�
     const renderedLines = component.render(120);
     assert.equal(renderedLines[0], "");
     const output = renderedLines.join("\n");
-    assert.match(output, /◆ Distill  ✓ Summarized/);
+    assert.match(output, /⟡ Distill  ✓ Summarized/);
     assert.match(output, /├─ outputRequest  只保留最终结论/);
     assert.match(output, /└─ Summary  协议渲染的提炼结果/);
     assert.doesNotMatch(output, /不应重复的基础正文/);

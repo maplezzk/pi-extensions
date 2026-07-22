@@ -56,8 +56,8 @@
     "en-US": " • Ctrl+O to expand"
   },
   "header": {
-    "zh-CN": "◆ Distill  {status}",
-    "en-US": "◆ Distill  {status}"
+    "zh-CN": "⟡ Distill  {status}",
+    "en-US": "⟡ Distill  {status}"
   },
   "summary": {
     "zh-CN": "摘要",
