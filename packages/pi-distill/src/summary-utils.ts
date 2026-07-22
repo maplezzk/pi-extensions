@@ -14,6 +14,7 @@ const DEFAULT_SUMMARIZE_ERRORS = true;
 const DEFAULT_RENDER_ENABLED = true;
 const DEFAULT_RENDER_PROMPT = true;
 const DEFAULT_RENDER_RESULT = true;
+const DEFAULT_DISABLED_TOOL_NAMES = new Set(["edit", "write"]);
 const CONFIG_DIRECTORY = "pi-distill";
 const CONFIG_FILE_NAME = "config.json";
 
@@ -33,7 +34,7 @@ export interface BashSummaryConfig {
   missedCompressionRatio: number;
   /** 工具返回错误且达到最小长度时是否仍调用提炼模型。 */
   summarizeErrors: boolean;
-  /** 按工具覆盖是否注入 outputRequest；未配置的工具默认开启。 */
+  /** 按工具覆盖是否注入 outputRequest；edit/write 未配置时默认关闭，其他工具默认开启。 */
   tools?: DistillToolConfig;
 }
 
@@ -373,7 +374,7 @@ export function isDistillToolEnabled(
   config: { tools?: DistillToolConfig } | undefined,
   toolName: string,
 ): boolean {
-  return config?.tools?.[toolName]?.enabled ?? true;
+  return config?.tools?.[toolName]?.enabled ?? !DEFAULT_DISABLED_TOOL_NAMES.has(toolName);
 }
 
 export type OutputSummaryIntent = "none" | "full" | "summary";

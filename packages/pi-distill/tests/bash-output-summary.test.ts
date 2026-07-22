@@ -275,6 +275,8 @@ test("配置文件支持按工具覆盖 outputRequest 开关", async () => {
   assert.equal(isDistillToolEnabled(loaded.config, "bash"), false);
   assert.equal(isDistillToolEnabled(loaded.config, "read"), true);
   assert.equal(isDistillToolEnabled(loaded.config, "grep"), true);
+  assert.equal(isDistillToolEnabled(loaded.config, "edit"), false);
+  assert.equal(isDistillToolEnabled(loaded.config, "write"), false);
   assert.deepEqual(loaded.warnings, []);
 });
 
@@ -649,7 +651,7 @@ test("包含图片等非文本内容时识别为非纯文本输出", () => {
 });
 
 test("按工具开关动态注入和移除 outputRequest", () => {
-  const tools = ["bash", "read"].map((name) => ({
+  const tools = ["bash", "read", "edit", "write"].map((name) => ({
     name,
     parameters: {
       type: "object",
@@ -666,7 +668,7 @@ test("按工具开关动态注入和移除 outputRequest", () => {
       timeoutSeconds: 10,
       missedCompressionRatio: 10,
       summarizeErrors: true,
-      tools: { bash: { enabled: false } },
+      tools: { bash: { enabled: false }, edit: { enabled: true } },
     },
     render: { enabled: true, showPrompt: true, showResult: true },
     configPath: "",
@@ -674,17 +676,19 @@ test("按工具开关动态注入和移除 outputRequest", () => {
   };
   const api = { getAllTools: () => tools } as any;
 
-  assert.equal(extendDistillToolParameters(api, loaded), 1);
+  assert.equal(extendDistillToolParameters(api, loaded), 2);
   assert.equal((tools[0].parameters as any).properties.outputRequest, undefined);
   assert.equal((tools[0].parameters as any).required.includes("outputRequest"), false);
   assert.equal(typeof (tools[1].parameters as any).properties.outputRequest, "object");
+  assert.equal(typeof (tools[2].parameters as any).properties.outputRequest, "object");
+  assert.equal((tools[3].parameters as any).properties.outputRequest, undefined);
 
   loaded.config.tools.bash.enabled = true;
-  assert.equal(extendDistillToolParameters(api, loaded), 2);
+  assert.equal(extendDistillToolParameters(api, loaded), 3);
   assert.equal(typeof (tools[0].parameters as any).properties.outputRequest, "object");
 
   loaded.config.tools.bash.enabled = false;
-  assert.equal(extendDistillToolParameters(api, loaded), 1);
+  assert.equal(extendDistillToolParameters(api, loaded), 2);
   assert.equal((tools[0].parameters as any).properties.outputRequest, undefined);
   assert.deepEqual((tools[0].parameters as any).required, ["value"]);
 });
@@ -878,12 +882,15 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.equal(registeredToolCount, 0);
     for (const tool of tools) {
       const schema = tool.parameters as any;
-      assert.equal(schema.required.filter((value: string) => value === "outputRequest").length, 1);
-      assert.equal(schema.properties.outputRequest.type, "string");
-      assert.equal(
-        schema.properties.outputRequest.description,
-        OUTPUT_REQUEST_DESCRIPTION,
-      );
+      const enabledByDefault = !["edit", "write"].includes(tool.name);
+      assert.equal(schema.required.filter((value: string) => value === "outputRequest").length, enabledByDefault ? 1 : 0);
+      assert.equal(schema.properties.outputRequest?.type, enabledByDefault ? "string" : undefined);
+      if (enabledByDefault) {
+        assert.equal(
+          schema.properties.outputRequest.description,
+          OUTPUT_REQUEST_DESCRIPTION,
+        );
+      }
     }
 
     const input: Record<string, unknown> = { value: "custom", outputRequest: "RAW" };
@@ -915,7 +922,7 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.equal(result.content[0].text, "ok");
     assert.equal(appendedEntries[0]?.type, DISTILL_AUDIT_ENTRY_TYPE);
 
-    const selections: Array<string | undefined> = ["Tool outputRequest", "custom-tool: On", undefined];
+    const selections: Array<string | undefined> = ["Tool outputRequest", "write: Off", "custom-tool: On", undefined];
     await commandHandler?.("", {
       hasUI: true,
       ui: {
@@ -928,7 +935,11 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
       join(process.env.PI_CODING_AGENT_DIR!, "extensions", "pi-distill", "config.json"),
       "utf8",
     )) as any;
-    assert.deepEqual(savedConfig.tools, { "custom-tool": { enabled: false } });
+    assert.deepEqual(savedConfig.tools, {
+      "custom-tool": { enabled: false },
+      write: { enabled: true },
+    });
+    assert.equal(typeof (tools.find((tool) => tool.name === "write")!.parameters as any).properties.outputRequest, "object");
     assert.equal((tools.find((tool) => tool.name === "custom-tool")!.parameters as any).properties.outputRequest, undefined);
 
     const disabledInput: Record<string, unknown> = { value: "custom", outputRequest: "RAW" };

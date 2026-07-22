@@ -106,7 +106,7 @@ pi-distill uses the actual result and configuration to keep it, distill it, or w
 Agent consumes a result suited to the current decision, with auditable diagnostics
 ```
 
-1. At session start, the extension adds required `outputRequest` to every enabled active tool whose parameter schema is an object. It does not hard-code `bash`, `read`, `grep`, or `find`.
+1. At session start, the extension adds required `outputRequest` to every enabled active tool whose parameter schema is an object. `edit` and `write` are disabled by default; other tools are enabled unless configured otherwise. It does not hard-code `bash`, `read`, `grep`, or `find`.
 2. The `tool_call` handler captures the parameter and removes it before forwarding the call, so the underlying tool never receives the extension-only field.
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
 4. Every tool call must include a non-empty `outputRequest`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
@@ -178,7 +178,7 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | `timeoutSeconds` | Maximum time allowed for the distillation model call. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
 | `summarizeErrors` | Whether error results that meet `minChars` should still be sent to the distillation model. |
-| `tools.<name>.enabled` | Enables or disables `outputRequest` injection and result distillation for one tool. Unconfigured tools are enabled by default; it can also be changed from `/pi-distill`. |
+| `tools.<name>.enabled` | Enables or disables `outputRequest` injection and result distillation for one tool. `edit` and `write` default to disabled; other unconfigured tools default to enabled. It can also be changed from `/pi-distill`. |
 | `render.*` | Controls the audit card, prompt preview, and result preview. |
 
 The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`. The legacy `maxOutputChars` / `PI_DISTILL_MAX_OUTPUT_CHARS` option is still parsed for backward compatibility but no longer has any effect.
