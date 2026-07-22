@@ -9,21 +9,16 @@
  *   HERDR_PANE_ID（公开 id，如 "1-1"）
  *
  * 所有 pane 操作通过 `herdr` CLI 完成，详见 SKILL.md。
+ * 日志、文件锁、BFS 分屏状态机、命令检测复用 backends/shared.ts。
  */
 
-import { execFileSync, execSync, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import { i18n } from "../i18n.ts";
+import { createBackendLogger, withFileLock, BfsSplitStateManager, hasCommand } from "./shared.ts";
 
-// ── 日志（herdr 独立文件，便于区分后端） ──
-const HERDR_SPLIT_LOG = "/tmp/pi-herdr-split.log";
-function herdrLog(msg: string): void {
-  try {
-    appendFileSync(HERDR_SPLIT_LOG, `[${new Date().toISOString()}] ${msg}`);
-  } catch {
-    /* 写日志失败不影响主流程 */
-  }
-}
+// ── 日志（统一格式，写入 /tmp/pi-mux-herdr.log） ──
+const herdrLog = createBackendLogger("herdr", "/tmp/pi-mux-herdr.log");
 
 /**
  * 捕获于模块加载时的 agent pane id。
@@ -33,27 +28,6 @@ function herdrLog(msg: string): void {
 export const AGENT_HERDR_PANE_ID = process.env.HERDR_PANE_ID;
 export const AGENT_HERDR_WORKSPACE_ID = process.env.HERDR_WORKSPACE_ID;
 export const AGENT_HERDR_TAB_ID = process.env.HERDR_TAB_ID;
-
-// ── 命令可用性缓存 ──
-
-const commandAvailability = new Map<string, boolean>();
-
-function hasCommand(command: string): boolean {
-  if (commandAvailability.has(command)) {
-    return commandAvailability.get(command)!;
-  }
-
-  let available = false;
-  try {
-    execFileSync("which", [command], { stdio: "ignore" });
-    available = true;
-  } catch {
-    available = false;
-  }
-
-  commandAvailability.set(command, available);
-  return available;
-}
 
 /**
  * 检测 herdr backend 是否可用：
@@ -77,12 +51,12 @@ export function isHerdrRuntimeAvailable(): boolean {
 
 /**
  * 调用 `herdr` 命令并返回 stdout。
- * 失败时 stderr 写入 log，原样抛错（调用方决定如何处理）。
+ * 失败时原样抛错（调用方决定如何处理）。
  */
 function herdrExec(args: string[]): string {
-  herdrLog(`[herdr exec] herdr ${args.map((a) => (a.includes(" ") ? JSON.stringify(a) : a)).join(" ")}\n`);
+  herdrLog(`[exec] herdr ${args.map((a) => (a.includes(" ") ? JSON.stringify(a) : a)).join(" ")}`);
   const out = execFileSync("herdr", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  herdrLog(`[herdr exec] -> ${JSON.stringify(out.trim().slice(0, 200))}\n`);
+  herdrLog(`[exec] -> ${JSON.stringify(out.trim().slice(0, 200))}`);
   return out;
 }
 
@@ -91,7 +65,7 @@ function herdrExec(args: string[]): string {
  * 无输出的命令，遵循 SKILL.md 中"pane send-text/send-keys/run print nothing on success"。
  */
 function herdrExecSilent(args: string[]): void {
-  herdrLog(`[herdr exec silent] herdr ${args.map((a) => (a.includes(" ") ? JSON.stringify(a) : a)).join(" ")}\n`);
+  herdrLog(`[exec silent] herdr ${args.map((a) => (a.includes(" ") ? JSON.stringify(a) : a)).join(" ")}`);
   execFileSync("herdr", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
@@ -125,12 +99,12 @@ function extractPaneId(json: unknown): string | null {
   return null;
 }
 
-// ── mux state 缓存 ──
-//
-// herdr 没有 tmux `last_split_source` 之类的明确"上一个 split 的父 pane"语义。
-// 我们记录每个 surface 的"父 pane id"，用于 close 时清理（herdr 不需要这个，但保留
-// 以便将来扩展 — closePane 实际上只看 surface id）。
-const herdrPaneSources = new Map<string, string>();
+// ── BFS 分屏状态 marker 路径 ──
+
+/** herdr BFS 分屏状态 marker 文件路径（按 agent pane id 区分） */
+function herdrMarkerPath(): string {
+  return `/tmp/herdr-subagent-pane-${(AGENT_HERDR_PANE_ID ?? "default").replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
+}
 
 // ── 对外 API：createSurface 系列 ──
 
@@ -139,6 +113,7 @@ const herdrPaneSources = new Map<string, string>();
  *
  * 实现：split 当前 agent pane 右侧（--no-focus 保持 agent 焦点不变）。
  * 后续 subagent 按 breadth-first 模式轮转 right/down/right/down…（与 cmux/muxy 行为一致）。
+ * 锁与 BFS 状态机复用 shared.ts。
  */
 export function createHerdrSurface(name: string): string {
   if (!AGENT_HERDR_PANE_ID) {
@@ -148,142 +123,66 @@ export function createHerdrSurface(name: string): string {
     );
   }
 
-  // 与 muxy 同样的广度优先分屏策略：
-  //   第一轮：从 agent pane 向右分，pos=0, base=1
-  //   第二轮：从第一个 pane 向下分，pos=0, base=1
-  //   第三轮：从第一个 pane 向右、第二个 pane 向右，pos=0, base=2
-  //   ……
-  // 状态文件：/tmp/herdr-subagent-pane-<agent_pane_id>.json
-  const markerFile = `/tmp/herdr-subagent-pane-${AGENT_HERDR_PANE_ID.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
-  const lockFile = `${markerFile}.lock`;
+  const markerFile = herdrMarkerPath();
+  const lockPath = `${markerFile}.lock`;
 
-  // 全局锁：所有分屏操作串行化
-  const acquired = (() => {
-    for (let i = 0; i < 60; i++) {
-      if (!existsSync(lockFile)) {
-        try {
-          writeFileSync(lockFile, `${process.pid}`, { flag: "wx" });
-          return true;
-        } catch {
-          // 竞争失败，继续等待
-        }
-      }
-      spawnSync("sleep", ["0.05"]);
-    }
-    return false;
-  })();
-
-  if (!acquired) {
-    herdrLog(`[herdr split] failed to acquire lock ${lockFile}\n`);
-    return "";
-  }
-
-  try {
-    let state: { panes: string[]; pos: number; base: number; dir: "right" | "down" } = {
-      panes: [],
-      pos: 0,
-      base: 0,
-      dir: "right",
-    };
-    try {
-      state = JSON.parse(readFileSync(markerFile, "utf8"));
-    } catch {
-      /* 文件不存在或损坏，用初始状态 */
-    }
+  return withFileLock(lockPath, {}, () => {
+    const state = new BfsSplitStateManager(markerFile);
 
     // 首次 split
-    if (state.panes.length === 0) {
+    if (state.panes().length === 0) {
       const output = herdrExec([
         "pane",
         "split",
-        AGENT_HERDR_PANE_ID,
+        AGENT_HERDR_PANE_ID!,
         "--direction",
         "right",
         "--no-focus",
       ]);
-      const json = parseHerdrJson(output);
-      const newPaneId = extractPaneId(json);
+      const newPaneId = extractPaneId(parseHerdrJson(output));
       if (newPaneId) {
-        state.panes = [newPaneId];
-        state.pos = 0;
-        state.base = 1;
-        state.dir = "down";
-        writeFileSync(markerFile, JSON.stringify(state));
-        herdrPaneSources.set(newPaneId, AGENT_HERDR_PANE_ID);
+        state.add(newPaneId);
         renameHerdrPane(newPaneId, name);
         herdrLog(
-          `[herdr split] mode=first dir=right from=${AGENT_HERDR_PANE_ID} new=${newPaneId} name=${JSON.stringify(name)}\n`,
+          `[split] mode=first dir=right from=${AGENT_HERDR_PANE_ID} new=${newPaneId} name=${JSON.stringify(name)}`,
         );
         return newPaneId;
       }
-      herdrLog(`[herdr split] first split returned no pane id, output=${JSON.stringify(output)}\n`);
+      herdrLog(`[split] first split returned no pane id, output=${JSON.stringify(output)}`);
       return "";
     }
 
-    // 本轮结束？翻转方向
-    if (state.pos >= state.base) {
-      state.pos = 0;
-      state.base = state.panes.length;
-      state.dir = state.dir === "right" ? "down" : "right";
-    }
+    // 后续：BFS 分屏
+    const next = state.next();
+    if (!next) return "";
 
-    let targetPane = state.panes[state.pos];
-    if (!targetPane) {
-      herdrLog(`[herdr split] state.panes[${state.pos}] is undefined\n`);
-      return "";
-    }
+    let { source } = next;
+    const { direction } = next;
 
-    // 若 targetPane 过期（pane 被关闭 / session 重启），自动重置状态从 agent pane 重新分屏
+    // 若 source 过期（pane 被关闭 / session 重启），重置状态从 agent pane 重新分屏
     let output: string;
-    let sourcePane = targetPane;
     try {
-      output = herdrExec([
-        "pane",
-        "split",
-        targetPane,
-        "--direction",
-        state.dir,
-        "--no-focus",
-      ]);
+      output = herdrExec(["pane", "split", source, "--direction", direction, "--no-focus"]);
     } catch {
       try { rmSync(markerFile); } catch { /* ignore */ }
-      herdrLog(
-        `[herdr split] pane ${targetPane} gone, resetting from agent pane ${AGENT_HERDR_PANE_ID}\n`,
-      );
-      state = { panes: [], pos: 0, base: 0, dir: "right" };
-      targetPane = AGENT_HERDR_PANE_ID;
-      sourcePane = AGENT_HERDR_PANE_ID;
-      output = herdrExec([
-        "pane",
-        "split",
-        AGENT_HERDR_PANE_ID,
-        "--direction",
-        "right",
-        "--no-focus",
-      ]);
+      herdrLog(`[split] pane ${source} gone, resetting from agent pane ${AGENT_HERDR_PANE_ID}`);
+      source = AGENT_HERDR_PANE_ID!;
+      output = herdrExec(["pane", "split", source, "--direction", "right", "--no-focus"]);
     }
-    const json = parseHerdrJson(output);
-    const newPaneId = extractPaneId(json);
+
+    const newPaneId = extractPaneId(parseHerdrJson(output));
     if (newPaneId) {
-      state.panes.push(newPaneId);
-      state.pos++;
-      writeFileSync(markerFile, JSON.stringify(state));
-      herdrPaneSources.set(newPaneId, sourcePane);
+      state.advance();
+      state.add(newPaneId);
       renameHerdrPane(newPaneId, name);
       herdrLog(
-        `[herdr split] mode=next pos=${state.pos - 1} base=${state.base} dir=${state.dir} from=${targetPane} new=${newPaneId} name=${JSON.stringify(name)}\n`,
+        `[split] mode=next dir=${direction} from=${source} new=${newPaneId} name=${JSON.stringify(name)}`,
       );
       return newPaneId;
     }
-    herdrLog(`[herdr split] next split returned no pane id, output=${JSON.stringify(output)}\n`);
+    herdrLog(`[split] next split returned no pane id, output=${JSON.stringify(output)}`);
     return "";
-  } finally {
-    try {
-      rmSync(lockFile);
-    } catch {
-      /* ignore */
-    }
-  }
+  });
 }
 
 /**
@@ -302,11 +201,8 @@ export function splitHerdrPane(
   if (!newPaneId) {
     throw new Error(`Unexpected herdr pane split output: ${output.trim() || "(empty)"}`);
   }
-  herdrPaneSources.set(newPaneId, fromPane);
   if (name) renameHerdrPane(newPaneId, name);
-  herdrLog(
-    `[herdr split] mode=direct dir=${dir} from=${fromPane} new=${newPaneId} name=${JSON.stringify(name ?? "")}\n`,
-  );
+  herdrLog(`[split] mode=direct dir=${dir} from=${fromPane} new=${newPaneId} name=${JSON.stringify(name ?? "")}`);
   return newPaneId;
 }
 
@@ -320,7 +216,7 @@ export function renameHerdrPane(paneId: string, name: string): void {
     const paneLabel = wsLabel ? `${wsLabel}[${name}]` : name;
     herdrExecSilent(["pane", "rename", paneId, paneLabel]);
   } catch (e) {
-    herdrLog(`[herdr rename pane] pane=${paneId} name=${JSON.stringify(name)} failed: ${(e as Error).message}\n`);
+    herdrLog(`[rename pane] pane=${paneId} name=${JSON.stringify(name)} failed: ${(e as Error).message}`);
   }
 }
 
@@ -333,7 +229,7 @@ export function renameHerdrAgent(paneId: string, name: string): void {
   try {
     herdrExecSilent(["agent", "rename", paneId, name]);
   } catch (e) {
-    herdrLog(`[herdr rename agent] pane=${paneId} name=${JSON.stringify(name)} failed: ${(e as Error).message}\n`);
+    herdrLog(`[rename agent] pane=${paneId} name=${JSON.stringify(name)} failed: ${(e as Error).message}`);
   }
 }
 
@@ -376,7 +272,7 @@ export function renameHerdrTab(paneId: string, name: string): void {
       }
     }
   } catch (e) {
-    herdrLog(`[herdr rename tab] pane=${paneId} name=${JSON.stringify(name)} failed: ${(e as Error).message}\n`);
+    herdrLog(`[rename tab] pane=${paneId} name=${JSON.stringify(name)} failed: ${(e as Error).message}`);
   }
 }
 
@@ -390,7 +286,7 @@ export function renameHerdrWorkspace(title: string): void {
   try {
     herdrExecSilent(["workspace", "rename", AGENT_HERDR_WORKSPACE_ID, title]);
   } catch (e) {
-    herdrLog(`[herdr rename workspace] title=${JSON.stringify(title)} failed: ${(e as Error).message}\n`);
+    herdrLog(`[rename workspace] title=${JSON.stringify(title)} failed: ${(e as Error).message}`);
   }
 }
 
@@ -435,38 +331,16 @@ export function readHerdrScreen(paneId: string, lines = 50, source: "visible" | 
 export function closeHerdrSurface(paneId: string): void {
   herdrExecSilent(["pane", "close", paneId]);
 
-  // 清理 mux state marker（与 muxy 的 close 逻辑一致）
-  const markerFile = `/tmp/herdr-subagent-pane-${(AGENT_HERDR_PANE_ID ?? "default").replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
-  try {
-    const parsed = JSON.parse(readFileSync(markerFile, "utf8"));
-    if (parsed && Array.isArray(parsed.panes)) {
-      const idx = parsed.panes.indexOf(paneId);
-      if (idx >= 0) {
-        const beforePanes = [...parsed.panes];
-        const beforePos = parsed.pos;
-        parsed.panes.splice(idx, 1);
-        if (typeof parsed.pos === "number" && idx < parsed.pos) {
-          parsed.pos = Math.max(0, parsed.pos - 1);
-        }
-        if (parsed.panes.length === 0) {
-          rmSync(markerFile);
-          herdrLog(
-            `[herdr close] pane=${paneId} panes=${JSON.stringify(beforePanes)} -> [] pos=${beforePos} -> <marker-removed>\n`,
-          );
-        } else {
-          writeFileSync(markerFile, JSON.stringify(parsed));
-          herdrLog(
-            `[herdr close] pane=${paneId} panes=${JSON.stringify(beforePanes)} -> ${JSON.stringify(parsed.panes)} pos=${beforePos} -> ${parsed.pos}\n`,
-          );
-        }
-      } else {
-        herdrLog(`[herdr close] pane=${paneId} (not in marker state.panes)\n`);
-      }
-    }
-  } catch {
-    herdrLog(`[herdr close] pane=${paneId} (no marker, nothing to clean)\n`);
+  // 从 BFS 状态移除已关闭的 subagent，避免僵尸 ID 累积
+  const state = new BfsSplitStateManager(herdrMarkerPath());
+  const beforePanes = state.panes();
+  state.remove(paneId);
+  const afterPanes = state.panes();
+  if (beforePanes.length !== afterPanes.length) {
+    herdrLog(`[close] pane=${paneId} panes=${JSON.stringify(beforePanes)} -> ${JSON.stringify(afterPanes)}`);
+  } else {
+    herdrLog(`[close] pane=${paneId} (not in marker state.panes)`);
   }
-  herdrPaneSources.delete(paneId);
 }
 
 // ── 辅助：从 pane id 解析 workspace id ──
