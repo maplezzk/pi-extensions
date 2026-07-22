@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.0.1...pi-distill-v1.0.2) (2026-07-22)
+
+
+### Bug Fixes
+
+* **pi-distill:** remove redundant file dumping, defer to Pi native output limiting ([#38](https://github.com/maplezzk/pi-extensions/issues/38)) ([3eb16e5](https://github.com/maplezzk/pi-extensions/commit/3eb16e5278e57988ea7a137a362dff076fe48468))
+* refine pi-distill display icon ([#41](https://github.com/maplezzk/pi-extensions/issues/41)) ([ae55d33](https://github.com/maplezzk/pi-extensions/commit/ae55d33bce19528ad1d07b995064429636e001a7))
+
 ## [1.0.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.0.0...pi-distill-v1.0.1) (2026-07-21)
 
 
