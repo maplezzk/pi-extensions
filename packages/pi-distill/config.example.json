@@ -6,6 +6,7 @@
   "timeoutSeconds": 10,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
+  "tools": {},
   "render": {
     "enabled": true,
     "showPrompt": true,

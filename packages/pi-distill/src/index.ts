@@ -44,10 +44,12 @@ import {
   decideOutputSummary,
   getDistillConfigPath,
   isRawSummary,
+  isDistillToolEnabled,
   loadDistillConfig,
   type BashSummaryConfig,
   type DistillConfigFile,
   type DistillRenderConfig,
+  type DistillToolConfig,
   type OutputSummaryDecision,
 } from "./summary-utils.ts";
 
@@ -72,10 +74,21 @@ type DistillExecutionContext = {
 };
 
 type PendingDistillCall = {
+  enabled: boolean;
   outputRequest: string;
   originalUserPrompt?: string;
   startedAt: number;
 };
+
+type OutputRequestSchemaState = {
+  hadProperties: boolean;
+  hadOutputRequest: boolean;
+  originalOutputRequest?: unknown;
+  hadRequired: boolean;
+  originalRequired?: unknown;
+};
+
+const outputRequestSchemaStates = new WeakMap<object, OutputRequestSchemaState>();
 
 type ToolResultEventPatch = {
   content?: ToolResultEvent["content"];
@@ -305,6 +318,8 @@ async function processToolResult(
     console.warn(`[pi-distill] ${loaded.warnings.join(" | ")}`);
   }
 
+  if (config && loaded.enabled && !isDistillToolEnabled(config, context.toolName)) return result;
+
   if (hasNonTextContent(result)) {
     return attachDiagnostics(result, {
       toolExecutionMs,
@@ -499,24 +514,62 @@ async function processToolResult(
   }
 }
 
-function extendOutputRequestParameter(tool: ToolInfo): boolean {
+function restoreOutputRequestParameter(parameters: Record<string, unknown>): boolean {
+  const state = outputRequestSchemaStates.get(parameters);
+  if (!state) return false;
+
+  const properties = parameters.properties;
+  if (state.hadOutputRequest) {
+    if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+      (properties as Record<string, unknown>).outputRequest = state.originalOutputRequest;
+    }
+  } else if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+    delete (properties as Record<string, unknown>).outputRequest;
+    if (!state.hadProperties && Object.keys(properties).length === 0) {
+      delete parameters.properties;
+    }
+  }
+
+  if (state.hadRequired) parameters.required = state.originalRequired;
+  else delete parameters.required;
+  outputRequestSchemaStates.delete(parameters);
+  return true;
+}
+
+function extendOutputRequestParameter(tool: ToolInfo, enabled: boolean): boolean {
   const parameters = tool.parameters as unknown as Record<string, unknown> | undefined;
   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
     console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
     return false;
   }
 
+  if (!enabled) return restoreOutputRequestParameter(parameters);
+
   if (parameters.type !== "object") {
     console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
     return false;
   }
 
+  const hadProperties = Object.prototype.hasOwnProperty.call(parameters, "properties");
   const properties = parameters.properties;
   if (properties === undefined) {
     parameters.properties = {};
   } else if (typeof properties !== "object" || properties === null || Array.isArray(properties)) {
     console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
     return false;
+  }
+
+  if (!outputRequestSchemaStates.has(parameters)) {
+    const currentProperties = parameters.properties as Record<string, unknown> | undefined;
+    outputRequestSchemaStates.set(parameters, {
+      hadProperties,
+      hadOutputRequest: Boolean(currentProperties && Object.prototype.hasOwnProperty.call(currentProperties, "outputRequest")),
+      originalOutputRequest: currentProperties?.outputRequest,
+      hadRequired: Object.prototype.hasOwnProperty.call(parameters, "required"),
+      originalRequired: Array.isArray(parameters.required)
+        ? [...parameters.required]
+        : parameters.required,
+    });
   }
 
   (parameters.properties as Record<string, unknown>).outputRequest = {
@@ -531,10 +584,14 @@ function extendOutputRequestParameter(tool: ToolInfo): boolean {
   return true;
 }
 
-export function extendDistillToolParameters(pi: Pick<ExtensionAPI, "getAllTools">): number {
+export function extendDistillToolParameters(
+  pi: Pick<ExtensionAPI, "getAllTools">,
+  loaded = loadDistillConfig(),
+): number {
   let extended = 0;
   for (const tool of pi.getAllTools()) {
-    if (extendOutputRequestParameter(tool)) extended += 1;
+    const enabled = loaded.enabled && Boolean(loaded.config) && isDistillToolEnabled(loaded.config, tool.name);
+    if (extendOutputRequestParameter(tool, enabled) && enabled) extended += 1;
   }
   return extended;
 }
@@ -548,6 +605,7 @@ function toToolResultEventResult(result: ToolResult): ToolResultEventPatch {
 }
 
 type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "timeoutSeconds" | "missedCompressionRatio" | "summarizeErrors">> & {
+  tools: DistillToolConfig;
   render: DistillRenderConfig;
 };
 
@@ -564,6 +622,9 @@ function getDistillUiConfig(): DistillUiConfig {
     timeoutSeconds: config?.timeoutSeconds ?? 10,
     missedCompressionRatio: config?.missedCompressionRatio ?? 10,
     summarizeErrors: config?.summarizeErrors ?? true,
+    tools: Object.fromEntries(
+      Object.entries(config?.tools ?? {}).map(([toolName, override]) => [toolName, { ...override }]),
+    ),
     render: { ...loaded.render },
   };
 }
@@ -603,6 +664,7 @@ async function saveDistillConfigFile(
   ctx: ExtensionCommandContext,
   config: DistillUiConfig,
   configPath: string,
+  onSaved?: () => void,
 ): Promise<void> {
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
@@ -610,9 +672,51 @@ async function saveDistillConfigFile(
   if (saved.warnings.length > 0) {
     ctx.ui.notify(i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
   }
+  onSaved?.();
 }
 
-async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: string): Promise<void> {
+function getConfigurableToolNames(pi: Pick<ExtensionAPI, "getAllTools">): string[] {
+  return [...new Set(
+    pi.getAllTools()
+      .map((tool) => tool.name)
+      .filter((name): name is string => typeof name === "string" && name.trim().length > 0),
+  )].sort();
+}
+
+async function runDistillToolConfigUi(
+  ctx: ExtensionCommandContext,
+  pi: Pick<ExtensionAPI, "getAllTools">,
+  config: DistillUiConfig,
+  configPath: string,
+  onSaved: () => void,
+): Promise<void> {
+  const toolNames = getConfigurableToolNames(pi);
+  if (toolNames.length === 0) {
+    ctx.ui.notify(i18n.t("noConfigurableTools"), "warning");
+    return;
+  }
+
+  while (true) {
+    const choices = toolNames.map((toolName) => i18n.t("toolStatus", {
+      tool: toolName,
+      value: isDistillToolEnabled(config, toolName) ? i18n.t("on") : i18n.t("off"),
+    }));
+    const choice = await ctx.ui.select(i18n.t("toolSettingsTitle"), choices);
+    if (choice === undefined) return;
+    const index = choices.indexOf(choice);
+    if (index < 0) return;
+    const toolName = toolNames[index];
+    config.tools[toolName] = { enabled: !isDistillToolEnabled(config, toolName) };
+    await saveDistillConfigFile(ctx, config, configPath, onSaved);
+  }
+}
+
+async function runDistillConfigUi(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  configPath: string,
+  onSaved: () => void,
+): Promise<void> {
   const loaded = loadDistillConfig();
   if (loaded.warnings.length > 0) {
     ctx.ui.notify(i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }), "warning");
@@ -631,60 +735,63 @@ async function runDistillConfigUi(ctx: ExtensionCommandContext, configPath: stri
       i18n.t("auditRenderer", { value: config.render.enabled ? i18n.t("on") : i18n.t("off") }),
       i18n.t("showOutputRequest", { value: config.render.showPrompt ? i18n.t("on") : i18n.t("off") }),
       i18n.t("showSummary", { value: config.render.showResult ? i18n.t("on") : i18n.t("off") }),
+      i18n.t("toolOverrides"),
     ];
     const choice = await ctx.ui.select(i18n.t("settingsTitle"), choices);
     if (choice === undefined) return;
 
     if (choice === choices[0]) {
       config.enabled = !config.enabled;
-      await saveDistillConfigFile(ctx, config, configPath);
+      await saveDistillConfigFile(ctx, config, configPath, onSaved);
     } else if (choice === choices[1]) {
       const value = await editDistillModel(ctx, config.model);
       if (value !== undefined) {
         config.model = value;
-        await saveDistillConfigFile(ctx, config, configPath);
+        await saveDistillConfigFile(ctx, config, configPath, onSaved);
       }
     } else if (choice === choices[2]) {
       const value = await editDistillNumber(ctx, i18n.t("minOutputTitle"), config.minChars);
       if (value !== undefined) {
         config.minChars = value;
-        await saveDistillConfigFile(ctx, config, configPath);
+        await saveDistillConfigFile(ctx, config, configPath, onSaved);
       }
     } else if (choice === choices[3]) {
       const value = await editDistillNumber(ctx, i18n.t("summaryLimitTitle"), config.maxChars);
       if (value !== undefined) {
         config.maxChars = value;
-        await saveDistillConfigFile(ctx, config, configPath);
+        await saveDistillConfigFile(ctx, config, configPath, onSaved);
       }
     } else if (choice === choices[4]) {
       const value = await editDistillNumber(ctx, i18n.t("timeoutTitle"), config.timeoutSeconds);
       if (value !== undefined) {
         config.timeoutSeconds = value;
-        await saveDistillConfigFile(ctx, config, configPath);
+        await saveDistillConfigFile(ctx, config, configPath, onSaved);
       }
     } else if (choice === choices[5]) {
       const value = await editDistillNumber(ctx, i18n.t("thresholdTitle"), config.missedCompressionRatio);
       if (value !== undefined) {
         config.missedCompressionRatio = value;
-        await saveDistillConfigFile(ctx, config, configPath);
+        await saveDistillConfigFile(ctx, config, configPath, onSaved);
       }
     } else if (choice === choices[6]) {
       config.summarizeErrors = !config.summarizeErrors;
-      await saveDistillConfigFile(ctx, config, configPath);
+      await saveDistillConfigFile(ctx, config, configPath, onSaved);
     } else if (choice === choices[7]) {
       config.render.enabled = !config.render.enabled;
-      await saveDistillConfigFile(ctx, config, configPath);
+      await saveDistillConfigFile(ctx, config, configPath, onSaved);
     } else if (choice === choices[8]) {
       config.render.showPrompt = !config.render.showPrompt;
-      await saveDistillConfigFile(ctx, config, configPath);
+      await saveDistillConfigFile(ctx, config, configPath, onSaved);
     } else if (choice === choices[9]) {
       config.render.showResult = !config.render.showResult;
-      await saveDistillConfigFile(ctx, config, configPath);
+      await saveDistillConfigFile(ctx, config, configPath, onSaved);
+    } else if (choice === choices[10]) {
+      await runDistillToolConfigUi(ctx, pi, config, configPath, onSaved);
     }
   }
 }
 
-function registerDistillConfigCommand(pi: ExtensionAPI): void {
+function registerDistillConfigCommand(pi: ExtensionAPI, onSaved: () => void): void {
   pi.registerCommand("pi-distill", {
     description: i18n.t("commandDescription"),
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -692,7 +799,7 @@ function registerDistillConfigCommand(pi: ExtensionAPI): void {
         ctx.ui.notify(i18n.t("interactiveOnly"), "warning");
         return;
       }
-      await runDistillConfigUi(ctx, getDistillConfigPath());
+      await runDistillConfigUi(ctx, pi, getDistillConfigPath(), onSaved);
     },
   });
 }
@@ -704,7 +811,7 @@ export default function piDistillExtension(pi: ExtensionAPI) {
   registerDistillFallbackRenderer(pi);
   const extendParameters = () => {
     try {
-      extendDistillToolParameters(pi);
+      extendDistillToolParameters(pi, loadDistillConfig());
     } catch (error) {
       console.warn(`[pi-distill] Failed to extend the outputRequest parameter: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -722,8 +829,13 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     };
   });
   pi.on("tool_call", (event) => {
+    const loaded = loadDistillConfig();
+    const enabled = loaded.enabled
+      && Boolean(loaded.config)
+      && isDistillToolEnabled(loaded.config, event.toolName);
     pendingCalls.set(event.toolCallId, {
-      outputRequest: getOutputRequest(event.input),
+      enabled,
+      outputRequest: enabled ? getOutputRequest(event.input) : "",
       originalUserPrompt,
       startedAt: performance.now(),
     });
@@ -733,6 +845,11 @@ export default function piDistillExtension(pi: ExtensionAPI) {
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
     const pending = pendingCalls.get(event.toolCallId);
     pendingCalls.delete(event.toolCallId);
+    if (pending && !pending.enabled) return toToolResultEventResult({
+      content: event.content,
+      details: event.details as Record<string, unknown> | undefined,
+      isError: event.isError,
+    });
     const outputRequest = pending?.outputRequest ?? getOutputRequest(event.input);
     const result = await processToolResult(
       {
@@ -756,5 +873,5 @@ export default function piDistillExtension(pi: ExtensionAPI) {
   });
   pi.on("agent_end", () => pendingCalls.clear());
   pi.on("session_shutdown", () => disposeToolDisplayMiddleware());
-  registerDistillConfigCommand(pi);
+  registerDistillConfigCommand(pi, extendParameters);
 }
