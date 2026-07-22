@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.0.2...pi-distill-v1.1.0) (2026-07-22)
+
+
+### Features
+
+* **pi-distill:** default disable edit and write distillation ([#45](https://github.com/maplezzk/pi-extensions/issues/45)) ([42a419b](https://github.com/maplezzk/pi-extensions/commit/42a419b519d1c943b47b32909b8f2677a0824dd9))
+* 拆分提炼评测并补充真实语料 ([#43](https://github.com/maplezzk/pi-extensions/issues/43)) ([95cfa96](https://github.com/maplezzk/pi-extensions/commit/95cfa969af0bf057da10fc9cc8c7031445b9d92f))
+
+
+### Bug Fixes
+
+* **pi-distill:** 强制错误输出遵守最小阈值 ([#42](https://github.com/maplezzk/pi-extensions/issues/42)) ([f407e89](https://github.com/maplezzk/pi-extensions/commit/f407e89e21e53fd8a5b7b086f481e41af29bcb67))
+
 ## [1.0.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.0.1...pi-distill-v1.0.2) (2026-07-22)
 
 
