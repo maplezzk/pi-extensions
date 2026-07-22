@@ -43,9 +43,10 @@ import { dirname, join } from "node:path";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 import {
   buildSummaryPrompt,
+  buildSummarySystemPrompt,
+  buildSummaryUserPrompt,
   decideOutputSummary,
   getDistillConfigPath,
-  isRawSummary,
   loadDistillConfig,
   MIN_EFFECTIVE_COMPRESSION_RATIO,
   shouldFallbackToOriginal,
@@ -90,11 +91,27 @@ type ToolResultEventPatch = {
 export const OUTPUT_REQUEST_DESCRIPTION = i18n.t("outputRequestDescription");
 const OUTPUT_REQUEST_SYSTEM_GUIDELINE = i18n.t("outputRequestSystemGuideline");
 
+type SummaryDecisionMode = "RAW" | "SUMMARY";
+type SummaryReasonCode =
+  | "VERBATIM_REQUEST"
+  | "SELECTED_INFORMATION"
+  | "FIELD_EXTRACTION"
+  | "ERROR_EXTRACTION"
+  | "SECURITY_BOUNDARY"
+  | "OTHER";
+
+type SummaryDecision = {
+  mode: SummaryDecisionMode;
+  reasonCode: SummaryReasonCode;
+  reason: string;
+};
+
 type SummaryResult = {
   text: string;
   summaryChars: number;
   summaryFilePath?: string;
   summaryModel: string;
+  decision: SummaryDecision;
 };
 
 type SummaryCompletion = (...args: Parameters<typeof complete>) => ReturnType<typeof complete>;
@@ -110,6 +127,9 @@ type SummaryDiagnostics = {
   outputSummaryAdvice?: string;
   /** 仅供 TUI 展示的底层错误，不追加到 Agent 可见 content。 */
   outputSummaryError?: string;
+  outputSummaryDecisionMode?: SummaryDecisionMode;
+  outputSummaryReasonCode?: SummaryReasonCode;
+  outputSummaryReason?: string;
   summaryModel?: string;
   originalOutputChars?: number;
   summaryChars?: number;
@@ -244,6 +264,64 @@ async function writeSummaryFile(summary: string): Promise<string> {
   return filePath;
 }
 
+function parseSummaryResponse(text: string, summaryModel: string): SummaryResult {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Summarizer returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Summarizer response must be a JSON object");
+  }
+  const record = payload as Record<string, unknown>;
+  const decision = record.decision;
+  const summary = record.summary;
+  if (!decision || typeof decision !== "object" || typeof summary !== "string") {
+    throw new Error("Summarizer response must contain decision and summary");
+  }
+  const decisionRecord = decision as Record<string, unknown>;
+  const mode = decisionRecord.mode;
+  const reasonCode = decisionRecord.reasonCode;
+  const reason = decisionRecord.reason;
+  const validReasonCodes: SummaryReasonCode[] = [
+    "VERBATIM_REQUEST",
+    "SELECTED_INFORMATION",
+    "FIELD_EXTRACTION",
+    "ERROR_EXTRACTION",
+    "SECURITY_BOUNDARY",
+    "OTHER",
+  ];
+  if (mode !== "RAW" && mode !== "SUMMARY") {
+    throw new Error("Summarizer decision.mode must be RAW or SUMMARY");
+  }
+  if (!validReasonCodes.includes(reasonCode as SummaryReasonCode)) {
+    throw new Error("Summarizer decision.reasonCode is invalid");
+  }
+  if (typeof reason !== "string" || reason.trim().length === 0 || reason.length > 160) {
+    throw new Error("Summarizer decision.reason must be 1-160 characters");
+  }
+  if (mode === "RAW" && summary !== "") {
+    throw new Error("Summarizer RAW decision must have an empty summary");
+  }
+  if (mode === "SUMMARY" && summary.trim().length === 0) {
+    throw new Error("Summarizer SUMMARY decision must have a non-empty summary");
+  }
+
+  const parsedDecision: SummaryDecision = {
+    mode,
+    reasonCode: reasonCode as SummaryReasonCode,
+    reason,
+  };
+  return {
+    text: summary,
+    summaryChars: summary.length,
+    summaryModel,
+    decision: parsedDecision,
+  };
+}
+
 async function summarizeOutput(
   prompt: string,
   output: string,
@@ -272,7 +350,11 @@ async function summarizeOutput(
           role: "user",
           content: [{
             type: "text",
-            text: buildSummaryPrompt(prompt, output, context.originalUserPrompt),
+            text: [
+              buildSummarySystemPrompt(),
+              "",
+              buildSummaryUserPrompt(prompt, output, context.originalUserPrompt),
+            ].join("\n"),
           }],
           timestamp: Date.now(),
         },
@@ -291,27 +373,23 @@ async function summarizeOutput(
     throw new Error(response.errorMessage ?? `Summarizer stopped with reason: ${response.stopReason}`);
   }
 
-  const summary = response.content
+  const rawResponse = response.content
     .filter((content): content is { type: "text"; text: string } => content.type === "text")
     .map((content) => content.text)
     .join("\n")
     .trim();
 
-  if (!summary) throw new Error("Summarizer returned no text");
-  if (summary.length <= config.maxChars) {
-    return {
-      text: summary,
-      summaryChars: summary.length,
-      summaryModel: `${model.provider}/${model.id}`,
-    };
-  }
+  if (!rawResponse) throw new Error("Summarizer returned no text");
+  const summaryModel = `${model.provider}/${model.id}`;
+  const parsed = parseSummaryResponse(rawResponse, summaryModel);
+  if (parsed.decision.mode === "RAW") return parsed;
+  if (parsed.summaryChars <= config.maxChars) return parsed;
 
-  const summaryFilePath = await writeSummaryFile(summary);
+  const summaryFilePath = await writeSummaryFile(parsed.text);
   return {
+    ...parsed,
     text: `Summary exceeded ${config.maxChars} chars and was written to: ${summaryFilePath}`,
-    summaryChars: summary.length,
     summaryFilePath,
-    summaryModel: `${model.provider}/${model.id}`,
   };
 }
 
@@ -425,7 +503,7 @@ export async function processToolResult(
       completion,
     );
     const summaryDurationMs = Math.round(performance.now() - summaryStartedAt);
-    if (isRawSummary(summarized.text)) {
+    if (summarized.decision.mode === "RAW") {
       // RAW 是总结模型的控制哨兵，不是要交给 Agent 的正文；原文仍通过同一条 final limiter。
       const rawDecision: OutputSummaryDecision = {
         intent: "full",
@@ -453,6 +531,9 @@ export async function processToolResult(
           summaryResultMaxChars: config.maxChars,
           missedCompressionRatio: config.missedCompressionRatio,
           summaryModel: summarized.summaryModel,
+          outputSummaryDecisionMode: summarized.decision.mode,
+          outputSummaryReasonCode: summarized.decision.reasonCode,
+          outputSummaryReason: summarized.decision.reason,
           ...diagnostics,
         }),
         content: [{ type: "text", text: output }],
@@ -485,6 +566,9 @@ export async function processToolResult(
           summaryResultMaxChars: config.maxChars,
           missedCompressionRatio: config.missedCompressionRatio,
           summaryModel: summarized.summaryModel,
+          outputSummaryDecisionMode: summarized.decision.mode,
+          outputSummaryReasonCode: summarized.decision.reasonCode,
+          outputSummaryReason: summarized.decision.reason,
           ...summaryDiagnostics,
         }),
         content: [{ type: "text", text: output }],
@@ -511,6 +595,9 @@ export async function processToolResult(
         summaryResultMaxChars: config.maxChars,
         missedCompressionRatio: config.missedCompressionRatio,
         summaryModel: summarized.summaryModel,
+        outputSummaryDecisionMode: summarized.decision.mode,
+        outputSummaryReasonCode: summarized.decision.reasonCode,
+        outputSummaryReason: summarized.decision.reason,
         summaryText: summarized.text,
         summaryFilePath: summarized.summaryFilePath,
         ...summaryDiagnostics,

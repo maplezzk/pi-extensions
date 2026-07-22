@@ -334,7 +334,7 @@ export function defaultDistillConfigFile(): DistillConfigFile {
   };
 }
 
-export const MIN_EFFECTIVE_COMPRESSION_RATIO = 1.2;
+export const MIN_EFFECTIVE_COMPRESSION_RATIO = 1.4;
 
 export type OutputSummaryIntent = "none" | "full" | "summary";
 
@@ -390,7 +390,22 @@ export function shouldSummarizeOutput(
   return decideOutputSummary(prompt, output, config, isError).shouldSummarize;
 }
 
-export function buildSummaryPrompt(
+export function buildSummarySystemPrompt(): string {
+  return [
+    i18n.t("system"),
+    i18n.t("purpose"),
+    i18n.t("method"),
+    i18n.t("data"),
+    i18n.t("preserve"),
+    i18n.t("languageMatch"),
+    i18n.t("exactRaw"),
+    i18n.t("decisionProtocol"),
+    i18n.t("sourceBoundary"),
+    i18n.t("onlyResult"),
+  ].join("\n");
+}
+
+export function buildSummaryUserPrompt(
   prompt: string,
   output: string,
   originalUserPrompt?: string,
@@ -404,15 +419,6 @@ export function buildSummaryPrompt(
       ]
     : [];
   return [
-    i18n.t("system"),
-    i18n.t("data"),
-    i18n.t("preserve"),
-    i18n.t("languageMatch"),
-    i18n.t("exactRaw"),
-    i18n.t("decisionProtocol"),
-    i18n.t("sourceBoundary"),
-    i18n.t("onlyResult"),
-    "",
     i18n.t("request"),
     prompt,
     ...(languageContext.length > 0 ? ["", ...languageContext] : []),
@@ -420,5 +426,17 @@ export function buildSummaryPrompt(
     "<tool-output>",
     output,
     "</tool-output>",
+  ].join("\n");
+}
+
+export function buildSummaryPrompt(
+  prompt: string,
+  output: string,
+  originalUserPrompt?: string,
+): string {
+  return [
+    buildSummarySystemPrompt(),
+    "",
+    buildSummaryUserPrompt(prompt, output, originalUserPrompt),
   ].join("\n");
 }

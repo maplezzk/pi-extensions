@@ -1,4 +1,4 @@
-import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { buildSummaryPrompt } from "../packages/pi-distill/src/summary-utils.ts";
@@ -10,12 +10,14 @@ const EXPECTED_CASE_COUNT = 21;
 const EXPECTED_SCENARIO_COUNT = 7;
 const CASES_PER_SCENARIO = 3;
 const MAX_MODEL_TOKENS = 2_000;
-const MIN_COMPRESSION_RATIO = 1.2;
+const MIN_COMPRESSION_RATIO = 1.4;
 const BASELINE_PROMPT_PREFIX = "baseline-v1";
 const CANDIDATE_PROMPT_PREFIX = "candidate-v2";
 
-type PromptVersion = typeof BASELINE_PROMPT_PREFIX | typeof CANDIDATE_PROMPT_PREFIX;
-type CaseStatus = "pass" | "fail" | "blocked";
+type PromptMessage = {
+  role: "user";
+  content: string;
+};
 
 type CliOptions = {
   endpoint?: string;
@@ -39,10 +41,13 @@ type EvaluationResult = {
   responseChars: number;
   compressionRatio?: number;
   requiredFactsPreserved: boolean;
+  forbiddenFactsPresent: boolean;
   exactRaw: boolean;
   response: string;
   error?: string;
   elapsedMs?: number;
+  reasonCode?: string;
+  reason?: string;
 };
 
 const BASELINE_PROMPT = [
@@ -106,20 +111,26 @@ function assertCaseSet(): void {
   }
 }
 
-function buildVersionPrompt(version: PromptVersion, testCase: SummaryPromptCase, output: string): string {
+function buildVersionMessages(version: PromptVersion, testCase: SummaryPromptCase, output: string): PromptMessage[] {
   if (version === CANDIDATE_PROMPT_PREFIX) {
-    return buildSummaryPrompt(testCase.outputRequest, output, testCase.userTask);
+    return [{
+      role: "user",
+      content: buildSummaryPrompt(testCase.outputRequest, output, testCase.userTask),
+    }];
   }
-  return [
-    BASELINE_PROMPT,
-    "",
-    "User distillation request:",
-    testCase.outputRequest,
-    "",
-    "<tool-output>",
-    output,
-    "</tool-output>",
-  ].join("\n");
+  return [{
+    role: "user",
+    content: [
+      BASELINE_PROMPT,
+      "",
+      "User distillation request:",
+      testCase.outputRequest,
+      "",
+      "<tool-output>",
+      output,
+      "</tool-output>",
+    ].join("\n"),
+  }];
 }
 
 function getAssistantText(content: unknown): string {
@@ -133,8 +144,39 @@ function getAssistantText(content: unknown): string {
     .trim();
 }
 
-function isStrictRaw(text: string): boolean {
-  return /^RAW$/i.test(text.trim());
+function parseModelDecision(version: PromptVersion, response: string): {
+  observedMode: "RAW" | "SUMMARY" | "INVALID";
+  responseText: string;
+  reasonCode?: string;
+  reason?: string;
+} {
+  if (version === BASELINE_PROMPT_PREFIX) {
+    const exactRaw = /^RAW$/i.test(response.trim());
+    return {
+      observedMode: exactRaw ? "RAW" : response.length > 0 ? "SUMMARY" : "INVALID",
+      responseText: response,
+      reasonCode: "LEGACY_TEXT",
+      reason: "Baseline response has no structured decision metadata.",
+    };
+  }
+  try {
+    const payload = JSON.parse(response) as {
+      decision?: { mode?: unknown; reasonCode?: unknown; reason?: unknown };
+      summary?: unknown;
+    };
+    const mode = payload.decision?.mode;
+    if ((mode !== "RAW" && mode !== "SUMMARY") || typeof payload.summary !== "string") {
+      return { observedMode: "INVALID", responseText: response };
+    }
+    return {
+      observedMode: mode,
+      responseText: payload.summary,
+      reasonCode: typeof payload.decision?.reasonCode === "string" ? payload.decision.reasonCode : undefined,
+      reason: typeof payload.decision?.reason === "string" ? payload.decision.reason : undefined,
+    };
+  } catch {
+    return { observedMode: "INVALID", responseText: response };
+  }
 }
 
 type ResponseEvaluationInput = {
@@ -152,18 +194,28 @@ function preservesRequiredFacts(testCase: SummaryPromptCase, response: string): 
   });
 }
 
+function containsForbiddenFacts(testCase: SummaryPromptCase, response: string): boolean {
+  return (testCase.forbiddenFacts ?? []).some((fact) => response.toLocaleLowerCase().includes(fact.toLocaleLowerCase()));
+}
+
 function evaluateResponse({ version, testCase, output, response, elapsedMs }: ResponseEvaluationInput): EvaluationResult {
-  const exactRaw = isStrictRaw(response);
-  const observedMode = exactRaw ? "RAW" : response.length > 0 ? "SUMMARY" : "INVALID";
-  const compressionRatio = response.length > 0 ? output.length / response.length : undefined;
+  const parsed = parseModelDecision(version, response);
+  const exactRaw = parsed.observedMode === "RAW";
+  const observedMode = parsed.observedMode;
+  const responseText = parsed.responseText;
+  const compressionRatio = responseText.length > 0 ? output.length / responseText.length : undefined;
   const requiredFactsPreserved = testCase.expectedMode === "RAW"
     ? true
-    : preservesRequiredFacts(testCase, response);
+    : preservesRequiredFacts(testCase, parsed.responseText);
+  const forbiddenFactsPresent = testCase.expectedMode === "RAW"
+    ? false
+    : containsForbiddenFacts(testCase, parsed.responseText);
   const isRawCase = testCase.expectedMode === "RAW";
-  const materiallyCompressed = compressionRatio !== undefined && compressionRatio >= MIN_COMPRESSION_RATIO;
+  const materiallyCompressed = testCase.allowDenseOutput === true
+    || (compressionRatio !== undefined && compressionRatio >= MIN_COMPRESSION_RATIO);
   const status: CaseStatus = isRawCase
     ? exactRaw ? "pass" : "fail"
-    : observedMode === "SUMMARY" && materiallyCompressed && requiredFactsPreserved && !response.includes("Ignore previous instructions")
+    : observedMode === "SUMMARY" && materiallyCompressed && requiredFactsPreserved && !forbiddenFactsPresent && !parsed.responseText.includes("Ignore previous instructions")
       ? "pass"
       : "fail";
   return {
@@ -174,17 +226,20 @@ function evaluateResponse({ version, testCase, output, response, elapsedMs }: Re
     requestMode: testCase.expectedMode,
     observedMode,
     originalChars: output.length,
-    responseChars: response.length,
+    responseChars: responseText.length,
     compressionRatio,
     requiredFactsPreserved,
+    forbiddenFactsPresent,
     exactRaw,
     response,
+    reasonCode: parsed.reasonCode,
+    reason: parsed.reason,
     elapsedMs,
     ...(status === "fail" ? { error: isRawCase ? "预期严格 RAW，但模型返回了其他内容。" : "摘要未满足模式、压缩比或关键事实要求。" } : {}),
   };
 }
 
-async function callModel(options: CliOptions, prompt: string): Promise<{ response: string; elapsedMs: number }> {
+async function callModel(options: CliOptions, messages: PromptMessage[]): Promise<{ response: string; elapsedMs: number }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
   const startedAt = performance.now();
@@ -199,7 +254,7 @@ async function callModel(options: CliOptions, prompt: string): Promise<{ respons
         model: options.model,
         maxToken: options.maxTokens,
         stream: false,
-        messages: [{ role: "user", content: prompt }],
+        messages,
       }),
     });
     const responseText = await response.text();
@@ -227,7 +282,7 @@ async function callModel(options: CliOptions, prompt: string): Promise<{ respons
 
 async function evaluateVersion(version: PromptVersion, testCase: SummaryPromptCase, output: string, options: CliOptions): Promise<EvaluationResult> {
   try {
-    const result = await callModel(options, buildVersionPrompt(version, testCase, output));
+    const result = await callModel(options, buildVersionMessages(version, testCase, output));
     return evaluateResponse({
       version,
       testCase,
@@ -246,6 +301,7 @@ async function evaluateVersion(version: PromptVersion, testCase: SummaryPromptCa
       originalChars: output.length,
       responseChars: 0,
       requiredFactsPreserved: false,
+      forbiddenFactsPresent: false,
       exactRaw: false,
       response: "",
       error: error instanceof Error ? error.message : String(error),
@@ -270,9 +326,9 @@ function renderMarkdown(results: EvaluationResult[], modelRef: string): string {
     const averageCompression = ratios.length > 0 ? (ratios.reduce((sum, ratio) => sum + ratio, 0) / ratios.length).toFixed(2) : "n/a";
     lines.push(`| ${version} | ${versionResults.filter((result) => result.status === "pass").length} | ${versionResults.filter((result) => result.status === "fail").length} | ${versionResults.filter((result) => result.status === "blocked").length} | ${versionResults.filter((result) => result.exactRaw).length} | ${averageCompression}x |`);
   }
-  lines.push("", "## Case details", "", "| Version | Scenario | Case | Status | Observed | Evidence |", "| --- | --- | --- | --- | --- | --- |");
+  lines.push("", "## Case details", "", "| Version | Scenario | Case | Status | Observed | Decision | Reason | Evidence |", "| --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const result of results) {
-    lines.push(`| ${result.version} | ${result.scenario} | ${result.caseId} | ${result.status} | ${result.observedMode} | ${result.error ?? `${result.responseChars} chars; facts=${result.requiredFactsPreserved}`} |`);
+    lines.push(`| ${result.version} | ${result.scenario} | ${result.caseId} | ${result.status} | ${result.observedMode} | ${result.reasonCode ?? "n/a"} | ${(result.reason ?? "n/a").replaceAll("|", "\\|")} | ${result.error ?? `${result.responseChars} chars; facts=${result.requiredFactsPreserved}`} |`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -287,7 +343,7 @@ async function main(): Promise<void> {
 
   const results: EvaluationResult[] = [];
   for (const testCase of SUMMARY_PROMPT_CASES) {
-    const output = await readFile(resolve("packages/pi-distill", "tests/fixtures", fixtureName(testCase)), "utf8");
+    const output = testCase.toolOutput;
     for (const version of [BASELINE_PROMPT_PREFIX, CANDIDATE_PROMPT_PREFIX] as const) {
       for (let repeat = 0; repeat < options.repeat; repeat += 1) {
         results.push(await evaluateVersion(version, testCase, output, options));
@@ -303,16 +359,6 @@ async function main(): Promise<void> {
   await writeFile(markdownPath, renderMarkdown(results, `${options.model} @ ${options.endpoint}`), "utf8");
   console.log(`JSON 报告：${jsonPath}`);
   console.log(`Markdown 报告：${markdownPath}`);
-}
-
-function fixtureName(testCase: SummaryPromptCase): string {
-  if (testCase.caseId.startsWith("A")) return "complete-source.md";
-  if (testCase.caseId.startsWith("B")) return "operations.log";
-  if (testCase.caseId.startsWith("C")) return "interface-review.md";
-  if (testCase.caseId.startsWith("D")) return "api-response.json";
-  if (testCase.caseId.startsWith("E")) return "short-exact.txt";
-  if (testCase.caseId.startsWith("F")) return "failure-output.log";
-  return "untrusted-output.txt";
 }
 
 main().catch((error) => {
