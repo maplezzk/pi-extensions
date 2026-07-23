@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.0.0...pi-extensions-tool-display-v1.0.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* 修复扩展重载生命周期并整合 TPS 指标 ([#47](https://github.com/maplezzk/pi-extensions/issues/47)) ([2999e36](https://github.com/maplezzk/pi-extensions/commit/2999e3681b08067a919db95097415ca51742580b))
+
 ## [1.0.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v0.2.2...pi-extensions-tool-display-v1.0.0) (2026-07-21)
 
 

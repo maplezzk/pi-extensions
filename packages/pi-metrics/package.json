@@ -1,6 +1,6 @@
 {
   "name": "pi-metrics",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Pi metrics extension: elapsed-time HUD and resilient TPS telemetry",
   "type": "module",
   "main": "./index.ts",

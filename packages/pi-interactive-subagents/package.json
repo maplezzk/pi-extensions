@@ -1,6 +1,6 @@
 {
   "name": "@maplezzk/pi-interactive-subagents",
-  "version": "3.7.1",
+  "version": "3.8.0",
   "description": "Interactive async subagents for pi — spawn, orchestrate, and manage sub-agent sessions in multiplexer panes. Fork of HazAT/pi-interactive-subagents.",
   "type": "module",
   "main": "./index.ts",
