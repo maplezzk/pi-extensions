@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.1.0...pi-distill-v1.1.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* use a compatible distill icon ([#49](https://github.com/maplezzk/pi-extensions/issues/49)) ([7c238e6](https://github.com/maplezzk/pi-extensions/commit/7c238e6d121a83732383c7d94484deb92368c831))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^1.0.0 to ^1.0.1
+
 ## [1.1.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.0.2...pi-distill-v1.1.0) (2026-07-22)
 
 
