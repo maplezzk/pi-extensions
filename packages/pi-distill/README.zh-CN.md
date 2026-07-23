@@ -108,7 +108,7 @@ pi-distill 根据真实结果和配置决定：原样返回，或调用模型提
 Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 ```
 
-1. 扩展在会话启动时为所有已启用、参数 schema 为 object 的工具增加必填的 `outputRequest` 参数，不写死 `bash`、`read`、`grep` 或 `find`。
+1. 扩展在会话启动时为所有已启用、参数 schema 为 object 的工具增加必填的 `outputRequest` 参数；`edit` 和 `write` 默认关闭，其他未配置工具默认开启。不写死 `bash`、`read`、`grep` 或 `find`。
 2. `tool_call` 事件捕获这个参数，并在交给底层工具前移除它，因此原工具不会收到扩展专用字段。
 3. `tool_result` 事件拿到真实输出后再做判断，不依赖 Agent 对输出长度的预测。
 4. 每次工具调用都必须包含非空的 `outputRequest`；严格的 `RAW` 表示明确要求原文；其他非空 prompt 才允许进入提炼流程。
@@ -162,6 +162,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
   "timeoutSeconds": 10,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
+  "tools": {},
   "render": {
     "enabled": true,
     "showPrompt": true,
@@ -180,6 +181,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `timeoutSeconds` | 提炼模型调用的最长等待时间。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
 | `summarizeErrors` | 工具返回错误且达到 `minChars` 时，是否仍发送给提炼模型。 |
+| `tools.<name>.enabled` | 按工具开启或关闭 `outputRequest` 注入和结果提炼。`edit` 和 `write` 默认关闭，其他未配置工具默认开启，也可以通过 `/pi-distill` 修改。 |
 | `render.*` | 控制审计卡片、prompt 预览和结果预览。 |
 
 主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。旧配置中的 `maxOutputChars` / `PI_DISTILL_MAX_OUTPUT_CHARS` 仍会被解析以兼容旧文件，但不再生效。

@@ -16,10 +16,12 @@ import {
   registerDistillToolDisplayMiddleware,
 } from "../src/tool-display-bridge.ts";
 import { Text } from "@earendil-works/pi-tui";
+import { extendDistillToolParameters } from "../src/index.ts";
 import {
   buildDecisionEvaluationPrompt,
   buildSummaryEvaluationPrompt,
   buildSummaryPrompt,
+  isDistillToolEnabled,
   isRawSummary,
   loadDistillConfig,
   MIN_EFFECTIVE_COMPRESSION_RATIO,
@@ -252,6 +254,29 @@ test("配置文件优先于兼容环境变量", async () => {
     showPrompt: false,
     showResult: true,
   });
+  assert.deepEqual(loaded.warnings, []);
+});
+
+test("配置文件支持按工具覆盖 outputRequest 开关", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-distill-tool-config-"));
+  const configFile = join(directory, "config.json");
+  await writeFile(configFile, JSON.stringify({
+    tools: {
+      bash: { enabled: false },
+      read: { enabled: true },
+    },
+  }));
+
+  const loaded = loadDistillConfig({}, configFile);
+  assert.deepEqual(loaded.config?.tools, {
+    bash: { enabled: false },
+    read: { enabled: true },
+  });
+  assert.equal(isDistillToolEnabled(loaded.config, "bash"), false);
+  assert.equal(isDistillToolEnabled(loaded.config, "read"), true);
+  assert.equal(isDistillToolEnabled(loaded.config, "grep"), true);
+  assert.equal(isDistillToolEnabled(loaded.config, "edit"), false);
+  assert.equal(isDistillToolEnabled(loaded.config, "write"), false);
   assert.deepEqual(loaded.warnings, []);
 });
 
@@ -610,6 +635,64 @@ test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", 
   }
 });
 
+test("包含图片等非文本内容时识别为非纯文本输出", () => {
+  const result = {
+    content: [
+      { type: "image", data: "encoded-image" },
+      { type: "text", text: "x".repeat(10_001) },
+    ],
+  } as unknown as Parameters<typeof hasNonTextContent>[0];
+
+  assert.equal(hasNonTextContent(result), true);
+  assert.equal(
+    hasNonTextContent({ content: [{ type: "text", text: "纯文本" }] }),
+    false,
+  );
+});
+
+test("按工具开关动态注入和移除 outputRequest", () => {
+  const tools = ["bash", "read", "edit", "write"].map((name) => ({
+    name,
+    parameters: {
+      type: "object",
+      properties: { value: { type: "string" } },
+      required: ["value"],
+    },
+  }));
+  const loaded = {
+    enabled: true,
+    config: {
+      minChars: 200,
+      maxChars: 100000,
+      maxOutputChars: 10000,
+      timeoutSeconds: 10,
+      missedCompressionRatio: 10,
+      summarizeErrors: true,
+      tools: { bash: { enabled: false }, edit: { enabled: true } },
+    },
+    render: { enabled: true, showPrompt: true, showResult: true },
+    configPath: "",
+    warnings: [],
+  };
+  const api = { getAllTools: () => tools } as any;
+
+  assert.equal(extendDistillToolParameters(api, loaded), 2);
+  assert.equal((tools[0].parameters as any).properties.outputRequest, undefined);
+  assert.equal((tools[0].parameters as any).required.includes("outputRequest"), false);
+  assert.equal(typeof (tools[1].parameters as any).properties.outputRequest, "object");
+  assert.equal(typeof (tools[2].parameters as any).properties.outputRequest, "object");
+  assert.equal((tools[3].parameters as any).properties.outputRequest, undefined);
+
+  loaded.config.tools.bash.enabled = true;
+  assert.equal(extendDistillToolParameters(api, loaded), 3);
+  assert.equal(typeof (tools[0].parameters as any).properties.outputRequest, "object");
+
+  loaded.config.tools.bash.enabled = false;
+  assert.equal(extendDistillToolParameters(api, loaded), 2);
+  assert.equal((tools[0].parameters as any).properties.outputRequest, undefined);
+  assert.deepEqual((tools[0].parameters as any).required, ["value"]);
+});
+
 test("pi-distill 可以追加 UI-only 保底审计", () => {
   const entries: Array<{ type: string; data: unknown }> = [];
   const builtinPi = {
@@ -775,11 +858,12 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
       sourceInfo: { source: "pi-distill-test" },
     }));
     let registeredToolCount = 0;
+    let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
     const appendedEntries: Array<{ type: string; data: unknown }> = [];
     const pi = {
       getAllTools: () => tools,
       registerTool: () => { registeredToolCount += 1; },
-      registerCommand: () => undefined,
+      registerCommand: (_name: string, command: any) => { commandHandler = command.handler; },
       registerEntryRenderer: () => undefined,
       appendEntry: (type: string, data: unknown) => appendedEntries.push({ type, data }),
       on: (event: string, handler: (...args: any[]) => any) => handlers.set(event, handler),
@@ -798,12 +882,15 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.equal(registeredToolCount, 0);
     for (const tool of tools) {
       const schema = tool.parameters as any;
-      assert.equal(schema.required.filter((value: string) => value === "outputRequest").length, 1);
-      assert.equal(schema.properties.outputRequest.type, "string");
-      assert.equal(
-        schema.properties.outputRequest.description,
-        OUTPUT_REQUEST_DESCRIPTION,
-      );
+      const enabledByDefault = !["edit", "write"].includes(tool.name);
+      assert.equal(schema.required.filter((value: string) => value === "outputRequest").length, enabledByDefault ? 1 : 0);
+      assert.equal(schema.properties.outputRequest?.type, enabledByDefault ? "string" : undefined);
+      if (enabledByDefault) {
+        assert.equal(
+          schema.properties.outputRequest.description,
+          OUTPUT_REQUEST_DESCRIPTION,
+        );
+      }
     }
 
     const input: Record<string, unknown> = { value: "custom", outputRequest: "RAW" };
@@ -834,6 +921,54 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.equal(result.details.outputSummaryStatus, "full-output");
     assert.equal(result.content[0].text, "ok");
     assert.equal(appendedEntries[0]?.type, DISTILL_AUDIT_ENTRY_TYPE);
+
+    const selections: Array<string | undefined> = ["__last__", "write", "custom-tool", undefined, undefined];
+    await commandHandler?.("", {
+      hasUI: true,
+      ui: {
+        select: async (_title: string, choices: string[]) => {
+          const target = selections.shift();
+          if (!target) return undefined;
+          if (target === "__last__") return choices.at(-1);
+          return choices.find((choice) => choice.startsWith(target));
+        },
+        input: async () => undefined,
+        notify: () => undefined,
+      },
+    });
+    const savedConfig = JSON.parse(await readFile(
+      join(process.env.PI_CODING_AGENT_DIR!, "extensions", "pi-distill", "config.json"),
+      "utf8",
+    )) as any;
+    assert.deepEqual(savedConfig.tools, {
+      "custom-tool": { enabled: false },
+      write: { enabled: true },
+    });
+    assert.equal(typeof (tools.find((tool) => tool.name === "write")!.parameters as any).properties.outputRequest, "object");
+    assert.equal((tools.find((tool) => tool.name === "custom-tool")!.parameters as any).properties.outputRequest, undefined);
+
+    const disabledInput: Record<string, unknown> = { value: "custom", outputRequest: "RAW" };
+    await handlers.get("tool_call")?.({
+      type: "tool_call",
+      toolName: "custom-tool",
+      toolCallId: "call-disabled",
+      input: disabledInput,
+    }, {});
+    assert.equal(disabledInput.outputRequest, undefined);
+    const disabledResult = await handlers.get("tool_result")?.({
+      type: "tool_result",
+      toolName: "custom-tool",
+      toolCallId: "call-disabled",
+      input: disabledInput,
+      content: [{ type: "text", text: "disabled output" }],
+      details: {},
+      isError: false,
+    }, { cwd: process.cwd() });
+    assert.deepEqual(disabledResult, {
+      content: [{ type: "text", text: "disabled output" }],
+      details: {},
+      isError: false,
+    });
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
