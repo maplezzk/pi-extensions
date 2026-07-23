@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | [`pi-distill`](./packages/pi-distill) | 在所有已启用 object-schema 工具的超长输出占满上下文前进行提炼。 | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配的项目规则审查 `edit` 和 `write` 变更，并返回结构化结果。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
-| [`pi-hud`](./packages/pi-hud) | 在 working spinner 实时显示会话全程耗时，并给出每轮耗时与总耗时小结。 | [English](./packages/pi-hud/README.md) · [中文](./packages/pi-hud/README.zh-CN.md) |
+| [`pi-metrics`](./packages/pi-metrics) | 在 working spinner 实时显示会话全程耗时，并给出每轮耗时与总耗时小结。 | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |
 | [`pi-models-discovery`](./packages/pi-models-discovery) | 自动发现 models.json 中标记 `discoverModels` 的 provider 的模型列表，启动走持久化缓存，并提供手动刷新命令。 | [English](./packages/pi-models-discovery/README.md) · [中文](./packages/pi-models-discovery/README.zh-CN.md) |
 | [`pi-extensions-i18n`](./packages/pi-extensions-i18n) | 提供共享的语言选择、catalog 加载、插值和 `/pi-language` 命令。 | [English](./packages/pi-extensions-i18n/README.md) · [中文](./packages/pi-extensions-i18n/README.zh-CN.md) |
 | [`pi-extensions-tool-display`](./packages/pi-extensions-tool-display) | 提供实际的 Pi 工具展示宿主，以及共享的结果渲染协议和组件工具。 | [English](./packages/pi-extensions-tool-display/README.md) · [中文](./packages/pi-extensions-tool-display/README.zh-CN.md) |

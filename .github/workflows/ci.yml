@@ -40,3 +40,6 @@ jobs:
 
       - name: npm name ownership gate
         run: node scripts/check-npm-names.mjs
+
+      - name: npm publish-health gate
+        run: node scripts/check-npm-publish-health.mjs

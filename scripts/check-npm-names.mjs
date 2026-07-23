@@ -15,13 +15,10 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fetchNpmInfo, KNOWN_MAINTAINERS } from "./lib/npm-registry.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const PACKAGES_DIR = join(ROOT, "packages");
-const REGISTRY = "https://registry.npmjs.org";
-
-/** Known maintainers of this repo (npm usernames) */
-const KNOWN_MAINTAINERS = ["maplezzk"];
 
 /** @type {string[]} */
 const errors = [];
@@ -37,32 +34,6 @@ const workspaceNames = new Set(
   packageDirs.map((dir) => JSON.parse(readFileSync(join(PACKAGES_DIR, dir, "package.json"), "utf8")).name),
 );
 
-/**
- * Fetch npm registry metadata for a package name.
- * @param {string} name - npm package name to look up
- * @returns {Promise<{ status: 'available' | 'timeout' | 'published', data?: object }>}
- *   - available: 404, name is free to publish
- *   - timeout: network timeout, skip check
- *   - published: package exists, data contains registry metadata
- */
-async function fetchNpmInfo(name) {
-  try {
-    const res = await fetch(`${REGISTRY}/${encodeURIComponent(name)}`, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (res.status === 404) return { status: "available" };
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return { status: "published", data: await res.json() };
-  } catch (err) {
-    if (err.name === "TimeoutError") {
-      warnings.push(`⚠️  ${name}: registry timeout, skipping check`);
-      return { status: "timeout" };
-    }
-    throw err;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Check 1: package names not squatted
 // ---------------------------------------------------------------------------
@@ -72,7 +43,10 @@ for (const dir of packageDirs) {
 
   const result = await fetchNpmInfo(name);
 
-  if (result.status === "timeout") continue;
+  if (result.status === "timeout") {
+    warnings.push(`⚠️  ${name}: registry timeout, skipping check`);
+    continue;
+  }
 
   if (result.status === "available") {
     // Available — first publish pending
@@ -103,7 +77,10 @@ for (const dir of packageDirs) {
     if (!workspaceNames.has(dep)) continue;
 
     const result = await fetchNpmInfo(dep);
-    if (result.status === "timeout") continue;
+    if (result.status === "timeout") {
+      warnings.push(`⚠️  ${pkgJson.name}: registry timeout while checking peerDependency "${dep}", skipping`);
+      continue;
+    }
 
     if (result.status === "available") {
       warnings.push(`⚠️  ${pkgJson.name}: peerDependency "${dep}" is a workspace package not yet on npm`);
