@@ -1,0 +1,76 @@
+{
+  "name": "@maplezzk/pi-dynamic-workflows",
+  "version": "1.0.0",
+  "description": "Claude-Code-style dynamic workflow orchestration for Pi. Fork of michaelliv/pi-dynamic-workflows.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "locales",
+    "types",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "michaelliv",
+  "contributors": [
+    "maplezzk"
+  ],
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-dynamic-workflows",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-dynamic-workflows"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "coding-agent",
+    "workflow",
+    "agents"
+  ],
+  "dependencies": {
+    "acorn": "^8.16.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0",
+    "pi-extensions-i18n": "^0.3.0",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@earendil-works/pi-tui": "0.80.10",
+    "@types/node": "24.12.4",
+    "pi-extensions-i18n": "^0.3.0",
+    "tsx": "4.23.1",
+    "typebox": "latest",
+    "typescript": "5.9.3"
+  }
+}

@@ -12,6 +12,8 @@
     "packages/pi-extensions-tool-display": {},
     "packages/pi-terminal-mux": {},
     "packages/pi-metrics": {},
-    "packages/pi-models-discovery": {}
+    "packages/pi-models-discovery": {},
+    "packages/pi-dynamic-workflows": {},
+    "packages/pi-interactive-subagents": {}
   }
 }

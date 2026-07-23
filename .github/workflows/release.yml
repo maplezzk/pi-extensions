@@ -36,6 +36,8 @@ jobs:
           - dir: packages/pi-terminal-mux
           - dir: packages/pi-metrics
           - dir: packages/pi-models-discovery
+          - dir: packages/pi-dynamic-workflows
+          - dir: packages/pi-interactive-subagents
     steps:
       - uses: actions/checkout@v4
 
