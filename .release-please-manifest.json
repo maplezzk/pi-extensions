@@ -5,5 +5,7 @@
   "packages/pi-extensions-tool-display": "1.0.0",
   "packages/pi-terminal-mux": "0.2.1",
   "packages/pi-metrics": "0.2.1",
-  "packages/pi-models-discovery": "1.0.0"
+  "packages/pi-models-discovery": "1.0.0",
+  "packages/pi-dynamic-workflows": "1.0.0",
+  "packages/pi-interactive-subagents": "3.7.1"
 }

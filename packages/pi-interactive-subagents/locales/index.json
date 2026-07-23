@@ -1,0 +1,6 @@
+{
+  "agentEndNudge": {
+    "zh-CN": "【自动提醒】\n• 已完成 → 调用 subagent_done 结束。\n• 结束前自检：是否在原地打转？若是，立刻收敛结果，用 caller_ping 抛回主 agent，不要过度思考。\n• 还在处理 → 忽略。",
+    "en-US": "[Auto reminder]\n• Done → call subagent_done to finish.\n• Before finishing, self-check: are you spinning in place? If so, converge your result immediately and hand it back to the main agent with caller_ping — don't overthink.\n• Still working → ignore."
+  }
+}

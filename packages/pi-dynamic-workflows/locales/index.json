@@ -1,0 +1,78 @@
+{
+  "commandDescription": {
+    "zh-CN": "配置 workflow 执行后端与异步模式",
+    "en-US": "Configure workflow execution backend and async mode"
+  },
+  "configTitle": {
+    "zh-CN": "Workflow 配置",
+    "en-US": "Workflow Config"
+  },
+  "exit": {
+    "zh-CN": "退出",
+    "en-US": "Exit"
+  },
+  "on": {
+    "zh-CN": "开启",
+    "en-US": "on"
+  },
+  "off": {
+    "zh-CN": "关闭",
+    "en-US": "off"
+  },
+  "toggleBackend": {
+    "zh-CN": "切换执行后端（当前：{value}）",
+    "en-US": "Toggle execution backend (current: {value})"
+  },
+  "toggleAsync": {
+    "zh-CN": "切换异步模式（当前：{value}）",
+    "en-US": "Toggle async mode (current: {value})"
+  },
+  "savedBackend": {
+    "zh-CN": "执行后端已切换为：{value}",
+    "en-US": "Execution backend switched to: {value}"
+  },
+  "savedAsync": {
+    "zh-CN": "异步模式已切换为：{value}",
+    "en-US": "Async mode switched to: {value}"
+  },
+  "reloadHint": {
+    "zh-CN": "需 /reload 生效",
+    "en-US": "Requires /reload to take effect"
+  },
+  "cancelToolDescription": {
+    "zh-CN": "取消正在后台运行的 workflow",
+    "en-US": "Cancel a running background workflow"
+  },
+  "cancelSent": {
+    "zh-CN": "Workflow {name} 取消请求已发送",
+    "en-US": "Cancel request sent for Workflow {name}"
+  },
+  "noneRunning": {
+    "zh-CN": "当前没有正在运行的 workflow",
+    "en-US": "No workflow is currently running"
+  },
+  "alreadyRunning": {
+    "zh-CN": "已有 workflow 在运行: {name}",
+    "en-US": "A workflow is already running: {name}"
+  },
+  "resultWritten": {
+    "zh-CN": "Workflow {name} 已完成（{count} 个 agent，耗时 {ms}ms）。\n结果已写入: {path}",
+    "en-US": "Workflow {name} completed with {count} agent(s) in {ms}ms.\nResult written to: {path}"
+  },
+  "cancelled": {
+    "zh-CN": "Workflow {name} 已取消",
+    "en-US": "Workflow {name} cancelled"
+  },
+  "started": {
+    "zh-CN": "Workflow {name} 已启动，后台执行中...",
+    "en-US": "Workflow {name} started, running in background..."
+  },
+  "totalResult": {
+    "zh-CN": "📄 总结果：{path}",
+    "en-US": "📄 Result: {path}"
+  },
+  "subagentRequired": {
+    "zh-CN": "PI_WORKFLOW_BACKEND=subagent 需要 pi-interactive-subagents 扩展。\n安装: pi install pi-interactive-subagents",
+    "en-US": "PI_WORKFLOW_BACKEND=subagent requires the pi-interactive-subagents extension.\nInstall: pi install pi-interactive-subagents"
+  }
+}

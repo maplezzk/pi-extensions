@@ -19,6 +19,8 @@ Each package is independently installable and keeps its detailed behavior, confi
 | [`pi-models-discovery`](./packages/pi-models-discovery) | Discovers models from `{baseUrl}/models` for providers marked with `discoverModels` in models.json, with a persistent startup cache and a manual refresh command. | [English](./packages/pi-models-discovery/README.md) · [中文](./packages/pi-models-discovery/README.zh-CN.md) |
 | [`pi-extensions-i18n`](./packages/pi-extensions-i18n) | Provides shared locale selection, catalog loading, interpolation, and the `/pi-language` command. | [English](./packages/pi-extensions-i18n/README.md) · [中文](./packages/pi-extensions-i18n/README.zh-CN.md) |
 | [`pi-extensions-tool-display`](./packages/pi-extensions-tool-display) | Provides the actual Pi tool-display host plus the shared result-rendering protocol and component helpers. | [English](./packages/pi-extensions-tool-display/README.md) · [中文](./packages/pi-extensions-tool-display/README.zh-CN.md) |
+| [`@maplezzk/pi-dynamic-workflows`](./packages/pi-dynamic-workflows) | Claude-Code-style dynamic workflow orchestration with `meta`/`phase()`/`agent()`/`parallel()`/`pipeline()` primitives, configurable via `/workflow-config`. Fork of michaelliv/pi-dynamic-workflows. | [English](./packages/pi-dynamic-workflows/README.md) · [中文](./packages/pi-dynamic-workflows/README.zh-CN.md) |
+| [`@maplezzk/pi-interactive-subagents`](./packages/pi-interactive-subagents) | Non-blocking interactive subagents in multiplexer panes with live status widget, `/plan` and `/iterate` workflows. Fork of HazAT/pi-interactive-subagents. | [English](./packages/pi-interactive-subagents/README.md) · [中文](./packages/pi-interactive-subagents/README.zh-CN.md) |
 
 ## Install everything
 

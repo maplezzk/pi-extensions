@@ -1,0 +1,76 @@
+{
+  "name": "@maplezzk/pi-interactive-subagents",
+  "version": "3.7.1",
+  "description": "Interactive async subagents for pi — spawn, orchestrate, and manage sub-agent sessions in multiplexer panes. Fork of HazAT/pi-interactive-subagents.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "pi-extension",
+    "agents",
+    "locales",
+    "config.json.example",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "scripts": {
+    "test": "tsx --test test/test.ts",
+    "test:integration": "tsx --test --test-concurrency=1 test/integration/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "HazAT",
+  "contributors": [
+    "maplezzk"
+  ],
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-interactive-subagents",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-interactive-subagents"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "coding-agent",
+    "subagents",
+    "multiplexer"
+  ],
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "pi-extensions-i18n": "^0.3.0",
+    "pi-terminal-mux": "^0.2.1"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@earendil-works/pi-tui": "0.80.10",
+    "@sinclair/typebox": "^0.34.49",
+    "@types/node": "24.12.4",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  }
+}
