@@ -1,7 +1,7 @@
 {
   "name": "pi-metrics",
   "version": "0.2.1",
-  "description": "Pi metrics extension: live session elapsed timer with per-turn and total run summaries",
+  "description": "Pi metrics extension: elapsed-time HUD and resilient TPS telemetry",
   "type": "module",
   "main": "./index.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "README.zh-CN.md"
   ],
   "scripts": {
-    "test": "tsx --test tests/pi-metrics.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
@@ -47,7 +47,9 @@
     "pi-extension",
     "coding-agent",
     "hud",
-    "elapsed-time"
+    "elapsed-time",
+    "tokens-per-second",
+    "telemetry"
   ],
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",

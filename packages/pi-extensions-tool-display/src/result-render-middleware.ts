@@ -66,9 +66,13 @@ export function registerResultRenderMiddleware(
   const api = getApi();
   if (typeof api?.registerResultRenderMiddleware === "function") {
     api.registerResultRenderMiddleware(registration);
-  } else {
-    queueRegistration(registration);
   }
+
+  // Keep the registration in the shared protocol queue even when a host is
+  // already available. The host can be replaced during /reload or when a new
+  // session creates a new ExtensionAPI instance; the new host must be able to
+  // rehydrate registrations that were attached to the previous API object.
+  queueRegistration(registration);
 
   return () => {
     getApi()?.unregisterResultRenderMiddleware?.(registration.id);
