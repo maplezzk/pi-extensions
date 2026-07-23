@@ -1525,8 +1525,11 @@ function drainPendingResultRenderMiddlewares(api: ToolDisplayApi): void {
   const pending = globalWithApi[TOOL_DISPLAY_PENDING_RESULT_MIDDLEWARES_KEY];
   if (!Array.isArray(pending) || pending.length === 0) return;
 
-  const entries = pending.splice(0);
-  for (const entry of entries) {
+  // This queue is the cross-host registry for external middleware, not a
+  // one-shot bootstrap queue. Keep it populated so a replacement host during
+  // /reload or a new session can rehydrate middleware registered on the old
+  // API instance.
+  for (const entry of pending) {
     if (!entry?.id || !entry.toolName || typeof entry.middleware !== "function") continue;
     api.registerResultRenderMiddleware(entry);
   }
