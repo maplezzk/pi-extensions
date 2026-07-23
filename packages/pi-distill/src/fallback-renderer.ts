@@ -58,8 +58,8 @@ function formatCount(value: number): string {
 
 function renderDistillAuditLine(audit: DistillAuditView, line: string, index: number, theme: RenderTheme): string {
   if (index === 0) {
-    const title = theme.fg("accent", theme.bold("⟡ Distill"));
-    const afterTitle = line.slice("⟡ Distill".length);
+    const title = theme.fg("accent", theme.bold("◇ Distill"));
+    const afterTitle = line.slice("◇ Distill".length);
     const statusIndex = afterTitle.indexOf(audit.statusLabel);
     if (statusIndex < 0) return `${title}${theme.fg("muted", afterTitle)}`;
     const beforeStatus = afterTitle.slice(0, statusIndex);
