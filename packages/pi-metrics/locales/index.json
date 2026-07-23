@@ -10,5 +10,61 @@
   "elapsedTotal": {
     "zh-CN": "⏱ 总耗时 {value}",
     "en-US": "⏱ Total elapsed {value}"
+  },
+  "tpsValue": {
+    "zh-CN": "TPS {value} tok/s",
+    "en-US": "TPS {value} tok/s"
+  },
+  "tpsUnknown": {
+    "zh-CN": "TPS —",
+    "en-US": "TPS —"
+  },
+  "tpsTtft": {
+    "zh-CN": "TTFT {value}",
+    "en-US": "TTFT {value}"
+  },
+  "tpsInput": {
+    "zh-CN": "in {value}",
+    "en-US": "in {value}"
+  },
+  "tpsOutput": {
+    "zh-CN": "out {value}",
+    "en-US": "out {value}"
+  },
+  "tpsStall": {
+    "zh-CN": "stall {value}×{count}",
+    "en-US": "stall {value}×{count}"
+  },
+  "tpsRate": {
+    "zh-CN": "${value}/M",
+    "en-US": "${value}/M"
+  },
+  "tpsExportDescription": {
+    "zh-CN": "导出 TPS telemetry JSONL（--full 导出整个 session）",
+    "en-US": "Export TPS telemetry as JSONL (--full for the full session)"
+  },
+  "sessionExportDescription": {
+    "zh-CN": "导出 session JSONL（--full 导出所有分支）",
+    "en-US": "Export session JSONL (--full for all branches)"
+  },
+  "tpsFullFlag": {
+    "zh-CN": "--full（导出所有分支）",
+    "en-US": "--full (all branches)"
+  },
+  "tpsNoEntries": {
+    "zh-CN": "在 {scope} 中没有匹配的条目",
+    "en-US": "No matching entries found in {scope}"
+  },
+  "tpsAllEntries": {
+    "zh-CN": "全部条目",
+    "en-US": "all entries"
+  },
+  "tpsCurrentBranch": {
+    "zh-CN": "当前分支",
+    "en-US": "current branch"
+  },
+  "tpsExported": {
+    "zh-CN": "已导出 {count} 个条目 → {filepath}",
+    "en-US": "Exported {count} entries → {filepath}"
   }
 }

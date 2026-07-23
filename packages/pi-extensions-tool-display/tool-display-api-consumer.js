@@ -53,19 +53,25 @@ export function registerToolResultRenderMiddleware(toolName, middleware, options
   }
 
   const id = options.id || `external-result-middleware-${++nextResultMiddlewareId}`;
+  const registration = { id, toolName, middleware };
   const api = getToolDisplayApi();
   if (typeof api?.registerResultRenderMiddleware === "function") {
-    return api.registerResultRenderMiddleware({ id, toolName, middleware });
+    const registeredId = api.registerResultRenderMiddleware(registration);
+    queueResultRenderMiddleware(registration);
+    return registeredId;
   }
 
+  queueResultRenderMiddleware(registration);
+  return id;
+}
+
+function queueResultRenderMiddleware(registration) {
   const existing = globalThis[TOOL_DISPLAY_PENDING_RESULT_MIDDLEWARES_KEY];
   const queue = Array.isArray(existing) ? existing : [];
-  const registration = { id, toolName, middleware };
-  const index = queue.findIndex((entry) => entry?.id === id);
+  const index = queue.findIndex((entry) => entry?.id === registration.id);
   if (index >= 0) queue[index] = registration;
   else queue.push(registration);
   globalThis[TOOL_DISPLAY_PENDING_RESULT_MIDDLEWARES_KEY] = queue;
-  return id;
 }
 
 export function unregisterToolResultRenderMiddleware(id) {

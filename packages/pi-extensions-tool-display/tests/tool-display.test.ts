@@ -65,6 +65,30 @@ test("queues middleware until the host display API is available", () => {
   }
 });
 
+test("keeps active middleware in the shared queue for host replacement", () => {
+  const apiKey = TOOL_DISPLAY_API_KEY;
+  const pendingKey = PENDING_MIDDLEWARES_KEY;
+  const previousApi = (globalThis as any)[apiKey];
+  const previousQueue = (globalThis as any)[pendingKey];
+  (globalThis as any)[apiKey] = {
+    registerResultRenderMiddleware: () => "distill.result-renderer.v1",
+    unregisterResultRenderMiddleware: () => true,
+  };
+  delete (globalThis as any)[pendingKey];
+
+  try {
+    const dispose = registerResultRenderMiddleware(registration("distill.result-renderer.v1"));
+    assert.equal((globalThis as any)[pendingKey]?.[0]?.id, "distill.result-renderer.v1");
+    dispose();
+    assert.deepEqual((globalThis as any)[pendingKey], []);
+  } finally {
+    if (previousApi === undefined) delete (globalThis as any)[apiKey];
+    else (globalThis as any)[apiKey] = previousApi;
+    if (previousQueue === undefined) delete (globalThis as any)[pendingKey];
+    else (globalThis as any)[pendingKey] = previousQueue;
+  }
+});
+
 test("appends a panel after a component without duplicating bridge code", () => {
   const rendered = appendResultRenderPanel(
     new Text("base", 0, 0),

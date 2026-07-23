@@ -101,3 +101,30 @@ test("stable middleware ids replace queued registrations and active middleware c
   assert.equal(unregisterToolResultRenderMiddleware("stable-id"), true);
   resetGlobalApi();
 });
+
+test("external middleware survives replacement of the tool-display host", () => {
+  resetGlobalApi();
+  const middlewareId = registerToolResultRenderMiddleware(
+    "bash",
+    () => new Text("rehydrated external result card", 0, 0),
+    { id: "host-replacement-result-card" },
+  );
+
+  const firstHost = createApiStub();
+  registerToolDisplayOverrides(firstHost.api, () => DEFAULT_TOOL_DISPLAY_CONFIG);
+
+  const secondHost = createApiStub();
+  registerToolDisplayOverrides(secondHost.api, () => DEFAULT_TOOL_DISPLAY_CONFIG);
+
+  const bash = secondHost.tools.find((tool) => tool.name === "bash");
+  assert.ok(bash?.renderResult);
+  assert.match(render(bash.renderResult(
+    { content: [{ type: "text", text: "tool output" }], details: {} },
+    { expanded: false, isPartial: false },
+    { fg: (_color, text) => text, bold: (text) => text },
+  )), /rehydrated external result card/);
+  assert.equal(getToolDisplayApi()?.hasResultRenderMiddleware(middlewareId), true);
+
+  assert.equal(unregisterToolResultRenderMiddleware(middlewareId), true);
+  resetGlobalApi();
+});
