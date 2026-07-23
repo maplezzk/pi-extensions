@@ -27,6 +27,8 @@ jobs:
     if: ${{ needs.release-please.outputs.paths_released }}
     runs-on: ubuntu-latest
     strategy:
+      # 单个包发布失败（如缺 trusted publisher / 版本冲突）不连累其它包，各自独立发布
+      fail-fast: false
       matrix:
         include:
           - dir: packages/pi-extensions-i18n
