@@ -72,7 +72,7 @@
     "en-US": "📄 Result: {path}"
   },
   "subagentRequired": {
-    "zh-CN": "PI_WORKFLOW_BACKEND=subagent 需要 pi-interactive-subagents 扩展。\n安装: pi install pi-interactive-subagents",
-    "en-US": "PI_WORKFLOW_BACKEND=subagent requires the pi-interactive-subagents extension.\nInstall: pi install pi-interactive-subagents"
+    "zh-CN": "PI_WORKFLOW_BACKEND=subagent 需要 pi-interactive-subagents 扩展。\n安装: pi install npm:@maplezzk/pi-interactive-subagents",
+    "en-US": "PI_WORKFLOW_BACKEND=subagent requires the pi-interactive-subagents extension.\nInstall: pi install npm:@maplezzk/pi-interactive-subagents"
   }
 }

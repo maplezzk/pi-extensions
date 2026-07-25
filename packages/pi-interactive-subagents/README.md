@@ -28,7 +28,7 @@ subagent({ name: "Scout: DB", agent: "scout", task: "Map database schema" });
 ## Install
 
 ```bash
-pi install @maplezzk/pi-interactive-subagents
+pi install npm:@maplezzk/pi-interactive-subagents
 ```
 
 Supported multiplexers:

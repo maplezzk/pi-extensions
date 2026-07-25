@@ -15,7 +15,7 @@
 ## 安装
 
 ```bash
-pi install @maplezzk/pi-dynamic-workflows
+pi install npm:@maplezzk/pi-dynamic-workflows
 ```
 
 ## 配置
