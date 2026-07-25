@@ -17,7 +17,7 @@ subagent({ name: "Scout: DB", agent: "scout", task: "梳理数据库 schema" });
 ## 安装
 
 ```bash
-pi install @maplezzk/pi-interactive-subagents
+pi install npm:@maplezzk/pi-interactive-subagents
 ```
 
 支持的终端复用器：[cmux](https://github.com/manaflow-ai/cmux)、[tmux](https://github.com/tmux/tmux)、[zellij](https://zellij.dev)、[WezTerm](https://wezfurlong.org/wezterm/)、[herdr](https://herdr.dev)、[Otty](https://otty.sh)。

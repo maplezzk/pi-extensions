@@ -15,7 +15,7 @@ Claude-Code-style dynamic workflow orchestration for Pi.
 ## Installation
 
 ```bash
-pi install @maplezzk/pi-dynamic-workflows
+pi install npm:@maplezzk/pi-dynamic-workflows
 ```
 
 ## Configuration
