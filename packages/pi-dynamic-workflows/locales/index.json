@@ -72,7 +72,7 @@
     "en-US": "📄 Result: {path}"
   },
   "subagentRequired": {
-    "zh-CN": "PI_WORKFLOW_BACKEND=subagent 需要 pi-interactive-subagents 扩展。\n安装: pi install npm:@maplezzk/pi-interactive-subagents",
-    "en-US": "PI_WORKFLOW_BACKEND=subagent requires the pi-interactive-subagents extension.\nInstall: pi install npm:@maplezzk/pi-interactive-subagents"
+    "zh-CN": "subagent 执行后端需要 pi-interactive-subagents 扩展，但当前未加载。\n\n解决方式（任选其一）：\n1. 安装扩展：pi install npm:@maplezzk/pi-interactive-subagents\n2. 运行 /workflow-config 将执行后端切回 workflow\n\n说明：subagent 后端由环境变量 PI_WORKFLOW_BACKEND=subagent 或 /workflow-config 持久化配置触发。",
+    "en-US": "The subagent execution backend requires the pi-interactive-subagents extension, which is not currently loaded.\n\nFix (choose one):\n1. Install the extension: pi install npm:@maplezzk/pi-interactive-subagents\n2. Run /workflow-config to switch the execution backend back to workflow\n\nNote: the subagent backend is activated by the PI_WORKFLOW_BACKEND=subagent environment variable or the /workflow-config persisted setting."
   }
 }
