@@ -22,7 +22,7 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 Run `/workflow-config` to interactively configure:
 
-- **Execution backend**: `workflow` (built-in in-process agent) or `subagent` (requires `pi-interactive-subagents`)
+- **Execution backend**: `workflow` (built-in in-process agent) or `subagent` (requires `pi-interactive-subagents` to be installed and loaded; each agent gets a real tool session)
 - **Async mode**: run workflows in the background with a live status widget
 
 Config is persisted to `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`.
@@ -35,6 +35,30 @@ Environment variables are supported as fallback only:
 | `PI_WORKFLOW_ASYNC` | `true` | Enable async mode (fallback) |
 
 JSON config takes priority over environment variables.
+
+> **Note:** The `subagent` backend depends on the `pi-interactive-subagents` extension injecting its capabilities into `globalThis.__pi_subagents` at runtime. If the backend is set to `subagent` but that extension is not installed/loaded, every `agent()` call in the workflow will fail.
+
+## Troubleshooting
+
+### Error: the subagent execution backend requires the pi-interactive-subagents extension, which is not currently loaded
+
+**Cause**: the workflow execution backend is set to `subagent`, but the `pi-interactive-subagents` extension is not installed or not loaded, so `globalThis.__pi_subagents` is not injected.
+
+The `subagent` backend can be activated by either of:
+
+- The `PI_WORKFLOW_BACKEND=subagent` environment variable
+- The persisted config written by `/workflow-config` (`~/.pi/agent/extensions/pi-dynamic-workflows/config.json`)
+
+**Fix (choose one)**:
+
+1. Install and load the extension (keep using the subagent backend):
+
+   ```bash
+   pi install npm:@maplezzk/pi-interactive-subagents
+   ```
+
+2. Switch back to the built-in `workflow` backend: run `/workflow-config` and set the execution backend to `workflow`. The persisted config takes priority over environment variables, so this overrides `PI_WORKFLOW_BACKEND`.
+3. If you enabled it via an environment variable, remove `export PI_WORKFLOW_BACKEND=subagent` from your shell config (e.g. `.zshrc` / `.zshenv`) and restart pi.
 
 ## Usage
 

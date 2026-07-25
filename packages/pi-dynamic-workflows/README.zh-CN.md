@@ -22,7 +22,7 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 运行 `/workflow-config` 进行交互式配置：
 
-- **执行后端**：`workflow`（内置进程内 agent）或 `subagent`（需安装 `pi-interactive-subagents`）
+- **执行后端**：`workflow`（内置进程内 agent）或 `subagent`（需安装并加载 `pi-interactive-subagents`，每个 agent 拥有真实工具会话）
 - **异步模式**：后台运行 workflow，带实时状态 widget
 
 配置持久化到 `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`。
@@ -35,6 +35,30 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 | `PI_WORKFLOW_ASYNC` | `true` | 启用异步模式（兜底） |
 
 JSON 配置优先级高于环境变量。
+
+> **注意**：`subagent` 后端依赖 `pi-interactive-subagents` 扩展在运行时向 `globalThis.__pi_subagents` 注入能力。若后端被设为 `subagent` 但该扩展未安装/未加载，workflow 中的每个 `agent()` 都会失败。
+
+## 常见问题
+
+### 报错：subagent 执行后端需要 pi-interactive-subagents 扩展，但当前未加载
+
+**原因**：workflow 的执行后端被设为 `subagent`，但 `pi-interactive-subagents` 扩展未安装或未加载，导致 `globalThis.__pi_subagents` 未注入。
+
+`subagent` 后端可能由以下任一来源触发：
+
+- 环境变量 `PI_WORKFLOW_BACKEND=subagent`
+- `/workflow-config` 写入的持久化配置（`~/.pi/agent/extensions/pi-dynamic-workflows/config.json`）
+
+**解决方式（任选其一）**：
+
+1. 安装并加载扩展（继续使用 subagent 后端）：
+
+   ```bash
+   pi install npm:@maplezzk/pi-interactive-subagents
+   ```
+
+2. 切回内置 `workflow` 后端：运行 `/workflow-config`，将执行后端改为 `workflow`。持久化配置优先级高于环境变量，可覆盖 `PI_WORKFLOW_BACKEND`。
+3. 若是通过环境变量启用，移除 shell 配置（如 `.zshrc` / `.zshenv`）中的 `export PI_WORKFLOW_BACKEND=subagent` 后重启 pi。
 
 ## 用法
 
