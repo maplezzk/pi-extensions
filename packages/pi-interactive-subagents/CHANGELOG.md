@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.8.0...pi-interactive-subagents-v3.8.1) (2026-07-26)
+
+
+### Bug Fixes
+
+* correct Pi npm install commands ([85765d1](https://github.com/maplezzk/pi-extensions/commit/85765d122307feb80690dee88af1976cd392e943))
+
 ## [3.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.7.1...pi-interactive-subagents-v3.8.0) (2026-07-23)
 
 
