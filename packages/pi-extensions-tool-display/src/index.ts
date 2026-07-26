@@ -44,9 +44,9 @@ export function toolDisplayReloadRequired(
 
 const initializedHosts = new WeakSet<ExtensionAPI>();
 
-function hasRegisteredToolDisplayCommand(pi: ExtensionAPI): boolean {
+function hasRegisteredToolDisplayCommand(pi: ExtensionAPI, name: string): boolean {
   try {
-    return pi.getCommands().some((command) => command.name === "tool-display");
+    return pi.getCommands().some((command) => command.name === name);
   } catch {
     return false;
   }
@@ -119,15 +119,16 @@ export function ensureToolDisplayHost(
 
   // Each Pi extension has its own registration map, while getCommands() sees
   // the shared runtime. Check the latter so feature extensions do not expose
-  // duplicate /tool-display entries when they initialize this host separately.
-  if (!hasRegisteredToolDisplayCommand(pi)) {
-    pi.registerCommand("tool-display", {
-      description: "Configure tool output rendering (OpenCode-style)",
-      handler: async (args, ctx) => {
-        const { runToolDisplayCommandHandler } = await import("./config-modal.js");
-        await runToolDisplayCommandHandler(args, ctx, { getConfig, setConfig, getCapabilities });
-      },
-    });
+  // duplicate management commands when they initialize this host separately.
+  const command = {
+    description: "Configure tool output rendering (OpenCode-style)",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      const { runToolDisplayCommandHandler } = await import("./config-modal.js");
+      await runToolDisplayCommandHandler(args, ctx, { getConfig, setConfig, getCapabilities });
+    },
+  };
+  for (const name of ["config:tool-display", "tool-display", "pi-tool-display"] as const) {
+    if (!hasRegisteredToolDisplayCommand(pi, name)) pi.registerCommand(name, command);
   }
 
   pi.on("session_start", async (_event, ctx) => {

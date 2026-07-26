@@ -11,7 +11,7 @@ Session metrics for the [Pi coding agent](https://github.com/earendil-works/pi):
 - When the agent fully settles (`agent_settled` — including auto-retries, compaction continuations, or Esc interruption), a final line shows the **total elapsed time from message send to stop** (`⏱ Total elapsed 18.9s`).
 - After each LLM turn, a notification reports TPS, TTFT, token counts, generation time, stalls, and blended cost when available.
 - Telemetry is persisted as `tps` custom session entries and restored after session resume or `/tree` navigation.
-- `/tps-export` exports telemetry JSONL; `/session-export` exports the session JSONL.
+- Metrics are exposed through session entries and notifications; this package does not register export slash commands.
 
 ## Migration from pi-tps
 

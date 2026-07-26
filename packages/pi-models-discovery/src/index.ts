@@ -5,7 +5,7 @@
  * GET {baseUrl}/models 自动发现模型并注册，无需手写 models 数组。
  *
  * 配置方式（二选一）：
- * 1. pi 终端内执行 /model-discovery，交互式添加/删除/重新发现 provider（推荐）；
+ * 1. pi 终端内执行 /config:model-discovery，交互式添加/删除/重新发现 provider（推荐）；
  * 2. 直接编辑 ~/.pi/agent/models.json：
  * {
  *   "providers": {
@@ -23,7 +23,7 @@
  * - 首次发现成功后，模型列表持久化到 ~/.pi/agent/extensions/pi-models-discovery/cache.json；
  *   之后每次启动直接读缓存注册，不请求网络。配置指纹
  *   （baseUrl+api+apiKey+headers+compat）变化时缓存自动失效，重新走网络发现。
- * - /model-discovery-refresh 强制重新拉取所有发现 provider 并更新缓存；
+ * - /config:model-discovery-refresh 强制重新拉取所有发现 provider 并更新缓存；
  *   /model 打开时触发的在线 refreshModels 同样走网络并同步更新缓存。
  * - baseUrl / api 由扩展显式转发（pi 的 extension 组合层要求），
  *   apiKey / name / headers / compat 不写回注册配置，由 pi 的 models.json 层回落生效。
@@ -37,7 +37,7 @@
  *   以免空列表清掉 models.json 手写 models。
  * - 发现请求的 apiKey 解析仅支持字面量与 $ENV_VAR/${ENV_VAR} 插值；
  *   "!command" 形式的 apiKey 跳过发现（显式警告），pi 发起聊天请求时仍由 pi 自身解析。
- * - /model-discovery 命令对 models.json 的修改立即生效（registerProvider 运行时可直接调用）；
+ * - /config:model-discovery 命令对 models.json 的修改立即生效（registerProvider 运行时可直接调用）；
  *   直接手编 models.json 后需 /reload 扩展生效。
  * - 本插件不使用 console.*：所有用户可见消息走 ctx.ui.notify；
  *   加载期（无 ctx）产生的消息收集到 pendingNotices，session_start 时统一 flush。
@@ -417,7 +417,7 @@ function validateEntry(entry: DiscoveryProviderEntry, notices: Notice[]): entry 
 
 /**
  * 对单个 provider 执行模型发现并注册（成功带 models，失败保留手写回退）。
- * 启动期缓存未命中时与 /model-discovery、/model-discovery-refresh 命令共用；
+ * 启动期缓存未命中时与 /config:model-discovery、/config:model-discovery-refresh 命令共用；
  * 运行期调用立即生效，无需 /reload。
  * 成功时持久化模型缓存；返回发现的模型列表（失败为 null），消息写入 notices。
  * 注意：本函数不再主动输出“发现成功”信息；调用方按需自行 notify，
@@ -476,9 +476,9 @@ function registerFromCache(
 	});
 }
 
-/** /model-discovery 交互式配置命令 */
+/** /config:model-discovery 交互式配置命令；旧名称保留为兼容别名。 */
 function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache) {
-	pi.registerCommand("model-discovery", {
+	const command = {
 		description: i18n.t("commandDescription"),
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) return;
@@ -512,12 +512,15 @@ function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache) {
 				}
 			}
 		},
-	});
+	};
+	for (const name of ["config:model-discovery", "model-discovery", "pi-model-discovery"] as const) {
+		pi.registerCommand(name, command);
+	}
 }
 
-/** /model-discovery-refresh 强制刷新命令：绕过启动缓存，重拉所有发现 provider 并更新持久化缓存 */
+/** /config:model-discovery-refresh 强制刷新命令；旧名称保留为兼容别名。 */
 function registerRefreshCommand(pi: ExtensionAPI) {
-	pi.registerCommand("model-discovery-refresh", {
+	const command = {
 		description: i18n.t("refreshDescription"),
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) return;
@@ -551,7 +554,10 @@ function registerRefreshCommand(pi: ExtensionAPI) {
 				ok === providers.length ? "info" : "warning",
 			);
 		},
-	});
+	};
+	for (const name of ["config:model-discovery-refresh", "model-discovery-refresh", "pi-model-discovery-refresh"] as const) {
+		pi.registerCommand(name, command);
+	}
 }
 
 type CommandCtx = Parameters<Parameters<ExtensionAPI["registerCommand"]>[1]["handler"]>[1];
@@ -561,7 +567,7 @@ function flushNotices(ctx: CommandCtx, notices: Notice[]): void {
 	for (const notice of notices) ctx.ui.notify(notice.message, notice.level);
 }
 
-/** /model-discovery 添加 provider 交互流程 */
+/** /config:model-discovery 添加 provider 交互流程 */
 async function addProviderFlow(pi: ExtensionAPI, ctx: CommandCtx, data: Record<string, unknown>, fetchCache: FetchCache) {
 	const existingIds = new Set(Object.keys((data.providers ?? {}) as Record<string, unknown>));
 	const id = (await ctx.ui.input(i18n.t("providerId")))?.trim();
@@ -617,7 +623,7 @@ async function addProviderFlow(pi: ExtensionAPI, ctx: CommandCtx, data: Record<s
 	}
 }
 
-/** /model-discovery 管理 provider（重新发现/删除）交互流程 */
+/** /config:model-discovery 管理 provider（重新发现/删除）交互流程 */
 async function manageProviderFlow(
 	pi: ExtensionAPI,
 	ctx: CommandCtx,

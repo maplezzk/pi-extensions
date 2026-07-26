@@ -449,7 +449,7 @@ export async function processToolResult(
       outputSummaryAdvice: loaded.warnings.length > 0
         ? `Distill is disabled: ${loaded.warnings.join(" ")}`
         : loaded.enabled
-          ? "Distill is disabled: invalid configuration. Check /pi-distill."
+          ? "Distill is disabled: invalid configuration. Check /config:distill."
           : "Distill is disabled by configuration.",
     };
     const agentDiagnostic = buildAgentDiagnosticText(diagnostics);
@@ -941,7 +941,7 @@ async function runDistillConfigUi(
 }
 
 function registerDistillConfigCommand(pi: ExtensionAPI, onSaved: () => void): void {
-  pi.registerCommand("pi-distill", {
+  const command = {
     description: i18n.t("commandDescription"),
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
@@ -950,7 +950,10 @@ function registerDistillConfigCommand(pi: ExtensionAPI, onSaved: () => void): vo
       }
       await runDistillConfigUi(ctx, pi, getDistillConfigPath(), onSaved);
     },
-  });
+  };
+  for (const name of ["config:distill", "pi-distill"] as const) {
+    pi.registerCommand(name, command);
+  }
 }
 
 export default function piDistillExtension(pi: ExtensionAPI) {

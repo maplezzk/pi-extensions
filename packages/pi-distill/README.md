@@ -24,7 +24,7 @@ The screenshot reports character reduction, not an exact tokenizer measurement. 
 
 ## Prompt language
 
-The distillation prompt strictly follows the current locale selected by `/pi-language`. Changing the persisted locale is picked up on the next tool call, including when the language command and `pi-distill` are loaded from separate package instances. `PI_EXTENSIONS_LOCALE` remains the explicit environment-variable override. The original user message is included only as language context and never overrides the selected locale.
+The distillation prompt strictly follows the current locale selected by `/config:language`. Changing the persisted locale is picked up on the next tool call, including when the language command and `pi-distill` are loaded from separate package instances. `PI_EXTENSIONS_LOCALE` remains the explicit environment-variable override. The original user message is included only as language context and never overrides the selected locale.
 
 ## How it works
 
@@ -55,7 +55,7 @@ Reload Pi after installation:
 Open the interactive configuration command with:
 
 ```text
-/pi-distill
+/config:distill
 ```
 
 ## The idea
@@ -125,7 +125,7 @@ Agent consumes a result suited to the current decision, with auditable diagnosti
 
 ## Prompt language
 
-The distillation prompt strictly follows the locale selected by `/pi-language`:
+The distillation prompt strictly follows the locale selected by `/config:language`:
 
 - the next tool call reads the newly persisted locale after a language switch;
 - separate package instances still synchronize through the shared locale setting;
@@ -178,7 +178,9 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | `timeoutSeconds` | Maximum time allowed for the distillation model call. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
 | `summarizeErrors` | Whether error results that meet `minChars` should still be sent to the distillation model. |
-| `tools.<name>.enabled` | Enables or disables `outputRequest` injection and result distillation for one tool. `edit` and `write` default to disabled; other unconfigured tools default to enabled. It can also be changed from `/pi-distill`. |
+| `tools.<name>.enabled` | Enables or disables `outputRequest` injection and result distillation for one tool. `edit` and `write` default to disabled; other unconfigured tools default to enabled. It can also be changed from `/config:distill`. |
+
+`/pi-distill` remains available as a compatibility alias.
 | `render.*` | Controls the audit card, prompt preview, and result preview. |
 
 The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`. The legacy `maxOutputChars` / `PI_DISTILL_MAX_OUTPUT_CHARS` option is still parsed for backward compatibility but no longer has any effect.

@@ -10,7 +10,7 @@
 - 通过 acorn AST 解析对 workflow 脚本进行静态校验
 - 可选 subagent 后端（依赖 `pi-interactive-subagents`），每个 agent 拥有真实工具访问
 - 异步后台执行模式，带实时状态 widget
-- 通过 `/workflow-config` 斜杠命令配置（持久化到 JSON）
+- 通过 `/config:workflow` 斜杠命令配置（持久化到 JSON）
 
 ## 安装
 
@@ -20,7 +20,7 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 ## 配置
 
-运行 `/workflow-config` 进行交互式配置：
+运行 `/config:workflow` 进行交互式配置：
 
 - **执行后端**：`workflow`（内置进程内 agent）或 `subagent`（需安装 `pi-interactive-subagents`）
 - **异步模式**：后台运行 workflow，带实时状态 widget
@@ -35,6 +35,8 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 | `PI_WORKFLOW_ASYNC` | `true` | 启用异步模式（兜底） |
 
 JSON 配置优先级高于环境变量。
+
+`/workflow-config` 和 `/pi-workflow-config` 仍作为兼容别名保留。
 
 ## 用法
 

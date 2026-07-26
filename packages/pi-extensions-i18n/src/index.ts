@@ -192,7 +192,7 @@ const commandMessages = loadCatalog(
 
 function registerLocaleCommand(pi: ExtensionAPI): void {
   const i18n = createTranslator(commandMessages);
-  pi.registerCommand("pi-language", {
+  const command = {
     description: i18n.t("description"),
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
@@ -246,7 +246,10 @@ function registerLocaleCommand(pi: ExtensionAPI): void {
         ctx.ui.notify(i18n.t("failed", { error: String(error) }), "error");
       }
     },
-  });
+  };
+  for (const name of ["config:language", "pi-language"] as const) {
+    pi.registerCommand(name, command);
+  }
 }
 
 export default function piI18n(pi: ExtensionAPI): void {

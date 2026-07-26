@@ -99,6 +99,10 @@ export function isCmuxAvailable(): boolean {
   return isCmuxRuntimeAvailable();
 }
 
+export function isMuxyAvailable(): boolean {
+  return isMuxyRuntimeAvailable();
+}
+
 export function isTmuxAvailable(): boolean {
   return isTmuxRuntimeAvailable();
 }

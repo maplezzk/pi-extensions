@@ -142,6 +142,7 @@ test("entry point registers tool-display command", () => {
 
   const cmdNames = capturedCommands.map((c) => c.name);
   assert.ok(cmdNames.includes("tool-display"), "tool-display command registered");
+  assert.ok(cmdNames.includes("config:tool-display"), "canonical config:tool-display command registered");
 });
 
 test("disabled entry point keeps the command but does not register render behavior", () => {

@@ -174,7 +174,7 @@ export function loadFileEditReviewConfig(
     && existsSync(legacyConfigFile);
   const resolvedConfigFile = shouldReadLegacyConfig ? legacyConfigFile : preferredConfigFile;
   const warnings = shouldReadLegacyConfig
-    ? [`已从旧配置 ${legacyConfigFile} 读取；通过 /pi-tool-supervisor 保存后会迁移到 ${preferredConfigFile}。`]
+    ? [`已从旧配置 ${legacyConfigFile} 读取；通过 /config:tool-supervisor 保存后会迁移到 ${preferredConfigFile}。`]
     : [];
   const defaultConfig: FileEditReviewConfig = {
     enabled: false,

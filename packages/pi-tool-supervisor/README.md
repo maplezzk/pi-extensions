@@ -35,7 +35,7 @@ Reload Pi after installation:
 Use the interactive configuration command:
 
 ```text
-/pi-tool-supervisor
+/config:tool-supervisor
 ```
 
 ## Configuration
@@ -97,7 +97,7 @@ consumers:
 - A failed tool call or an unchanged file is skipped.
 - The extension does not roll back edits, block the operating system, or replace Pi's permission and sandbox controls.
 
-When upgrading from `pi-file-edit-review`, the extension reads the legacy configuration if the new configuration does not exist. Saving through `/pi-tool-supervisor` writes the new configuration path.
+When upgrading from `pi-file-edit-review`, the extension reads the legacy configuration if the new configuration does not exist. Saving through `/config:tool-supervisor` writes the new configuration path. `/pi-tool-supervisor` remains available as a compatibility alias.
 
 ## Requirements
 

@@ -53,6 +53,10 @@ import {
   shouldMarkUserTookOver,
   shouldAutoExitOnAgentEnd,
 } from "../pi-extension/subagents/subagent-done.ts";
+import {
+  loadMuxConfig,
+  saveMuxPreference,
+} from "../pi-extension/subagents/mux-config.ts";
 
 // --- Helpers ---
 
@@ -806,6 +810,54 @@ describe("status.ts", () => {
   });
 });
 
+describe("subagent mux config", () => {
+  it("loads the persisted preference and lets environment variables override it", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      writeFileSync(configPath, JSON.stringify({ mux: "tmux" }));
+
+      const previousTerminalMux = process.env.PI_TERMINAL_MUX;
+      const previousSubagentMux = process.env.PI_SUBAGENT_MUX;
+      delete process.env.PI_TERMINAL_MUX;
+      delete process.env.PI_SUBAGENT_MUX;
+      try {
+        assert.deepEqual(loadMuxConfig(configPath), { mux: "tmux", source: "file" });
+        process.env.PI_TERMINAL_MUX = "zellij";
+        assert.deepEqual(loadMuxConfig(configPath), { mux: "zellij", source: "environment" });
+      } finally {
+        if (previousTerminalMux === undefined) delete process.env.PI_TERMINAL_MUX;
+        else process.env.PI_TERMINAL_MUX = previousTerminalMux;
+        if (previousSubagentMux === undefined) delete process.env.PI_SUBAGENT_MUX;
+        else process.env.PI_SUBAGENT_MUX = previousSubagentMux;
+      }
+    });
+  });
+
+  it("saves a preference and makes it effective immediately", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      const previousTerminalMux = process.env.PI_TERMINAL_MUX;
+      const previousSubagentMux = process.env.PI_SUBAGENT_MUX;
+      try {
+        const saved = saveMuxPreference("tmux", configPath);
+        assert.deepEqual(saved, { mux: "tmux", source: "file" });
+        assert.equal(process.env.PI_TERMINAL_MUX, "tmux");
+        assert.equal(loadMuxConfig(configPath).mux, "tmux");
+
+        saveMuxPreference("auto", configPath);
+        assert.equal(process.env.PI_TERMINAL_MUX, undefined);
+        assert.equal(process.env.PI_SUBAGENT_MUX, undefined);
+        assert.equal(loadMuxConfig(configPath).mux, "auto");
+      } finally {
+        if (previousTerminalMux === undefined) delete process.env.PI_TERMINAL_MUX;
+        else process.env.PI_TERMINAL_MUX = previousTerminalMux;
+        if (previousSubagentMux === undefined) delete process.env.PI_SUBAGENT_MUX;
+        else process.env.PI_SUBAGENT_MUX = previousSubagentMux;
+      }
+    });
+  });
+});
+
 describe("subagent discovery", () => {
   const testApi = (subagentsModule as any).__test__;
 
@@ -1391,6 +1443,14 @@ describe("commands", () => {
 
     const iterate = registeredCommands.find((command) => command.name === "iterate");
     assert.ok(iterate, "expected /iterate to be registered");
+    assert.ok(
+      registeredCommands.find((command) => command.name === "config:subagent"),
+      "expected /config:subagent to be registered",
+    );
+    assert.ok(
+      registeredCommands.find((command) => command.name === "subagent-config"),
+      "expected /subagent-config to be registered",
+    );
 
     iterate.handler("Fix the bug", {});
 

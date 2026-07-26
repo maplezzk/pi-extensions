@@ -13,6 +13,7 @@ export {
   muxSetupHint,
   muxLog,
   AGENT_MUXY_PANE_ID,
+  isMuxyAvailable,
   isCmuxAvailable,
   isTmuxAvailable,
   isZellijAvailable,

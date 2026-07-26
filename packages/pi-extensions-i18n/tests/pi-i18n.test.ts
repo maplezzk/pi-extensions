@@ -44,13 +44,15 @@ assert.equal(getLocale(), "zh-CN");
 writeFileSync(configPath, JSON.stringify({ locale: "en-US" }));
 assert.equal(getLocale(), "en-US");
 
-let registeredCommand: any;
+const registeredCommands: any[] = [];
 piI18n({
   registerCommand(name: string, options: unknown) {
-    registeredCommand = { name, options };
+    registeredCommands.push({ name, options });
   },
 } as any);
-assert.equal(registeredCommand.name, "pi-language");
+const registeredCommand = registeredCommands.find((command) => command.name === "config:language");
+assert.ok(registeredCommand);
+assert.ok(registeredCommands.find((command) => command.name === "pi-language"));
 registeredCommand.options.handler("", {
   hasUI: true,
   ui: {

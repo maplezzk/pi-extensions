@@ -4,6 +4,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 import {
   readdirSync,
   readFileSync,
@@ -30,7 +31,23 @@ import {
   readScreen,
   getLastSplitSource,
   clearLastSplitSource,
+  isMuxyAvailable,
+  isCmuxAvailable,
+  isTmuxAvailable,
+  isZellijAvailable,
+  isWezTermAvailable,
+  isHerdrAvailable,
+  isOttyAvailable,
+  type MuxBackend,
 } from "pi-terminal-mux";
+
+import {
+  applyPersistedMuxPreference,
+  loadMuxConfig,
+  saveMuxPreference,
+  SUBAGENT_MUX_BACKENDS,
+  type SubagentMuxPreference,
+} from "./mux-config.ts";
 
 import {
   findLastAssistantMessage,
@@ -56,6 +73,8 @@ import {
   type ActivityReadResult,
   type SubagentActivityState,
 } from "./activity.ts";
+
+const i18n = createTranslator(loadCatalog(new URL("../../locales/index.json", import.meta.url)));
 
 /** Absolute path to `pi-extension/subagents`. https://github.com/nodejs/node/issues/37845 */
 const SUBAGENTS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -935,6 +954,83 @@ function resolveResumeLaunchBehavior(params: { autoExit?: boolean }): { autoExit
   return { autoExit, interactive: !autoExit };
 }
 
+function isMuxBackendAvailable(backend: MuxBackend): boolean {
+  switch (backend) {
+    case "muxy": return isMuxyAvailable();
+    case "cmux": return isCmuxAvailable();
+    case "tmux": return isTmuxAvailable();
+    case "zellij": return isZellijAvailable();
+    case "wezterm": return isWezTermAvailable();
+    case "herdr": return isHerdrAvailable();
+    case "otty": return isOttyAvailable();
+  }
+}
+
+function muxPreferenceLabel(preference: SubagentMuxPreference): string {
+  return preference === "auto" ? i18n.t("muxAuto") : preference;
+}
+
+function registerMuxConfigCommand(pi: ExtensionAPI): void {
+  const command = {
+    description: i18n.t("muxCommandDescription"),
+    handler: async (args, ctx) => {
+      const requested = args.trim().toLowerCase();
+      if (requested) {
+        const preference = requested === "auto" || (SUBAGENT_MUX_BACKENDS as readonly string[]).includes(requested)
+          ? requested as SubagentMuxPreference
+          : null;
+        if (!preference) {
+          ctx.ui.notify(i18n.t("muxInvalid", { value: requested }), "warning");
+          return;
+        }
+        try {
+          const saved = saveMuxPreference(preference);
+          ctx.ui.notify(i18n.t("muxSaved", { value: muxPreferenceLabel(saved.mux) }), "info");
+        } catch (error) {
+          ctx.ui.notify(String(error), "error");
+        }
+        return;
+      }
+
+      if (!ctx.hasUI) {
+        ctx.ui.notify(i18n.t("muxInteractiveOnly"), "warning");
+        return;
+      }
+
+      const current = loadMuxConfig();
+      const detected = getMuxBackend();
+      const options: Array<{ preference: SubagentMuxPreference; label: string }> = [
+        {
+          preference: "auto",
+          label: `${current.mux === "auto" ? "●" : "○"} ${i18n.t("muxAuto")} — ${detected ?? i18n.t("muxUnavailable")}`,
+        },
+        ...SUBAGENT_MUX_BACKENDS.map((backend) => ({
+          preference: backend,
+          label: `${current.mux === backend ? "●" : "○"} ${backend} — ${isMuxBackendAvailable(backend) ? i18n.t("muxAvailable") : i18n.t("muxUnavailable")}`,
+        })),
+      ];
+      const exit = i18n.t("muxExit");
+      const choice = await ctx.ui.select(
+        i18n.t("muxConfigTitle", { value: muxPreferenceLabel(current.mux) }),
+        [...options.map((option) => option.label), exit],
+      );
+      if (!choice || choice === exit) return;
+
+      const selected = options.find((option) => option.label === choice);
+      if (!selected) return;
+      try {
+        const saved = saveMuxPreference(selected.preference);
+        ctx.ui.notify(i18n.t("muxSaved", { value: muxPreferenceLabel(saved.mux) }), "info");
+      } catch (error) {
+        ctx.ui.notify(String(error), "error");
+      }
+    },
+  };
+  for (const name of ["config:subagent", "subagent-config", "pi-subagent-config"] as const) {
+    pi.registerCommand(name, command);
+  }
+}
+
 export const __test__ = {
   borderLine,
   getShellReadyDelayMs,
@@ -1431,6 +1527,8 @@ async function watchSubagent(
 }
 
 export default function subagentsExtension(pi: ExtensionAPI) {
+  applyPersistedMuxPreference();
+
   // Expose launchSubagent / watchSubagent for programmatic use by other extensions
   (globalThis as any).__pi_subagents = { launchSubagent, watchSubagent };
 
@@ -2074,6 +2172,8 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       pi.sendUserMessage(toolCall);
     },
   });
+
+  registerMuxConfigCommand(pi);
 
   // ── subagent_result message renderer ──
   pi.registerMessageRenderer("subagent_result", (message, options, theme) => {

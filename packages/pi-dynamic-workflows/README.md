@@ -10,7 +10,7 @@ Claude-Code-style dynamic workflow orchestration for Pi.
 - Static validation of workflow scripts via acorn AST parsing
 - Optional subagent backend via `pi-interactive-subagents` for real tool access per agent
 - Async background execution mode with live status widget
-- Configurable via `/workflow-config` slash command (persisted to JSON)
+- Configurable via `/config:workflow` slash command (persisted to JSON)
 
 ## Installation
 
@@ -20,7 +20,7 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 ## Configuration
 
-Run `/workflow-config` to interactively configure:
+Run `/config:workflow` to interactively configure:
 
 - **Execution backend**: `workflow` (built-in in-process agent) or `subagent` (requires `pi-interactive-subagents`)
 - **Async mode**: run workflows in the background with a live status widget
@@ -35,6 +35,8 @@ Environment variables are supported as fallback only:
 | `PI_WORKFLOW_ASYNC` | `true` | Enable async mode (fallback) |
 
 JSON config takes priority over environment variables.
+
+`/workflow-config` and `/pi-workflow-config` remain available as compatibility aliases.
 
 ## Usage
 
