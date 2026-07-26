@@ -24,7 +24,7 @@
 
 ## Prompt 语言
 
-提炼 prompt 会严格跟随 `/pi-language` 当前选择的语言。持久化语言发生变化后，下一次工具调用会读取新设置，即使语言命令和 `pi-distill` 来自不同的包实例也可以同步。`PI_EXTENSIONS_LOCALE` 仍然是显式的环境变量覆盖项。原始用户消息只作为语言上下文传入，不能覆盖已选择的语言。
+提炼 prompt 会严格跟随 `/config:language` 当前选择的语言。持久化语言发生变化后，下一次工具调用会读取新设置，即使语言命令和 `pi-distill` 来自不同的包实例也可以同步。`PI_EXTENSIONS_LOCALE` 仍然是显式的环境变量覆盖项。原始用户消息只作为语言上下文传入，不能覆盖已选择的语言。
 
 ## 工作方式
 
@@ -55,7 +55,7 @@ pi install npm:pi-distill
 交互式配置命令：
 
 ```text
-/pi-distill
+/config:distill
 ```
 
 ## 核心思想
@@ -127,10 +127,10 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 
 ## Prompt 语言
 
-提炼 prompt 完全跟随 `/pi-language` 当前选择的语言：
+提炼 prompt 完全跟随 `/config:language` 当前选择的语言：
 
 - 切换语言后，下一次工具调用读取新的持久化语言设置；
-- 即使 `/pi-language` 和 `pi-distill` 来自不同的包实例，也通过共享 locale 设置同步；
+- 即使 `/config:language` 和 `pi-distill` 来自不同的包实例，也通过共享 locale 设置同步；
 - `PI_EXTENSIONS_LOCALE` 可以作为显式环境变量覆盖；
 - 原始用户消息只作为任务上下文传入，不会把中文用户消息误判成中文 prompt。
 
@@ -181,7 +181,9 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `timeoutSeconds` | 提炼模型调用的最长等待时间。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
 | `summarizeErrors` | 工具返回错误且达到 `minChars` 时，是否仍发送给提炼模型。 |
-| `tools.<name>.enabled` | 按工具开启或关闭 `outputRequest` 注入和结果提炼。`edit` 和 `write` 默认关闭，其他未配置工具默认开启，也可以通过 `/pi-distill` 修改。 |
+| `tools.<name>.enabled` | 按工具开启或关闭 `outputRequest` 注入和结果提炼。`edit` 和 `write` 默认关闭，其他未配置工具默认开启，也可以通过 `/config:distill` 修改。 |
+
+`/pi-distill` 仍作为兼容别名保留。
 | `render.*` | 控制审计卡片、prompt 预览和结果预览。 |
 
 主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。旧配置中的 `maxOutputChars` / `PI_DISTILL_MAX_OUTPUT_CHARS` 仍会被解析以兼容旧文件，但不再生效。

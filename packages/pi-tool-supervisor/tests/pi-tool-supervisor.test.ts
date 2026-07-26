@@ -336,7 +336,7 @@ test("pi-tool-supervisor 通过 Pi 工具事件独立接入，不注册或依赖
   try {
     const handlers = new Map<string, (...args: any[]) => any>();
     let registeredToolCount = 0;
-    let registeredCommandName: string | undefined;
+    const registeredCommandNames: string[] = [];
     const pi = {
       // The shared display host is initialized by the supervisor now. Mark all
       // built-ins as externally owned so this test isolates supervisor wiring
@@ -346,7 +346,7 @@ test("pi-tool-supervisor 通过 Pi 工具事件独立接入，不注册或依赖
         sourceInfo: { source: "pi-tool-supervisor-test" },
       })),
       registerTool: () => { registeredToolCount += 1; },
-      registerCommand: (name: string) => { registeredCommandName = name; },
+      registerCommand: (name: string) => { registeredCommandNames.push(name); },
       registerEntryRenderer: () => undefined,
       appendEntry: () => undefined,
       on: (event: string, handler: (...args: any[]) => any) => handlers.set(event, handler),
@@ -371,7 +371,8 @@ test("pi-tool-supervisor 通过 Pi 工具事件独立接入，不注册或依赖
     }, { cwd: process.cwd() });
 
     assert.equal(registeredToolCount, 0);
-    assert.equal(registeredCommandName, "pi-tool-supervisor");
+    assert.ok(registeredCommandNames.includes("config:tool-supervisor"));
+    assert.ok(registeredCommandNames.includes("pi-tool-supervisor"));
     assert.equal(result.content[0].text, "Wrote file");
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

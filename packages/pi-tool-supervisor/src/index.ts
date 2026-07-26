@@ -617,7 +617,7 @@ async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: strin
 }
 
 function registerReviewConfigCommand(pi: ExtensionAPI): void {
-  pi.registerCommand("pi-tool-supervisor", {
+  const command = {
     description: i18n.t("commandDescription"),
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
@@ -626,7 +626,10 @@ function registerReviewConfigCommand(pi: ExtensionAPI): void {
       }
       await runReviewConfigUi(ctx, getPiSupervisorConfigPath());
     },
-  });
+  };
+  for (const name of ["config:tool-supervisor", "pi-tool-supervisor"] as const) {
+    pi.registerCommand(name, command);
+  }
 }
 
 export default function piSupervisorExtension(pi: ExtensionAPI) {

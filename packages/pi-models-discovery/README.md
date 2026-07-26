@@ -15,7 +15,7 @@ pi install npm:pi-models-discovery
 ### Option 1: interactive configuration inside pi (recommended)
 
 ```
-/model-discovery
+/config:model-discovery
 ```
 
 Interactively add / remove / rediscover providers: enter id, baseUrl, api type, apiKey (optional), display name (optional). Changes are written to models.json and take effect **immediately** (no /reload required). A backup is written to `models.json.discovery-bak` before each write.
@@ -42,12 +42,12 @@ Add `"discoverModels": true` to a provider in `~/.pi/agent/models.json`:
 
 `baseUrl` and `api` are required; `apiKey` is optional (omit for unauthenticated services). Multiple providers sharing the same `baseUrl+apiKey` reuse a single `/models` request.
 
-Hand edits require `/reload` to take effect; changes made through `/model-discovery` apply immediately.
+Hand edits require `/reload` to take effect; changes made through `/config:model-discovery` apply immediately.
 
 ## Refreshing the cache
 
 ```
-/model-discovery-refresh
+/config:model-discovery-refresh
 ```
 
 Forces a rediscovery of every discovery provider and updates the local cache, notifying the result for each provider.
@@ -55,11 +55,13 @@ Forces a rediscovery of every discovery provider and updates the local cache, no
 ## Behavior
 
 - **Startup (cache-first)**: when the cache hits, models are registered directly from the persisted list with zero network requests. The cache lives at `~/.pi/agent/extensions/pi-models-discovery/cache.json`. The cache is invalidated automatically when the provider configuration fingerprint (baseUrl+api+apiKey+headers+compat) changes, triggering a fresh network discovery.
-- **Online refresh**: `/model-discovery-refresh`, or the `refreshModels` hook triggered when opening `/model`, rediscovers online and updates the cache.
+- **Online refresh**: `/config:model-discovery-refresh`, or the `refreshModels` hook triggered when opening `/model`, rediscovers online and updates the cache.
 - **Offline / fetch failure**: handwritten `models` in models.json (if any) are kept as a fallback, and an explicit warning is surfaced via in-session notify — never a silent degradation. One provider failing does not affect the others.
 - **apiKey resolution** (discovery request only): supports literals and `$ENV_VAR` / `${ENV_VAR}` interpolation; `!command` values skip discovery with an explicit warning (chat requests are still resolved by pi itself and are unaffected).
 - Default parameters for discovered models: `reasoning: true`, `input: ["text", "image"]`, zero cost, `contextWindow` 1M, `maxTokens` 64K, `compat.supportsDeveloperRole: false`. Provider-level `compat` is merged into every discovered model.
 - Model metadata may carry `name` / `context_window` (or `contextWindow`) / `max_tokens` (or `maxTokens`); defaults are used when absent.
+
+The old `/model-discovery`, `/model-discovery-refresh`, `/pi-model-discovery`, and `/pi-model-discovery-refresh` names remain available as compatibility aliases.
 
 ## Uninstall
 

@@ -56,7 +56,9 @@ zellij --session pi   # then run: pi
 # just run pi inside Otty — no wrapper needed
 ```
 
-Optional: set `PI_SUBAGENT_MUX=cmux|tmux|zellij|wezterm|herdr|otty` to force a specific backend.
+Optional: set `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty` to force a specific backend.
+
+You can also configure it from inside Pi with `/config:subagent`. Run it without arguments for an interactive menu, or use `/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr|otty` for a direct choice. The selection is persisted in Pi's user extension config directory; explicit `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` environment variables take precedence. `/subagent-config` and `/pi-subagent-config` remain available as compatibility aliases.
 
 > **Otty notes:**
 > - Otty sets `TERM_PROGRAM=otty` automatically when pi runs inside it; the backend detects this env var.

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 /**
  * Workflow 运行时配置。
  *
- * 优先级：JSON 配置文件（由 /workflow-config 斜杠命令写入）> 环境变量兜底 > 默认值。
+ * 优先级：JSON 配置文件（由 /config:workflow 斜杠命令写入）> 环境变量兜底 > 默认值。
  * 环境变量仅作为兜底支持（PI_WORKFLOW_BACKEND / PI_WORKFLOW_ASYNC）。
  */
 export type WorkflowBackend = "workflow" | "subagent";

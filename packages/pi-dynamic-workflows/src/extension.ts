@@ -101,9 +101,9 @@ export default function extension(pi: ExtensionAPI) {
   });
 }
 
-/** /workflow-config 交互式配置命令：切换执行后端与异步模式，持久化到 JSON。 */
+/** /config:workflow 交互式配置命令；旧名称保留为兼容别名。 */
 function registerConfigCommand(pi: ExtensionAPI) {
-  pi.registerCommand("workflow-config", {
+  const command = {
     description: i18n.t("commandDescription"),
     handler: async (_args, ctx) => {
       if (!ctx.hasUI) return;
@@ -132,5 +132,8 @@ function registerConfigCommand(pi: ExtensionAPI) {
         }
       }
     },
-  });
+  };
+  for (const name of ["config:workflow", "workflow-config", "pi-workflow-config"] as const) {
+    pi.registerCommand(name, command);
+  }
 }

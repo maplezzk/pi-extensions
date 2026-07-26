@@ -10,7 +10,7 @@ Claude-Code-style dynamic workflow orchestration for Pi.
 - Static validation of workflow scripts via acorn AST parsing
 - Optional subagent backend via `pi-interactive-subagents` for real tool access per agent
 - Async background execution mode with live status widget
-- Configurable via `/workflow-config` slash command (persisted to JSON)
+- Configurable via `/config:workflow` slash command (persisted to JSON)
 
 ## Installation
 
@@ -20,7 +20,7 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 ## Configuration
 
-Run `/workflow-config` to interactively configure:
+Run `/config:workflow` to interactively configure:
 
 - **Execution backend**: `workflow` (built-in in-process agent) or `subagent` (requires `pi-interactive-subagents` to be installed and loaded; each agent gets a real tool session)
 - **Async mode**: run workflows in the background with a live status widget
@@ -57,8 +57,10 @@ The `subagent` backend can be activated by either of:
    pi install npm:@maplezzk/pi-interactive-subagents
    ```
 
-2. Switch back to the built-in `workflow` backend: run `/workflow-config` and set the execution backend to `workflow`. The persisted config takes priority over environment variables, so this overrides `PI_WORKFLOW_BACKEND`.
+2. Switch back to the built-in `workflow` backend: run `/config:workflow` and set the execution backend to `workflow`. The persisted config takes priority over environment variables, so this overrides `PI_WORKFLOW_BACKEND`.
 3. If you enabled it via an environment variable, remove `export PI_WORKFLOW_BACKEND=subagent` from your shell config (e.g. `.zshrc` / `.zshenv`) and restart pi.
+
+`/workflow-config` and `/pi-workflow-config` remain available as compatibility aliases.
 
 ## Usage
 

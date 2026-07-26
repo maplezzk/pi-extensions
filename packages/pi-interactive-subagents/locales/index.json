@@ -2,5 +2,41 @@
   "agentEndNudge": {
     "zh-CN": "【自动提醒】\n• 已完成 → 调用 subagent_done 结束。\n• 结束前自检：是否在原地打转？若是，立刻收敛结果，用 caller_ping 抛回主 agent，不要过度思考。\n• 还在处理 → 忽略。",
     "en-US": "[Auto reminder]\n• Done → call subagent_done to finish.\n• Before finishing, self-check: are you spinning in place? If so, converge your result immediately and hand it back to the main agent with caller_ping — don't overthink.\n• Still working → ignore."
+  },
+  "muxCommandDescription": {
+    "zh-CN": "配置 subagent 使用的终端复用器",
+    "en-US": "Configure the terminal multiplexer used by subagents"
+  },
+  "muxConfigTitle": {
+    "zh-CN": "选择 subagent 终端复用器（当前：{value}）",
+    "en-US": "Choose the subagent multiplexer (current: {value})"
+  },
+  "muxAuto": {
+    "zh-CN": "自动检测",
+    "en-US": "Auto-detect"
+  },
+  "muxAvailable": {
+    "zh-CN": "可用",
+    "en-US": "available"
+  },
+  "muxUnavailable": {
+    "zh-CN": "未检测到",
+    "en-US": "unavailable"
+  },
+  "muxExit": {
+    "zh-CN": "退出",
+    "en-US": "Exit"
+  },
+  "muxSaved": {
+    "zh-CN": "subagent 终端复用器已设置为：{value}",
+    "en-US": "Subagent multiplexer set to: {value}"
+  },
+  "muxInvalid": {
+    "zh-CN": "不支持的 mux：{value}。可选：auto、muxy、cmux、tmux、zellij、wezterm、herdr、otty。",
+    "en-US": "Unsupported mux: {value}. Choose auto, muxy, cmux, tmux, zellij, wezterm, herdr, or otty."
+  },
+  "muxInteractiveOnly": {
+    "zh-CN": "请在支持 UI 的 Pi 会话中运行 /config:subagent。",
+    "en-US": "Run /config:subagent in a Pi session with UI support."
   }
 }

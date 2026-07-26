@@ -5,15 +5,10 @@
  * elapsed-time HUD and generation telemetry share one lifecycle.
  */
 
-import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
-  ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { i18n } from "./i18n.ts";
@@ -345,54 +340,6 @@ function restoreTPSNotification(
   }
 }
 
-function openDirectory(directory: string): void {
-  try {
-    execFileSync(process.platform === "darwin" ? "open" : "xdg-open", [directory], {
-      stdio: "ignore",
-    });
-  } catch {
-    // Opening an export directory is optional; the path is still reported.
-  }
-}
-
-function exportEntries(
-  entries: SessionEntryLike[],
-  full: boolean,
-  filterType: string | null,
-  directoryName: "pi-telemetry" | "pi-sessions",
-  prefix: "pi-telemetry" | "pi-session",
-  sessionId: string,
-): { filepath: string; count: number } {
-  const isStructural = (entry: SessionEntryLike) =>
-    entry.type === "model_change" || entry.type === "branch_summary";
-  const exported = entries.filter(
-    (entry) => isStructural(entry) ||
-      (entry.type === "custom" && (!filterType || entry.customType === filterType)),
-  );
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const exportedIds = new Set(exported.map((entry) => entry.id));
-  const rechainParentId = (entry: SessionEntryLike): string | null => {
-    let parentId = entry.parentId ?? null;
-    while (parentId) {
-      if (exportedIds.has(parentId)) return parentId;
-      parentId = byId.get(parentId)?.parentId ?? null;
-    }
-    return null;
-  };
-  const rechained = exported.map((entry) => ({ ...entry, parentId: rechainParentId(entry) }));
-  const cacheBase = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
-  const directory = join(cacheBase, directoryName);
-  mkdirSync(directory, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const scope = [full ? "full" : "branch", filterType?.replace(/[^a-zA-Z0-9_-]/g, "-")]
-    .filter(Boolean)
-    .join("-");
-  const filepath = join(directory, `${prefix}-${scope}-${sessionId.slice(0, 8)}-${timestamp}.jsonl`);
-  writeFileSync(filepath, `${rechained.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
-  openDirectory(directory);
-  return { filepath, count: exported.length };
-}
-
 export default function tpsExtension(pi: ExtensionAPI): void {
   let currentTiming: TurnTiming | null = null;
   let pendingNeuralwattBilledCost: { turnIndex: number; costUsd: number } | null = null;
@@ -402,7 +349,6 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     billedApplied: boolean;
     ctx: ExtensionContext;
   } | null = null;
-  let cachedEntries: Array<{ type?: string; customType?: string }> = [];
   const tpsCaps = new Map<string, number>();
   const restoreTimers = new Set<ReturnType<typeof setTimeout>>();
   let unsubscribeNeuralwatt: (() => void) | undefined;
@@ -411,7 +357,6 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     currentTiming = null;
     pendingNeuralwattBilledCost = null;
     lastCommittedTurn = null;
-    cachedEntries = [];
     for (const timer of restoreTimers) clearTimeout(timer);
     restoreTimers.clear();
   };
@@ -447,7 +392,6 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     committed.telemetry = corrected;
     pi.appendEntry("tps", corrected);
     pi.events?.emit("tps:telemetry", corrected);
-    cachedEntries.push({ type: "custom", customType: "tps" });
     if (committed.ctx.hasUI) committed.ctx.ui.notify(composeDisplayString(corrected), "info");
   });
 
@@ -459,14 +403,12 @@ export default function tpsExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     clearState();
-    cachedEntries = ctx.sessionManager.getEntries();
     restoreTPSNotification(ctx, scheduleRestore);
   });
 
   pi.on("session_tree", (_event: SessionTreeEvent, ctx) => {
     pendingNeuralwattBilledCost = null;
     lastCommittedTurn = null;
-    cachedEntries = ctx.sessionManager.getEntries();
     restoreTPSNotification(ctx, scheduleRestore);
   });
 
@@ -572,53 +514,6 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     pi.appendEntry("tps", telemetry);
     pi.events?.emit("tps:telemetry", telemetry);
     if (ctx.hasUI) ctx.ui.notify(composeDisplayString(telemetry), "info");
-    cachedEntries.push({ type: "custom", customType: "tps" });
   });
 
-  pi.registerCommand("tps-export", {
-    description: i18n.t("tpsExportDescription"),
-    getArgumentCompletions: (argumentPrefix: string) => {
-      if ("--full".startsWith(argumentPrefix)) return [{ value: "--full", label: i18n.t("tpsFullFlag") }];
-      const types = new Set<string>();
-      for (const entry of cachedEntries) {
-        if (entry.type === "custom" && entry.customType) types.add(entry.customType);
-      }
-      return [...types]
-        .filter((customType) => customType.startsWith(argumentPrefix))
-        .map((customType) => ({ value: customType, label: customType }));
-    },
-    handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const tokens = args.trim().split(/\s+/).filter(Boolean);
-      const full = tokens.includes("--full");
-      const filterType = tokens.filter((token) => token !== "--full").join(" ") || null;
-      const entries = (full ? ctx.sessionManager.getEntries() : ctx.sessionManager.getBranch()) as SessionEntryLike[];
-      const isStructural = (entry: SessionEntryLike) => entry.type === "model_change" || entry.type === "branch_summary";
-      const matching = entries.filter((entry) => isStructural(entry) ||
-        (entry.type === "custom" && (!filterType || entry.customType === filterType)));
-      if (matching.length === 0) {
-        ctx.ui.notify(i18n.t("tpsNoEntries", { scope: full ? i18n.t("tpsAllEntries") : i18n.t("tpsCurrentBranch") }), "warning");
-        return;
-      }
-      const sessionId = ctx.sessionManager.getSessionId?.() ?? "unknown";
-      const result = exportEntries(entries, full, filterType, "pi-telemetry", "pi-telemetry", sessionId);
-      ctx.ui.notify(i18n.t("tpsExported", { count: result.count, filepath: result.filepath }), "info");
-    },
-  });
-
-  pi.registerCommand("session-export", {
-    description: i18n.t("sessionExportDescription"),
-    getArgumentCompletions: (argumentPrefix: string) =>
-      "--full".startsWith(argumentPrefix) ? [{ value: "--full", label: i18n.t("tpsFullFlag") }] : [],
-    handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const full = args.trim().split(/\s+/).includes("--full");
-      const entries = (full ? ctx.sessionManager.getEntries() : ctx.sessionManager.getBranch()) as SessionEntryLike[];
-      if (entries.length === 0) {
-        ctx.ui.notify(i18n.t("tpsNoEntries", { scope: full ? i18n.t("tpsAllEntries") : i18n.t("tpsCurrentBranch") }), "warning");
-        return;
-      }
-      const sessionId = ctx.sessionManager.getSessionId?.() ?? "unknown";
-      const result = exportEntries(entries, full, null, "pi-sessions", "pi-session", sessionId);
-      ctx.ui.notify(i18n.t("tpsExported", { count: result.count, filepath: result.filepath }), "info");
-    },
-  });
 }

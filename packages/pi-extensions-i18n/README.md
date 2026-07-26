@@ -11,7 +11,7 @@ Independent Pi extensions still need the same operational pieces: a portable con
 - `zh-CN`, `en-US`, and `auto` locale preferences.
 - Persistent setting at `~/.pi/agent/extensions/pi-extensions-i18n/config.json`.
 - `PI_EXTENSIONS_LOCALE` environment-variable override.
-- `/pi-language` interactive command, plus `/pi-language en-US` direct selection.
+- `/config:language` interactive command, plus `/config:language en-US` direct selection.
 - Catalog loading and validation requiring both language entries for every message key.
 - Translator interpolation for user-facing UI, command descriptions, and agent prompts.
 
@@ -46,7 +46,7 @@ PI_EXTENSIONS_LOCALE=en-US pi
 ```
 
 ```text
-/pi-language en-US
+/config:language en-US
 ```
 
 ## Extension author API
@@ -83,7 +83,7 @@ Invalid catalogs fail during loading, which makes missing translations visible i
 ## Requirements
 
 - Node.js 22 or newer.
-- Pi's extension runtime when using the `/pi-language` command.
+- Pi's extension runtime when using the `/config:language` command. `/pi-language` remains available as a compatibility alias.
 
 ## License
 

@@ -8,8 +8,8 @@
     "en-US": "Force rediscovery of all model-discovery providers and update the local cache (startup uses the cache and performs no network requests by default)"
   },
   "refreshEmpty": {
-    "zh-CN": "models.json 中没有标记 discoverModels 的 provider，可用 /model-discovery 添加",
-    "en-US": "No provider in models.json is marked with discoverModels; add one with /model-discovery"
+    "zh-CN": "models.json 中没有标记 discoverModels 的 provider，可用 /config:model-discovery 添加",
+    "en-US": "No provider in models.json is marked with discoverModels; add one with /config:model-discovery"
   },
   "refreshDone": {
     "zh-CN": "模型刷新完成：{ok}/{total} 个 provider 成功",
@@ -148,8 +148,8 @@
     "en-US": "{id}: discovered and registered {count} models; they are available in /model"
   },
   "firstFailed": {
-    "zh-CN": "{id}: 配置已保存，但首次发现失败；服务恢复后可在 /model-discovery 中重新发现",
-    "en-US": "{id}: configuration saved, but initial discovery failed; rediscover with /model-discovery after the service recovers"
+    "zh-CN": "{id}: 配置已保存，但首次发现失败；服务恢复后可在 /config:model-discovery 中重新发现",
+    "en-US": "{id}: configuration saved, but initial discovery failed; rediscover with /config:model-discovery after the service recovers"
   },
   "rediscover": {
     "zh-CN": "🔄 重新发现模型",

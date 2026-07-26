@@ -104,7 +104,7 @@ export function buildInspectorSettings(
 			inspectorTitle: "Global Tool Display Switch",
 			inspectorSummary: [
 				"Enables or disables all pi-tool-display rendering and tool ownership behavior.",
-				"The /tool-display command remains available while disabled so the extension can be enabled again without editing Pi package settings.",
+				"The /config:tool-display command remains available while disabled so the extension can be enabled again without editing Pi package settings.",
 			],
 			inspectorOptions: [
 				"on — enable tool overrides and enhanced rendering",
@@ -500,7 +500,7 @@ export function handleToolDisplayArgs(args: string, ctx: ExtensionCommandContext
 		const candidate = normalized.slice("preset ".length).trim();
 		const preset = parseToolDisplayPreset(candidate);
 		if (!preset) {
-			ctx.ui.notify(`Unknown preset. Use: /tool-display preset ${PRESET_COMMAND_HINT}`, "warning");
+			ctx.ui.notify(`Unknown preset. Use: /config:tool-display preset ${PRESET_COMMAND_HINT}`, "warning");
 			return true;
 		}
 
@@ -509,7 +509,7 @@ export function handleToolDisplayArgs(args: string, ctx: ExtensionCommandContext
 		return true;
 	}
 
-	ctx.ui.notify(`Usage: /tool-display [show|reset|preset ${PRESET_COMMAND_HINT}]`, "warning");
+	ctx.ui.notify(`Usage: /config:tool-display [show|reset|preset ${PRESET_COMMAND_HINT}]`, "warning");
 	return true;
 }
 
@@ -523,7 +523,7 @@ export async function runToolDisplayCommandHandler(
 	}
 
 	if (!ctx.hasUI) {
-		ctx.ui.notify("/tool-display requires interactive TUI mode.", "warning");
+		ctx.ui.notify("/config:tool-display requires interactive TUI mode.", "warning");
 		return;
 	}
 
@@ -531,10 +531,13 @@ export async function runToolDisplayCommandHandler(
 }
 
 export function registerToolDisplayCommand(pi: ExtensionAPI, controller: ToolDisplayConfigController): void {
-	pi.registerCommand("tool-display", {
+	const command = {
 		description: "Configure tool output rendering (OpenCode-style)",
 		handler: async (args, ctx) => {
 			await runToolDisplayCommandHandler(args, ctx, controller);
 		},
-	});
+	};
+	for (const name of ["config:tool-display", "tool-display", "pi-tool-display"] as const) {
+		pi.registerCommand(name, command);
+	}
 }

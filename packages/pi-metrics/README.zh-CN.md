@@ -11,7 +11,7 @@
 - AI 完全停止时（`agent_settled`，覆盖自动重试、compaction 续跑以及 Esc 中断）追加一行**从发出消息到停止的总耗时**（`⏱ 总耗时 18.9s`）。
 - 每轮 LLM 调用结束后显示 TPS、TTFT、token 数、生成耗时、stall 和可用的综合成本。
 - Telemetry 以 `tps` custom session entry 持久化，并在恢复 session 或 `/tree` 后恢复显示。
-- `/tps-export` 导出 TPS JSONL，`/session-export` 导出 session JSONL。
+- Metrics 通过 session entry 和通知提供；本包不再注册导出类斜杠命令。
 
 ## 从 pi-tps 迁移
 

@@ -35,7 +35,7 @@ pi install npm:pi-tool-supervisor
 使用交互式配置命令：
 
 ```text
-/pi-tool-supervisor
+/config:tool-supervisor
 ```
 
 ## 配置
@@ -97,7 +97,7 @@ consumers:
 - 工具调用失败或文件内容没有变化时跳过审查。
 - 扩展不会回滚编辑、阻断操作系统，也不替代 Pi 的权限与沙箱控制。
 
-从 `pi-file-edit-review` 升级时，如果新配置不存在，扩展会读取旧配置；通过 `/pi-tool-supervisor` 保存后会写入新的配置路径。
+从 `pi-file-edit-review` 升级时，如果新配置不存在，扩展会读取旧配置；通过 `/config:tool-supervisor` 保存后会写入新的配置路径。`/pi-tool-supervisor` 仍作为兼容别名保留。
 
 ## 要求
 

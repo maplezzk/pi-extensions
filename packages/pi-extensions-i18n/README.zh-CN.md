@@ -11,7 +11,7 @@ Pi 扩展公共国际化运行时。它提供基于 catalog 的小型 API，支�
 - 支持 `zh-CN`、`en-US` 和 `auto` 语言偏好。
 - 将设置持久化到 `~/.pi/agent/extensions/pi-extensions-i18n/config.json`。
 - 支持 `PI_EXTENSIONS_LOCALE` 环境变量覆盖。
-- 提供 `/pi-language` 交互式命令，也支持 `/pi-language en-US` 直接设置。
+- 提供 `/config:language` 交互式命令，也支持 `/config:language en-US` 直接设置。
 - 加载并校验 catalog，要求每个消息 key 同时提供两种语言。
 - 为 UI、命令描述和 Agent prompt 提供用户文案插值。
 
@@ -46,7 +46,7 @@ PI_EXTENSIONS_LOCALE=en-US pi
 ```
 
 ```text
-/pi-language en-US
+/config:language en-US
 ```
 
 ## 扩展作者 API
@@ -83,7 +83,7 @@ catalog 条目必须同时包含两种语言：
 ## 要求
 
 - Node.js 22 或更高版本。
-- 使用 `/pi-language` 命令时需要 Pi 扩展运行时。
+- 使用 `/config:language` 命令时需要 Pi 扩展运行时；`/pi-language` 仍作为兼容别名保留。
 
 ## 许可证
 

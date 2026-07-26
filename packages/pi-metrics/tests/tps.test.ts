@@ -24,6 +24,7 @@ test("TPS unsubscribes shared event listeners during extension shutdown", () => 
   const energyListeners = new Set<(payload: unknown) => unknown>();
   let unsubscribeCount = 0;
   let appendedEntries = 0;
+  const registeredCommands: string[] = [];
 
   const fakePi = {
     on(event: string, handler: (...args: any[]) => unknown) {
@@ -42,10 +43,11 @@ test("TPS unsubscribes shared event listeners during extension shutdown", () => 
     appendEntry() {
       appendedEntries++;
     },
-    registerCommand() {},
+    registerCommand(name: string) { registeredCommands.push(name); },
   } as unknown as ExtensionAPI;
 
   tpsExtension(fakePi);
+  assert.deepEqual(registeredCommands, []);
   assert.equal(energyListeners.size, 1);
 
   handlers.get("session_shutdown")?.();
