@@ -215,6 +215,13 @@ async function reviewWithModel(
     model: reviewer.model,
     rulesFiles: rules.map((rule) => rule.reviewer.rulesFile).filter((file): file is string => Boolean(file)),
   };
+  if (context.signal?.aborted) {
+    return {
+      ...base,
+      status: "skipped",
+      durationMs: Math.round(performance.now() - startedAt),
+    };
+  }
   const separator = reviewer.model.indexOf("/");
   const modelProvider = reviewer.model.slice(0, separator);
   const modelId = reviewer.model.slice(separator + 1);
@@ -235,6 +242,13 @@ async function reviewWithModel(
   try {
     const auth = await context.ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (auth.ok === false) throw new Error(`审查模型鉴权失败：${auth.error}`);
+    if (context.signal?.aborted) {
+      return {
+        ...base,
+        status: "skipped",
+        durationMs: Math.round(performance.now() - startedAt),
+      };
+    }
     const response = await complete(
       model,
       {
@@ -309,6 +323,17 @@ async function reviewToolResult(
   result: ToolResult,
 ): Promise<ToolResult> {
   const startedAt = performance.now();
+  if (context.signal?.aborted) {
+    const audit: FileEditReviewAudit = {
+      filePath: snapshot.filePath,
+      toolName,
+      status: "skipped",
+      reviewers: [],
+      durationMs: Math.round(performance.now() - startedAt),
+      warnings: [...configWarnings, i18n.t("reviewAborted")],
+    };
+    return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit } };
+  }
   const after = await captureAfter(
     toolName,
     isAbsolute(snapshot.filePath) ? snapshot.filePath : resolve(context.ctx.cwd, snapshot.filePath),
@@ -407,6 +432,8 @@ async function prepareFileReviewCall(
     }
     return pending;
   }
+
+  if (context.signal?.aborted) return pending;
 
   const filePath = getPath(context.params);
   if (!filePath || !loaded.config.reviewers.some((reviewer) =>
@@ -642,6 +669,7 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
       toolName: event.toolName,
       toolCallId: event.toolCallId,
       params: event.input,
+      signal: ctx.signal,
       ctx,
     };
     pendingCalls.set(event.toolCallId, await prepareFileReviewCall(context));
@@ -660,6 +688,7 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
         toolName: event.toolName,
         toolCallId: event.toolCallId,
         params: pending.params,
+        signal: ctx.signal,
         ctx,
       },
       pending,

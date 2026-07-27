@@ -94,6 +94,7 @@ consumers:
 
 - A rejected review is appended to the tool result with findings; the agent is expected to address it before continuing.
 - A reviewer failure is reported as an incomplete review and the original edit result is allowed through.
+- If the parent agent request is already aborted, the review is skipped before any reviewer model request is started.
 - A failed tool call or an unchanged file is skipped.
 - The extension does not roll back edits, block the operating system, or replace Pi's permission and sandbox controls.
 
