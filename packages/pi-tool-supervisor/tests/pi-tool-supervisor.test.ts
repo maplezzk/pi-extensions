@@ -380,6 +380,87 @@ test("pi-tool-supervisor 通过 Pi 工具事件独立接入，不注册或依赖
   }
 });
 
+test("上级请求已终止时不发起审查模型请求", async () => {
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-aborted-"));
+  const projectDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-aborted-project-"));
+  const controller = new AbortController();
+  const handlers = new Map<string, (...args: any[]) => any>();
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesFile = join(projectDir, "java-rules.md");
+    await writeFile(rulesFile, `---
+name: java-local
+filePatterns:
+  - "**/*.java"
+---
+
+# Java
+
+1. 只审查修改内容。
+`);
+    await mkdir(join(agentDir, "extensions", "pi-tool-supervisor"), { recursive: true });
+    await writeFile(join(agentDir, "extensions", "pi-tool-supervisor", "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "java-local", model: "provider/model", rulesFile }],
+    }));
+
+    let findCalls = 0;
+    let authCalls = 0;
+    const pi = {
+      getAllTools: () => ["edit", "write"].map((name) => ({ name, sourceInfo: { source: "test" } })),
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: (...args: any[]) => any) => handlers.set(event, handler),
+    } as any;
+    piSupervisorExtension(pi);
+
+    const context = {
+      cwd: projectDir,
+      signal: controller.signal,
+      modelRegistry: {
+        find: () => {
+          findCalls += 1;
+          return {};
+        },
+        getApiKeyAndHeaders: async () => {
+          authCalls += 1;
+          return { ok: true, apiKey: "test-key", headers: {}, env: {} };
+        },
+      },
+    };
+    const input = { path: "src/Example.java", content: "class Example {}\n" };
+    await handlers.get("tool_call")?.({
+      type: "tool_call",
+      toolName: "write",
+      toolCallId: "write-aborted-1",
+      input,
+    }, context);
+    controller.abort();
+    const result = await handlers.get("tool_result")?.({
+      type: "tool_result",
+      toolName: "write",
+      toolCallId: "write-aborted-1",
+      input,
+      content: [{ type: "text", text: "Wrote file" }],
+      details: {},
+      isError: false,
+    }, context);
+
+    assert.equal(findCalls, 0);
+    assert.equal(authCalls, 0);
+    assert.equal(result.details.fileEditReview.status, "skipped");
+    assert.deepEqual(result.details.fileEditReview.reviewers, []);
+    assert.match(result.details.fileEditReview.warnings.join(" "), /未发起审查模型请求/);
+  } finally {
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
 test("新配置不存在时读取 pi-file-edit-review 旧配置", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-legacy-config-"));

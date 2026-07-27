@@ -134,5 +134,9 @@
   "tempFileWriteFailed": {
     "zh-CN": "超长工具结果写入临时文件失败，已截断返回：{message}",
     "en-US": "Failed to write oversized tool result to temp file, truncated: {message}"
+  },
+  "reviewAborted": {
+    "zh-CN": "上级请求已终止，未发起审查模型请求。",
+    "en-US": "The parent request was aborted; no review-model request was started."
   }
 }
