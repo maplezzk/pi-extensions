@@ -21,7 +21,7 @@ Independent Pi extensions still need the same operational pieces: a portable con
 pi install npm:pi-extensions-i18n
 ```
 
-Feature packages such as `pi-distill` and `pi-tool-supervisor` use it as a shared dependency. Install it explicitly when you want the locale command by itself.
+Feature packages use it as a shared dependency and load its extension entry automatically, so installing a feature package is enough to provide the locale command. Install this package directly only when you want the locale command without another feature package.
 
 Reload Pi after installation:
 

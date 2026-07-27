@@ -24,6 +24,7 @@
   "pi": {
     "extensions": [
       "./index.ts",
+      "../pi-extensions-i18n/index.ts",
       "../pi-extensions-tool-display/index.ts"
     ]
   },
@@ -52,10 +53,10 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
     "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
-    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0",
-    "pi-extensions-i18n": "^0.3.0"
+    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0"
   },
   "dependencies": {
+    "pi-extensions-i18n": "^0.3.0",
     "pi-extensions-tool-display": "^1.0.1"
   },
   "devDependencies": {
