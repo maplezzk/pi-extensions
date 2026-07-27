@@ -1,6 +1,6 @@
 {
   "name": "pi-terminal-mux",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Terminal multiplexer abstraction for pi extensions — unified surface API across muxy, cmux, tmux, zellij, wezterm, herdr and otty, with headless fallback",
   "type": "module",
   "main": "./index.ts",
@@ -53,7 +53,7 @@
     "coding-agent"
   ],
   "dependencies": {
-    "pi-extensions-i18n": "^0.3.0"
+    "pi-extensions-i18n": "^0.3.1"
   },
   "devDependencies": {
     "@types/node": "24.12.4",

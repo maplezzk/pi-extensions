@@ -1,6 +1,6 @@
 {
   "name": "pi-extensions-i18n",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Shared i18n catalog loader & translator for pi extensions",
   "type": "module",
   "main": "./index.ts",

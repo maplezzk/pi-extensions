@@ -1,6 +1,6 @@
 {
   "name": "pi-models-discovery",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Pi extension: discover models from {baseUrl}/models for providers marked with discoverModels in models.json",
   "type": "module",
   "main": "./index.ts",
@@ -53,7 +53,7 @@
     "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.3.0"
+    "pi-extensions-i18n": "^0.3.1"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.80.10",

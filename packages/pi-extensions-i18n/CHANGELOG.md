@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.3.0...pi-extensions-i18n-v0.3.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* auto-install shared i18n extension dependencies ([6d5e069](https://github.com/maplezzk/pi-extensions/commit/6d5e06973ae82c69b51b9c68995a82704f7afbd3))
+
 ## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.2.0...pi-extensions-i18n-v0.3.0) (2026-07-19)
 
 
