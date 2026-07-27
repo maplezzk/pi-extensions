@@ -44,7 +44,7 @@
 pi install npm:pi-distill
 ```
 
-包清单会把共享依赖 `pi-extensions-tool-display` 作为一个扩展入口加载，不需要额外安装宿主包。
+包清单会把共享依赖 `pi-extensions-i18n` 和 `pi-extensions-tool-display` 作为扩展入口加载，不需要额外安装这些包。安装 `pi-distill` 后即可使用 `/config:language`。
 
 安装后重新加载 Pi：
 

@@ -32,6 +32,17 @@ function warn(msg) {
   warnings.push(`⚠️  ${msg}`);
 }
 
+function collectTypeScriptFiles(root) {
+  if (!existsSync(root)) return [];
+  const files = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) files.push(...collectTypeScriptFiles(path));
+    else if (entry.isFile() && path.endsWith(".ts")) files.push(path);
+  }
+  return files;
+}
+
 // ---------------------------------------------------------------------------
 // 1. Load release-please-config.json
 // ---------------------------------------------------------------------------
@@ -117,6 +128,28 @@ for (const dir of packageDirs) {
     if (pkgJson[field] === undefined || pkgJson[field] === null || pkgJson[field] === "") {
       error(`${label}: package.json missing required field "${field}"`);
     }
+  }
+
+  // Runtime imports must be installed with the package. Pi's extension
+  // installer does not guarantee that peerDependencies are available to a
+  // package's source files.
+  const runtimeSourceFiles = [
+    join(pkgRoot, "index.ts"),
+    join(pkgRoot, "src"),
+    join(pkgRoot, "pi-extension"),
+  ].flatMap((path) => (path.endsWith(".ts") ? (existsSync(path) ? [path] : []) : collectTypeScriptFiles(path)));
+  const importsI18n = runtimeSourceFiles.some((path) =>
+    /(?:from|import\s*\()\s*["']pi-extensions-i18n["']/.test(readFileSync(path, "utf8")),
+  );
+  if (importsI18n && !pkgJson.dependencies?.["pi-extensions-i18n"]) {
+    error(`${label}: runtime imports pi-extensions-i18n, but it is not declared in dependencies`);
+  }
+  if (
+    importsI18n &&
+    Array.isArray(pkgJson.pi?.extensions) &&
+    !pkgJson.pi.extensions.includes("../pi-extensions-i18n/index.ts")
+  ) {
+    error(`${label}: runtime imports pi-extensions-i18n, but its Pi extension entry is not loaded`);
   }
 
   // 5. files field should include READMEs

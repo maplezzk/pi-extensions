@@ -25,7 +25,8 @@
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./index.ts",
+      "../pi-extensions-i18n/index.ts"
     ]
   },
   "engines": {
