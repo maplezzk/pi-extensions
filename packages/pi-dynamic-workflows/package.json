@@ -1,6 +1,6 @@
 {
   "name": "@maplezzk/pi-dynamic-workflows",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Claude-Code-style dynamic workflow orchestration for Pi. Fork of michaelliv/pi-dynamic-workflows.",
   "type": "module",
   "main": "./index.ts",
@@ -56,7 +56,7 @@
   ],
   "dependencies": {
     "acorn": "^8.16.0",
-    "pi-extensions-i18n": "^0.3.0"
+    "pi-extensions-i18n": "^0.3.1"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
