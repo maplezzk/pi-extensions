@@ -110,7 +110,7 @@ Agent consumes a result suited to the current decision, with auditable diagnosti
 2. The `tool_call` handler captures the parameter and removes it before forwarding the call, so the underlying tool never receives the extension-only field.
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
 4. Every tool call must include a non-empty `outputRequest`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
-5. If distillation fails, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card.
+5. If distillation fails, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card. JSON responses wrapped in Markdown fences such as `````json … ````` are also accepted.
 
 ## Output contract
 

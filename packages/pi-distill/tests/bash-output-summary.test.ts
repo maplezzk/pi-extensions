@@ -100,16 +100,20 @@ async function withFakeSummaryConfig<T>(action: () => Promise<T>): Promise<T> {
 }
 
 /** 构造返回指定文本的 fake completion provider。 */
-function fakeCompletion(text: string): TestCompletion {
+function fakeCompletion(text: string, responseFormat: "json" | "fenced-json" = "json"): TestCompletion {
+  const response = JSON.stringify({
+    decision: {
+      mode: text === "RAW" ? "RAW" : "SUMMARY",
+      reasonCode: text === "RAW" ? "VERBATIM_REQUEST" : "SELECTED_INFORMATION",
+      reason: text === "RAW" ? "The request requires verbatim output." : "The request selects specific information.",
+    },
+    summary: text === "RAW" ? "" : text,
+  });
   return async () => ({
-    content: [{ type: "text", text: JSON.stringify({
-      decision: {
-        mode: text === "RAW" ? "RAW" : "SUMMARY",
-        reasonCode: text === "RAW" ? "VERBATIM_REQUEST" : "SELECTED_INFORMATION",
-        reason: text === "RAW" ? "The request requires verbatim output." : "The request selects specific information.",
-      },
-      summary: text === "RAW" ? "" : text,
-    }) }],
+    content: [{
+      type: "text",
+      text: responseFormat === "fenced-json" ? `  \n\`\`\`json  \n${response}\n\`\`\`  ` : response,
+    }],
   } as unknown as TestCompletionResult);
 }
 
@@ -578,6 +582,24 @@ test("fake provider 的空响应、非法响应和异常都保留原文", async 
     assert.equal(thrown.content[0]?.text, output);
     assert.equal(thrown.details?.outputSummaryStatus, "summary-failed");
     assert.match(String(thrown.details?.outputSummaryError), /fake provider failed/);
+  });
+});
+
+test("兼容模型用 Markdown 代码围栏包裹 JSON 响应", async () => {
+  await withFakeSummaryConfig(async () => {
+    const context = fakeSummaryContext();
+    const output = "FAIL checkout\nERROR at checkout.ts:8\nnext: retry fixture";
+
+    const result = await processToolResult(
+      context,
+      fakeToolResult(output),
+      0,
+      fakeCompletion("ERROR at checkout.ts:8", "fenced-json"),
+    );
+
+    assert.equal(result.content[0]?.text, "ERROR at checkout.ts:8");
+    assert.equal(result.details?.outputSummaryStatus, "summarized");
+    assert.equal(result.details?.outputSummaryDecisionMode, "SUMMARY");
   });
 });
 
