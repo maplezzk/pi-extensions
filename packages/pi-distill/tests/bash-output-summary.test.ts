@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasNonTextContent } from "../src/output-limit.ts";
+import { hasNonTextContent, limitReturnedToolResult } from "../src/output-limit.ts";
 import {
   appendDistillFallbackAudit,
   buildDistillAuditLines,
@@ -65,12 +65,13 @@ function fakeToolResult(output: string, isError = false): TestResult {
 }
 
 /** 为摘要处理链创建隔离配置，避免测试读取用户配置。 */
-async function withFakeSummaryConfig<T>(action: () => Promise<T>): Promise<T> {
+async function withFakeSummaryConfig<T>(action: () => Promise<T>, maxOutputChars = 10000): Promise<T> {
   const keys = [
     "PI_CODING_AGENT_DIR",
     "PI_DISTILL_MODEL",
     "PI_DISTILL_MIN_CHARS",
     "PI_DISTILL_MAX_CHARS",
+    "PI_DISTILL_MAX_OUTPUT_CHARS",
     "PI_DISTILL_TIMEOUT_SECONDS",
   ];
   const previous = new Map(keys.map((key) => [key, process.env[key]] as const));
@@ -82,12 +83,14 @@ async function withFakeSummaryConfig<T>(action: () => Promise<T>): Promise<T> {
     model: "fake/model",
     minChars: 1,
     maxChars: 10000,
+    maxOutputChars,
     timeoutSeconds: 1,
   }));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   process.env.PI_DISTILL_MODEL = "fake/model";
   process.env.PI_DISTILL_MIN_CHARS = "1";
   process.env.PI_DISTILL_MAX_CHARS = "10000";
+  process.env.PI_DISTILL_MAX_OUTPUT_CHARS = String(maxOutputChars);
   process.env.PI_DISTILL_TIMEOUT_SECONDS = "1";
   try {
     return await action();
@@ -670,6 +673,41 @@ test("包含图片等非文本内容时识别为非纯文本输出", () => {
     hasNonTextContent({ content: [{ type: "text", text: "纯文本" }] }),
     false,
   );
+});
+
+test("最终文本超过上限时写入临时文件并返回文件指针", async () => {
+  const finalContent = "x".repeat(10_001);
+  const result = await limitReturnedToolResult(
+    { content: [{ type: "text", text: finalContent }] },
+    10_000,
+  );
+
+  assert.equal(result.details?.outputTruncated, true);
+  assert.equal(result.details?.outputLimitChars, 10_000);
+  assert.match(result.content[0]?.text ?? "", /Output exceeded 10000 chars/);
+  assert.equal(
+    await readFile(result.details?.fullOutputPath as string, "utf8"),
+    finalContent,
+  );
+});
+
+test("最终输出限制覆盖摘要结果", async () => {
+  await withFakeSummaryConfig(async () => {
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult("a".repeat(500)),
+      0,
+      fakeCompletion("x".repeat(200)),
+    );
+
+    assert.equal(result.details?.outputTruncated, true);
+    assert.equal(result.details?.outputLimitChars, 100);
+    assert.equal((result.content[0]?.text ?? "").length, 100);
+    assert.match(
+      await readFile(result.details?.fullOutputPath as string, "utf8"),
+      /^x{200}/,
+    );
+  }, 100);
 });
 
 test("按工具开关动态注入和移除 outputRequest", () => {
