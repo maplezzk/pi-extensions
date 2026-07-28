@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.3](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.1.2...pi-distill-v1.1.3) (2026-07-28)
+
+
+### Bug Fixes
+
+* restore pi-distill final output limit ([#60](https://github.com/maplezzk/pi-extensions/issues/60)) ([e628a9a](https://github.com/maplezzk/pi-extensions/commit/e628a9a363f695c5e95966a0f09181233afcfbc8))
+* tolerate fenced JSON from distill model ([#59](https://github.com/maplezzk/pi-extensions/issues/59)) ([2b70ad5](https://github.com/maplezzk/pi-extensions/commit/2b70ad54b3f2001ebf8c1e87be7f5bede37300e7))
+
 ## [1.1.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.1.1...pi-distill-v1.1.2) (2026-07-27)
 
 

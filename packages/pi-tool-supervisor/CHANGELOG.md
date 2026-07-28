@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.8](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.7...pi-tool-supervisor-v0.3.8) (2026-07-28)
+
+
+### Bug Fixes
+
+* skip aborted supervisor reviews ([#57](https://github.com/maplezzk/pi-extensions/issues/57)) ([b77c668](https://github.com/maplezzk/pi-extensions/commit/b77c6683cc887e85a00890078e5900f14de237fb))
+
 ## [0.3.7](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.6...pi-tool-supervisor-v0.3.7) (2026-07-27)
 
 
