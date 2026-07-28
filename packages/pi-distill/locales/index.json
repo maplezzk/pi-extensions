@@ -119,6 +119,14 @@
     "zh-CN": "最终输出字符上限",
     "en-US": "Final output character limit"
   },
+  "outputLimitExceeded": {
+    "zh-CN": "输出超过 {maxChars} 个字符，完整内容已写入：{path}",
+    "en-US": "Output exceeded {maxChars} chars and was written to: {path}"
+  },
+  "outputLimitWriteFailed": {
+    "zh-CN": "无法写入超长输出临时文件，将返回截断内容：{error}",
+    "en-US": "Failed to write oversized output to a temp file; returning truncated content: {error}"
+  },
   "timeoutTitle": {
     "zh-CN": "提炼模型超时（秒）",
     "en-US": "Summarizer timeout (seconds)"

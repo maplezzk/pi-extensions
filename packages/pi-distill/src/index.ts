@@ -6,7 +6,8 @@
  *
  * 所有工具统一使用 outputRequest：严格传入 RAW 时返回原始输出；其他非空
  * outputRequest 表示调用提炼模型，具体保留内容由 outputRequest 决定。
- * 提炼结果超过 maxChars 时写入临时文件，只返回文件路径。
+ * 提炼结果超过 maxChars 时写入临时文件，只返回文件路径；最终返回内容
+ * 超过 maxOutputChars 时同样写入临时文件，只把文件指针交给 Agent。
  *
  * 配置文件优先；旧环境变量继续兼容：
  * - ~/.pi/agent/extensions/pi-distill/config.json
@@ -36,7 +37,7 @@ import {
   isDistillToolDisplayMiddlewareActive,
   registerDistillToolDisplayMiddleware,
 } from "./tool-display-bridge.ts";
-import { getTextContent, hasNonTextContent } from "./output-limit.ts";
+import { getTextContent, hasNonTextContent, limitReturnedToolResult } from "./output-limit.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -431,8 +432,10 @@ export async function processToolResult(
   const loaded = loadDistillConfig();
   const config = loaded.config;
   const outputSummaryRender = { ...loaded.render };
-  // Merge with Pi's native output limiter; this extension must not truncate tool results itself.
-  const finish = (candidate: ToolResult) => candidate;
+  // Pi may persist raw tool output before this hook runs. This second limit
+  // protects the post-distillation result, including RAW and fallbacks.
+  const maxReturnedChars = config?.maxOutputChars ?? 10_000;
+  const finish = (candidate: ToolResult) => limitReturnedToolResult(candidate, maxReturnedChars);
   if (loaded.warnings.length > 0) {
     console.warn(`[pi-distill] ${loaded.warnings.join(" | ")}`);
   }

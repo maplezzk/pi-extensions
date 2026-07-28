@@ -157,6 +157,7 @@ Start from [`config.example.json`](./config.example.json):
   "model": "",
   "minChars": 200,
   "maxChars": 100000,
+  "maxOutputChars": 10000,
   "timeoutSeconds": 10,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
@@ -174,7 +175,8 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | --- | --- |
 | `model` | Optional `provider/model`; empty uses the current Pi session model. |
 | `minChars` | Minimum output size before a summary is requested. |
-| `maxChars` | Maximum output budget for the distillation model (about `maxChars / 2` tokens) and a diagnostic reference; no longer used to write files. |
+| `maxChars` | Distilled text is written to a temporary file when it exceeds this length. |
+| `maxOutputChars` | Maximum text returned to the Agent. Oversized text is written to a temporary file and replaced with a file pointer. |
 | `timeoutSeconds` | Maximum time allowed for the distillation model call. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
 | `summarizeErrors` | Whether error results that meet `minChars` should still be sent to the distillation model. |
@@ -183,7 +185,7 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 `/pi-distill` remains available as a compatibility alias.
 | `render.*` | Controls the audit card, prompt preview, and result preview. |
 
-The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`. The legacy `maxOutputChars` / `PI_DISTILL_MAX_OUTPUT_CHARS` option is still parsed for backward compatibility but no longer has any effect.
+The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_MAX_OUTPUT_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`.
 
 ## Requirements
 
