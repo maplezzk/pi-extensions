@@ -279,9 +279,10 @@ async function writeSummaryFile(summary: string): Promise<string> {
 }
 
 function parseSummaryResponse(text: string, summaryModel: string): SummaryResult {
+  const normalizedText = unwrapJsonCodeFence(text);
   let payload: unknown;
   try {
-    payload = JSON.parse(text);
+    payload = JSON.parse(normalizedText);
   } catch (error) {
     throw new Error(`Summarizer returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -334,6 +335,13 @@ function parseSummaryResponse(text: string, summaryModel: string): SummaryResult
     summaryModel,
     decision: parsedDecision,
   };
+}
+
+/** 兼容模型用 Markdown JSON 代码围栏包裹结构化响应的常见输出格式。 */
+function unwrapJsonCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^(`{3,})[ \t]*(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n\1[ \t]*$/i);
+  return match?.[2]?.trim() ?? trimmed;
 }
 
 async function summarizeOutput(
