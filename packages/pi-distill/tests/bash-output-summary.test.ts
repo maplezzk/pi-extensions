@@ -65,7 +65,17 @@ function fakeToolResult(output: string, isError = false): TestResult {
 }
 
 /** 为摘要处理链创建隔离配置，避免测试读取用户配置。 */
-async function withFakeSummaryConfig<T>(action: () => Promise<T>, maxOutputChars = 10000): Promise<T> {
+async function withFakeSummaryConfig<T>(
+  action: () => Promise<T>,
+  maxOutputChars = 10000,
+  retryConfig: {
+    timeoutRetryCount?: number;
+    errorRetryCount?: number;
+  } = {
+    timeoutRetryCount: 1,
+    errorRetryCount: 1,
+  },
+): Promise<T> {
   const keys = [
     "PI_CODING_AGENT_DIR",
     "PI_DISTILL_MODEL",
@@ -73,6 +83,8 @@ async function withFakeSummaryConfig<T>(action: () => Promise<T>, maxOutputChars
     "PI_DISTILL_MAX_CHARS",
     "PI_DISTILL_MAX_OUTPUT_CHARS",
     "PI_DISTILL_TIMEOUT_SECONDS",
+    "PI_DISTILL_TIMEOUT_RETRY_COUNT",
+    "PI_DISTILL_ERROR_RETRY_COUNT",
   ];
   const previous = new Map(keys.map((key) => [key, process.env[key]] as const));
   const agentDir = await mkdtemp(join(tmpdir(), "pi-distill-summary-test-"));
@@ -85,6 +97,7 @@ async function withFakeSummaryConfig<T>(action: () => Promise<T>, maxOutputChars
     maxChars: 10000,
     maxOutputChars,
     timeoutSeconds: 1,
+    ...retryConfig,
   }));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   process.env.PI_DISTILL_MODEL = "fake/model";
@@ -92,6 +105,13 @@ async function withFakeSummaryConfig<T>(action: () => Promise<T>, maxOutputChars
   process.env.PI_DISTILL_MAX_CHARS = "10000";
   process.env.PI_DISTILL_MAX_OUTPUT_CHARS = String(maxOutputChars);
   process.env.PI_DISTILL_TIMEOUT_SECONDS = "1";
+  for (const [key, value] of [
+    ["PI_DISTILL_TIMEOUT_RETRY_COUNT", retryConfig.timeoutRetryCount],
+    ["PI_DISTILL_ERROR_RETRY_COUNT", retryConfig.errorRetryCount],
+  ] as const) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = String(value);
+  }
   try {
     return await action();
   } finally {
@@ -132,6 +152,8 @@ test("只配置总结模型时使用默认阈值", () => {
       maxChars: 100000,
       maxOutputChars: 10000,
       timeoutSeconds: 10,
+      timeoutRetryCount: 1,
+      errorRetryCount: 1,
       missedCompressionRatio: 10,
       summarizeErrors: true,
     },
@@ -151,6 +173,8 @@ test("新 pi-distill 环境变量优先于旧 Bash 变量", () => {
     maxChars: 100000,
     maxOutputChars: 10000,
     timeoutSeconds: 10,
+    timeoutRetryCount: 1,
+    errorRetryCount: 1,
     missedCompressionRatio: 10,
     summarizeErrors: true,
   });
@@ -161,12 +185,29 @@ test("支持按秒配置提炼超时，并兼容旧变量", () => {
   assert.equal(parseBashSummaryConfig({ PI_BASH_SUMMARY_TIMEOUT_SECONDS: "8" })?.timeoutSeconds, 8);
 });
 
+test("超时和非超时异常支持独立重试次数", () => {
+  assert.equal(parseBashSummaryConfig({})?.timeoutRetryCount, 1);
+  assert.equal(parseBashSummaryConfig({})?.errorRetryCount, 1);
+  assert.equal(parseBashSummaryConfig({
+    PI_DISTILL_TIMEOUT_RETRY_COUNT: "2",
+    PI_DISTILL_ERROR_RETRY_COUNT: "0",
+  })?.timeoutRetryCount, 2);
+  assert.equal(parseBashSummaryConfig({
+    PI_DISTILL_TIMEOUT_RETRY_COUNT: "2",
+    PI_DISTILL_ERROR_RETRY_COUNT: "0",
+  })?.errorRetryCount, 0);
+  assert.equal(parseBashSummaryConfig({ PI_DISTILL_TIMEOUT_RETRY_COUNT: "1.5" }), undefined);
+  assert.equal(parseBashSummaryConfig({ PI_DISTILL_ERROR_RETRY_COUNT: "-1" }), undefined);
+});
+
 test("未配置总结模型时使用当前会话模型的默认配置", () => {
   assert.deepEqual(parseBashSummaryConfig({}), {
     minChars: 200,
     maxChars: 100000,
     maxOutputChars: 10000,
     timeoutSeconds: 10,
+    timeoutRetryCount: 1,
+    errorRetryCount: 1,
     missedCompressionRatio: 10,
     summarizeErrors: true,
   });
@@ -179,6 +220,8 @@ test("未配置总结模型时使用当前会话模型的默认配置", () => {
       maxChars: 100000,
       maxOutputChars: 10000,
       timeoutSeconds: 10,
+      timeoutRetryCount: 1,
+      errorRetryCount: 1,
       missedCompressionRatio: 10,
       summarizeErrors: true,
     },
@@ -199,6 +242,8 @@ test("解析 provider/model、最小输入阈值和最大总结阈值", () => {
       maxChars: 500,
       maxOutputChars: 10000,
       timeoutSeconds: 10,
+      timeoutRetryCount: 1,
+      errorRetryCount: 1,
       missedCompressionRatio: 10,
       summarizeErrors: true,
     },
@@ -230,6 +275,8 @@ test("配置文件优先于兼容环境变量", async () => {
     model: "file-provider/file-model",
     minChars: 321,
     maxChars: 654,
+    timeoutRetryCount: 0,
+    errorRetryCount: 2,
     missedCompressionRatio: 4.5,
     render: {
       enabled: true,
@@ -243,6 +290,8 @@ test("配置文件优先于兼容环境变量", async () => {
     PI_BASH_SUMMARY_MIN_CHARS: "100",
     PI_BASH_SUMMARY_MAX_CHARS: "200",
     PI_BASH_SUMMARY_MISSED_COMPRESSION_RATIO: "2",
+    PI_DISTILL_TIMEOUT_RETRY_COUNT: "3",
+    PI_DISTILL_ERROR_RETRY_COUNT: "4",
   }, configFile);
 
   assert.deepEqual(loaded.config, {
@@ -252,6 +301,8 @@ test("配置文件优先于兼容环境变量", async () => {
     maxChars: 654,
     maxOutputChars: 10000,
     timeoutSeconds: 10,
+    timeoutRetryCount: 0,
+    errorRetryCount: 2,
     missedCompressionRatio: 4.5,
     summarizeErrors: true,
   });
@@ -310,6 +361,8 @@ test("只有明确需要摘要且输出达到阈值时才总结", () => {
     maxChars: 100,
     maxOutputChars: 10000,
     timeoutSeconds: 10,
+    timeoutRetryCount: 1,
+    errorRetryCount: 1,
     missedCompressionRatio: 10,
     summarizeErrors: true,
   };
@@ -336,6 +389,8 @@ test("错误工具输出也遵守最小长度阈值，并支持关闭总结", ()
     maxChars: 1000,
     maxOutputChars: 1000,
     timeoutSeconds: 10,
+    timeoutRetryCount: 1,
+    errorRetryCount: 1,
     missedCompressionRatio: 10,
     summarizeErrors: true,
   };
@@ -548,6 +603,86 @@ test("fake provider 覆盖摘要链路的 RAW、有效摘要和低收益回退",
   });
 });
 
+test("提炼首次失败后默认重试一次并可成功返回", async () => {
+  await withFakeSummaryConfig(async () => {
+    const output = "FAIL checkout\nERROR at checkout.ts:8\nnext: inspect the payment provider\n".repeat(4);
+    const successfulCompletion = fakeCompletion("ERROR at checkout.ts:8; inspect the payment provider");
+    let attempts = 0;
+    const flakyCompletion: TestCompletion = async (...args) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporary provider failure");
+      return successfulCompletion(...args);
+    };
+
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult(output),
+      0,
+      flakyCompletion,
+    );
+
+    assert.equal(attempts, 2);
+    assert.equal(result.details?.outputSummaryStatus, "summarized");
+    assert.equal(result.content[0]?.text, "ERROR at checkout.ts:8; inspect the payment provider");
+  });
+});
+
+test("errorRetryCount 为零时非超时异常不重试", async () => {
+  await withFakeSummaryConfig(async () => {
+    let attempts = 0;
+    const failingCompletion: TestCompletion = async () => {
+      attempts += 1;
+      throw new Error("provider unavailable");
+    };
+
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult("FAIL checkout\nERROR at checkout.ts:8\nnext: retry"),
+      0,
+      failingCompletion,
+    );
+
+    assert.equal(attempts, 1);
+    assert.equal(result.details?.outputSummaryStatus, "summary-failed");
+    assert.match(String(result.details?.outputSummaryError), /provider unavailable/);
+  }, 10000, { timeoutRetryCount: 1, errorRetryCount: 0 });
+});
+
+test("超时使用独立重试次数并可在下一次尝试成功", async () => {
+  await withFakeSummaryConfig(async () => {
+    const output = "ERROR deployment timeout at api\n".repeat(10);
+    const successfulCompletion = fakeCompletion("ERROR deployment timeout at api");
+    let attempts = 0;
+    const timeoutThenSuccess: TestCompletion = async (...args) => {
+      attempts += 1;
+      if (attempts > 1) return successfulCompletion(...args);
+      const signal = args[2]?.signal;
+      return new Promise((_, reject) => {
+        if (!signal) {
+          reject(new Error("test completion did not receive an abort signal"));
+          return;
+        }
+        signal.addEventListener(
+          "abort",
+          () => reject(new Error("fake provider timed out")),
+          { once: true },
+        );
+      });
+    };
+
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult(output),
+      0,
+      timeoutThenSuccess,
+    );
+
+    assert.equal(attempts, 2);
+    assert.equal(result.details?.outputSummaryStatus, "summarized");
+    assert.equal(result.content[0]?.text, "ERROR deployment timeout at api");
+  }, 10000, { timeoutRetryCount: 1, errorRetryCount: 0 });
+});
+
 test("fake provider 的空响应、非法响应和异常都保留原文", async () => {
   await withFakeSummaryConfig(async () => {
     const context = fakeSummaryContext();
@@ -610,8 +745,10 @@ test("fake provider 超时后保留原文并记录失败", async () => {
   await withFakeSummaryConfig(async () => {
     const context = fakeSummaryContext();
     const output = "ERROR deployment timeout at api";
+    let attempts = 0;
     const timeoutCompletion: TestCompletion = async (_model, _request, options) => (
       new Promise((_, reject) => {
+        attempts += 1;
         const signal = options?.signal;
         if (!signal) {
           reject(new Error("test completion did not receive an abort signal"));
@@ -622,10 +759,11 @@ test("fake provider 超时后保留原文并记录失败", async () => {
     );
 
     const result = await processToolResult(context, fakeToolResult(output), 0, timeoutCompletion);
+    assert.equal(attempts, 1);
     assert.equal(result.content[0]?.text, output);
     assert.equal(result.details?.outputSummaryStatus, "summary-failed");
     assert.match(String(result.details?.outputSummaryError), /fake provider aborted/);
-  });
+  }, 10000, { timeoutRetryCount: 0, errorRetryCount: 1 });
 });
 
 test("fallback 审计显示为原文回退而非已提炼", async () => {
@@ -726,6 +864,8 @@ test("按工具开关动态注入和移除 outputRequest", () => {
       maxChars: 100000,
       maxOutputChars: 10000,
       timeoutSeconds: 10,
+      timeoutRetryCount: 1,
+      errorRetryCount: 1,
       missedCompressionRatio: 10,
       summarizeErrors: true,
       tools: { bash: { enabled: false }, edit: { enabled: true } },

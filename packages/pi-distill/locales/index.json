@@ -11,6 +11,10 @@
     "zh-CN": "请输入大于 0 的整数。",
     "en-US": "Enter a positive integer."
   },
+  "nonNegativeInteger": {
+    "zh-CN": "请输入大于或等于 0 的整数。",
+    "en-US": "Enter a non-negative integer."
+  },
   "modelInput": {
     "zh-CN": "模型（provider/model；留空使用当前会话模型）",
     "en-US": "Model (provider/model; leave empty to use the current session model)"
@@ -71,6 +75,14 @@
     "zh-CN": "超时：{value}s",
     "en-US": "Timeout: {value}s"
   },
+  "timeoutRetryCount": {
+    "zh-CN": "超时重试：{value} 次",
+    "en-US": "Timeout retries: {value}"
+  },
+  "errorRetryCount": {
+    "zh-CN": "异常重试：{value} 次",
+    "en-US": "Error retries: {value}"
+  },
   "threshold": {
     "zh-CN": "长输出阈值：{value}x",
     "en-US": "Long-output threshold: {value}x"
@@ -130,6 +142,26 @@
   "timeoutTitle": {
     "zh-CN": "提炼模型超时（秒）",
     "en-US": "Summarizer timeout (seconds)"
+  },
+  "timeoutRetryCountTitle": {
+    "zh-CN": "提炼超时重试次数",
+    "en-US": "Distillation timeout retry count"
+  },
+  "errorRetryCountTitle": {
+    "zh-CN": "提炼非超时异常重试次数",
+    "en-US": "Distillation non-timeout error retry count"
+  },
+  "retryingSummary": {
+    "zh-CN": "提炼发生{kind}，正在进行第 {retry}/{limit} 次重试：{error}",
+    "en-US": "Distillation hit {kind}; starting retry {retry}/{limit}: {error}"
+  },
+  "retryKindTimeout": {
+    "zh-CN": "超时",
+    "en-US": "a timeout"
+  },
+  "retryKindError": {
+    "zh-CN": "非超时异常",
+    "en-US": "a non-timeout error"
   },
   "thresholdTitle": {
     "zh-CN": "长输出阈值",

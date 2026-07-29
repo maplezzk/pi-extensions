@@ -5,6 +5,8 @@
   "maxChars": 100000,
   "maxOutputChars": 10000,
   "timeoutSeconds": 10,
+  "timeoutRetryCount": 1,
+  "errorRetryCount": 1,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
   "tools": {},
