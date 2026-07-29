@@ -16,6 +16,8 @@
  * - PI_DISTILL_MAX_CHARS=提炼结果超过此字符数时写入文件，默认 100000
  * - PI_DISTILL_MAX_OUTPUT_CHARS=最终返回内容超过此字符数时写入文件，默认 10000
  * - PI_DISTILL_TIMEOUT_SECONDS=模型调用最长等待秒数，默认 10
+ * - PI_DISTILL_TIMEOUT_RETRY_COUNT=提炼超时后的额外重试次数，默认 1；0 表示不重试
+ * - PI_DISTILL_ERROR_RETRY_COUNT=其他异常后的额外重试次数，默认 1；0 表示不重试
  * - PI_DISTILL_MISSED_COMPRESSION_RATIO=长输出提醒倍数，默认 10
  * - 旧 PI_BASH_SUMMARY_* 变量作为兼容回退
  */
@@ -416,6 +418,63 @@ async function summarizeOutput(
   };
 }
 
+async function summarizeOutputWithRetries(
+  prompt: string,
+  output: string,
+  config: BashSummaryConfig,
+  context: DistillExecutionContext,
+  completion: SummaryCompletion,
+): Promise<SummaryResult> {
+  let timeoutRetries = 0;
+  let errorRetries = 0;
+
+  while (true) {
+    if (context.signal?.aborted) {
+      throw new Error("Summarization aborted");
+    }
+
+    const attemptController = new AbortController();
+    const abortFromParent = () => attemptController.abort();
+    context.signal?.addEventListener("abort", abortFromParent, { once: true });
+    if (context.signal?.aborted) attemptController.abort();
+    let timedOut = false;
+    const timeout = setTimeout(
+      () => {
+        timedOut = true;
+        attemptController.abort();
+      },
+      config.timeoutSeconds * 1000,
+    );
+
+    try {
+      return await summarizeOutput(
+        prompt,
+        output,
+        config,
+        context,
+        attemptController.signal,
+        completion,
+      );
+    } catch (error) {
+      if (context.signal?.aborted) throw error;
+      const retryLimit = timedOut ? config.timeoutRetryCount : config.errorRetryCount;
+      const retriesUsed = timedOut ? timeoutRetries : errorRetries;
+      if (retriesUsed >= retryLimit) throw error;
+      if (timedOut) timeoutRetries += 1;
+      else errorRetries += 1;
+      console.warn(i18n.t("retryingSummary", {
+        kind: i18n.t(timedOut ? "retryKindTimeout" : "retryKindError"),
+        retry: retriesUsed + 1,
+        limit: retryLimit,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      clearTimeout(timeout);
+      context.signal?.removeEventListener("abort", abortFromParent);
+    }
+  }
+}
+
 function getOutputRequest(params: Record<string, unknown>): string {
   return typeof params.outputRequest === "string"
     ? params.outputRequest.trim()
@@ -515,17 +574,12 @@ export async function processToolResult(
   }
 
   const summaryStartedAt = performance.now();
-  const timeoutController = new AbortController();
-  const abortFromParent = () => timeoutController.abort();
-  context.signal?.addEventListener("abort", abortFromParent, { once: true });
-  const timeout = setTimeout(() => timeoutController.abort(), config.timeoutSeconds * 1000);
   try {
-    const summarized = await summarizeOutput(
+    const summarized = await summarizeOutputWithRetries(
       prompt,
       output,
       config,
       context,
-      timeoutController.signal,
       completion,
     );
     const summaryDurationMs = Math.round(performance.now() - summaryStartedAt);
@@ -660,9 +714,6 @@ export async function processToolResult(
         : result.content,
     };
     return finish(candidate);
-  } finally {
-    clearTimeout(timeout);
-    context.signal?.removeEventListener("abort", abortFromParent);
   }
 }
 
@@ -756,7 +807,7 @@ function toToolResultEventResult(result: ToolResult): ToolResultEventPatch {
   };
 }
 
-type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "maxOutputChars" | "timeoutSeconds" | "missedCompressionRatio" | "summarizeErrors">> & {
+type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "maxOutputChars" | "timeoutSeconds" | "timeoutRetryCount" | "errorRetryCount" | "missedCompressionRatio" | "summarizeErrors">> & {
   tools: DistillToolConfig;
   render: DistillRenderConfig;
 };
@@ -773,6 +824,8 @@ function getDistillUiConfig(): DistillUiConfig {
     maxChars: config?.maxChars ?? 100_000,
     maxOutputChars: config?.maxOutputChars ?? 10_000,
     timeoutSeconds: config?.timeoutSeconds ?? 10,
+    timeoutRetryCount: config?.timeoutRetryCount ?? 1,
+    errorRetryCount: config?.errorRetryCount ?? 1,
     missedCompressionRatio: config?.missedCompressionRatio ?? 10,
     summarizeErrors: config?.summarizeErrors ?? true,
     tools: Object.fromEntries(
@@ -794,6 +847,22 @@ async function editDistillNumber(
     return undefined;
   }
   return Number(value);
+}
+
+async function editDistillNonNegativeInteger(
+  ctx: ExtensionCommandContext,
+  title: string,
+  current: number,
+): Promise<number | undefined> {
+  const value = await ctx.ui.input(title, String(current));
+  if (value === undefined) return undefined;
+  const normalized = value.trim();
+  const parsed = Number(normalized);
+  if (!/^\d+$/.test(normalized) || !Number.isSafeInteger(parsed)) {
+    ctx.ui.notify(i18n.t("nonNegativeInteger"), "error");
+    return undefined;
+  }
+  return parsed;
 }
 
 async function editDistillModel(
@@ -884,6 +953,8 @@ async function runDistillConfigUi(
       i18n.t("summaryLimit", { value: config.maxChars }),
       i18n.t("finalLimit", { value: config.maxOutputChars }),
       i18n.t("timeout", { value: config.timeoutSeconds }),
+      i18n.t("timeoutRetryCount", { value: config.timeoutRetryCount }),
+      i18n.t("errorRetryCount", { value: config.errorRetryCount }),
       i18n.t("threshold", { value: config.missedCompressionRatio }),
       i18n.t("summarizeErrors", { value: config.summarizeErrors ? i18n.t("on") : i18n.t("off") }),
       i18n.t("auditRenderer", { value: config.render.enabled ? i18n.t("on") : i18n.t("off") }),
@@ -928,24 +999,44 @@ async function runDistillConfigUi(
         await saveDistillConfigFile(ctx, config, configPath, onSaved);
       }
     } else if (choice === choices[6]) {
+      const value = await editDistillNonNegativeInteger(
+        ctx,
+        i18n.t("timeoutRetryCountTitle"),
+        config.timeoutRetryCount,
+      );
+      if (value !== undefined) {
+        config.timeoutRetryCount = value;
+        await saveDistillConfigFile(ctx, config, configPath, onSaved);
+      }
+    } else if (choice === choices[7]) {
+      const value = await editDistillNonNegativeInteger(
+        ctx,
+        i18n.t("errorRetryCountTitle"),
+        config.errorRetryCount,
+      );
+      if (value !== undefined) {
+        config.errorRetryCount = value;
+        await saveDistillConfigFile(ctx, config, configPath, onSaved);
+      }
+    } else if (choice === choices[8]) {
       const value = await editDistillNumber(ctx, i18n.t("thresholdTitle"), config.missedCompressionRatio);
       if (value !== undefined) {
         config.missedCompressionRatio = value;
         await saveDistillConfigFile(ctx, config, configPath, onSaved);
       }
-    } else if (choice === choices[7]) {
+    } else if (choice === choices[9]) {
       config.summarizeErrors = !config.summarizeErrors;
       await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[8]) {
+    } else if (choice === choices[10]) {
       config.render.enabled = !config.render.enabled;
       await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[9]) {
+    } else if (choice === choices[11]) {
       config.render.showPrompt = !config.render.showPrompt;
       await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[10]) {
+    } else if (choice === choices[12]) {
       config.render.showResult = !config.render.showResult;
       await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[11]) {
+    } else if (choice === choices[13]) {
       await runDistillToolConfigUi(ctx, pi, config, configPath, onSaved);
     }
   }

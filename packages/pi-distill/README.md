@@ -110,7 +110,7 @@ Agent consumes a result suited to the current decision, with auditable diagnosti
 2. The `tool_call` handler captures the parameter and removes it before forwarding the call, so the underlying tool never receives the extension-only field.
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
 4. Every tool call must include a non-empty `outputRequest`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
-5. If distillation fails, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card. JSON responses wrapped in Markdown fences such as `````json … ````` are also accepted.
+5. A timed-out attempt is retried according to `timeoutRetryCount`, while other failures use `errorRetryCount` (both default to one retry). If all attempts fail, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card. JSON responses wrapped in Markdown fences such as `````json … ````` are also accepted.
 
 ## Output contract
 
@@ -118,7 +118,7 @@ Agent consumes a result suited to the current decision, with auditable diagnosti
 | --- | --- | --- |
 | Omitted | Invalid tool call; Pi rejects the call before the underlying tool runs | Never omit it; use `RAW` when no compression is explicitly requested |
 | Exactly `RAW` (case-insensitive) | Skip the distillation model and keep the complete original text; oversized text is handled by Pi's own output-limiting mechanism | You need to inspect, copy, or verify exact output |
-| Any non-empty value other than `RAW` | Call the model once the output reaches the threshold; the prompt defines what to retain | “Keep errors, warnings, and final status” workflows |
+| Any non-empty value other than `RAW` | Call the model when the output reaches the threshold; timed-out and other failed attempts use separate retry budgets, and the prompt defines what to retain | “Keep errors, warnings, and final status” workflows |
 | Any non-text content such as images or audio | Preserve the result as-is; do not send it to the distillation model or apply text truncation | Image reads, binary results, and mixed text/media results |
 
 `RAW` is the deterministic completeness signal. The distillation prompt tells the summarizer to return exactly `RAW` when the request clearly asks for complete extraction without omissions, especially for syntax, parameters, SQL, API calls, or other text that must be copied. Passing `RAW` directly remains the preferred option when the tool caller can control the parameter.
@@ -159,6 +159,8 @@ Start from [`config.example.json`](./config.example.json):
   "maxChars": 100000,
   "maxOutputChars": 10000,
   "timeoutSeconds": 10,
+  "timeoutRetryCount": 1,
+  "errorRetryCount": 1,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
   "render": {
@@ -177,7 +179,9 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | `minChars` | Minimum output size before a summary is requested. |
 | `maxChars` | Distilled text is written to a temporary file when it exceeds this length. |
 | `maxOutputChars` | Maximum text returned to the Agent. Oversized text is written to a temporary file and replaced with a file pointer. |
-| `timeoutSeconds` | Maximum time allowed for the distillation model call. |
+| `timeoutSeconds` | Maximum time allowed for each distillation model attempt. |
+| `timeoutRetryCount` | Number of additional attempts after a timeout. Defaults to `1`; set to `0` to disable timeout retries. |
+| `errorRetryCount` | Number of additional attempts after any non-timeout error. Defaults to `1`; set to `0` to disable other error retries. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
 | `summarizeErrors` | Whether error results that meet `minChars` should still be sent to the distillation model. |
 | `tools.<name>.enabled` | Enables or disables `outputRequest` injection and result distillation for one tool. `edit` and `write` default to disabled; other unconfigured tools default to enabled. It can also be changed from `/config:distill`. |
@@ -185,7 +189,7 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 `/pi-distill` remains available as a compatibility alias.
 | `render.*` | Controls the audit card, prompt preview, and result preview. |
 
-The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_MAX_OUTPUT_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`.
+The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_MAX_OUTPUT_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_TIMEOUT_RETRY_COUNT`, `PI_DISTILL_ERROR_RETRY_COUNT`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`.
 
 ## Requirements
 

@@ -112,7 +112,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 2. `tool_call` 事件捕获这个参数，并在交给底层工具前移除它，因此原工具不会收到扩展专用字段。
 3. `tool_result` 事件拿到真实输出后再做判断，不依赖 Agent 对输出长度的预测。
 4. 每次工具调用都必须包含非空的 `outputRequest`；严格的 `RAW` 表示明确要求原文；其他非空 prompt 才允许进入提炼流程。
-5. 提炼失败、没有可用模型或结果收益过低时，扩展保留原始事实，并通过 details 和审计卡片暴露状态；模型用 Markdown 的 JSON 代码围栏（如 `````json … `````）包裹响应时也会兼容解析。
+5. 单次提炼超时后按照 `timeoutRetryCount` 重试，其他异常按照 `errorRetryCount` 重试（两者默认都重试 1 次）；全部尝试失败、没有可用模型或结果收益过低时，扩展保留原始事实，并通过 details 和审计卡片暴露状态；模型用 Markdown 的 JSON 代码围栏（如 `````json … `````）包裹响应时也会兼容解析。
 
 ## 输出处理契约
 
@@ -120,7 +120,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | --- | --- | --- |
 | 未提供 | 工具调用无效；Pi 会在底层工具执行前拒绝该调用 | 不要省略；未明确要求压缩时使用 `RAW` |
 | 严格为 `RAW`（大小写不敏感） | 不调用提炼模型，保留完整原始文本；超长时由 Pi 自身的输出限制机制处理 | 逐字核对、复制内容、需要完整日志时 |
-| 任意非空且非 `RAW` | 输出达到阈值后调用模型，具体保留内容由 prompt 决定 | “只保留错误、警告和最终状态”等场景 |
+| 任意非空且非 `RAW` | 输出达到阈值后调用模型，超时与其他异常分别使用独立重试次数，具体保留内容由 prompt 决定 | “只保留错误、警告和最终状态”等场景 |
 | 包含图片、音频或其他非文本内容 | 原样保留，不发送给提炼模型，不做文本长度截断 | 图片读取、二进制结果、混合文本与图片结果 |
 
 `RAW` 是确定性的完整输出信号。提炼 prompt 会要求总结模型在用户明确要求“不遗漏地完整提取”时直接返回 `RAW`，尤其适用于语法、参数、SQL、API 调用或其他需要复制的精确文本。工具调用方可以控制参数时，直接传 `RAW` 仍然是首选方式。
@@ -161,6 +161,8 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
   "maxChars": 100000,
   "maxOutputChars": 10000,
   "timeoutSeconds": 10,
+  "timeoutRetryCount": 1,
+  "errorRetryCount": 1,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
   "tools": {},
@@ -180,7 +182,9 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `minChars` | 达到此输出长度后才请求提炼。 |
 | `maxChars` | 提炼结果超过此字符数时写入临时文件。 |
 | `maxOutputChars` | 最终返回给 Agent 的文本上限。超出后写入临时文件，只返回文件指针。 |
-| `timeoutSeconds` | 提炼模型调用的最长等待时间。 |
+| `timeoutSeconds` | 每次提炼模型尝试的最长等待时间。 |
+| `timeoutRetryCount` | 超时后的额外重试次数。默认 `1`；设为 `0` 时不重试超时。 |
+| `errorRetryCount` | 非超时异常后的额外重试次数。默认 `1`；设为 `0` 时不重试其他异常。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
 | `summarizeErrors` | 工具返回错误且达到 `minChars` 时，是否仍发送给提炼模型。 |
 | `tools.<name>.enabled` | 按工具开启或关闭 `outputRequest` 注入和结果提炼。`edit` 和 `write` 默认关闭，其他未配置工具默认开启，也可以通过 `/config:distill` 修改。 |
@@ -188,7 +192,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 `/pi-distill` 仍作为兼容别名保留。
 | `render.*` | 控制审计卡片、prompt 预览和结果预览。 |
 
-主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_MAX_OUTPUT_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。
+主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_MAX_OUTPUT_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_TIMEOUT_RETRY_COUNT`、`PI_DISTILL_ERROR_RETRY_COUNT`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。
 
 ## 要求
 

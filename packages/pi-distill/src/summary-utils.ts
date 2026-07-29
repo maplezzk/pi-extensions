@@ -9,6 +9,8 @@ const DEFAULT_MIN_CHARS = 200;
 const DEFAULT_MAX_CHARS = 100_000;
 const DEFAULT_MAX_OUTPUT_CHARS = 10_000;
 const DEFAULT_TIMEOUT_SECONDS = 10;
+const DEFAULT_TIMEOUT_RETRY_COUNT = 1;
+const DEFAULT_ERROR_RETRY_COUNT = 1;
 const DEFAULT_MISSED_COMPRESSION_RATIO = 10;
 const DEFAULT_SUMMARIZE_ERRORS = true;
 const DEFAULT_RENDER_ENABLED = true;
@@ -30,6 +32,10 @@ export interface BashSummaryConfig {
   maxOutputChars: number;
   /** 模型调用最长等待时间。 */
   timeoutSeconds: number;
+  /** 单次提炼因超时失败后的额外重试次数。 */
+  timeoutRetryCount: number;
+  /** 单次提炼因非超时异常失败后的额外重试次数。 */
+  errorRetryCount: number;
   /** 无 prompt 的长输出触发 missed-compression 提醒所需的倍数。 */
   missedCompressionRatio: number;
   /** 工具返回错误且达到最小长度时是否仍调用提炼模型。 */
@@ -60,6 +66,8 @@ export interface DistillConfigFile {
   maxChars?: number;
   maxOutputChars?: number;
   timeoutSeconds?: number;
+  timeoutRetryCount?: number;
+  errorRetryCount?: number;
   missedCompressionRatio?: number;
   summarizeErrors?: boolean;
   tools?: DistillToolConfig;
@@ -109,6 +117,8 @@ export function parseBashSummaryConfig(
   const timeoutSecondsValue = (
     env.PI_DISTILL_TIMEOUT_SECONDS ?? env.PI_BASH_SUMMARY_TIMEOUT_SECONDS
   )?.trim();
+  const timeoutRetryCountValue = env.PI_DISTILL_TIMEOUT_RETRY_COUNT?.trim();
+  const errorRetryCountValue = env.PI_DISTILL_ERROR_RETRY_COUNT?.trim();
   const missedCompressionRatioValue = (
     env.PI_DISTILL_MISSED_COMPRESSION_RATIO ?? env.PI_BASH_SUMMARY_MISSED_COMPRESSION_RATIO
   )?.trim();
@@ -127,6 +137,12 @@ export function parseBashSummaryConfig(
   const timeoutSeconds = timeoutSecondsValue
     ? parsePositiveInteger(timeoutSecondsValue)
     : DEFAULT_TIMEOUT_SECONDS;
+  const timeoutRetryCount = timeoutRetryCountValue
+    ? parseNonNegativeInteger(timeoutRetryCountValue)
+    : DEFAULT_TIMEOUT_RETRY_COUNT;
+  const errorRetryCount = errorRetryCountValue
+    ? parseNonNegativeInteger(errorRetryCountValue)
+    : DEFAULT_ERROR_RETRY_COUNT;
   const missedCompressionRatio = missedCompressionRatioValue
     ? parsePositiveNumber(missedCompressionRatioValue)
     : DEFAULT_MISSED_COMPRESSION_RATIO;
@@ -138,12 +154,14 @@ export function parseBashSummaryConfig(
     minChars === undefined ||
     maxChars === undefined ||
     timeoutSeconds === undefined ||
+    timeoutRetryCount === undefined ||
+    errorRetryCount === undefined ||
     maxOutputChars === undefined ||
     missedCompressionRatio === undefined ||
     summarizeErrors === undefined
   ) {
     console.warn(
-      "[pi-distill] Invalid distillation config; distillation disabled. Check PI_DISTILL_MIN_CHARS, PI_DISTILL_MAX_CHARS, PI_DISTILL_MAX_OUTPUT_CHARS, PI_DISTILL_TIMEOUT_SECONDS, PI_DISTILL_MISSED_COMPRESSION_RATIO, and PI_DISTILL_SUMMARIZE_ERRORS (legacy PI_BASH_SUMMARY_* variables remain supported).",
+      "[pi-distill] Invalid distillation config; distillation disabled. Check PI_DISTILL_MIN_CHARS, PI_DISTILL_MAX_CHARS, PI_DISTILL_MAX_OUTPUT_CHARS, PI_DISTILL_TIMEOUT_SECONDS, PI_DISTILL_TIMEOUT_RETRY_COUNT, PI_DISTILL_ERROR_RETRY_COUNT, PI_DISTILL_MISSED_COMPRESSION_RATIO, and PI_DISTILL_SUMMARIZE_ERRORS (legacy PI_BASH_SUMMARY_* variables remain supported).",
     );
     return undefined;
   }
@@ -154,6 +172,8 @@ export function parseBashSummaryConfig(
       maxChars,
       maxOutputChars,
       timeoutSeconds,
+      timeoutRetryCount,
+      errorRetryCount,
       missedCompressionRatio,
       summarizeErrors,
     };
@@ -174,6 +194,8 @@ export function parseBashSummaryConfig(
     maxChars,
     maxOutputChars,
     timeoutSeconds,
+    timeoutRetryCount,
+    errorRetryCount,
     missedCompressionRatio,
     summarizeErrors,
   };
@@ -187,6 +209,12 @@ function parsePositiveInteger(value: string | undefined): number | undefined {
   if (!value || !/^\d+$/.test(value)) return undefined;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseNonNegativeInteger(value: string | undefined): number | undefined {
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function parsePositiveNumber(value: string): number | undefined {
@@ -279,6 +307,19 @@ function appendFileValueToEnv(
     return;
   }
 
+  if (
+    key === "timeoutRetryCount" ||
+    key === "errorRetryCount"
+  ) {
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+      warnings.push(`Config field ${key} must be a non-negative integer.`);
+      env[envKey] = "__invalid_file_value__";
+      return;
+    }
+    env[envKey] = String(value);
+    return;
+  }
+
   if (typeof value !== "number" || !Number.isFinite(value)) {
     warnings.push(`Config field ${key} must be a positive number.`);
     env[envKey] = "__invalid_file_value__";
@@ -326,6 +367,20 @@ export function loadDistillConfig(
     appendFileValueToEnv(
       effectiveEnv,
       file,
+      "timeoutRetryCount",
+      "PI_DISTILL_TIMEOUT_RETRY_COUNT",
+      warnings,
+    );
+    appendFileValueToEnv(
+      effectiveEnv,
+      file,
+      "errorRetryCount",
+      "PI_DISTILL_ERROR_RETRY_COUNT",
+      warnings,
+    );
+    appendFileValueToEnv(
+      effectiveEnv,
+      file,
       "missedCompressionRatio",
       "PI_DISTILL_MISSED_COMPRESSION_RATIO",
       warnings,
@@ -357,6 +412,8 @@ export function defaultDistillConfigFile(): DistillConfigFile {
     maxChars: DEFAULT_MAX_CHARS,
     maxOutputChars: DEFAULT_MAX_OUTPUT_CHARS,
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+    timeoutRetryCount: DEFAULT_TIMEOUT_RETRY_COUNT,
+    errorRetryCount: DEFAULT_ERROR_RETRY_COUNT,
     missedCompressionRatio: DEFAULT_MISSED_COMPRESSION_RATIO,
     summarizeErrors: DEFAULT_SUMMARIZE_ERRORS,
     tools: {},
