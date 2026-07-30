@@ -160,9 +160,6 @@ export function parseBashSummaryConfig(
     missedCompressionRatio === undefined ||
     summarizeErrors === undefined
   ) {
-    console.warn(
-      "[pi-distill] Invalid distillation config; distillation disabled. Check PI_DISTILL_MIN_CHARS, PI_DISTILL_MAX_CHARS, PI_DISTILL_MAX_OUTPUT_CHARS, PI_DISTILL_TIMEOUT_SECONDS, PI_DISTILL_TIMEOUT_RETRY_COUNT, PI_DISTILL_ERROR_RETRY_COUNT, PI_DISTILL_MISSED_COMPRESSION_RATIO, and PI_DISTILL_SUMMARIZE_ERRORS (legacy PI_BASH_SUMMARY_* variables remain supported).",
-    );
     return undefined;
   }
 
@@ -181,9 +178,6 @@ export function parseBashSummaryConfig(
 
   const separator = modelRef.indexOf("/");
   if (separator <= 0 || separator === modelRef.length - 1) {
-    console.warn(
-      `[pi-distill] Invalid PI_DISTILL_MODEL; expected provider/model, got: ${modelRef}`,
-    );
     return undefined;
   }
 
