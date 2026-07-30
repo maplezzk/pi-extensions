@@ -133,8 +133,15 @@ test("runWorkflow aborts once without unhandled rejections from unawaited agent 
   const onUnhandled = (reason: unknown) => unhandled.push(reason);
   process.on("unhandledRejection", onUnhandled);
 
+  let startedCount = 0;
+  let resolveAllStarted = () => {};
+  const allStarted = new Promise<void>((resolve) => {
+    resolveAllStarted = resolve;
+  });
   const abortingAgent = {
     run(_prompt: string, options: { signal?: AbortSignal }): Promise<never> {
+      startedCount++;
+      if (startedCount === 3) resolveAllStarted();
       return new Promise((_resolve, reject) => {
         const onAbort = () => reject(new Error("Subagent was aborted"));
         options.signal?.addEventListener("abort", onAbort, { once: true });
@@ -155,10 +162,10 @@ const second = agent('second', { label: 'second', schema: {} })
 const final = agent(JSON.stringify({ first, second }), { label: 'final', schema: {} })
 return final
 `,
-      { agent: abortingAgent, signal: abortController.signal },
+      { agent: abortingAgent, signal: abortController.signal, concurrency: 3 },
     );
 
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await allStarted;
     abortController.abort();
 
     await assert.rejects(workflow, /Subagent was aborted/);
