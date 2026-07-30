@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.1.3...pi-distill-v1.2.0) (2026-07-29)
+
+
+### Features
+
+* 支持按失败类型配置提炼重试 ([#61](https://github.com/maplezzk/pi-extensions/issues/61)) ([cf7b344](https://github.com/maplezzk/pi-extensions/commit/cf7b34476dbae4b692ee053ffe95d56c29232bd3))
+
 ## [1.1.3](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.1.2...pi-distill-v1.1.3) (2026-07-28)
 
 
