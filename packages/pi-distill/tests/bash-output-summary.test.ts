@@ -840,7 +840,9 @@ test("最终输出限制覆盖摘要结果", async () => {
 
     assert.equal(result.details?.outputTruncated, true);
     assert.equal(result.details?.outputLimitChars, 100);
-    assert.equal((result.content[0]?.text ?? "").length, 100);
+    const returnedText = result.content[0]?.text ?? "";
+    assert.ok(returnedText.length <= 100);
+    assert.match(returnedText, /Output exceeded 100 chars/);
     assert.match(
       await readFile(result.details?.fullOutputPath as string, "utf8"),
       /^x{200}/,
