@@ -203,7 +203,7 @@ export async function runWorkflow<T = unknown>(
   };
 
   const context = vm.createContext({
-    agent,
+    __agent: agent,
     parallel,
     pipeline,
     log,
@@ -230,7 +230,21 @@ export async function runWorkflow<T = unknown>(
     Promise,
   });
 
-  const wrapped = `(async () => {\n${body}\n})()`;
+  // A host Promise receives a context-local wrapper when it crosses into vm.
+  // Track that wrapper in the vm realm itself so a fire-and-forget agent() that
+  // later rejects (notably during cancellation) cannot become an unhandled
+  // rejection and terminate Pi. Returning the original promise preserves normal
+  // await/rejection semantics for workflow scripts.
+  const wrapped = `(async (__workflowAgent) => {
+const trackedAgent = (...args) => {
+  const promise = __workflowAgent(...args)
+  void promise.catch(() => {})
+  return promise
+}
+return await (async (agent) => {
+${body}
+})(trackedAgent)
+})(__agent)`;
   const result = await new vm.Script(wrapped, { filename: `${meta.name || "workflow"}.js` }).runInContext(context);
   await Promise.allSettled([...pendingAgentRuns]);
   assertStructuredCloneable(result, "workflow result");

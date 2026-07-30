@@ -126,3 +126,52 @@ return { scan }
     "result:Catalog Date.now(), Math.random(), and new Date() usage",
   );
 });
+
+test("runWorkflow aborts once without unhandled rejections from unawaited agent promises", async () => {
+  const abortController = new AbortController();
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+
+  let startedCount = 0;
+  let resolveAllStarted = () => {};
+  const allStarted = new Promise<void>((resolve) => {
+    resolveAllStarted = resolve;
+  });
+  const abortingAgent = {
+    run(_prompt: string, options: { signal?: AbortSignal }): Promise<never> {
+      startedCount++;
+      if (startedCount === 3) resolveAllStarted();
+      return new Promise((_resolve, reject) => {
+        const onAbort = () => reject(new Error("Subagent was aborted"));
+        options.signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    },
+  };
+
+  try {
+    const workflow = runWorkflow(
+      `export const meta = {
+  name: 'abort_fanout',
+  description: 'Abort unawaited fan-out safely',
+  phases: [{ title: 'Fan out' }]
+}
+
+const first = agent('first', { label: 'first', schema: {} })
+const second = agent('second', { label: 'second', schema: {} })
+const final = agent(JSON.stringify({ first, second }), { label: 'final', schema: {} })
+return final
+`,
+      { agent: abortingAgent, signal: abortController.signal, concurrency: 3 },
+    );
+
+    await allStarted;
+    abortController.abort();
+
+    await assert.rejects(workflow, /Subagent was aborted/);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
+  }
+});
