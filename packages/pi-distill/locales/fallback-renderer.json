@@ -43,6 +43,22 @@
     "zh-CN": "字符",
     "en-US": "chars"
   },
+  "tokens": {
+    "zh-CN": "Token",
+    "en-US": "tokens"
+  },
+  "compressionTokens": {
+    "zh-CN": "压缩消耗",
+    "en-US": "compression"
+  },
+  "tokensSaved": {
+    "zh-CN": "节省",
+    "en-US": "saved"
+  },
+  "savedPercent": {
+    "zh-CN": "节省",
+    "en-US": "saved"
+  },
   "tool": {
     "zh-CN": "工具",
     "en-US": "Tool"
