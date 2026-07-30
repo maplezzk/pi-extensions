@@ -402,6 +402,26 @@ function recordDistillSessionResult(
   }
 }
 
+export function formatCompactCount(value: number): string {
+  const absolute = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  const formatScaled = (scaled: number): string => {
+    const rounded = Math.round(scaled * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  };
+  if (absolute >= 1_000_000) return `${sign}${formatScaled(absolute / 1_000_000)}m`;
+  if (absolute >= 1_000) return `${sign}${formatScaled(absolute / 1_000)}k`;
+  return String(Math.round(value));
+}
+
+export function formatSessionDuration(milliseconds: number): string {
+  if (milliseconds < 1_000) return `${Math.max(0, Math.round(milliseconds))}ms`;
+  const seconds = milliseconds / 1_000;
+  if (seconds < 60) return `${seconds.toFixed(1).replace(/\.0$/, "")}s`;
+  const minutes = seconds / 60;
+  return `${minutes.toFixed(1).replace(/\.0$/, "")}min`;
+}
+
 function formatDistillSessionStats(stats: DistillSessionStats): string {
   const compressionRatio = stats.summaryChars > 0
     ? (stats.originalOutputChars / stats.summaryChars).toFixed(2)
@@ -416,12 +436,12 @@ function formatDistillSessionStats(stats: DistillSessionStats): string {
     : 0;
   const tokenUsage = stats.hasSummaryTokenUsage
     ? {
-        input: stats.summaryInputTokens,
-        output: stats.summaryOutputTokens,
-        reasoning: stats.summaryReasoningTokens,
-        cacheRead: stats.summaryCacheReadTokens,
-        cacheWrite: stats.summaryCacheWriteTokens,
-        total: stats.summaryTotalTokens,
+        input: formatCompactCount(stats.summaryInputTokens),
+        output: formatCompactCount(stats.summaryOutputTokens),
+        reasoning: formatCompactCount(stats.summaryReasoningTokens),
+        cacheRead: formatCompactCount(stats.summaryCacheReadTokens),
+        cacheWrite: formatCompactCount(stats.summaryCacheWriteTokens),
+        total: formatCompactCount(stats.summaryTotalTokens),
       }
     : {
         input: i18n.t("statsUnavailable"),
@@ -432,23 +452,23 @@ function formatDistillSessionStats(stats: DistillSessionStats): string {
         total: i18n.t("statsUnavailable"),
       };
   return i18n.t("statsReport", {
-    toolResults: stats.toolResults,
-    summarizedResults: stats.summarizedResults,
-    fallbackResults: stats.fallbackResults,
-    failedResults: stats.failedResults,
-    rawResults: stats.rawResults,
-    skippedResults: stats.skippedResults,
-    nonTextResults: stats.nonTextResults,
-    summaryAttempts: stats.summaryAttempts,
-    retryCount: stats.retryCount,
-    originalOutputChars: stats.originalOutputChars,
-    summaryChars: stats.summaryChars,
+    toolResults: formatCompactCount(stats.toolResults),
+    summarizedResults: formatCompactCount(stats.summarizedResults),
+    fallbackResults: formatCompactCount(stats.fallbackResults),
+    failedResults: formatCompactCount(stats.failedResults),
+    rawResults: formatCompactCount(stats.rawResults),
+    skippedResults: formatCompactCount(stats.skippedResults),
+    nonTextResults: formatCompactCount(stats.nonTextResults),
+    summaryAttempts: formatCompactCount(stats.summaryAttempts),
+    retryCount: formatCompactCount(stats.retryCount),
+    originalOutputChars: formatCompactCount(stats.originalOutputChars),
+    summaryChars: formatCompactCount(stats.summaryChars),
     compressionRatio,
-    estimatedOriginalOutputTokens: stats.estimatedOriginalOutputTokens,
-    estimatedSummaryTokens: stats.estimatedSummaryTokens,
-    estimatedTokensSaved: stats.estimatedTokensSaved,
-    summaryDurationMs: Math.round(stats.summaryDurationMs),
-    summaryAverageDurationMs: averageDurationMs,
+    estimatedOriginalOutputTokens: formatCompactCount(stats.estimatedOriginalOutputTokens),
+    estimatedSummaryTokens: formatCompactCount(stats.estimatedSummaryTokens),
+    estimatedTokensSaved: formatCompactCount(stats.estimatedTokensSaved),
+    summaryDuration: formatSessionDuration(stats.summaryDurationMs),
+    summaryAverageDuration: formatSessionDuration(averageDurationMs),
     summaryInputTokens: tokenUsage.input,
     summaryOutputTokens: tokenUsage.output,
     summaryReasoningTokens: tokenUsage.reasoning,

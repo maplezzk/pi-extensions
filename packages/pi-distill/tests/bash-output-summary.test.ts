@@ -16,7 +16,11 @@ import {
   registerDistillToolDisplayMiddleware,
 } from "../src/tool-display-bridge.ts";
 import { Text } from "@earendil-works/pi-tui";
-import { extendDistillToolParameters } from "../src/index.ts";
+import {
+  extendDistillToolParameters,
+  formatCompactCount,
+  formatSessionDuration,
+} from "../src/index.ts";
 import {
   buildDecisionEvaluationPrompt,
   buildSummaryEvaluationPrompt,
@@ -761,6 +765,16 @@ test("重试时累计每次模型调用的 token usage", async () => {
     assert.equal(result.details?.summaryOutputTokens, 40);
     assert.equal(result.details?.summaryTotalTokens, 340);
   });
+});
+
+test("会话统计使用紧凑数量和可读耗时单位", () => {
+  assert.equal(formatCompactCount(999), "999");
+  assert.equal(formatCompactCount(2_597), "2.6k");
+  assert.equal(formatCompactCount(1_000_000), "1m");
+  assert.equal(formatCompactCount(12_500_000), "12.5m");
+  assert.equal(formatSessionDuration(850), "850ms");
+  assert.equal(formatSessionDuration(12_100), "12.1s");
+  assert.equal(formatSessionDuration(90_000), "1.5min");
 });
 
 test("fake provider 的空响应、非法响应和异常都保留原文", async () => {
