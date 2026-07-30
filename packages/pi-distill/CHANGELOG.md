@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.2.0...pi-distill-v1.2.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **pi-distill:** stabilize output limit test ([#63](https://github.com/maplezzk/pi-extensions/issues/63)) ([47bbbbb](https://github.com/maplezzk/pi-extensions/commit/47bbbbb7a4b2ce50b36c9b1447b1843e05afa2f2))
+
 ## [1.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.1.3...pi-distill-v1.2.0) (2026-07-29)
 
 
