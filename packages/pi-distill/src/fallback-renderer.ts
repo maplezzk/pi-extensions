@@ -213,13 +213,13 @@ export function buildDistillAuditLines(
   const metrics: string[] = [];
 
   if (estimatedOriginalTokens !== undefined && estimatedSummaryTokens !== undefined) {
-    const tokenMetric = `≈${formatCompactCount(estimatedOriginalTokens)}→${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
+    const tokenMetric = `≈${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
     const savedMetric = estimatedTokensSaved !== undefined && estimatedTokensSaved > 0
       ? `（${i18n.t("tokensSaved")} ≈${formatCompactCount(estimatedTokensSaved)}${compressionSavedPercent !== undefined ? `，${compressionSavedPercent.toFixed(1)}%` : ""}）`
       : "";
     metrics.push(`${tokenMetric}${savedMetric}`);
   } else if (originalChars !== undefined && summaryChars !== undefined) {
-    metrics.push(`${formatCount(originalChars)}→${formatCount(summaryChars)} ${i18n.t("chars")}`);
+    metrics.push(`${formatCount(originalChars)} → ${formatCount(summaryChars)} ${i18n.t("chars")}`);
     if (compressionRatio !== undefined) metrics.push(`${compressionRatio.toFixed(2)}×`);
     if (compressionSavedPercent !== undefined) {
       metrics.push(`${compressionSavedPercent.toFixed(1)}% ${i18n.t("savedPercent")}`);

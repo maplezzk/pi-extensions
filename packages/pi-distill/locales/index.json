@@ -163,6 +163,14 @@
     "zh-CN": "非超时异常",
     "en-US": "a non-timeout error"
   },
+  "outputRequestUnavailable": {
+    "zh-CN": "无法扩展工具 {tool} 的参数结构；outputRequest 不可用。",
+    "en-US": "Could not extend the {tool} parameter schema; outputRequest is unavailable."
+  },
+  "extendOutputRequestFailed": {
+    "zh-CN": "扩展 outputRequest 参数失败：{error}",
+    "en-US": "Failed to extend the outputRequest parameter: {error}"
+  },
   "thresholdTitle": {
     "zh-CN": "长输出阈值",
     "en-US": "Long-output threshold"
@@ -180,8 +188,8 @@
     "en-US": "n/a"
   },
   "statsReport": {
-    "zh-CN": "Distill 会话统计\n工具 {toolResults}｜成功 {summarizedResults}｜回退 {fallbackResults}｜失败 {failedResults}\nRAW {rawResults}｜跳过 {skippedResults}｜非文本 {nonTextResults}\n尝试 {summaryAttempts}｜重试 {retryCount}｜耗时 {summaryDuration}（平均 {summaryAverageDuration}）\n字符：{originalOutputChars} → {summaryChars}（{compressionRatio}x）\nToken（估算）：{estimatedOriginalOutputTokens} → {estimatedSummaryTokens}（节省 {estimatedTokensSaved}）\n提炼消耗 Token：{summaryTotalTokens}（输入 {summaryInputTokens}｜输出 {summaryOutputTokens}｜推理 {summaryReasoningTokens}）\n缓存 Token：读 {summaryCacheReadTokens}｜写 {summaryCacheWriteTokens}\n模型成本：{summaryCost}",
-    "en-US": "Distill session statistics\nTools {toolResults} | summarized {summarizedResults} | fallback {fallbackResults} | failed {failedResults}\nRAW {rawResults} | skipped {skippedResults} | non-text {nonTextResults}\nAttempts {summaryAttempts} | retries {retryCount} | time {summaryDuration} (avg {summaryAverageDuration})\nChars: {originalOutputChars} → {summaryChars} ({compressionRatio}x)\nTokens (estimated): {estimatedOriginalOutputTokens} → {estimatedSummaryTokens} (saved {estimatedTokensSaved})\nDistillation cost: {summaryTotalTokens} tokens (input {summaryInputTokens} | output {summaryOutputTokens} | reasoning {summaryReasoningTokens})\nCache tokens: read {summaryCacheReadTokens} | write {summaryCacheWriteTokens}\nModel cost: {summaryCost}"
+    "zh-CN": "Distill 会话统计\n工具结果 {toolResults}｜成功 {summarizedResults}｜回退 {fallbackResults}｜失败 {failedResults}\nRAW {rawResults}｜跳过 {skippedResults}｜非文本 {nonTextResults}\n尝试 {summaryAttempts}｜重试 {retryCount}｜耗时 {summaryDuration}（平均 {summaryAverageDuration}）\n字符：{originalOutputChars} → {summaryChars}（{compressionRatio}x）\nToken（估算）：{estimatedOriginalOutputTokens} → {estimatedSummaryTokens}（节省 {estimatedTokensSaved}）\n模型总 Token：{summaryTotalTokens}（输入 {summaryInputTokens}｜输出 {summaryOutputTokens}｜推理 {summaryReasoningTokens}）\n缓存 Token：读 {summaryCacheReadTokens}｜写 {summaryCacheWriteTokens}\n模型成本：{summaryCost}",
+    "en-US": "Distill session statistics\nTool results {toolResults} | summarized {summarizedResults} | fallback {fallbackResults} | failed {failedResults}\nRAW {rawResults} | skipped {skippedResults} | non-text {nonTextResults}\nAttempts {summaryAttempts} | retries {retryCount} | time {summaryDuration} (avg {summaryAverageDuration})\nChars: {originalOutputChars} → {summaryChars} ({compressionRatio}x)\nTokens (estimated): {estimatedOriginalOutputTokens} → {estimatedSummaryTokens} (saved {estimatedTokensSaved})\nModel total tokens: {summaryTotalTokens} (input {summaryInputTokens} | output {summaryOutputTokens} | reasoning {summaryReasoningTokens})\nCache tokens: read {summaryCacheReadTokens} | write {summaryCacheWriteTokens}\nModel cost: {summaryCost}"
   },
   "outputRequest": {
     "zh-CN": "outputRequest",
