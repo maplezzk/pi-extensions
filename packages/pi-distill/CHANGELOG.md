@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.2.1...pi-distill-v1.3.0) (2026-07-31)
+
+
+### Features
+
+* 展示提炼 Token 节省与压缩消耗 ([#68](https://github.com/maplezzk/pi-extensions/issues/68)) ([7a6fde4](https://github.com/maplezzk/pi-extensions/commit/7a6fde44957e73196dd4a33010ac63120decdba9))
+
+
+### Bug Fixes
+
+* **pi-distill:** route runtime warnings through Pi UI ([#66](https://github.com/maplezzk/pi-extensions/issues/66)) ([9301f6e](https://github.com/maplezzk/pi-extensions/commit/9301f6eb253a9a72cb0990ad4f8f5edae2e44d23))
+
 ## [1.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.2.0...pi-distill-v1.2.1) (2026-07-30)
 
 
