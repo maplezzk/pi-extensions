@@ -56,6 +56,13 @@ function formatCount(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
 
+function formatCompactCount(value: number): string {
+  const rounded = Math.round(value);
+  if (rounded >= 1_000_000) return `${(rounded / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+  if (rounded >= 1_000) return `${(rounded / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return String(rounded);
+}
+
 function renderDistillAuditLine(audit: DistillAuditView, line: string, index: number, theme: RenderTheme): string {
   if (index === 0) {
     const title = theme.fg("accent", theme.bold("◇ Distill"));
@@ -191,6 +198,10 @@ export function buildDistillAuditLines(
   const error = getString(details.outputSummaryError);
   const originalChars = getFiniteNumber(details.originalOutputChars);
   const summaryChars = getFiniteNumber(details.summaryChars);
+  const estimatedOriginalTokens = getFiniteNumber(details.estimatedOriginalOutputTokens);
+  const estimatedSummaryTokens = getFiniteNumber(details.estimatedSummaryTokens);
+  const estimatedTokensSaved = getFiniteNumber(details.estimatedTokensSaved);
+  const summaryTotalTokens = getFiniteNumber(details.summaryTotalTokens);
   const compressionRatio = getFiniteNumber(details.compressionRatio);
   const compressionSavedPercent = getFiniteNumber(details.compressionSavedPercent);
   const toolExecutionMs = getFiniteNumber(details.toolExecutionMs);
@@ -201,14 +212,23 @@ export function buildDistillAuditLines(
   const statusView = statusViews[status] ?? { label: status, tone: "muted" as const };
   const metrics: string[] = [];
 
-  if (originalChars !== undefined && summaryChars !== undefined) {
+  if (estimatedOriginalTokens !== undefined && estimatedSummaryTokens !== undefined) {
+    const tokenMetric = `≈${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
+    const savedMetric = estimatedTokensSaved !== undefined && estimatedTokensSaved > 0
+      ? `（${i18n.t("tokensSaved")} ≈${formatCompactCount(estimatedTokensSaved)}${compressionSavedPercent !== undefined ? `，${compressionSavedPercent.toFixed(1)}%` : ""}）`
+      : "";
+    metrics.push(`${tokenMetric}${savedMetric}`);
+  } else if (originalChars !== undefined && summaryChars !== undefined) {
     metrics.push(`${formatCount(originalChars)} → ${formatCount(summaryChars)} ${i18n.t("chars")}`);
+    if (compressionRatio !== undefined) metrics.push(`${compressionRatio.toFixed(2)}×`);
+    if (compressionSavedPercent !== undefined) {
+      metrics.push(`${compressionSavedPercent.toFixed(1)}% ${i18n.t("savedPercent")}`);
+    }
   } else if (originalChars !== undefined) {
     metrics.push(`${formatCount(originalChars)} ${i18n.t("chars")}`);
   }
-  if (compressionRatio !== undefined) metrics.push(`${compressionRatio.toFixed(2)}×`);
-  if (compressionSavedPercent !== undefined) {
-    metrics.push(`${compressionSavedPercent.toFixed(1)}% saved`);
+  if (summaryTotalTokens !== undefined && summaryTotalTokens > 0) {
+    metrics.push(`${i18n.t("compressionTokens")} ${formatCompactCount(summaryTotalTokens)} ${i18n.t("tokens")}`);
   }
   if (toolExecutionMs !== undefined && toolExecutionMs >= 50) {
     metrics.push(`${i18n.t("tool")} ${formatDuration(toolExecutionMs)}`);

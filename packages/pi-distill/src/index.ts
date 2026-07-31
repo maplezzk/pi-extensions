@@ -123,20 +123,69 @@ type SummaryDecision = {
   reason: string;
 };
 
+type SummaryUsage = {
+  input?: number;
+  output?: number;
+  reasoning?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  totalTokens?: number;
+  cost?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+};
+
 type SummaryResult = {
   text: string;
   summaryChars: number;
   summaryFilePath?: string;
   summaryModel: string;
   decision: SummaryDecision;
+  usage?: SummaryUsage;
+  attempts?: number;
 };
 
 type SummaryCompletion = (...args: Parameters<typeof complete>) => ReturnType<typeof complete>;
 type DistillWarningReporter = (message: string) => void;
 
+class SummaryAttemptError extends Error {
+  constructor(message: string, readonly usage?: SummaryUsage) {
+    super(message);
+    this.name = "SummaryAttemptError";
+  }
+}
+
+class SummaryRetryError extends Error {
+  constructor(
+    message: string,
+    readonly attempts: number,
+    readonly usage?: SummaryUsage,
+  ) {
+    super(message);
+    this.name = "SummaryRetryError";
+  }
+}
+
 type SummaryDiagnostics = {
   toolExecutionMs?: number;
   summaryDurationMs?: number;
+  summaryAttempts?: number;
+  summaryInputTokens?: number;
+  summaryOutputTokens?: number;
+  summaryReasoningTokens?: number;
+  summaryCacheReadTokens?: number;
+  summaryCacheWriteTokens?: number;
+  summaryTotalTokens?: number;
+  summaryCost?: number;
+  /** 原始输出与最终摘要的 Token 数是按 Pi 的 chars/4 规则估算的。 */
+  estimatedOriginalOutputTokens?: number;
+  estimatedSummaryTokens?: number;
+  estimatedTokensSaved?: number;
   outputSummaryIntent?: string;
   outputSummaryPrompt?: string;
   outputSummaryRender?: DistillRenderConfig;
@@ -158,6 +207,278 @@ type SummaryDiagnostics = {
   summaryResultMaxChars?: number;
   missedCompressionRatio?: number;
 };
+
+function toFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeSummaryUsage(value: unknown): SummaryUsage | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const usage: SummaryUsage = {
+    input: toFiniteNumber(record.input),
+    output: toFiniteNumber(record.output),
+    reasoning: toFiniteNumber(record.reasoning),
+    cacheRead: toFiniteNumber(record.cacheRead),
+    cacheWrite: toFiniteNumber(record.cacheWrite),
+    totalTokens: toFiniteNumber(record.totalTokens),
+  };
+  if (record.cost && typeof record.cost === "object" && !Array.isArray(record.cost)) {
+    const cost = record.cost as Record<string, unknown>;
+    usage.cost = {
+      input: toFiniteNumber(cost.input),
+      output: toFiniteNumber(cost.output),
+      reasoning: toFiniteNumber(cost.reasoning),
+      cacheRead: toFiniteNumber(cost.cacheRead),
+      cacheWrite: toFiniteNumber(cost.cacheWrite),
+      total: toFiniteNumber(cost.total),
+    };
+  }
+  return Object.values(usage).some((entry) => typeof entry === "number") || usage.cost !== undefined
+    ? usage
+    : undefined;
+}
+
+function mergeSummaryUsage(first: SummaryUsage | undefined, second: SummaryUsage | undefined): SummaryUsage | undefined {
+  if (!first && !second) return undefined;
+  const merged: SummaryUsage = {};
+  for (const key of ["input", "output", "reasoning", "cacheRead", "cacheWrite", "totalTokens"] as const) {
+    const value = (first?.[key] ?? 0) + (second?.[key] ?? 0);
+    if ((first?.[key] !== undefined || second?.[key] !== undefined) && Number.isFinite(value)) {
+      merged[key] = value;
+    }
+  }
+  if (first?.cost || second?.cost) {
+    merged.cost = {};
+    for (const key of ["input", "output", "reasoning", "cacheRead", "cacheWrite", "total"] as const) {
+      const value = (first?.cost?.[key] ?? 0) + (second?.cost?.[key] ?? 0);
+      if ((first?.cost?.[key] !== undefined || second?.cost?.[key] !== undefined) && Number.isFinite(value)) {
+        merged.cost[key] = value;
+      }
+    }
+  }
+  return merged;
+}
+
+function getSummaryUsageDiagnostics(usage: SummaryUsage | undefined): Pick<
+  SummaryDiagnostics,
+  "summaryInputTokens" | "summaryOutputTokens" | "summaryReasoningTokens" | "summaryCacheReadTokens" | "summaryCacheWriteTokens" | "summaryTotalTokens" | "summaryCost"
+> {
+  return {
+    summaryInputTokens: usage?.input,
+    summaryOutputTokens: usage?.output,
+    summaryReasoningTokens: usage?.reasoning,
+    summaryCacheReadTokens: usage?.cacheRead,
+    summaryCacheWriteTokens: usage?.cacheWrite,
+    summaryTotalTokens: usage?.totalTokens,
+    summaryCost: usage?.cost?.total,
+  };
+}
+
+const ESTIMATED_CHARS_PER_TOKEN = 4;
+
+function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / ESTIMATED_CHARS_PER_TOKEN);
+}
+
+function getTokenCompressionDiagnostics(
+  originalOutput: string,
+  finalOutput: string,
+): Pick<SummaryDiagnostics, "estimatedOriginalOutputTokens" | "estimatedSummaryTokens" | "estimatedTokensSaved"> {
+  const estimatedOriginalOutputTokens = estimateTextTokens(originalOutput);
+  const estimatedSummaryTokens = estimateTextTokens(finalOutput);
+  return {
+    estimatedOriginalOutputTokens,
+    estimatedSummaryTokens,
+    estimatedTokensSaved: Math.max(0, estimatedOriginalOutputTokens - estimatedSummaryTokens),
+  };
+}
+
+type DistillSessionStats = {
+  startedAt: number;
+  toolResults: number;
+  summarizedResults: number;
+  fallbackResults: number;
+  failedResults: number;
+  rawResults: number;
+  skippedResults: number;
+  nonTextResults: number;
+  summaryAttempts: number;
+  retryCount: number;
+  originalOutputChars: number;
+  summaryChars: number;
+  summaryDurationMs: number;
+  summaryInputTokens: number;
+  summaryOutputTokens: number;
+  summaryReasoningTokens: number;
+  summaryCacheReadTokens: number;
+  summaryCacheWriteTokens: number;
+  summaryTotalTokens: number;
+  hasSummaryTokenUsage: boolean;
+  estimatedOriginalOutputTokens: number;
+  estimatedSummaryTokens: number;
+  estimatedTokensSaved: number;
+  summaryCost: number;
+  hasSummaryCost: boolean;
+};
+
+function createDistillSessionStats(): DistillSessionStats {
+  return {
+    startedAt: Date.now(),
+    toolResults: 0,
+    summarizedResults: 0,
+    fallbackResults: 0,
+    failedResults: 0,
+    rawResults: 0,
+    skippedResults: 0,
+    nonTextResults: 0,
+    summaryAttempts: 0,
+    retryCount: 0,
+    originalOutputChars: 0,
+    summaryChars: 0,
+    summaryDurationMs: 0,
+    summaryInputTokens: 0,
+    summaryOutputTokens: 0,
+    summaryReasoningTokens: 0,
+    summaryCacheReadTokens: 0,
+    summaryCacheWriteTokens: 0,
+    summaryTotalTokens: 0,
+    hasSummaryTokenUsage: false,
+    estimatedOriginalOutputTokens: 0,
+    estimatedSummaryTokens: 0,
+    estimatedTokensSaved: 0,
+    summaryCost: 0,
+    hasSummaryCost: false,
+  };
+}
+
+function getDetailNumber(details: Record<string, unknown> | undefined, key: string): number | undefined {
+  return toFiniteNumber(details?.[key]);
+}
+
+function recordDistillSessionResult(
+  stats: DistillSessionStats,
+  details: Record<string, unknown> | undefined,
+): void {
+  stats.toolResults += 1;
+  const status = typeof details?.outputSummaryStatus === "string"
+    ? details.outputSummaryStatus
+    : undefined;
+  if (status === "summarized") stats.summarizedResults += 1;
+  else if (status === "summary-fallback") stats.fallbackResults += 1;
+  else if (status === "summary-failed") stats.failedResults += 1;
+  else if (status === "full-output") stats.rawResults += 1;
+  else if (status === "non-text-output") stats.nonTextResults += 1;
+  else stats.skippedResults += 1;
+
+  stats.summaryAttempts += getDetailNumber(details, "summaryAttempts") ?? 0;
+  const attempts = getDetailNumber(details, "summaryAttempts");
+  if (attempts !== undefined) stats.retryCount += Math.max(0, attempts - 1);
+  stats.originalOutputChars += getDetailNumber(details, "originalOutputChars") ?? 0;
+  stats.summaryChars += getDetailNumber(details, "summaryChars") ?? 0;
+  stats.summaryDurationMs += getDetailNumber(details, "summaryDurationMs") ?? 0;
+  stats.summaryInputTokens += getDetailNumber(details, "summaryInputTokens") ?? 0;
+  stats.summaryOutputTokens += getDetailNumber(details, "summaryOutputTokens") ?? 0;
+  stats.summaryReasoningTokens += getDetailNumber(details, "summaryReasoningTokens") ?? 0;
+  stats.summaryCacheReadTokens += getDetailNumber(details, "summaryCacheReadTokens") ?? 0;
+  stats.summaryCacheWriteTokens += getDetailNumber(details, "summaryCacheWriteTokens") ?? 0;
+  const summaryTotalTokens = getDetailNumber(details, "summaryTotalTokens");
+  if (summaryTotalTokens !== undefined) {
+    stats.summaryTotalTokens += summaryTotalTokens;
+  }
+  if (
+    getDetailNumber(details, "summaryInputTokens") !== undefined
+    || getDetailNumber(details, "summaryOutputTokens") !== undefined
+    || getDetailNumber(details, "summaryTotalTokens") !== undefined
+  ) {
+    stats.hasSummaryTokenUsage = true;
+  }
+  stats.estimatedOriginalOutputTokens += getDetailNumber(details, "estimatedOriginalOutputTokens") ?? 0;
+  stats.estimatedSummaryTokens += getDetailNumber(details, "estimatedSummaryTokens") ?? 0;
+  stats.estimatedTokensSaved += getDetailNumber(details, "estimatedTokensSaved") ?? 0;
+  const cost = getDetailNumber(details, "summaryCost");
+  if (cost !== undefined) {
+    stats.summaryCost += cost;
+    stats.hasSummaryCost = true;
+  }
+}
+
+export function formatCompactCount(value: number): string {
+  const absolute = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  const formatScaled = (scaled: number): string => {
+    const rounded = Math.round(scaled * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  };
+  if (absolute >= 1_000_000) return `${sign}${formatScaled(absolute / 1_000_000)}m`;
+  if (absolute >= 1_000) return `${sign}${formatScaled(absolute / 1_000)}k`;
+  return String(Math.round(value));
+}
+
+export function formatSessionDuration(milliseconds: number): string {
+  if (milliseconds < 1_000) return `${Math.max(0, Math.round(milliseconds))}ms`;
+  const seconds = milliseconds / 1_000;
+  if (seconds < 60) return `${seconds.toFixed(1).replace(/\.0$/, "")}s`;
+  const minutes = seconds / 60;
+  return `${minutes.toFixed(1).replace(/\.0$/, "")}min`;
+}
+
+function formatDistillSessionStats(stats: DistillSessionStats): string {
+  const compressionRatio = stats.summaryChars > 0
+    ? (stats.originalOutputChars / stats.summaryChars).toFixed(2)
+    : "-";
+  const cost = stats.hasSummaryCost ? stats.summaryCost.toFixed(6) : i18n.t("statsUnavailable");
+  const summaryOperations = stats.summarizedResults
+    + stats.fallbackResults
+    + stats.failedResults
+    + stats.rawResults;
+  const averageDurationMs = summaryOperations > 0
+    ? Math.round(stats.summaryDurationMs / summaryOperations)
+    : 0;
+  const tokenUsage = stats.hasSummaryTokenUsage
+    ? {
+        input: formatCompactCount(stats.summaryInputTokens),
+        output: formatCompactCount(stats.summaryOutputTokens),
+        reasoning: formatCompactCount(stats.summaryReasoningTokens),
+        cacheRead: formatCompactCount(stats.summaryCacheReadTokens),
+        cacheWrite: formatCompactCount(stats.summaryCacheWriteTokens),
+        total: formatCompactCount(stats.summaryTotalTokens),
+      }
+    : {
+        input: i18n.t("statsUnavailable"),
+        output: i18n.t("statsUnavailable"),
+        reasoning: i18n.t("statsUnavailable"),
+        cacheRead: i18n.t("statsUnavailable"),
+        cacheWrite: i18n.t("statsUnavailable"),
+        total: i18n.t("statsUnavailable"),
+      };
+  return i18n.t("statsReport", {
+    toolResults: formatCompactCount(stats.toolResults),
+    summarizedResults: formatCompactCount(stats.summarizedResults),
+    fallbackResults: formatCompactCount(stats.fallbackResults),
+    failedResults: formatCompactCount(stats.failedResults),
+    rawResults: formatCompactCount(stats.rawResults),
+    skippedResults: formatCompactCount(stats.skippedResults),
+    nonTextResults: formatCompactCount(stats.nonTextResults),
+    summaryAttempts: formatCompactCount(stats.summaryAttempts),
+    retryCount: formatCompactCount(stats.retryCount),
+    originalOutputChars: formatCompactCount(stats.originalOutputChars),
+    summaryChars: formatCompactCount(stats.summaryChars),
+    compressionRatio,
+    estimatedOriginalOutputTokens: formatCompactCount(stats.estimatedOriginalOutputTokens),
+    estimatedSummaryTokens: formatCompactCount(stats.estimatedSummaryTokens),
+    estimatedTokensSaved: formatCompactCount(stats.estimatedTokensSaved),
+    summaryDuration: formatSessionDuration(stats.summaryDurationMs),
+    summaryAverageDuration: formatSessionDuration(averageDurationMs),
+    summaryInputTokens: tokenUsage.input,
+    summaryOutputTokens: tokenUsage.output,
+    summaryReasoningTokens: tokenUsage.reasoning,
+    summaryCacheReadTokens: tokenUsage.cacheRead,
+    summaryCacheWriteTokens: tokenUsage.cacheWrite,
+    summaryTotalTokens: tokenUsage.total,
+    summaryCost: cost,
+  });
+}
 
 function attachDiagnostics(result: ToolResult, diagnostics: SummaryDiagnostics): ToolResult {
   return {
@@ -395,8 +716,12 @@ async function summarizeOutput(
     },
   );
 
+  const usage = normalizeSummaryUsage(response.usage);
   if (response.stopReason === "error" || response.stopReason === "aborted") {
-    throw new Error(response.errorMessage ?? `Summarizer stopped with reason: ${response.stopReason}`);
+    throw new SummaryAttemptError(
+      response.errorMessage ?? `Summarizer stopped with reason: ${response.stopReason}`,
+      usage,
+    );
   }
 
   const rawResponse = response.content
@@ -405,17 +730,23 @@ async function summarizeOutput(
     .join("\n")
     .trim();
 
-  if (!rawResponse) throw new Error("Summarizer returned no text");
+  if (!rawResponse) throw new SummaryAttemptError("Summarizer returned no text", usage);
   const summaryModel = `${model.provider}/${model.id}`;
-  const parsed = parseSummaryResponse(rawResponse, summaryModel);
-  if (parsed.decision.mode === "RAW") return parsed;
-  if (parsed.summaryChars <= config.maxChars) return parsed;
+  let parsed: SummaryResult;
+  try {
+    parsed = parseSummaryResponse(rawResponse, summaryModel);
+  } catch (error) {
+    throw new SummaryAttemptError(error instanceof Error ? error.message : String(error), usage);
+  }
+  if (parsed.decision.mode === "RAW") return { ...parsed, usage };
+  if (parsed.summaryChars <= config.maxChars) return { ...parsed, usage };
 
   const summaryFilePath = await writeSummaryFile(parsed.text);
   return {
     ...parsed,
     text: `Summary exceeded ${config.maxChars} chars and was written to: ${summaryFilePath}`,
     summaryFilePath,
+    usage,
   };
 }
 
@@ -428,10 +759,12 @@ async function summarizeOutputWithRetries(
 ): Promise<SummaryResult> {
   let timeoutRetries = 0;
   let errorRetries = 0;
+  let attempts = 0;
+  let totalUsage: SummaryUsage | undefined;
 
   while (true) {
     if (context.signal?.aborted) {
-      throw new Error("Summarization aborted");
+      throw new SummaryRetryError("Summarization aborted", attempts, totalUsage);
     }
 
     const attemptController = new AbortController();
@@ -446,9 +779,10 @@ async function summarizeOutputWithRetries(
       },
       config.timeoutSeconds * 1000,
     );
+    attempts += 1;
 
     try {
-      return await summarizeOutput(
+      const result = await summarizeOutput(
         prompt,
         output,
         config,
@@ -456,11 +790,31 @@ async function summarizeOutputWithRetries(
         attemptController.signal,
         completion,
       );
+      totalUsage = mergeSummaryUsage(totalUsage, result.usage);
+      return {
+        ...result,
+        usage: totalUsage,
+        attempts,
+      };
     } catch (error) {
-      if (context.signal?.aborted) throw error;
+      totalUsage = mergeSummaryUsage(
+        totalUsage,
+        error instanceof SummaryAttemptError || error instanceof SummaryRetryError
+          ? error.usage
+          : undefined,
+      );
+      if (context.signal?.aborted) {
+        throw new SummaryRetryError("Summarization aborted", attempts, totalUsage);
+      }
       const retryLimit = timedOut ? config.timeoutRetryCount : config.errorRetryCount;
       const retriesUsed = timedOut ? timeoutRetries : errorRetries;
-      if (retriesUsed >= retryLimit) throw error;
+      if (retriesUsed >= retryLimit) {
+        throw new SummaryRetryError(
+          error instanceof Error ? error.message : String(error),
+          attempts,
+          totalUsage,
+        );
+      }
       if (timedOut) timeoutRetries += 1;
       else errorRetries += 1;
       context.ctx.ui.notify(i18n.t("retryingSummary", {
@@ -566,6 +920,7 @@ export async function processToolResult(
       summaryTriggerMaxChars: null,
       summaryResultMaxChars: config.maxChars,
       missedCompressionRatio: config.missedCompressionRatio,
+      ...getTokenCompressionDiagnostics(output, output),
       ...skippedDiagnostics,
     };
     const candidate = {
@@ -596,6 +951,9 @@ export async function processToolResult(
       const diagnostics: SummaryDiagnostics = {
         originalOutputChars: output.length,
         summaryChars: output.length,
+        summaryAttempts: summarized.attempts,
+        ...getSummaryUsageDiagnostics(summarized.usage),
+        ...getTokenCompressionDiagnostics(output, output),
         compressionRatio: 1,
         compressionSavedPercent: 0,
         ...rawDiagnostics,
@@ -630,6 +988,9 @@ export async function processToolResult(
     const summaryDiagnostics: SummaryDiagnostics = {
       originalOutputChars: output.length,
       summaryChars: summarized.summaryChars,
+      summaryAttempts: summarized.attempts,
+      ...getSummaryUsageDiagnostics(summarized.usage),
+      ...getTokenCompressionDiagnostics(output, summarized.text),
       ...compressionDiagnostics,
     };
     const agentDiagnostic = buildAgentDiagnosticText(summaryDiagnostics);
@@ -652,6 +1013,7 @@ export async function processToolResult(
           outputSummaryReasonCode: summarized.decision.reasonCode,
           outputSummaryReason: summarized.decision.reason,
           ...summaryDiagnostics,
+          ...getTokenCompressionDiagnostics(output, output),
         }),
         content: [{ type: "text", text: output }],
       });
@@ -688,11 +1050,14 @@ export async function processToolResult(
   } catch (error) {
     const summaryDurationMs = Math.round(performance.now() - summaryStartedAt);
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const retryError = error instanceof SummaryRetryError ? error : undefined;
     // 总结链路任何异常都必须保留原始结果，不能把异常文本替换给 AI。
     const diagnostics: SummaryDiagnostics = {
       toolExecutionMs,
       summaryDurationMs,
       originalOutputChars: output.length,
+      summaryAttempts: retryError?.attempts,
+      ...getSummaryUsageDiagnostics(retryError?.usage),
       outputSummaryIntent: decision.intent,
       outputSummaryPrompt: prompt || undefined,
       outputSummaryRender,
@@ -701,6 +1066,7 @@ export async function processToolResult(
       summaryTriggerMaxChars: null,
       summaryResultMaxChars: config.maxChars,
       missedCompressionRatio: config.missedCompressionRatio,
+      ...getTokenCompressionDiagnostics(output, output),
       outputSummaryAnomalies: ["summary-failed"],
       outputSummaryAdvice: `Summarization failed; the original output was preserved. Check model configuration or authentication. Requests still running after ${config.timeoutSeconds}s are treated as timed out.`,
       outputSummaryError: errorMessage,
@@ -1065,9 +1431,26 @@ function registerDistillConfigCommand(
   }
 }
 
+function registerDistillStatsCommand(
+  pi: ExtensionAPI,
+  getStats: () => DistillSessionStats,
+): void {
+  pi.registerCommand("distill:stats", {
+    description: i18n.t("statsCommandDescription"),
+    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+      if (!ctx.hasUI) {
+        ctx.ui.notify(i18n.t("interactiveOnly"), "warning");
+        return;
+      }
+      ctx.ui.notify(formatDistillSessionStats(getStats()), "info");
+    },
+  });
+}
+
 export default function piDistillExtension(pi: ExtensionAPI) {
   const pendingCalls = new Map<string, PendingDistillCall>();
   const reportedWarnings = new Set<string>();
+  let sessionStats = createDistillSessionStats();
   let originalUserPrompt = "";
   const disposeToolDisplayMiddleware = registerDistillToolDisplayMiddleware();
   registerDistillFallbackRenderer(pi);
@@ -1086,7 +1469,10 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     }
   };
 
-  pi.on("session_start", (_event, ctx) => extendParameters(ctx));
+  pi.on("session_start", (_event, ctx) => {
+    sessionStats = createDistillSessionStats();
+    extendParameters(ctx);
+  });
   pi.on("before_agent_start", (event, ctx) => {
     originalUserPrompt = typeof event.prompt === "string" ? event.prompt : "";
     extendParameters(ctx);
@@ -1114,11 +1500,15 @@ export default function piDistillExtension(pi: ExtensionAPI) {
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
     const pending = pendingCalls.get(event.toolCallId);
     pendingCalls.delete(event.toolCallId);
-    if (pending && !pending.enabled) return toToolResultEventResult({
-      content: event.content,
-      details: event.details as Record<string, unknown> | undefined,
-      isError: event.isError,
-    });
+    if (pending && !pending.enabled) {
+      const untouchedResult: ToolResult = {
+        content: event.content,
+        details: event.details as Record<string, unknown> | undefined,
+        isError: event.isError,
+      };
+      recordDistillSessionResult(sessionStats, untouchedResult.details);
+      return toToolResultEventResult(untouchedResult);
+    }
     const outputRequest = pending?.outputRequest ?? getOutputRequest(event.input);
     const result = await processToolResult(
       {
@@ -1135,6 +1525,7 @@ export default function piDistillExtension(pi: ExtensionAPI) {
       },
       pending ? Math.round(performance.now() - pending.startedAt) : 0,
     );
+    recordDistillSessionResult(sessionStats, result.details);
     if (!isDistillToolDisplayMiddlewareActive(event.toolName)) {
       appendDistillFallbackAudit(pi, event.toolName, result.details, loadDistillConfig().render);
     }
@@ -1142,5 +1533,6 @@ export default function piDistillExtension(pi: ExtensionAPI) {
   });
   pi.on("agent_end", () => pendingCalls.clear());
   pi.on("session_shutdown", () => disposeToolDisplayMiddleware());
+  registerDistillStatsCommand(pi, () => sessionStats);
   registerDistillConfigCommand(pi, extendParameters);
 }

@@ -16,7 +16,11 @@ import {
   registerDistillToolDisplayMiddleware,
 } from "../src/tool-display-bridge.ts";
 import { Text } from "@earendil-works/pi-tui";
-import { extendDistillToolParameters } from "../src/index.ts";
+import {
+  extendDistillToolParameters,
+  formatCompactCount,
+  formatSessionDuration,
+} from "../src/index.ts";
 import {
   buildDecisionEvaluationPrompt,
   buildSummaryEvaluationPrompt,
@@ -127,7 +131,11 @@ async function withFakeSummaryConfig<T>(
 }
 
 /** 构造返回指定文本的 fake completion provider。 */
-function fakeCompletion(text: string, responseFormat: "json" | "fenced-json" = "json"): TestCompletion {
+function fakeCompletion(
+  text: string,
+  responseFormat: "json" | "fenced-json" = "json",
+  usage?: Record<string, unknown>,
+): TestCompletion {
   const response = JSON.stringify({
     decision: {
       mode: text === "RAW" ? "RAW" : "SUMMARY",
@@ -141,6 +149,7 @@ function fakeCompletion(text: string, responseFormat: "json" | "fenced-json" = "
       type: "text",
       text: responseFormat === "fenced-json" ? `  \n\`\`\`json  \n${response}\n\`\`\`  ` : response,
     }],
+    usage,
   } as unknown as TestCompletionResult);
 }
 
@@ -706,6 +715,91 @@ test("超时使用独立重试次数并可在下一次尝试成功", async () =>
   }, 10000, { timeoutRetryCount: 1, errorRetryCount: 0 });
 });
 
+test("提炼 details 保留模型 token usage", async () => {
+  await withFakeSummaryConfig(async () => {
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult("FAIL checkout\\nERROR at checkout.ts:8\\nnext: inspect"),
+      0,
+      fakeCompletion("ERROR at checkout.ts:8", "json", {
+        input: 1200,
+        output: 80,
+        reasoning: 20,
+        cacheRead: 300,
+        cacheWrite: 10,
+        totalTokens: 1600,
+        cost: {
+          input: 0.001,
+          output: 0.002,
+          total: 0.003,
+        },
+      }),
+    );
+
+    assert.equal(result.details?.summaryInputTokens, 1200);
+    assert.equal(result.details?.summaryOutputTokens, 80);
+    assert.equal(result.details?.summaryReasoningTokens, 20);
+    assert.equal(result.details?.summaryCacheReadTokens, 300);
+    assert.equal(result.details?.summaryCacheWriteTokens, 10);
+    assert.equal(result.details?.summaryTotalTokens, 1600);
+    assert.equal(result.details?.summaryCost, 0.003);
+    assert.equal(result.details?.summaryAttempts, 1);
+    assert.ok((result.details?.estimatedOriginalOutputTokens ?? 0) > 0);
+    assert.ok((result.details?.estimatedSummaryTokens ?? 0) > 0);
+    assert.equal(
+      result.details?.estimatedTokensSaved,
+      (result.details?.estimatedOriginalOutputTokens ?? 0)
+        - (result.details?.estimatedSummaryTokens ?? 0),
+    );
+    assert.ok((result.details?.estimatedTokensSaved ?? 0) > 0);
+  });
+});
+
+test("重试时累计每次模型调用的 token usage", async () => {
+  await withFakeSummaryConfig(async () => {
+    let attempts = 0;
+    const completion: TestCompletion = async (...args) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          stopReason: "error",
+          errorMessage: "temporary provider failure",
+          content: [],
+          usage: { input: 100, output: 10, totalTokens: 110 },
+        } as unknown as TestCompletionResult;
+      }
+      return fakeCompletion("ERROR at checkout.ts:8", "json", {
+        input: 200,
+        output: 30,
+        totalTokens: 230,
+      })(...args);
+    };
+
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult("FAIL checkout\\nERROR at checkout.ts:8\\nnext: inspect"),
+      0,
+      completion,
+    );
+
+    assert.equal(attempts, 2);
+    assert.equal(result.details?.summaryAttempts, 2);
+    assert.equal(result.details?.summaryInputTokens, 300);
+    assert.equal(result.details?.summaryOutputTokens, 40);
+    assert.equal(result.details?.summaryTotalTokens, 340);
+  });
+});
+
+test("会话统计使用紧凑数量和可读耗时单位", () => {
+  assert.equal(formatCompactCount(999), "999");
+  assert.equal(formatCompactCount(2_597), "2.6k");
+  assert.equal(formatCompactCount(1_000_000), "1m");
+  assert.equal(formatCompactCount(12_500_000), "12.5m");
+  assert.equal(formatSessionDuration(850), "850ms");
+  assert.equal(formatSessionDuration(12_100), "12.1s");
+  assert.equal(formatSessionDuration(90_000), "1.5min");
+});
+
 test("fake provider 的空响应、非法响应和异常都保留原文", async () => {
   await withFakeSummaryConfig(async () => {
     const context = fakeSummaryContext();
@@ -795,12 +889,18 @@ test("fallback 审计显示为原文回退而非已提炼", async () => {
     outputSummaryStatus: "summary-fallback",
     originalOutputChars: 3_691,
     summaryChars: 3_706,
+    estimatedOriginalOutputTokens: 923,
+    estimatedSummaryTokens: 927,
+    estimatedTokensSaved: 0,
+    summaryTotalTokens: 1_600,
     compressionRatio: 0.99,
     compressionSavedPercent: 0,
   }, true);
   assert.ok(audit);
   assert.match(audit.lines[0] ?? "", /Original restored/);
   assert.doesNotMatch(audit.lines[0] ?? "", /Summarized/);
+  assert.match(audit.lines[0] ?? "", /923.*927/);
+  assert.match(audit.lines[0] ?? "", /1\.6k/);
 });
 
 test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", () => {
@@ -1084,11 +1184,15 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     }));
     let registeredToolCount = 0;
     let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
+    const commandHandlers = new Map<string, (args: string, ctx: any) => Promise<void>>();
     const appendedEntries: Array<{ type: string; data: unknown }> = [];
     const pi = {
       getAllTools: () => tools,
       registerTool: () => { registeredToolCount += 1; },
-      registerCommand: (_name: string, command: any) => { commandHandler = command.handler; },
+      registerCommand: (name: string, command: any) => {
+        commandHandlers.set(name, command.handler);
+        commandHandler = command.handler;
+      },
       registerEntryRenderer: () => undefined,
       appendEntry: (type: string, data: unknown) => appendedEntries.push({ type, data }),
       on: (event: string, handler: (...args: any[]) => any) => handlers.set(event, handler),
@@ -1146,6 +1250,14 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.equal(result.details.outputSummaryStatus, "full-output");
     assert.equal(result.content[0].text, "ok");
     assert.equal(appendedEntries[0]?.type, DISTILL_AUDIT_ENTRY_TYPE);
+
+    let statsMessage = "";
+    await commandHandlers.get("distill:stats")?.("", {
+      hasUI: true,
+      ui: { notify: (message: string) => { statsMessage = message; } },
+    });
+    assert.match(statsMessage, /Tool results|工具结果/);
+    assert.match(statsMessage, /Model total tokens|模型总 Token/);
 
     const selections: Array<string | undefined> = ["__last__", "write", "custom-tool", undefined, undefined];
     await commandHandler?.("", {

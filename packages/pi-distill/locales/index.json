@@ -179,6 +179,18 @@
     "zh-CN": "交互式配置工具输出提炼",
     "en-US": "Configure tool-output distillation interactively"
   },
+  "statsCommandDescription": {
+    "zh-CN": "查看本次会话的工具输出提炼统计",
+    "en-US": "Show tool-output distillation statistics for this session"
+  },
+  "statsUnavailable": {
+    "zh-CN": "不可用",
+    "en-US": "n/a"
+  },
+  "statsReport": {
+    "zh-CN": "Distill 会话统计\n工具结果 {toolResults}｜成功 {summarizedResults}｜回退 {fallbackResults}｜失败 {failedResults}\nRAW {rawResults}｜跳过 {skippedResults}｜非文本 {nonTextResults}\n尝试 {summaryAttempts}｜重试 {retryCount}｜耗时 {summaryDuration}（平均 {summaryAverageDuration}）\n字符：{originalOutputChars} → {summaryChars}（{compressionRatio}x）\nToken（估算）：{estimatedOriginalOutputTokens} → {estimatedSummaryTokens}（节省 {estimatedTokensSaved}）\n模型总 Token：{summaryTotalTokens}（输入 {summaryInputTokens}｜输出 {summaryOutputTokens}｜推理 {summaryReasoningTokens}）\n缓存 Token：读 {summaryCacheReadTokens}｜写 {summaryCacheWriteTokens}\n模型成本：{summaryCost}",
+    "en-US": "Distill session statistics\nTool results {toolResults} | summarized {summarizedResults} | fallback {fallbackResults} | failed {failedResults}\nRAW {rawResults} | skipped {skippedResults} | non-text {nonTextResults}\nAttempts {summaryAttempts} | retries {retryCount} | time {summaryDuration} (avg {summaryAverageDuration})\nChars: {originalOutputChars} → {summaryChars} ({compressionRatio}x)\nTokens (estimated): {estimatedOriginalOutputTokens} → {estimatedSummaryTokens} (saved {estimatedTokensSaved})\nModel total tokens: {summaryTotalTokens} (input {summaryInputTokens} | output {summaryOutputTokens} | reasoning {summaryReasoningTokens})\nCache tokens: read {summaryCacheReadTokens} | write {summaryCacheWriteTokens}\nModel cost: {summaryCost}"
+  },
   "outputRequest": {
     "zh-CN": "outputRequest",
     "en-US": "outputRequest"

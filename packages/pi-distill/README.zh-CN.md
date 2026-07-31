@@ -192,6 +192,12 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 `/pi-distill` 仍作为兼容别名保留。
 | `render.*` | 控制审计卡片、prompt 预览和结果预览。 |
 
+## Session 统计
+
+使用 `/distill:stats` 查看当前 Pi 会话的提炼统计。统计只保存在内存中，在会话开始时重置，不保存原始工具输出。
+
+统计包括工具结果数量、成功/失败/回退次数、模型尝试次数、原始与摘要字符数、压缩比、按 `chars/4` 估算的原文/摘要 Token、预计节省 Token、提炼实际消耗的 input/output/cache/total Token 和成本。数量达到 1,000 或 1,000,000 时分别使用 `k` 或 `m` 紧凑显示；耗时会根据数值显示为 `ms`、`s` 或 `min`。原文/摘要 Token 是估算值；provider 未返回 usage 时，提炼消耗 Token 或成本字段显示为不可用。
+
 主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_MAX_OUTPUT_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_TIMEOUT_RETRY_COUNT`、`PI_DISTILL_ERROR_RETRY_COUNT`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。
 
 ## 要求
