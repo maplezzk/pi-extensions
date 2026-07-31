@@ -59,7 +59,6 @@ export async function limitReturnedToolResult(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(i18n.t("outputLimitWriteFailed", { error: message }));
     return {
       ...result,
       content: [{ type: "text", text: text.slice(0, maxChars) }],

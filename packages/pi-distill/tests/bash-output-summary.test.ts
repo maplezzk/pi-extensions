@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hasNonTextContent, limitReturnedToolResult } from "../src/output-limit.ts";
@@ -39,13 +39,17 @@ type TestCompletion = NonNullable<Parameters<typeof processToolResult>[3]>;
 type TestCompletionResult = Awaited<ReturnType<TestCompletion>>;
 
 /** 构造真实摘要处理链所需的最小扩展上下文。 */
-function fakeSummaryContext(): TestContext {
+function fakeSummaryContext(
+  notify: (message: string, type?: "info" | "warning" | "error") => void = () => undefined,
+): TestContext {
   const model = { provider: "fake", id: "model" };
   return {
     toolName: "fake-tool",
     toolCallId: "fake-call",
     params: { outputRequest: "提取错误和下一步" },
     ctx: {
+      hasUI: true,
+      ui: { notify },
       model,
       modelRegistry: {
         find: () => model,
@@ -607,6 +611,7 @@ test("提炼首次失败后默认重试一次并可成功返回", async () => {
   await withFakeSummaryConfig(async () => {
     const output = "FAIL checkout\nERROR at checkout.ts:8\nnext: inspect the payment provider\n".repeat(4);
     const successfulCompletion = fakeCompletion("ERROR at checkout.ts:8; inspect the payment provider");
+    const notices: Array<{ message: string; type?: string }> = [];
     let attempts = 0;
     const flakyCompletion: TestCompletion = async (...args) => {
       attempts += 1;
@@ -615,7 +620,7 @@ test("提炼首次失败后默认重试一次并可成功返回", async () => {
     };
 
     const result = await processToolResult(
-      fakeSummaryContext(),
+      fakeSummaryContext((message, type) => notices.push({ message, type })),
       fakeToolResult(output),
       0,
       flakyCompletion,
@@ -624,7 +629,25 @@ test("提炼首次失败后默认重试一次并可成功返回", async () => {
     assert.equal(attempts, 2);
     assert.equal(result.details?.outputSummaryStatus, "summarized");
     assert.equal(result.content[0]?.text, "ERROR at checkout.ts:8; inspect the payment provider");
+    assert.deepEqual(notices, [{
+      message: "Distillation hit a non-timeout error; starting retry 1/1: temporary provider failure",
+      type: "warning",
+    }]);
   });
+});
+
+test("运行期源码禁止直接调用 console API", async () => {
+  const sourceDirectory = join(import.meta.dirname, "..", "src");
+  const sourceFiles = (await readdir(sourceDirectory, { recursive: true }))
+    .filter((file) => file.endsWith(".ts"));
+  const violations: string[] = [];
+
+  for (const file of sourceFiles) {
+    const source = await readFile(join(sourceDirectory, file), "utf8");
+    if (/\bconsole\s*\./.test(source)) violations.push(file);
+  }
+
+  assert.deepEqual(violations, []);
 });
 
 test("errorRetryCount 为零时非超时异常不重试", async () => {

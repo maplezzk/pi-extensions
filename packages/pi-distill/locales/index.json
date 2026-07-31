@@ -163,6 +163,14 @@
     "zh-CN": "非超时异常",
     "en-US": "a non-timeout error"
   },
+  "outputRequestUnavailable": {
+    "zh-CN": "无法扩展工具 {tool} 的参数结构；outputRequest 不可用。",
+    "en-US": "Could not extend the {tool} parameter schema; outputRequest is unavailable."
+  },
+  "extendOutputRequestFailed": {
+    "zh-CN": "扩展 outputRequest 参数失败：{error}",
+    "en-US": "Failed to extend the outputRequest parameter: {error}"
+  },
   "thresholdTitle": {
     "zh-CN": "长输出阈值",
     "en-US": "Long-output threshold"

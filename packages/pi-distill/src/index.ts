@@ -132,6 +132,7 @@ type SummaryResult = {
 };
 
 type SummaryCompletion = (...args: Parameters<typeof complete>) => ReturnType<typeof complete>;
+type DistillWarningReporter = (message: string) => void;
 
 type SummaryDiagnostics = {
   toolExecutionMs?: number;
@@ -462,12 +463,12 @@ async function summarizeOutputWithRetries(
       if (retriesUsed >= retryLimit) throw error;
       if (timedOut) timeoutRetries += 1;
       else errorRetries += 1;
-      console.warn(i18n.t("retryingSummary", {
+      context.ctx.ui.notify(i18n.t("retryingSummary", {
         kind: i18n.t(timedOut ? "retryKindTimeout" : "retryKindError"),
         retry: retriesUsed + 1,
         limit: retryLimit,
         error: error instanceof Error ? error.message : String(error),
-      }));
+      }), "warning");
     } finally {
       clearTimeout(timeout);
       context.signal?.removeEventListener("abort", abortFromParent);
@@ -496,7 +497,9 @@ export async function processToolResult(
   const maxReturnedChars = config?.maxOutputChars ?? 10_000;
   const finish = (candidate: ToolResult) => limitReturnedToolResult(candidate, maxReturnedChars);
   if (loaded.warnings.length > 0) {
-    console.warn(`[pi-distill] ${loaded.warnings.join(" | ")}`);
+    context.ctx.ui.notify(i18n.t("configWarnings", {
+      warnings: loaded.warnings.join(" "),
+    }), "warning");
   }
 
   if (config && loaded.enabled && !isDistillToolEnabled(config, context.toolName)) return result;
@@ -535,9 +538,7 @@ export async function processToolResult(
   try {
     output = await getCompleteOutput(result);
   } catch (error) {
-    console.warn(
-      `[tool-output-summary] ${context.toolName} could not read the full output; returning the original result: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return finish(attachDiagnostics(result, {
       toolExecutionMs,
       outputSummaryPrompt: prompt || undefined,
@@ -547,6 +548,7 @@ export async function processToolResult(
       summaryTriggerMaxChars: null,
       summaryResultMaxChars: config.maxChars,
       missedCompressionRatio: config.missedCompressionRatio,
+      outputSummaryError: errorMessage,
     }));
   }
 
@@ -687,9 +689,6 @@ export async function processToolResult(
     const summaryDurationMs = Math.round(performance.now() - summaryStartedAt);
     const errorMessage = error instanceof Error ? error.message : String(error);
     // 总结链路任何异常都必须保留原始结果，不能把异常文本替换给 AI。
-    console.warn(
-      `[tool-output-summary] ${context.toolName} summarization failed; returning the original result: ${errorMessage}`,
-    );
     const diagnostics: SummaryDiagnostics = {
       toolExecutionMs,
       summaryDurationMs,
@@ -739,17 +738,21 @@ function restoreOutputRequestParameter(parameters: Record<string, unknown>): boo
   return true;
 }
 
-function extendOutputRequestParameter(tool: ToolInfo, enabled: boolean): boolean {
+function extendOutputRequestParameter(
+  tool: ToolInfo,
+  enabled: boolean,
+  reportWarning: DistillWarningReporter,
+): boolean {
   const parameters = tool.parameters as unknown as Record<string, unknown> | undefined;
   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
-    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
+    reportWarning(i18n.t("outputRequestUnavailable", { tool: tool.name }));
     return false;
   }
 
   if (!enabled) return restoreOutputRequestParameter(parameters);
 
   if (parameters.type !== "object") {
-    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
+    reportWarning(i18n.t("outputRequestUnavailable", { tool: tool.name }));
     return false;
   }
 
@@ -758,7 +761,7 @@ function extendOutputRequestParameter(tool: ToolInfo, enabled: boolean): boolean
   if (properties === undefined) {
     parameters.properties = {};
   } else if (typeof properties !== "object" || properties === null || Array.isArray(properties)) {
-    console.warn(`[pi-distill] Could not extend the ${tool.name} parameter schema; outputRequest is unavailable.`);
+    reportWarning(i18n.t("outputRequestUnavailable", { tool: tool.name }));
     return false;
   }
 
@@ -790,11 +793,12 @@ function extendOutputRequestParameter(tool: ToolInfo, enabled: boolean): boolean
 export function extendDistillToolParameters(
   pi: Pick<ExtensionAPI, "getAllTools">,
   loaded = loadDistillConfig(),
+  reportWarning: DistillWarningReporter = () => undefined,
 ): number {
   let extended = 0;
   for (const tool of pi.getAllTools()) {
     const enabled = loaded.enabled && Boolean(loaded.config) && isDistillToolEnabled(loaded.config, tool.name);
-    if (extendOutputRequestParameter(tool, enabled) && enabled) extended += 1;
+    if (extendOutputRequestParameter(tool, enabled, reportWarning) && enabled) extended += 1;
   }
   return extended;
 }
@@ -1042,7 +1046,10 @@ async function runDistillConfigUi(
   }
 }
 
-function registerDistillConfigCommand(pi: ExtensionAPI, onSaved: () => void): void {
+function registerDistillConfigCommand(
+  pi: ExtensionAPI,
+  onSaved: (ctx: ExtensionCommandContext) => void,
+): void {
   const command = {
     description: i18n.t("commandDescription"),
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -1050,7 +1057,7 @@ function registerDistillConfigCommand(pi: ExtensionAPI, onSaved: () => void): vo
         ctx.ui.notify(i18n.t("interactiveOnly"), "warning");
         return;
       }
-      await runDistillConfigUi(ctx, pi, getDistillConfigPath(), onSaved);
+      await runDistillConfigUi(ctx, pi, getDistillConfigPath(), () => onSaved(ctx));
     },
   };
   for (const name of ["config:distill", "pi-distill"] as const) {
@@ -1060,21 +1067,29 @@ function registerDistillConfigCommand(pi: ExtensionAPI, onSaved: () => void): vo
 
 export default function piDistillExtension(pi: ExtensionAPI) {
   const pendingCalls = new Map<string, PendingDistillCall>();
+  const reportedWarnings = new Set<string>();
   let originalUserPrompt = "";
   const disposeToolDisplayMiddleware = registerDistillToolDisplayMiddleware();
   registerDistillFallbackRenderer(pi);
-  const extendParameters = () => {
+  const extendParameters = (ctx: ExtensionContext) => {
+    const reportWarning = (message: string) => {
+      if (reportedWarnings.has(message)) return;
+      reportedWarnings.add(message);
+      ctx.ui.notify(message, "warning");
+    };
     try {
-      extendDistillToolParameters(pi, loadDistillConfig());
+      extendDistillToolParameters(pi, loadDistillConfig(), reportWarning);
     } catch (error) {
-      console.warn(`[pi-distill] Failed to extend the outputRequest parameter: ${error instanceof Error ? error.message : String(error)}`);
+      reportWarning(i18n.t("extendOutputRequestFailed", {
+        error: error instanceof Error ? error.message : String(error),
+      }));
     }
   };
 
-  pi.on("session_start", extendParameters);
-  pi.on("before_agent_start", (event) => {
+  pi.on("session_start", (_event, ctx) => extendParameters(ctx));
+  pi.on("before_agent_start", (event, ctx) => {
     originalUserPrompt = typeof event.prompt === "string" ? event.prompt : "";
-    extendParameters();
+    extendParameters(ctx);
     return {
       systemPrompt: [
         typeof event.systemPrompt === "string" ? event.systemPrompt : "",
