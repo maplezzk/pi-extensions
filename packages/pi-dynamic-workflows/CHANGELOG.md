@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.1.2...pi-dynamic-workflows-v1.1.3) (2026-07-31)
+
+
+### Bug Fixes
+
+* **pi-dynamic-workflows:** prevent abort crash ([#65](https://github.com/maplezzk/pi-extensions/issues/65)) ([6f5ab04](https://github.com/maplezzk/pi-extensions/commit/6f5ab049496cb97304bd0318693da37f2e36e616))
+
 ## [1.1.2](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.1.1...pi-dynamic-workflows-v1.1.2) (2026-07-27)
 
 
