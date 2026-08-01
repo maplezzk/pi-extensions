@@ -34,6 +34,8 @@ function getString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+const MIN_TOOL_DURATION_DISPLAY_MS = 50;
+
 function formatDuration(milliseconds: number): string {
   return `${(milliseconds / 1000).toFixed(1)}s`;
 }
@@ -202,7 +204,6 @@ export function buildDistillAuditLines(
   const estimatedSummaryTokens = getFiniteNumber(details.estimatedSummaryTokens);
   const estimatedTokensSaved = getFiniteNumber(details.estimatedTokensSaved);
   const summaryTotalTokens = getFiniteNumber(details.summaryTotalTokens);
-  const compressionRatio = getFiniteNumber(details.compressionRatio);
   const compressionSavedPercent = getFiniteNumber(details.compressionSavedPercent);
   const toolExecutionMs = getFiniteNumber(details.toolExecutionMs);
   const summaryDurationMs = getFiniteNumber(details.summaryDurationMs);
@@ -210,34 +211,37 @@ export function buildDistillAuditLines(
   const outputRequest = getString(details.outputSummaryPrompt);
   const summaryText = getString(details.summaryText);
   const statusView = statusViews[status] ?? { label: status, tone: "muted" as const };
-  const metrics: string[] = [];
 
+  let mainMetric = "";
   if (estimatedOriginalTokens !== undefined && estimatedSummaryTokens !== undefined) {
-    const tokenMetric = `≈${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
-    const savedMetric = estimatedTokensSaved !== undefined && estimatedTokensSaved > 0
-      ? `（${i18n.t("tokensSaved")} ≈${formatCompactCount(estimatedTokensSaved)}${compressionSavedPercent !== undefined ? `，${compressionSavedPercent.toFixed(1)}%` : ""}）`
-      : "";
-    metrics.push(`${tokenMetric}${savedMetric}`);
+    mainMetric = `≈${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
+    if (estimatedTokensSaved !== undefined && estimatedTokensSaved > 0 && compressionSavedPercent !== undefined) {
+      mainMetric += ` −${compressionSavedPercent.toFixed(1)}%`;
+    }
   } else if (originalChars !== undefined && summaryChars !== undefined) {
-    metrics.push(`${formatCount(originalChars)} → ${formatCount(summaryChars)} ${i18n.t("chars")}`);
-    if (compressionRatio !== undefined) metrics.push(`${compressionRatio.toFixed(2)}×`);
+    mainMetric = `${formatCount(originalChars)} → ${formatCount(summaryChars)} ${i18n.t("chars")}`;
     if (compressionSavedPercent !== undefined) {
-      metrics.push(`${compressionSavedPercent.toFixed(1)}% ${i18n.t("savedPercent")}`);
+      mainMetric += ` −${compressionSavedPercent.toFixed(1)}%`;
     }
   } else if (originalChars !== undefined) {
-    metrics.push(`${formatCount(originalChars)} ${i18n.t("chars")}`);
+    mainMetric = `${formatCount(originalChars)} ${i18n.t("chars")}`;
   }
+
+  const secondaryMetrics: string[] = [];
   if (summaryTotalTokens !== undefined && summaryTotalTokens > 0) {
-    metrics.push(`${i18n.t("compressionTokens")} ${formatCompactCount(summaryTotalTokens)} ${i18n.t("tokens")}`);
+    secondaryMetrics.push(`${i18n.t("compressionTokens")} ${formatCompactCount(summaryTotalTokens)}`);
   }
-  if (toolExecutionMs !== undefined && toolExecutionMs >= 50) {
-    metrics.push(`${i18n.t("tool")} ${formatDuration(toolExecutionMs)}`);
+  if (toolExecutionMs !== undefined && toolExecutionMs >= MIN_TOOL_DURATION_DISPLAY_MS) {
+    secondaryMetrics.push(`${i18n.t("tool")} ${formatDuration(toolExecutionMs)}`);
   }
-  if (summaryDurationMs !== undefined) metrics.push(`${i18n.t("distill")} ${formatDuration(summaryDurationMs)}`);
+  if (summaryDurationMs !== undefined) secondaryMetrics.push(`${i18n.t("distill")} ${formatDuration(summaryDurationMs)}`);
+  const secondaryGroup = secondaryMetrics.length > 0
+    ? `${i18n.t("groupOpen")}${secondaryMetrics.join(" · ")}${i18n.t("groupClose")}`
+    : "";
 
   const expandHint = expanded ? "" : i18n.t("expand");
   const lines = [
-    i18n.t("header", { status: `${statusView.label}${metrics.length > 0 ? `  ${metrics.join(" · ")}` : ""}${expandHint}` }),
+    i18n.t("header", { status: `${statusView.label}${mainMetric ? `  ${mainMetric}${secondaryGroup}` : ""}${expandHint}` }),
   ];
   if (expanded) {
     const sections: Array<{ label: string; text: string }> = [];

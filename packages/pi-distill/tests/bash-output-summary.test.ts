@@ -903,6 +903,27 @@ test("fallback 审计显示为原文回退而非已提炼", async () => {
   assert.match(audit.lines[0] ?? "", /1\.6k/);
 });
 
+test("fallback 审计紧凑展示 token 节省与压缩消耗", async () => {
+  const { buildDistillAuditLines } = await import("../src/fallback-renderer.ts");
+  const audit = buildDistillAuditLines("grep", {
+    outputSummaryStatus: "summarized",
+    originalOutputChars: 712,
+    summaryChars: 296,
+    estimatedOriginalOutputTokens: 178,
+    estimatedSummaryTokens: 74,
+    estimatedTokensSaved: 104,
+    summaryTotalTokens: 3_900,
+    compressionRatio: 2.41,
+    compressionSavedPercent: 58.6,
+    summaryDurationMs: 11_200,
+  }, false);
+  assert.ok(audit);
+  assert.equal(
+    audit.lines[0],
+    "◇ Distill  ✓ Summarized  ≈178 → 74 tok −58.6%(compression 3.9k · distill 11.2s) • Ctrl+O to expand",
+  );
+});
+
 test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", () => {
   const previousLocale = process.env.PI_EXTENSIONS_LOCALE;
   try {
@@ -1048,14 +1069,14 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
   assert.deepEqual(
     buildDistillAuditLines("bash", details, false, render)?.lines,
     [
-      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s • Ctrl+O to expand",
+      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars −90.0%(distill 1.2s) • Ctrl+O to expand",
     ],
   );
 
   assert.deepEqual(
     buildDistillAuditLines("bash", details, true, render)?.lines,
     [
-      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s",
+      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars −90.0%(distill 1.2s)",
       "├─ outputRequest  只保留计数范围和结论",
       "└─ Summary  计数器从 1 到 100，乘积从 2 到 200。",
     ],
@@ -1064,7 +1085,7 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
   assert.deepEqual(
     buildDistillAuditLines("bash", details, true, { ...render, showPrompt: false })?.lines,
     [
-      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s",
+      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars −90.0%(distill 1.2s)",
       "└─ Summary  计数器从 1 到 100，乘积从 2 到 200。",
     ],
   );

@@ -44,28 +44,28 @@
     "en-US": "chars"
   },
   "tokens": {
-    "zh-CN": "Token",
-    "en-US": "tokens"
+    "zh-CN": "tok",
+    "en-US": "tok"
   },
   "compressionTokens": {
-    "zh-CN": "压缩消耗",
+    "zh-CN": "压缩",
     "en-US": "compression"
   },
-  "tokensSaved": {
-    "zh-CN": "节省",
-    "en-US": "saved"
+  "groupOpen": {
+    "zh-CN": "（",
+    "en-US": "("
   },
-  "savedPercent": {
-    "zh-CN": "节省",
-    "en-US": "saved"
+  "groupClose": {
+    "zh-CN": "）",
+    "en-US": ")"
   },
   "tool": {
     "zh-CN": "工具",
-    "en-US": "Tool"
+    "en-US": "tool"
   },
   "distill": {
     "zh-CN": "提炼",
-    "en-US": "Distill"
+    "en-US": "distill"
   },
   "expand": {
     "zh-CN": " • Ctrl+O 展开",
