@@ -214,7 +214,7 @@ export function buildDistillAuditLines(
 
   let mainMetric = "";
   if (estimatedOriginalTokens !== undefined && estimatedSummaryTokens !== undefined) {
-    mainMetric = `≈${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
+    mainMetric = `${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
     if (estimatedTokensSaved !== undefined && estimatedTokensSaved > 0 && compressionSavedPercent !== undefined) {
       mainMetric += ` −${compressionSavedPercent.toFixed(1)}%`;
     }

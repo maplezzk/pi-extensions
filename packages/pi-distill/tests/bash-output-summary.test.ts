@@ -318,6 +318,7 @@ test("配置文件优先于兼容环境变量", async () => {
     errorRetryCount: 2,
     missedCompressionRatio: 4.5,
     summarizeErrors: true,
+    tokenEstimator: "heuristic",
   });
   assert.equal(loaded.enabled, true);
   assert.deepEqual(loaded.render, {
@@ -920,8 +921,61 @@ test("fallback 审计紧凑展示 token 节省与压缩消耗", async () => {
   assert.ok(audit);
   assert.equal(
     audit.lines[0],
-    "◇ Distill  ✓ Summarized  ≈178 → 74 tok −58.6%(compression 3.9k · distill 11.2s) • Ctrl+O to expand",
+    "◇ Distill  ✓ Summarized  178 → 74 tok −58.6%(compression 3.9k · distill 11.2s) • Ctrl+O to expand",
   );
+});
+
+test("启发式 token 估算对 CJK 按字计数、其余按 chars/4", async () => {
+  const { estimateHeuristicTokens } = await import("../src/token-estimator.ts");
+  assert.equal(estimateHeuristicTokens(""), 0);
+  assert.equal(estimateHeuristicTokens("hello world!"), 3);
+  assert.equal(estimateHeuristicTokens("计数器"), 3);
+  assert.equal(estimateHeuristicTokens("计数器 abcd"), 5);
+  assert.equal(estimateHeuristicTokens("拡張子 .ts"), 4);
+});
+
+test("可选 token 估算器缺失时降级为启发式并明确告警", async () => {
+  const { createTokenEstimator, resetTokenEstimatorCache } = await import("../src/token-estimator.ts");
+  resetTokenEstimatorCache();
+
+  const heuristic = createTokenEstimator("heuristic");
+  assert.equal(heuristic.kind, "heuristic");
+  assert.equal(heuristic.fallbackWarning, undefined);
+
+  const claude = createTokenEstimator("claude");
+  assert.equal(claude.kind, "claude");
+  assert.match(claude.fallbackWarning ?? "", /@anthropic-ai\/tokenizer/);
+  assert.equal(claude.countTokens("abcd"), 1);
+
+  const cl100k = createTokenEstimator("cl100k");
+  assert.equal(cl100k.kind, "cl100k");
+  assert.match(cl100k.fallbackWarning ?? "", /js-tiktoken/);
+});
+
+test("tokenEstimator 支持配置文件与环境变量，非法值降级并告警", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-distill-estimator-"));
+  const configFile = join(directory, "config.json");
+  const missingFile = join(directory, "missing.json");
+
+  await writeFile(configFile, JSON.stringify({ tokenEstimator: "cl100k" }));
+  const fromFile = loadDistillConfig({}, configFile);
+  assert.equal(fromFile.config?.tokenEstimator, "cl100k");
+  assert.deepEqual(fromFile.warnings, []);
+
+  const fromEnv = loadDistillConfig({ PI_DISTILL_TOKEN_ESTIMATOR: "claude" }, missingFile);
+  assert.equal(fromEnv.config?.tokenEstimator, "claude");
+
+  const fallbackToDefault = loadDistillConfig({}, missingFile);
+  assert.equal(fallbackToDefault.config?.tokenEstimator, "heuristic");
+
+  await writeFile(configFile, JSON.stringify({ tokenEstimator: "gpt-5" }));
+  const invalidFile = loadDistillConfig({}, configFile);
+  assert.equal(invalidFile.config?.tokenEstimator, "heuristic");
+  assert.match(invalidFile.warnings.join(" "), /tokenEstimator/);
+
+  const invalidEnv = loadDistillConfig({ PI_DISTILL_TOKEN_ESTIMATOR: "bogus" }, missingFile);
+  assert.equal(invalidEnv.config?.tokenEstimator, "heuristic");
+  assert.match(invalidEnv.warnings.join(" "), /PI_DISTILL_TOKEN_ESTIMATOR/);
 });
 
 test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", () => {
@@ -1280,14 +1334,13 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.match(statsMessage, /Tool results|工具结果/);
     assert.match(statsMessage, /Model total tokens|模型总 Token/);
 
-    const selections: Array<string | undefined> = ["__last__", "write", "custom-tool", undefined, undefined];
+    const selections: Array<string | undefined> = ["Tool outputRequest", "write", "custom-tool", undefined, undefined];
     await commandHandler?.("", {
       hasUI: true,
       ui: {
         select: async (_title: string, choices: string[]) => {
           const target = selections.shift();
           if (!target) return undefined;
-          if (target === "__last__") return choices.at(-1);
           return choices.find((choice) => choice.startsWith(target));
         },
         input: async () => undefined,
