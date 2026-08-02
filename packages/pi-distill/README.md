@@ -185,7 +185,7 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | `errorRetryCount` | Number of additional attempts after any non-timeout error. Defaults to `1`; set to `0` to disable other error retries. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
 | `summarizeErrors` | Whether error results that meet `minChars` should still be sent to the distillation model. |
-| `tokenEstimator` | Token estimator used for the displayed original/summary token counts: `heuristic` (default, zero-dependency; CJK characters count ~1 token each, other text ~4 chars/token), `claude` (exact Claude counts via the optional `@anthropic-ai/tokenizer` package), or `cl100k` (exact OpenAI cl100k counts via the optional `js-tiktoken` package). If an optional package is missing, pi-distill warns and falls back to `heuristic`. |
+| `tokenEstimator` | Token estimator used for the displayed original/summary token counts: `heuristic` (default, zero-dependency; CJK characters count ~1 token each, other text ~4 chars/token), `claude` (via the optional `@anthropic-ai/tokenizer` package; its vocab dates from the Claude 2 era, so it is still an approximation for Claude 3 and later), or `cl100k` (exact OpenAI cl100k counts via the optional `js-tiktoken` package). If an optional package is missing, pi-distill warns and falls back to `heuristic`. |
 | `tools.<name>.enabled` | Enables or disables `outputRequest` injection and result distillation for one tool. `edit` and `write` default to disabled; other unconfigured tools default to enabled. It can also be changed from `/config:distill`. |
 
 `/pi-distill` remains available as a compatibility alias.

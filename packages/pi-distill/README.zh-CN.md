@@ -188,7 +188,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `errorRetryCount` | 非超时异常后的额外重试次数。默认 `1`；设为 `0` 时不重试其他异常。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
 | `summarizeErrors` | 工具返回错误且达到 `minChars` 时，是否仍发送给提炼模型。 |
-| `tokenEstimator` | 展示用原文/摘要 Token 的估算器：`heuristic`（默认，零依赖；CJK 字符约每字 1 token，其余文本约 4 字符 1 token）、`claude`（通过可选依赖 `@anthropic-ai/tokenizer` 精确计数 Claude token）、`cl100k`（通过可选依赖 `js-tiktoken` 精确计数 OpenAI cl100k token）。可选依赖缺失时会明确告警并降级为 `heuristic`。 |
+| `tokenEstimator` | 展示用原文/摘要 Token 的估算器：`heuristic`（默认，零依赖；CJK 字符约每字 1 token，其余文本约 4 字符 1 token）、`claude`（通过可选依赖 `@anthropic-ai/tokenizer`；词表停留在 Claude 2 时代，对 Claude 3 及之后的模型仍是近似）、`cl100k`（通过可选依赖 `js-tiktoken` 精确计数 OpenAI cl100k token）。可选依赖缺失时会明确告警并降级为 `heuristic`。 |
 | `tools.<name>.enabled` | 按工具开启或关闭 `outputRequest` 注入和结果提炼。`edit` 和 `write` 默认关闭，其他未配置工具默认开启，也可以通过 `/config:distill` 修改。 |
 
 `/pi-distill` 仍作为兼容别名保留。
