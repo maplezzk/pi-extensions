@@ -920,7 +920,7 @@ test("fallback 审计紧凑展示 token 节省与压缩消耗", async () => {
   assert.ok(audit);
   assert.equal(
     audit.lines[0],
-    "◇ Distill  ✓  178 → 74 tok ↓58.6% · cost 3.9k · distill 11.2s • Ctrl+O to expand",
+    "◇ Distill  ✓  178 → 74 tok ↓58.6% · usage 3.9k · distill 11.2s • Ctrl+O to expand",
   );
 });
 

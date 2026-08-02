@@ -48,8 +48,8 @@
     "en-US": "tok"
   },
   "compressionTokens": {
-    "zh-CN": "消耗",
-    "en-US": "cost"
+    "zh-CN": "用量",
+    "en-US": "usage"
   },
   "tool": {
     "zh-CN": "工具",
