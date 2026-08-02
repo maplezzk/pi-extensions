@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.3.0...pi-distill-v1.4.0) (2026-08-02)
+
+
+### Features
+
+* **pi-distill:** 重设计折叠态审计行并改进 token 估算 ([#69](https://github.com/maplezzk/pi-extensions/issues/69)) ([23427cc](https://github.com/maplezzk/pi-extensions/commit/23427cc334ac261b67f531157372d14fe021cfd7))
+
 ## [1.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.2.1...pi-distill-v1.3.0) (2026-07-31)
 
 
