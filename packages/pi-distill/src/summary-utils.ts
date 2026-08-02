@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
-import { DEFAULT_TOKEN_ESTIMATOR, TOKEN_ESTIMATOR_KINDS, type TokenEstimatorKind } from "./token-estimator.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/summary-utils.json", import.meta.url)));
 
@@ -41,8 +40,6 @@ export interface BashSummaryConfig {
   missedCompressionRatio: number;
   /** 工具返回错误且达到最小长度时是否仍调用提炼模型。 */
   summarizeErrors: boolean;
-  /** 展示用 token 估算器；heuristic 零依赖，claude/cl100k 需要安装可选依赖。 */
-  tokenEstimator?: TokenEstimatorKind;
   /** 按工具覆盖是否注入 outputRequest；edit/write 未配置时默认关闭，其他工具默认开启。 */
   tools?: DistillToolConfig;
 }
@@ -73,7 +70,6 @@ export interface DistillConfigFile {
   errorRetryCount?: number;
   missedCompressionRatio?: number;
   summarizeErrors?: boolean;
-  tokenEstimator?: TokenEstimatorKind;
   tools?: DistillToolConfig;
   render?: Partial<DistillRenderConfig>;
 }
@@ -225,30 +221,6 @@ function parseBoolean(value: string): boolean | undefined {
   if (value === "true" || value === "1") return true;
   if (value === "false" || value === "0") return false;
   return undefined;
-}
-
-function resolveTokenEstimator(
-  file: Record<string, unknown> | undefined,
-  env: NodeJS.ProcessEnv,
-  warnings: string[],
-): TokenEstimatorKind {
-  const allowed = TOKEN_ESTIMATOR_KINDS.join(", ");
-  if (file && "tokenEstimator" in file) {
-    const value = file.tokenEstimator;
-    if (typeof value === "string" && (TOKEN_ESTIMATOR_KINDS as readonly string[]).includes(value)) {
-      return value as TokenEstimatorKind;
-    }
-    warnings.push(`Config field tokenEstimator must be one of: ${allowed}.`);
-    return DEFAULT_TOKEN_ESTIMATOR;
-  }
-  const envValue = env.PI_DISTILL_TOKEN_ESTIMATOR?.trim();
-  if (envValue) {
-    if ((TOKEN_ESTIMATOR_KINDS as readonly string[]).includes(envValue)) {
-      return envValue as TokenEstimatorKind;
-    }
-    warnings.push(`PI_DISTILL_TOKEN_ESTIMATOR must be one of: ${allowed}.`);
-  }
-  return DEFAULT_TOKEN_ESTIMATOR;
 }
 
 function parseRenderConfig(
@@ -417,7 +389,6 @@ export function loadDistillConfig(
   }
 
   const config = parseBashSummaryConfig(effectiveEnv);
-  if (config) config.tokenEstimator = resolveTokenEstimator(file, effectiveEnv, warnings);
   const tools = parseToolConfig(file, warnings);
   if (config && tools !== undefined) config.tools = tools;
   const render = parseRenderConfig(file, warnings);

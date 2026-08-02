@@ -165,7 +165,6 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
   "errorRetryCount": 1,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
-  "tokenEstimator": "heuristic",
   "tools": {},
   "render": {
     "enabled": true,
@@ -188,7 +187,6 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `errorRetryCount` | 非超时异常后的额外重试次数。默认 `1`；设为 `0` 时不重试其他异常。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
 | `summarizeErrors` | 工具返回错误且达到 `minChars` 时，是否仍发送给提炼模型。 |
-| `tokenEstimator` | 展示用原文/摘要 Token 的估算器：`heuristic`（默认，零依赖；CJK 字符约每字 1 token，其余文本约 4 字符 1 token）、`claude`（通过可选依赖 `@anthropic-ai/tokenizer`；词表停留在 Claude 2 时代，对 Claude 3 及之后的模型仍是近似）、`cl100k`（通过可选依赖 `js-tiktoken` 精确计数 OpenAI cl100k token）。可选依赖缺失时会明确告警并降级为 `heuristic`。 |
 | `tools.<name>.enabled` | 按工具开启或关闭 `outputRequest` 注入和结果提炼。`edit` 和 `write` 默认关闭，其他未配置工具默认开启，也可以通过 `/config:distill` 修改。 |
 
 `/pi-distill` 仍作为兼容别名保留。
@@ -198,9 +196,9 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 
 使用 `/distill:stats` 查看当前 Pi 会话的提炼统计。统计只保存在内存中，在会话开始时重置，不保存原始工具输出。
 
-统计包括工具结果数量、成功/失败/回退次数、模型尝试次数、原始与摘要字符数、压缩比、估算的原文/摘要 Token（见 `tokenEstimator`）、预计节省 Token、提炼实际消耗的 input/output/cache/total Token 和成本。数量达到 1,000 或 1,000,000 时分别使用 `k` 或 `m` 紧凑显示；耗时会根据数值显示为 `ms`、`s` 或 `min`。原文/摘要 Token 是估算值；provider 未返回 usage 时，提炼消耗 Token 或成本字段显示为不可用。
+统计包括工具结果数量、成功/失败/回退次数、模型尝试次数、原始与摘要字符数、压缩比、估算的原文/摘要 Token（启发式：CJK 字符约每字 1 token，其余文本约 4 字符 1 token）、预计节省 Token、提炼实际消耗的 input/output/cache/total Token 和成本。数量达到 1,000 或 1,000,000 时分别使用 `k` 或 `m` 紧凑显示；耗时会根据数值显示为 `ms`、`s` 或 `min`。原文/摘要 Token 是估算值；provider 未返回 usage 时，提炼消耗 Token 或成本字段显示为不可用。
 
-主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_MAX_OUTPUT_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_TIMEOUT_RETRY_COUNT`、`PI_DISTILL_ERROR_RETRY_COUNT`、`PI_DISTILL_MISSED_COMPRESSION_RATIO`、`PI_DISTILL_SUMMARIZE_ERRORS` 和 `PI_DISTILL_TOKEN_ESTIMATOR`。
+主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_MAX_OUTPUT_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_TIMEOUT_RETRY_COUNT`、`PI_DISTILL_ERROR_RETRY_COUNT`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。
 
 ## 要求
 

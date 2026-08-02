@@ -9,7 +9,6 @@
   "errorRetryCount": 1,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
-  "tokenEstimator": "heuristic",
   "tools": {},
   "render": {
     "enabled": true,
