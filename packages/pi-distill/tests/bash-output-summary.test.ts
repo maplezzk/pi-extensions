@@ -920,7 +920,7 @@ test("fallback 审计紧凑展示 token 节省与压缩消耗", async () => {
   assert.ok(audit);
   assert.equal(
     audit.lines[0],
-    "◇ Distill  ✓  178 → 74 tok ↓58.6% · usage 3.9k · distill 11.2s • Ctrl+O to expand",
+    "✓ Distill  178 → 74 tok ↓58.6% · usage 3.9k · distill 11.2s • Ctrl+O to expand",
   );
 });
 
@@ -1078,14 +1078,14 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
   assert.deepEqual(
     buildDistillAuditLines("bash", details, false, render)?.lines,
     [
-      "◇ Distill  ✓  12,000 → 1,200 chars ↓90.0% · distill 1.2s • Ctrl+O to expand",
+      "✓ Distill  12,000 → 1,200 chars ↓90.0% · distill 1.2s • Ctrl+O to expand",
     ],
   );
 
   assert.deepEqual(
     buildDistillAuditLines("bash", details, true, render)?.lines,
     [
-      "◇ Distill  ✓  12,000 → 1,200 chars ↓90.0% · distill 1.2s",
+      "✓ Distill  12,000 → 1,200 chars ↓90.0% · distill 1.2s",
       "├─ outputRequest  只保留计数范围和结论",
       "└─ Summary  计数器从 1 到 100，乘积从 2 到 200。",
     ],
@@ -1094,7 +1094,7 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
   assert.deepEqual(
     buildDistillAuditLines("bash", details, true, { ...render, showPrompt: false })?.lines,
     [
-      "◇ Distill  ✓  12,000 → 1,200 chars ↓90.0% · distill 1.2s",
+      "✓ Distill  12,000 → 1,200 chars ↓90.0% · distill 1.2s",
       "└─ Summary  计数器从 1 到 100，乘积从 2 到 200。",
     ],
   );
@@ -1104,8 +1104,7 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
     fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
     bold: (text: string) => `<b>${text}</b>`,
   } as any);
-  assert.match(styled, /<accent><b>◇ Distill<\/b><\/accent>/);
-  assert.match(styled, /<success>✓<\/success>/);
+  assert.match(styled, /<success><b>✓<\/b><\/success><accent><b> Distill<\/b><\/accent>/);
   assert.match(styled, /<accent>outputRequest<\/accent>/);
   assert.match(styled, /<success>Summary<\/success>/);
   assert.equal(
@@ -1155,7 +1154,7 @@ test("pi-distill 通过通用 tool-display result middleware 渲染且不重复�
     const renderedLines = component.render(120);
     assert.equal(renderedLines[0], "");
     const output = renderedLines.join("\n");
-    assert.match(output, /◇ Distill  ✓/);
+    assert.match(output, /✓ Distill/);
     assert.match(output, /├─ outputRequest  只保留最终结论/);
     assert.match(output, /└─ Summary  协议渲染的提炼结果/);
     assert.doesNotMatch(output, /不应重复的基础正文/);

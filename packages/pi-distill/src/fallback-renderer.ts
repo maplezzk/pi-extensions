@@ -17,7 +17,10 @@ type AuditTone = "success" | "muted" | "dim" | "warning" | "error";
 
 type DistillAuditView = {
   lines: string[];
-  statusLabel: string;
+  /** 状态图标同时承担品牌位（替换原 ◇），是语言无关符号，不走 locale。 */
+  statusIcon: string;
+  /** 状态文字；summarized 等自解释状态为空。 */
+  statusText: string;
   statusTone: AuditTone;
 };
 
@@ -67,13 +70,13 @@ function formatCompactCount(value: number): string {
 
 function renderDistillAuditLine(audit: DistillAuditView, line: string, index: number, theme: RenderTheme): string {
   if (index === 0) {
-    const title = theme.fg("accent", theme.bold("◇ Distill"));
-    const afterTitle = line.slice("◇ Distill".length);
-    const statusIndex = afterTitle.indexOf(audit.statusLabel);
-    if (statusIndex < 0) return `${title}${theme.fg("muted", afterTitle)}`;
-    const beforeStatus = afterTitle.slice(0, statusIndex);
-    const afterStatus = afterTitle.slice(statusIndex + audit.statusLabel.length);
-    return `${title}${theme.fg("toolTitle", beforeStatus)}${theme.fg(audit.statusTone, audit.statusLabel)}${theme.fg("muted", afterStatus)}`;
+    const title = `${theme.fg(audit.statusTone, theme.bold(audit.statusIcon))}${theme.fg("accent", theme.bold(" Distill"))}`;
+    const afterTitle = line.slice(`${audit.statusIcon} Distill`.length);
+    const statusPrefix = audit.statusText ? `  ${audit.statusText}` : "";
+    if (statusPrefix && afterTitle.startsWith(statusPrefix)) {
+      return `${title}${theme.fg(audit.statusTone, statusPrefix)}${theme.fg("muted", afterTitle.slice(statusPrefix.length))}`;
+    }
+    return `${title}${theme.fg("muted", afterTitle)}`;
   }
 
   const section = line.match(/^([├└]─ )([^ ]+)(  )(.*)$/);
@@ -181,17 +184,17 @@ export function buildDistillAuditLines(
   const status = getString(details.outputSummaryStatus);
   if (!status) return undefined;
 
-  const statusViews: Record<string, { label: string; tone: AuditTone }> = {
-    summarized: { label: i18n.t("summarized"), tone: "success" },
-    "summary-fallback": { label: i18n.t("summaryFallback"), tone: "warning" },
-    disabled: { label: i18n.t("disabled"), tone: "dim" },
-    "disabled-by-config": { label: i18n.t("off"), tone: "dim" },
-    "not-requested": { label: i18n.t("original"), tone: "muted" },
-    "full-output": { label: i18n.t("raw"), tone: "warning" },
-    "below-threshold": { label: i18n.t("belowThreshold"), tone: "dim" },
-    "non-text-output": { label: i18n.t("nonTextOutput"), tone: "muted" },
-    "diagnostic-failed": { label: i18n.t("readFailed"), tone: "warning" },
-    "summary-failed": { label: i18n.t("summaryFailed"), tone: "error" },
+  const statusViews: Record<string, { icon: string; textKey?: string; tone: AuditTone }> = {
+    summarized: { icon: "✓", tone: "success" },
+    "summary-fallback": { icon: "↺", textKey: "summaryFallback", tone: "warning" },
+    disabled: { icon: "○", textKey: "disabled", tone: "dim" },
+    "disabled-by-config": { icon: "○", textKey: "off", tone: "dim" },
+    "not-requested": { icon: "○", textKey: "original", tone: "muted" },
+    "full-output": { icon: "↺", textKey: "raw", tone: "warning" },
+    "below-threshold": { icon: "–", textKey: "belowThreshold", tone: "dim" },
+    "non-text-output": { icon: "○", textKey: "nonTextOutput", tone: "muted" },
+    "diagnostic-failed": { icon: "!", textKey: "readFailed", tone: "warning" },
+    "summary-failed": { icon: "✕", textKey: "summaryFailed", tone: "error" },
   };
   const anomalies = Array.isArray(details.outputSummaryAnomalies)
     ? details.outputSummaryAnomalies.filter((value): value is string => typeof value === "string")
@@ -210,7 +213,8 @@ export function buildDistillAuditLines(
   const fullOutputPath = getString(details.fullOutputPath);
   const outputRequest = getString(details.outputSummaryPrompt);
   const summaryText = getString(details.summaryText);
-  const statusView = statusViews[status] ?? { label: status, tone: "muted" as const };
+  const statusView = statusViews[status] ?? { icon: "○", tone: "muted" as const };
+  const statusText = statusView.textKey ? i18n.t(statusView.textKey) : status in statusViews ? "" : status;
 
   let mainMetric = "";
   if (estimatedOriginalTokens !== undefined && estimatedSummaryTokens !== undefined) {
@@ -238,9 +242,10 @@ export function buildDistillAuditLines(
 
   const expandHint = expanded ? "" : i18n.t("expand");
   const metricParts = [mainMetric, ...secondaryMetrics].filter((part) => part.length > 0);
-  const lines = [
-    i18n.t("header", { status: `${statusView.label}${metricParts.length > 0 ? `  ${metricParts.join(" · ")}` : ""}${expandHint}` }),
-  ];
+  const headerSegments = [`${statusView.icon} Distill`];
+  if (statusText) headerSegments.push(statusText);
+  if (metricParts.length > 0) headerSegments.push(metricParts.join(" · "));
+  const lines = [`${headerSegments.join("  ")}${expandHint}`];
   if (expanded) {
     const sections: Array<{ label: string; text: string }> = [];
     if (render.showPrompt && outputRequest) sections.push({ label: i18n.t("outputRequest"), text: outputRequest });
@@ -265,7 +270,8 @@ export function buildDistillAuditLines(
 
   return {
     lines,
-    statusLabel: statusView.label,
+    statusIcon: statusView.icon,
+    statusText,
     statusTone: statusView.tone,
   };
 }
