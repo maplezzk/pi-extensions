@@ -91,6 +91,14 @@
     "zh-CN": "提炼错误：{value}",
     "en-US": "Summarize errors: {value}"
   },
+  "tokenEstimator": {
+    "zh-CN": "Token 估算器：{value}",
+    "en-US": "Token estimator: {value}"
+  },
+  "tokenEstimatorTitle": {
+    "zh-CN": "选择 token 估算器（claude/cl100k 需安装可选依赖）",
+    "en-US": "Select token estimator (claude/cl100k require optional dependencies)"
+  },
   "auditRenderer": {
     "zh-CN": "审计渲染器：{value}",
     "en-US": "Audit renderer: {value}"

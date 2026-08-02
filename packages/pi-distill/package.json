@@ -52,9 +52,19 @@
     "coding-agent"
   ],
   "peerDependencies": {
+    "@anthropic-ai/tokenizer": ">=0.0.4",
     "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
     "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
-    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0"
+    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0",
+    "js-tiktoken": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/tokenizer": {
+      "optional": true
+    },
+    "js-tiktoken": {
+      "optional": true
+    }
   },
   "dependencies": {
     "pi-extensions-i18n": "^0.3.1",

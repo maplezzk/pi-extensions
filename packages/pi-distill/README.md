@@ -163,6 +163,7 @@ Start from [`config.example.json`](./config.example.json):
   "errorRetryCount": 1,
   "missedCompressionRatio": 10,
   "summarizeErrors": true,
+  "tokenEstimator": "heuristic",
   "render": {
     "enabled": true,
     "showPrompt": true,
@@ -184,6 +185,7 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | `errorRetryCount` | Number of additional attempts after any non-timeout error. Defaults to `1`; set to `0` to disable other error retries. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
 | `summarizeErrors` | Whether error results that meet `minChars` should still be sent to the distillation model. |
+| `tokenEstimator` | Token estimator used for the displayed original/summary token counts: `heuristic` (default, zero-dependency; CJK characters count ~1 token each, other text ~4 chars/token), `claude` (exact Claude counts via the optional `@anthropic-ai/tokenizer` package), or `cl100k` (exact OpenAI cl100k counts via the optional `js-tiktoken` package). If an optional package is missing, pi-distill warns and falls back to `heuristic`. |
 | `tools.<name>.enabled` | Enables or disables `outputRequest` injection and result distillation for one tool. `edit` and `write` default to disabled; other unconfigured tools default to enabled. It can also be changed from `/config:distill`. |
 
 `/pi-distill` remains available as a compatibility alias.
@@ -193,9 +195,9 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 
 Use `/distill:stats` to view distillation statistics for the current Pi session. Statistics are kept in memory, reset when the session starts, and never store raw tool output.
 
-The report includes tool-result counts, success/failure/fallback counts, model attempts, original and summary character totals, compression ratio, `chars/4` estimated original/summary tokens, estimated tokens saved, and model-reported input/output/cache/total tokens and cost. Counts use compact `k` and `m` units at 1,000 and 1,000,000; durations use `ms`, `s`, or `min` based on their value. Estimated context tokens are labeled as estimates; usage and cost fields are shown as unavailable when the provider does not return usage data.
+The report includes tool-result counts, success/failure/fallback counts, model attempts, original and summary character totals, compression ratio, estimated original/summary tokens (see `tokenEstimator`), estimated tokens saved, and model-reported input/output/cache/total tokens and cost. Counts use compact `k` and `m` units at 1,000 and 1,000,000; durations use `ms`, `s`, or `min` based on their value. Estimated context tokens are labeled as estimates; usage and cost fields are shown as unavailable when the provider does not return usage data.
 
-The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_MAX_OUTPUT_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_TIMEOUT_RETRY_COUNT`, `PI_DISTILL_ERROR_RETRY_COUNT`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, and `PI_DISTILL_SUMMARIZE_ERRORS`.
+The main environment variables are `PI_DISTILL_MODEL`, `PI_DISTILL_MIN_CHARS`, `PI_DISTILL_MAX_CHARS`, `PI_DISTILL_MAX_OUTPUT_CHARS`, `PI_DISTILL_TIMEOUT_SECONDS`, `PI_DISTILL_TIMEOUT_RETRY_COUNT`, `PI_DISTILL_ERROR_RETRY_COUNT`, `PI_DISTILL_MISSED_COMPRESSION_RATIO`, `PI_DISTILL_SUMMARIZE_ERRORS`, and `PI_DISTILL_TOKEN_ESTIMATOR`.
 
 ## Requirements
 

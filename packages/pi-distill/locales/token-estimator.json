@@ -1,0 +1,6 @@
+{
+  "estimatorFallback": {
+    "zh-CN": "token 估算器 \"{kind}\" 需要安装可选依赖 \"{packageName}\"（npm install {packageName}），已降级为启发式估算。",
+    "en-US": "Token estimator \"{kind}\" requires the optional dependency \"{packageName}\" (npm install {packageName}); falling back to the heuristic estimator."
+  }
+}

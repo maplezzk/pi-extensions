@@ -61,6 +61,13 @@ import {
   type DistillToolConfig,
   type OutputSummaryDecision,
 } from "./summary-utils.ts";
+import {
+  createTokenEstimator,
+  DEFAULT_TOKEN_ESTIMATOR,
+  estimateHeuristicTokens,
+  TOKEN_ESTIMATOR_KINDS,
+  type TokenEstimatorKind,
+} from "./token-estimator.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -182,7 +189,7 @@ type SummaryDiagnostics = {
   summaryCacheWriteTokens?: number;
   summaryTotalTokens?: number;
   summaryCost?: number;
-  /** 原始输出与最终摘要的 Token 数是按 Pi 的 chars/4 规则估算的。 */
+  /** 原始输出与最终摘要的展示用 Token 数，由配置的 tokenEstimator 估算（默认启发式）。 */
   estimatedOriginalOutputTokens?: number;
   estimatedSummaryTokens?: number;
   estimatedTokensSaved?: number;
@@ -275,18 +282,13 @@ function getSummaryUsageDiagnostics(usage: SummaryUsage | undefined): Pick<
   };
 }
 
-const ESTIMATED_CHARS_PER_TOKEN = 4;
-
-function estimateTextTokens(text: string): number {
-  return Math.ceil(text.length / ESTIMATED_CHARS_PER_TOKEN);
-}
-
 function getTokenCompressionDiagnostics(
   originalOutput: string,
   finalOutput: string,
+  countTokens: (text: string) => number = estimateHeuristicTokens,
 ): Pick<SummaryDiagnostics, "estimatedOriginalOutputTokens" | "estimatedSummaryTokens" | "estimatedTokensSaved"> {
-  const estimatedOriginalOutputTokens = estimateTextTokens(originalOutput);
-  const estimatedSummaryTokens = estimateTextTokens(finalOutput);
+  const estimatedOriginalOutputTokens = countTokens(originalOutput);
+  const estimatedSummaryTokens = countTokens(finalOutput);
   return {
     estimatedOriginalOutputTokens,
     estimatedSummaryTokens,
@@ -836,6 +838,8 @@ function getOutputRequest(params: Record<string, unknown>): string {
     : "";
 }
 
+const reportedTokenEstimatorWarnings = new Set<string>();
+
 export async function processToolResult(
   context: DistillExecutionContext,
   result: ToolResult,
@@ -845,6 +849,11 @@ export async function processToolResult(
   const prompt = getOutputRequest(context.params);
   const loaded = loadDistillConfig();
   const config = loaded.config;
+  const tokenEstimator = createTokenEstimator(config?.tokenEstimator ?? DEFAULT_TOKEN_ESTIMATOR);
+  if (tokenEstimator.fallbackWarning && !reportedTokenEstimatorWarnings.has(tokenEstimator.fallbackWarning)) {
+    reportedTokenEstimatorWarnings.add(tokenEstimator.fallbackWarning);
+    context.ctx.ui.notify(tokenEstimator.fallbackWarning, "warning");
+  }
   const outputSummaryRender = { ...loaded.render };
   // Pi may persist raw tool output before this hook runs. This second limit
   // protects the post-distillation result, including RAW and fallbacks.
@@ -920,7 +929,7 @@ export async function processToolResult(
       summaryTriggerMaxChars: null,
       summaryResultMaxChars: config.maxChars,
       missedCompressionRatio: config.missedCompressionRatio,
-      ...getTokenCompressionDiagnostics(output, output),
+      ...getTokenCompressionDiagnostics(output, output, tokenEstimator.countTokens),
       ...skippedDiagnostics,
     };
     const candidate = {
@@ -953,7 +962,7 @@ export async function processToolResult(
         summaryChars: output.length,
         summaryAttempts: summarized.attempts,
         ...getSummaryUsageDiagnostics(summarized.usage),
-        ...getTokenCompressionDiagnostics(output, output),
+        ...getTokenCompressionDiagnostics(output, output, tokenEstimator.countTokens),
         compressionRatio: 1,
         compressionSavedPercent: 0,
         ...rawDiagnostics,
@@ -990,7 +999,7 @@ export async function processToolResult(
       summaryChars: summarized.summaryChars,
       summaryAttempts: summarized.attempts,
       ...getSummaryUsageDiagnostics(summarized.usage),
-      ...getTokenCompressionDiagnostics(output, summarized.text),
+      ...getTokenCompressionDiagnostics(output, summarized.text, tokenEstimator.countTokens),
       ...compressionDiagnostics,
     };
     const agentDiagnostic = buildAgentDiagnosticText(summaryDiagnostics);
@@ -1013,7 +1022,7 @@ export async function processToolResult(
           outputSummaryReasonCode: summarized.decision.reasonCode,
           outputSummaryReason: summarized.decision.reason,
           ...summaryDiagnostics,
-          ...getTokenCompressionDiagnostics(output, output),
+          ...getTokenCompressionDiagnostics(output, output, tokenEstimator.countTokens),
         }),
         content: [{ type: "text", text: output }],
       });
@@ -1066,7 +1075,7 @@ export async function processToolResult(
       summaryTriggerMaxChars: null,
       summaryResultMaxChars: config.maxChars,
       missedCompressionRatio: config.missedCompressionRatio,
-      ...getTokenCompressionDiagnostics(output, output),
+      ...getTokenCompressionDiagnostics(output, output, tokenEstimator.countTokens),
       outputSummaryAnomalies: ["summary-failed"],
       outputSummaryAdvice: `Summarization failed; the original output was preserved. Check model configuration or authentication. Requests still running after ${config.timeoutSeconds}s are treated as timed out.`,
       outputSummaryError: errorMessage,
@@ -1177,7 +1186,7 @@ function toToolResultEventResult(result: ToolResult): ToolResultEventPatch {
   };
 }
 
-type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "maxOutputChars" | "timeoutSeconds" | "timeoutRetryCount" | "errorRetryCount" | "missedCompressionRatio" | "summarizeErrors">> & {
+type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "maxOutputChars" | "timeoutSeconds" | "timeoutRetryCount" | "errorRetryCount" | "missedCompressionRatio" | "summarizeErrors" | "tokenEstimator">> & {
   tools: DistillToolConfig;
   render: DistillRenderConfig;
 };
@@ -1198,6 +1207,7 @@ function getDistillUiConfig(): DistillUiConfig {
     errorRetryCount: config?.errorRetryCount ?? 1,
     missedCompressionRatio: config?.missedCompressionRatio ?? 10,
     summarizeErrors: config?.summarizeErrors ?? true,
+    tokenEstimator: config?.tokenEstimator ?? DEFAULT_TOKEN_ESTIMATOR,
     tools: Object.fromEntries(
       Object.entries(config?.tools ?? {}).map(([toolName, override]) => [toolName, { ...override }]),
     ),
@@ -1331,6 +1341,7 @@ async function runDistillConfigUi(
       i18n.t("showOutputRequest", { value: config.render.showPrompt ? i18n.t("on") : i18n.t("off") }),
       i18n.t("showSummary", { value: config.render.showResult ? i18n.t("on") : i18n.t("off") }),
       i18n.t("toolOverrides"),
+      i18n.t("tokenEstimator", { value: config.tokenEstimator }),
     ];
     const choice = await ctx.ui.select(i18n.t("settingsTitle"), choices);
     if (choice === undefined) return;
@@ -1408,6 +1419,15 @@ async function runDistillConfigUi(
       await saveDistillConfigFile(ctx, config, configPath, onSaved);
     } else if (choice === choices[13]) {
       await runDistillToolConfigUi(ctx, pi, config, configPath, onSaved);
+    } else if (choice === choices[14]) {
+      const selected = await ctx.ui.select(
+        i18n.t("tokenEstimatorTitle"),
+        [...TOKEN_ESTIMATOR_KINDS],
+      );
+      if (selected !== undefined) {
+        config.tokenEstimator = selected as TokenEstimatorKind;
+        await saveDistillConfigFile(ctx, config, configPath, onSaved);
+      }
     }
   }
 }
