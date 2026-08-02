@@ -17,7 +17,10 @@ type AuditTone = "success" | "muted" | "dim" | "warning" | "error";
 
 type DistillAuditView = {
   lines: string[];
-  statusLabel: string;
+  /** 状态图标同时承担品牌位（替换原 ◇），是语言无关符号，不走 locale。 */
+  statusIcon: string;
+  /** 状态文字；summarized 等自解释状态为空。 */
+  statusText: string;
   statusTone: AuditTone;
 };
 
@@ -33,6 +36,8 @@ function getFiniteNumber(value: unknown): number | undefined {
 function getString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
+
+const MIN_TOOL_DURATION_DISPLAY_MS = 50;
 
 function formatDuration(milliseconds: number): string {
   return `${(milliseconds / 1000).toFixed(1)}s`;
@@ -65,13 +70,13 @@ function formatCompactCount(value: number): string {
 
 function renderDistillAuditLine(audit: DistillAuditView, line: string, index: number, theme: RenderTheme): string {
   if (index === 0) {
-    const title = theme.fg("accent", theme.bold("◇ Distill"));
-    const afterTitle = line.slice("◇ Distill".length);
-    const statusIndex = afterTitle.indexOf(audit.statusLabel);
-    if (statusIndex < 0) return `${title}${theme.fg("muted", afterTitle)}`;
-    const beforeStatus = afterTitle.slice(0, statusIndex);
-    const afterStatus = afterTitle.slice(statusIndex + audit.statusLabel.length);
-    return `${title}${theme.fg("toolTitle", beforeStatus)}${theme.fg(audit.statusTone, audit.statusLabel)}${theme.fg("muted", afterStatus)}`;
+    const title = `${theme.fg(audit.statusTone, theme.bold(audit.statusIcon))}${theme.fg("accent", theme.bold(" Distill"))}`;
+    const afterTitle = line.slice(`${audit.statusIcon} Distill`.length);
+    const statusPrefix = audit.statusText ? `  ${audit.statusText}` : "";
+    if (statusPrefix && afterTitle.startsWith(statusPrefix)) {
+      return `${title}${theme.fg(audit.statusTone, statusPrefix)}${theme.fg("muted", afterTitle.slice(statusPrefix.length))}`;
+    }
+    return `${title}${theme.fg("muted", afterTitle)}`;
   }
 
   const section = line.match(/^([├└]─ )([^ ]+)(  )(.*)$/);
@@ -179,17 +184,17 @@ export function buildDistillAuditLines(
   const status = getString(details.outputSummaryStatus);
   if (!status) return undefined;
 
-  const statusViews: Record<string, { label: string; tone: AuditTone }> = {
-    summarized: { label: i18n.t("summarized"), tone: "success" },
-    "summary-fallback": { label: i18n.t("summaryFallback"), tone: "warning" },
-    disabled: { label: i18n.t("disabled"), tone: "dim" },
-    "disabled-by-config": { label: i18n.t("off"), tone: "dim" },
-    "not-requested": { label: i18n.t("original"), tone: "muted" },
-    "full-output": { label: i18n.t("raw"), tone: "warning" },
-    "below-threshold": { label: i18n.t("belowThreshold"), tone: "dim" },
-    "non-text-output": { label: i18n.t("nonTextOutput"), tone: "muted" },
-    "diagnostic-failed": { label: i18n.t("readFailed"), tone: "warning" },
-    "summary-failed": { label: i18n.t("summaryFailed"), tone: "error" },
+  const statusViews: Record<string, { icon: string; textKey?: string; tone: AuditTone }> = {
+    summarized: { icon: "✓", tone: "success" },
+    "summary-fallback": { icon: "↺", textKey: "summaryFallback", tone: "warning" },
+    disabled: { icon: "○", textKey: "disabled", tone: "dim" },
+    "disabled-by-config": { icon: "○", textKey: "off", tone: "dim" },
+    "not-requested": { icon: "○", textKey: "original", tone: "muted" },
+    "full-output": { icon: "↺", textKey: "raw", tone: "warning" },
+    "below-threshold": { icon: "–", textKey: "belowThreshold", tone: "dim" },
+    "non-text-output": { icon: "○", textKey: "nonTextOutput", tone: "muted" },
+    "diagnostic-failed": { icon: "!", textKey: "readFailed", tone: "warning" },
+    "summary-failed": { icon: "✕", textKey: "summaryFailed", tone: "error" },
   };
   const anomalies = Array.isArray(details.outputSummaryAnomalies)
     ? details.outputSummaryAnomalies.filter((value): value is string => typeof value === "string")
@@ -202,43 +207,45 @@ export function buildDistillAuditLines(
   const estimatedSummaryTokens = getFiniteNumber(details.estimatedSummaryTokens);
   const estimatedTokensSaved = getFiniteNumber(details.estimatedTokensSaved);
   const summaryTotalTokens = getFiniteNumber(details.summaryTotalTokens);
-  const compressionRatio = getFiniteNumber(details.compressionRatio);
   const compressionSavedPercent = getFiniteNumber(details.compressionSavedPercent);
   const toolExecutionMs = getFiniteNumber(details.toolExecutionMs);
   const summaryDurationMs = getFiniteNumber(details.summaryDurationMs);
   const fullOutputPath = getString(details.fullOutputPath);
   const outputRequest = getString(details.outputSummaryPrompt);
   const summaryText = getString(details.summaryText);
-  const statusView = statusViews[status] ?? { label: status, tone: "muted" as const };
-  const metrics: string[] = [];
+  const statusView = statusViews[status] ?? { icon: "○", tone: "muted" as const };
+  const statusText = statusView.textKey ? i18n.t(statusView.textKey) : status in statusViews ? "" : status;
 
+  let mainMetric = "";
   if (estimatedOriginalTokens !== undefined && estimatedSummaryTokens !== undefined) {
-    const tokenMetric = `≈${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
-    const savedMetric = estimatedTokensSaved !== undefined && estimatedTokensSaved > 0
-      ? `（${i18n.t("tokensSaved")} ≈${formatCompactCount(estimatedTokensSaved)}${compressionSavedPercent !== undefined ? `，${compressionSavedPercent.toFixed(1)}%` : ""}）`
-      : "";
-    metrics.push(`${tokenMetric}${savedMetric}`);
+    mainMetric = `${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
+    if (estimatedTokensSaved !== undefined && estimatedTokensSaved > 0 && compressionSavedPercent !== undefined) {
+      mainMetric += ` ↓${compressionSavedPercent.toFixed(1)}%`;
+    }
   } else if (originalChars !== undefined && summaryChars !== undefined) {
-    metrics.push(`${formatCount(originalChars)} → ${formatCount(summaryChars)} ${i18n.t("chars")}`);
-    if (compressionRatio !== undefined) metrics.push(`${compressionRatio.toFixed(2)}×`);
+    mainMetric = `${formatCount(originalChars)} → ${formatCount(summaryChars)} ${i18n.t("chars")}`;
     if (compressionSavedPercent !== undefined) {
-      metrics.push(`${compressionSavedPercent.toFixed(1)}% ${i18n.t("savedPercent")}`);
+      mainMetric += ` ↓${compressionSavedPercent.toFixed(1)}%`;
     }
   } else if (originalChars !== undefined) {
-    metrics.push(`${formatCount(originalChars)} ${i18n.t("chars")}`);
+    mainMetric = `${formatCount(originalChars)} ${i18n.t("chars")}`;
   }
+
+  const secondaryMetrics: string[] = [];
   if (summaryTotalTokens !== undefined && summaryTotalTokens > 0) {
-    metrics.push(`${i18n.t("compressionTokens")} ${formatCompactCount(summaryTotalTokens)} ${i18n.t("tokens")}`);
+    secondaryMetrics.push(`${i18n.t("compressionTokens")} ${formatCompactCount(summaryTotalTokens)}`);
   }
-  if (toolExecutionMs !== undefined && toolExecutionMs >= 50) {
-    metrics.push(`${i18n.t("tool")} ${formatDuration(toolExecutionMs)}`);
+  if (toolExecutionMs !== undefined && toolExecutionMs >= MIN_TOOL_DURATION_DISPLAY_MS) {
+    secondaryMetrics.push(`${i18n.t("tool")} ${formatDuration(toolExecutionMs)}`);
   }
-  if (summaryDurationMs !== undefined) metrics.push(`${i18n.t("distill")} ${formatDuration(summaryDurationMs)}`);
+  if (summaryDurationMs !== undefined) secondaryMetrics.push(`${i18n.t("distill")} ${formatDuration(summaryDurationMs)}`);
 
   const expandHint = expanded ? "" : i18n.t("expand");
-  const lines = [
-    i18n.t("header", { status: `${statusView.label}${metrics.length > 0 ? `  ${metrics.join(" · ")}` : ""}${expandHint}` }),
-  ];
+  const metricParts = [mainMetric, ...secondaryMetrics].filter((part) => part.length > 0);
+  const headerSegments = [`${statusView.icon} Distill`];
+  if (statusText) headerSegments.push(statusText);
+  if (metricParts.length > 0) headerSegments.push(metricParts.join(" · "));
+  const lines = [`${headerSegments.join("  ")}${expandHint}`];
   if (expanded) {
     const sections: Array<{ label: string; text: string }> = [];
     if (render.showPrompt && outputRequest) sections.push({ label: i18n.t("outputRequest"), text: outputRequest });
@@ -263,7 +270,8 @@ export function buildDistillAuditLines(
 
   return {
     lines,
-    statusLabel: statusView.label,
+    statusIcon: statusView.icon,
+    statusText,
     statusTone: statusView.tone,
   };
 }

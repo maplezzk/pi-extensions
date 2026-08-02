@@ -903,6 +903,36 @@ test("fallback 审计显示为原文回退而非已提炼", async () => {
   assert.match(audit.lines[0] ?? "", /1\.6k/);
 });
 
+test("fallback 审计紧凑展示 token 节省与压缩消耗", async () => {
+  const { buildDistillAuditLines } = await import("../src/fallback-renderer.ts");
+  const audit = buildDistillAuditLines("grep", {
+    outputSummaryStatus: "summarized",
+    originalOutputChars: 712,
+    summaryChars: 296,
+    estimatedOriginalOutputTokens: 178,
+    estimatedSummaryTokens: 74,
+    estimatedTokensSaved: 104,
+    summaryTotalTokens: 3_900,
+    compressionRatio: 2.41,
+    compressionSavedPercent: 58.6,
+    summaryDurationMs: 11_200,
+  }, false);
+  assert.ok(audit);
+  assert.equal(
+    audit.lines[0],
+    "✓ Distill  178 → 74 tok ↓58.6% · usage 3.9k · distill 11.2s • Ctrl+O to expand",
+  );
+});
+
+test("启发式 token 估算对 CJK 按字计数、其余按 chars/4", async () => {
+  const { estimateHeuristicTokens } = await import("../src/token-estimator.ts");
+  assert.equal(estimateHeuristicTokens(""), 0);
+  assert.equal(estimateHeuristicTokens("hello world!"), 3);
+  assert.equal(estimateHeuristicTokens("计数器"), 3);
+  assert.equal(estimateHeuristicTokens("计数器 abcd"), 5);
+  assert.equal(estimateHeuristicTokens("拡張子 .ts"), 4);
+});
+
 test("提炼 prompt 完全跟随 pi-language，不被原始用户消息覆盖", () => {
   const previousLocale = process.env.PI_EXTENSIONS_LOCALE;
   try {
@@ -1048,14 +1078,14 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
   assert.deepEqual(
     buildDistillAuditLines("bash", details, false, render)?.lines,
     [
-      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s • Ctrl+O to expand",
+      "✓ Distill  12,000 → 1,200 chars ↓90.0% · distill 1.2s • Ctrl+O to expand",
     ],
   );
 
   assert.deepEqual(
     buildDistillAuditLines("bash", details, true, render)?.lines,
     [
-      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s",
+      "✓ Distill  12,000 → 1,200 chars ↓90.0% · distill 1.2s",
       "├─ outputRequest  只保留计数范围和结论",
       "└─ Summary  计数器从 1 到 100，乘积从 2 到 200。",
     ],
@@ -1064,7 +1094,7 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
   assert.deepEqual(
     buildDistillAuditLines("bash", details, true, { ...render, showPrompt: false })?.lines,
     [
-      "◇ Distill  ✓ Summarized  12,000 → 1,200 chars · 10.00× · 90.0% saved · Distill 1.2s",
+      "✓ Distill  12,000 → 1,200 chars ↓90.0% · distill 1.2s",
       "└─ Summary  计数器从 1 到 100，乘积从 2 到 200。",
     ],
   );
@@ -1074,8 +1104,7 @@ test("pi-distill 可以追加 UI-only 保底审计", () => {
     fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
     bold: (text: string) => `<b>${text}</b>`,
   } as any);
-  assert.match(styled, /<accent><b>◇ Distill<\/b><\/accent>/);
-  assert.match(styled, /<success>✓ Summarized<\/success>/);
+  assert.match(styled, /<success><b>✓<\/b><\/success><accent><b> Distill<\/b><\/accent>/);
   assert.match(styled, /<accent>outputRequest<\/accent>/);
   assert.match(styled, /<success>Summary<\/success>/);
   assert.equal(
@@ -1125,7 +1154,7 @@ test("pi-distill 通过通用 tool-display result middleware 渲染且不重复�
     const renderedLines = component.render(120);
     assert.equal(renderedLines[0], "");
     const output = renderedLines.join("\n");
-    assert.match(output, /◇ Distill  ✓ Summarized/);
+    assert.match(output, /✓ Distill/);
     assert.match(output, /├─ outputRequest  只保留最终结论/);
     assert.match(output, /└─ Summary  协议渲染的提炼结果/);
     assert.doesNotMatch(output, /不应重复的基础正文/);
@@ -1259,14 +1288,13 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     assert.match(statsMessage, /Tool results|工具结果/);
     assert.match(statsMessage, /Model total tokens|模型总 Token/);
 
-    const selections: Array<string | undefined> = ["__last__", "write", "custom-tool", undefined, undefined];
+    const selections: Array<string | undefined> = ["Tool outputRequest", "write", "custom-tool", undefined, undefined];
     await commandHandler?.("", {
       hasUI: true,
       ui: {
         select: async (_title: string, choices: string[]) => {
           const target = selections.shift();
           if (!target) return undefined;
-          if (target === "__last__") return choices.at(-1);
           return choices.find((choice) => choice.startsWith(target));
         },
         input: async () => undefined,

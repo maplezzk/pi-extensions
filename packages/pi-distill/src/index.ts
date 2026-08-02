@@ -61,6 +61,7 @@ import {
   type DistillToolConfig,
   type OutputSummaryDecision,
 } from "./summary-utils.ts";
+import { estimateHeuristicTokens } from "./token-estimator.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -182,7 +183,7 @@ type SummaryDiagnostics = {
   summaryCacheWriteTokens?: number;
   summaryTotalTokens?: number;
   summaryCost?: number;
-  /** 原始输出与最终摘要的 Token 数是按 Pi 的 chars/4 规则估算的。 */
+  /** 原始输出与最终摘要的展示用 Token 数，由分段启发式估算（CJK 约每字 1 token，其余约 4 字符 1 token）。 */
   estimatedOriginalOutputTokens?: number;
   estimatedSummaryTokens?: number;
   estimatedTokensSaved?: number;
@@ -275,18 +276,12 @@ function getSummaryUsageDiagnostics(usage: SummaryUsage | undefined): Pick<
   };
 }
 
-const ESTIMATED_CHARS_PER_TOKEN = 4;
-
-function estimateTextTokens(text: string): number {
-  return Math.ceil(text.length / ESTIMATED_CHARS_PER_TOKEN);
-}
-
 function getTokenCompressionDiagnostics(
   originalOutput: string,
   finalOutput: string,
 ): Pick<SummaryDiagnostics, "estimatedOriginalOutputTokens" | "estimatedSummaryTokens" | "estimatedTokensSaved"> {
-  const estimatedOriginalOutputTokens = estimateTextTokens(originalOutput);
-  const estimatedSummaryTokens = estimateTextTokens(finalOutput);
+  const estimatedOriginalOutputTokens = estimateHeuristicTokens(originalOutput);
+  const estimatedSummaryTokens = estimateHeuristicTokens(finalOutput);
   return {
     estimatedOriginalOutputTokens,
     estimatedSummaryTokens,

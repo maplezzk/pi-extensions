@@ -1,79 +1,63 @@
 {
-  "summarized": {
-    "zh-CN": "✓ 已提炼",
-    "en-US": "✓ Summarized"
-  },
   "summaryFallback": {
-    "zh-CN": "↺ 已回退原文",
-    "en-US": "↺ Original restored"
+    "zh-CN": "已回退原文",
+    "en-US": "Original restored"
   },
   "disabled": {
-    "zh-CN": "○ 已禁用",
-    "en-US": "○ Disabled"
+    "zh-CN": "已禁用",
+    "en-US": "Disabled"
   },
   "off": {
-    "zh-CN": "○ 关闭",
-    "en-US": "○ Off"
+    "zh-CN": "关闭",
+    "en-US": "Off"
   },
   "original": {
-    "zh-CN": "○ 原始输出",
-    "en-US": "○ Original"
+    "zh-CN": "原始输出",
+    "en-US": "Original"
   },
   "raw": {
-    "zh-CN": "↺ RAW",
-    "en-US": "↺ RAW"
+    "zh-CN": "RAW",
+    "en-US": "RAW"
   },
   "belowThreshold": {
-    "zh-CN": "– 低于阈值",
-    "en-US": "– Below threshold"
+    "zh-CN": "低于阈值",
+    "en-US": "Below threshold"
   },
   "nonTextOutput": {
     "zh-CN": "非文本结果",
     "en-US": "Non-text output"
   },
   "readFailed": {
-    "zh-CN": "! 读取失败",
-    "en-US": "! Read failed"
+    "zh-CN": "读取失败",
+    "en-US": "Read failed"
   },
   "summaryFailed": {
-    "zh-CN": "✕ 提炼失败",
-    "en-US": "✕ Summary failed"
+    "zh-CN": "提炼失败",
+    "en-US": "Summary failed"
   },
   "chars": {
     "zh-CN": "字符",
     "en-US": "chars"
   },
   "tokens": {
-    "zh-CN": "Token",
-    "en-US": "tokens"
+    "zh-CN": "tok",
+    "en-US": "tok"
   },
   "compressionTokens": {
-    "zh-CN": "压缩消耗",
-    "en-US": "compression"
-  },
-  "tokensSaved": {
-    "zh-CN": "节省",
-    "en-US": "saved"
-  },
-  "savedPercent": {
-    "zh-CN": "节省",
-    "en-US": "saved"
+    "zh-CN": "用量",
+    "en-US": "usage"
   },
   "tool": {
     "zh-CN": "工具",
-    "en-US": "Tool"
+    "en-US": "tool"
   },
   "distill": {
     "zh-CN": "提炼",
-    "en-US": "Distill"
+    "en-US": "distill"
   },
   "expand": {
     "zh-CN": " • Ctrl+O 展开",
     "en-US": " • Ctrl+O to expand"
-  },
-  "header": {
-    "zh-CN": "◇ Distill  {status}",
-    "en-US": "◇ Distill  {status}"
   },
   "summary": {
     "zh-CN": "摘要",
