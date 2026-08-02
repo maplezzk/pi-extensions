@@ -1,7 +1,7 @@
 {
   "summarized": {
-    "zh-CN": "✓ 已提炼",
-    "en-US": "✓ Summarized"
+    "zh-CN": "✓",
+    "en-US": "✓"
   },
   "summaryFallback": {
     "zh-CN": "↺ 已回退原文",
@@ -48,16 +48,8 @@
     "en-US": "tok"
   },
   "compressionTokens": {
-    "zh-CN": "压缩",
-    "en-US": "compression"
-  },
-  "groupOpen": {
-    "zh-CN": "（",
-    "en-US": "("
-  },
-  "groupClose": {
-    "zh-CN": "）",
-    "en-US": ")"
+    "zh-CN": "消耗",
+    "en-US": "cost"
   },
   "tool": {
     "zh-CN": "工具",

@@ -216,12 +216,12 @@ export function buildDistillAuditLines(
   if (estimatedOriginalTokens !== undefined && estimatedSummaryTokens !== undefined) {
     mainMetric = `${formatCompactCount(estimatedOriginalTokens)} → ${formatCompactCount(estimatedSummaryTokens)} ${i18n.t("tokens")}`;
     if (estimatedTokensSaved !== undefined && estimatedTokensSaved > 0 && compressionSavedPercent !== undefined) {
-      mainMetric += ` −${compressionSavedPercent.toFixed(1)}%`;
+      mainMetric += ` ↓${compressionSavedPercent.toFixed(1)}%`;
     }
   } else if (originalChars !== undefined && summaryChars !== undefined) {
     mainMetric = `${formatCount(originalChars)} → ${formatCount(summaryChars)} ${i18n.t("chars")}`;
     if (compressionSavedPercent !== undefined) {
-      mainMetric += ` −${compressionSavedPercent.toFixed(1)}%`;
+      mainMetric += ` ↓${compressionSavedPercent.toFixed(1)}%`;
     }
   } else if (originalChars !== undefined) {
     mainMetric = `${formatCount(originalChars)} ${i18n.t("chars")}`;
@@ -235,13 +235,11 @@ export function buildDistillAuditLines(
     secondaryMetrics.push(`${i18n.t("tool")} ${formatDuration(toolExecutionMs)}`);
   }
   if (summaryDurationMs !== undefined) secondaryMetrics.push(`${i18n.t("distill")} ${formatDuration(summaryDurationMs)}`);
-  const secondaryGroup = secondaryMetrics.length > 0
-    ? `${i18n.t("groupOpen")}${secondaryMetrics.join(" · ")}${i18n.t("groupClose")}`
-    : "";
 
   const expandHint = expanded ? "" : i18n.t("expand");
+  const metricParts = [mainMetric, ...secondaryMetrics].filter((part) => part.length > 0);
   const lines = [
-    i18n.t("header", { status: `${statusView.label}${mainMetric ? `  ${mainMetric}${secondaryGroup}` : ""}${expandHint}` }),
+    i18n.t("header", { status: `${statusView.label}${metricParts.length > 0 ? `  ${metricParts.join(" · ")}` : ""}${expandHint}` }),
   ];
   if (expanded) {
     const sections: Array<{ label: string; text: string }> = [];
