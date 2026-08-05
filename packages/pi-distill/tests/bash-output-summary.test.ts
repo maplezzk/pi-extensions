@@ -616,6 +616,68 @@ test("fake provider 覆盖摘要链路的 RAW、有效摘要和低收益回退",
   });
 });
 
+test("OpenAI 提炼请求通过 provider payload 设置 JSON response format", async () => {
+  await withFakeSummaryConfig(async () => {
+    let completionOptions: Parameters<TestCompletion>[2];
+    const completion: TestCompletion = async (...args) => {
+      completionOptions = args[2];
+      return fakeCompletion("ERROR E42")(...args);
+    };
+
+    await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult("FAIL checkout\nERROR E42\nnext: retry\n".repeat(8)),
+      0,
+      completion,
+    );
+
+    const onPayload = completionOptions?.onPayload;
+    assert.equal(typeof onPayload, "function");
+
+    const completionsPayload = { model: "model", messages: [], stream: true };
+    assert.deepEqual(
+      await onPayload?.(
+        completionsPayload,
+        { provider: "fake", id: "model", api: "openai-completions" } as never,
+      ),
+      {
+        ...completionsPayload,
+        response_format: { type: "json_object" },
+      },
+    );
+    assert.equal("response_format" in completionsPayload, false);
+
+    const responsesPayload = {
+      model: "model",
+      input: [],
+      stream: true,
+      text: { verbosity: "low" },
+    };
+    assert.deepEqual(
+      await onPayload?.(
+        responsesPayload,
+        { provider: "fake", id: "model", api: "openai-responses" } as never,
+      ),
+      {
+        ...responsesPayload,
+        text: {
+          verbosity: "low",
+          format: { type: "json_object" },
+        },
+      },
+    );
+    assert.deepEqual(responsesPayload.text, { verbosity: "low" });
+
+    assert.equal(
+      await onPayload?.(
+        { model: "model", messages: [] },
+        { provider: "fake", id: "model", api: "anthropic-messages" } as never,
+      ),
+      undefined,
+    );
+  });
+});
+
 test("提炼首次失败后默认重试一次并可成功返回", async () => {
   await withFakeSummaryConfig(async () => {
     const output = "FAIL checkout\nERROR at checkout.ts:8\nnext: inspect the payment provider\n".repeat(4);

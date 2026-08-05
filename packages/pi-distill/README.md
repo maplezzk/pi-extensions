@@ -110,7 +110,7 @@ Agent consumes a result suited to the current decision, with auditable diagnosti
 2. The `tool_call` handler captures the parameter and removes it before forwarding the call, so the underlying tool never receives the extension-only field.
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
 4. Every tool call must include a non-empty `outputRequest`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
-5. A timed-out attempt is retried according to `timeoutRetryCount`, while other failures use `errorRetryCount` (both default to one retry). If all attempts fail, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card. JSON responses wrapped in Markdown fences such as `````json … ````` are also accepted.
+5. OpenAI-compatible completion requests enable native JSON mode with `response_format: { "type": "json_object" }`; OpenAI Responses-compatible requests use the equivalent `text.format`. A timed-out attempt is retried according to `timeoutRetryCount`, while other failures use `errorRetryCount` (both default to one retry). If all attempts fail, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card. JSON responses wrapped in Markdown fences such as `````json … ````` are also accepted.
 
 ## Output contract
 

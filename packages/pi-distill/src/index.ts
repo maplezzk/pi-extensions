@@ -152,7 +152,43 @@ type SummaryResult = {
 };
 
 type SummaryCompletion = (...args: Parameters<typeof complete>) => ReturnType<typeof complete>;
+type SummaryCompletionModel = Parameters<SummaryCompletion>[0];
+type SummaryCompletionOptions = Parameters<SummaryCompletion>[2];
 type DistillWarningReporter = (message: string) => void;
+
+const OPENAI_RESPONSES_APIS = new Set([
+  "openai-responses",
+  "openai-codex-responses",
+  "azure-openai-responses",
+]);
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Enforce JSON mode on OpenAI-compatible summary requests without breaking other APIs. */
+function addSummaryJsonResponseFormat(payload: unknown, model: SummaryCompletionModel): unknown {
+  if (!isObjectRecord(payload)) return undefined;
+
+  if (model.api === "openai-completions") {
+    return {
+      ...payload,
+      response_format: { type: "json_object" },
+    };
+  }
+
+  if (OPENAI_RESPONSES_APIS.has(model.api)) {
+    return {
+      ...payload,
+      text: {
+        ...(isObjectRecord(payload.text) ? payload.text : {}),
+        format: { type: "json_object" },
+      },
+    };
+  }
+
+  return undefined;
+}
 
 class SummaryAttemptError extends Error {
   constructor(message: string, readonly usage?: SummaryUsage) {
@@ -684,6 +720,14 @@ async function summarizeOutput(
   const auth = await context.ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (auth.ok === false) throw new Error(`Summarizer authentication failed: ${auth.error}`);
 
+  const completionOptions = {
+    apiKey: auth.apiKey,
+    headers: auth.headers,
+    env: auth.env,
+    maxTokens: Math.max(256, Math.ceil(config.maxChars / 2)),
+    onPayload: addSummaryJsonResponseFormat,
+    signal,
+  } satisfies SummaryCompletionOptions;
   const response = await completion(
     model,
     {
@@ -702,13 +746,7 @@ async function summarizeOutput(
         },
       ],
     },
-    {
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      env: auth.env,
-      maxTokens: Math.max(256, Math.ceil(config.maxChars / 2)),
-      signal,
-    },
+    completionOptions,
   );
 
   const usage = normalizeSummaryUsage(response.usage);
