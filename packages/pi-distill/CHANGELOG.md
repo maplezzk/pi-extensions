@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.4.0...pi-distill-v1.5.0) (2026-08-05)
+
+
+### Features
+
+* 为提炼请求启用 JSON 响应格式 ([#73](https://github.com/maplezzk/pi-extensions/issues/73)) ([b95b414](https://github.com/maplezzk/pi-extensions/commit/b95b414b63205d887359bdacb19d57e81e55c396))
+
 ## [1.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.3.0...pi-distill-v1.4.0) (2026-08-02)
 
 
