@@ -708,6 +708,18 @@ async function summarizeOutput(
       env: auth.env,
       maxTokens: Math.max(256, Math.ceil(config.maxChars / 2)),
       signal,
+      // Ask OpenAI-compatible providers (e.g. DeepSeek) to emit a strict JSON
+      // object. This guarantees a valid single-line JSON response, eliminating
+      // the "Summarizer response must contain decision and summary" parse
+      // failures caused by stray prose or fenced text. Providers that do not
+      // invoke onPayload are unaffected.
+      onPayload: (payload: unknown) => {
+        const p = payload as Record<string, unknown> | null;
+        if (p && typeof p === "object" && !("response_format" in p)) {
+          p.response_format = { type: "json_object" };
+        }
+        return payload;
+      },
     },
   );
 
