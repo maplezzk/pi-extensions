@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.2.2...pi-terminal-mux-v0.3.0) (2026-08-06)
+
+
+### Features
+
+* **pi-terminal-mux:** add Orca terminal backend ([#76](https://github.com/maplezzk/pi-extensions/issues/76)) ([86e1bcb](https://github.com/maplezzk/pi-extensions/commit/86e1bcb85eba7da9c5e7bbee04483dcc16ebf5f0))
+
 ## [0.2.2](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.2.1...pi-terminal-mux-v0.2.2) (2026-07-27)
 
 
