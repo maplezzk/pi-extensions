@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.3.0...pi-terminal-mux-v0.3.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **pi-terminal-mux:** make Orca create split panes ([a1759c1](https://github.com/maplezzk/pi-extensions/commit/a1759c191d9c19bec2a58c3cb3a98f4e411effe8))
+* **pi-terminal-mux:** split Orca subagent panes ([cc4ee5c](https://github.com/maplezzk/pi-extensions/commit/cc4ee5cd9b91a7d9065d312e30143c8cde14544e))
+
 ## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.2.2...pi-terminal-mux-v0.3.0) (2026-08-06)
 
 
