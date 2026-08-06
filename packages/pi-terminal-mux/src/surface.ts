@@ -45,10 +45,12 @@ import { ops as zellijOps } from "./backends/zellij.ts";
 import { ops as weztermOps } from "./backends/wezterm.ts";
 import { ops as herdrOps, AGENT_HERDR_PANE_ID, renameHerdrTab, renameHerdrWorkspace } from "./backends/herdr.ts";
 import { ops as ottyOps, AGENT_OTTY_PANE_ID } from "./backends/otty.ts";
+import { ops as orcaOps, AGENT_ORCA_TERMINAL_HANDLE } from "./backends/orca.ts";
 
 // 各后端直接引用的公开函数（非对称操作不进 BackendOps）
 import { renameHerdrPane, renameHerdrAgent, sendHerdrCommand, sendHerdrEscape, readHerdrScreen, closeHerdrSurface } from "./backends/herdr.ts";
 import { sendOttyCommand, sendOttyEscape, readOttyScreen, closeOttySurface, renameOttyTab } from "./backends/otty.ts";
+import { renameOrcaTerminal } from "./backends/orca.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -63,6 +65,7 @@ const backendOps: Record<MuxBackend, BackendOps> = {
   wezterm: weztermOps,
   herdr: herdrOps,
   otty: ottyOps,
+  orca: orcaOps,
 };
 
 // ── 内部辅助 ──
@@ -155,6 +158,9 @@ export function createSurfaceSplit(
     lastSplitSource = sourcePane;
   } else if (backend === "otty") {
     lastSplitSource = fromSurface ?? AGENT_OTTY_PANE_ID ?? null;
+  } else if (backend === "orca") {
+    // orca split 默认从 agent 自己的 terminal 拆，与 splitOrcaTerminal 的回退逻辑一致
+    lastSplitSource = fromSurface ?? AGENT_ORCA_TERMINAL_HANDLE ?? null;
   } else {
     // tmux / wezterm / zellij
     const source = backend === "tmux" ? process.env.TMUX_PANE : fromSurface;
@@ -359,6 +365,12 @@ export function renameCurrentTab(title: string): void {
     return;
   }
 
+  if (backend === "orca") {
+    if (!AGENT_ORCA_TERMINAL_HANDLE) throw new Error("ORCA_TERMINAL_HANDLE not set");
+    renameOrcaTerminal(AGENT_ORCA_TERMINAL_HANDLE, title);
+    return;
+  }
+
   // zellij: rename the agent's own pane
   const paneId = process.env.ZELLIJ_PANE_ID;
   if (paneId) {
@@ -421,6 +433,11 @@ export function renameWorkspace(title: string): void {
   }
 
   if (backend === "otty") {
+    return;
+  }
+
+  if (backend === "orca") {
+    // orca: 无独立 workspace 概念（worktree 由 Orca 管理），跳过
     return;
   }
 

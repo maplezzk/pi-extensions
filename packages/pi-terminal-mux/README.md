@@ -1,6 +1,6 @@
 # pi-terminal-mux
 
-Terminal multiplexer abstraction for pi extensions — one unified surface API across **muxy, cmux, tmux, zellij, wezterm, herdr and otty**, with automatic **headless fallback** (background child process + log file) when no multiplexer is detected.
+Terminal multiplexer abstraction for pi extensions — one unified surface API across **muxy, cmux, tmux, zellij, wezterm, herdr, otty and orca**, with automatic **headless fallback** (background child process + log file) when no multiplexer is detected.
 
 Any pi extension that needs terminal interaction (splitting panes, sending commands, reading screens, closing panes, waiting for process exit) should depend on this package instead of re-implementing backend detection and command assembly.
 
@@ -57,10 +57,11 @@ closeSurface(surface);
 | wezterm | `WEZTERM_UNIX_SOCKET` + `wezterm` command |
 | herdr | `HERDR_ENV=1` + `HERDR_PANE_ID` + `herdr` command |
 | otty | `TERM_PROGRAM=otty` + `otty` command |
+| orca | `TERM_PROGRAM=Orca` + `orca` command + reachable Orca runtime |
 
 Default priority follows the table order (muxy first). Force a backend with:
 
-- `PI_TERMINAL_MUX` (preferred): `muxy | cmux | tmux | zellij | wezterm | herdr | otty`
+- `PI_TERMINAL_MUX` (preferred): `muxy | cmux | tmux | zellij | wezterm | herdr | otty | orca`
 - `PI_SUBAGENT_MUX`: backward-compatible alias
 
 If the forced backend's runtime is unavailable, `getMuxBackend()` returns `null` — it never silently falls back to another backend.
@@ -71,7 +72,7 @@ If the forced backend's runtime is unavailable, `getMuxBackend()` returns `null`
 
 | Function | Description |
 |----------|-------------|
-| `createSurface(name)` | Smart placement (cmux: first right-split then tabs; zellij: tab-aware tiled/stacked; muxy/otty: breadth-first splits), returns a surface handle |
+| `createSurface(name)` | Smart placement (cmux: first right-split then tabs; zellij: tab-aware tiled/stacked; muxy/otty: breadth-first splits; orca: new tab in the current worktree), returns a surface handle |
 | `createSurfaceSplit(name, direction, fromSurface?)` | Split in an explicit direction (left/right/up/down) |
 | `sendCommand(surface, command)` | Send a command and press Enter |
 | `sendLongCommand(surface, command, opts?)` | Write long commands to a script file first; `opts.scriptPreamble` injects env exports; returns the script path |
@@ -88,7 +89,7 @@ If the forced backend's runtime is unavailable, `getMuxBackend()` returns `null`
 
 ### Backend-native APIs
 
-Backend-native functions are also re-exported (e.g. `createHerdrSurface`, `splitHerdrPane`, `readHerdrScreen`, `sendOttyCommand`, `renameOttyTab`, ...). Subpath imports are available too: `pi-terminal-mux/mux`, `pi-terminal-mux/herdr`, `pi-terminal-mux/otty`.
+Backend-native functions are also re-exported (e.g. `createHerdrSurface`, `splitHerdrPane`, `readHerdrScreen`, `sendOttyCommand`, `renameOttyTab`, `createOrcaSurface`, `sendOrcaCommand`, ...). Subpath imports are available too: `pi-terminal-mux/mux`, `pi-terminal-mux/herdr`, `pi-terminal-mux/otty`, `pi-terminal-mux/orca`.
 
 ## Headless mode
 
@@ -108,7 +109,7 @@ When no backend is detected, `createSurface` returns a `headless:`-prefixed surf
 
 - **No machine coupling**: every backend is selected via runtime detection (env vars + command availability); no hardcoded local paths; missing CLIs degrade backend-by-backend down to headless.
 - **Localized user-facing text**: setup hints go through the [pi-extensions-i18n](https://www.npmjs.com/package/pi-extensions-i18n) catalog with complete `zh-CN` and `en-US` entries.
-- **Agent pane anchoring**: the agent's own pane ID on muxy/herdr/otty is captured at module load (`AGENT_MUXY_PANE_ID` etc.), immune to later focus switches.
+- **Agent pane anchoring**: the agent's own pane ID on muxy/herdr/otty/orca is captured at module load (`AGENT_MUXY_PANE_ID`, `AGENT_ORCA_TERMINAL_HANDLE` etc.), immune to later focus switches.
 
 ## License
 

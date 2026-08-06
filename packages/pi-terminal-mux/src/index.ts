@@ -1,7 +1,7 @@
 /**
  * pi-terminal-mux — 终端多路复用器统一抽象层
  *
- * 支持后端：muxy / cmux / tmux / zellij / wezterm / herdr / otty，
+ * 支持后端：muxy / cmux / tmux / zellij / wezterm / herdr / otty / orca，
  * 探测不到任何后端时自动降级为 headless（后台子进程 + 日志文件）。
  *
  * 统一 surface API（跨后端一致语义）：
@@ -61,6 +61,25 @@ export {
 } from "./otty.ts";
 export type { OttyPaneSnapshot } from "./otty.ts";
 
+// ── orca 后端原生 API ──
+export {
+  AGENT_ORCA_TERMINAL_HANDLE,
+  isOrcaRuntimeAvailable,
+  parseOrcaJson,
+  extractOrcaCreateHandle,
+  extractOrcaSplitHandle,
+  extractOrcaReadTail,
+  orcaSplitDirection,
+  createOrcaSurface,
+  splitOrcaTerminal,
+  sendOrcaCommand,
+  sendOrcaEscape,
+  readOrcaScreen,
+  closeOrcaSurface,
+  renameOrcaTerminal,
+} from "./orca.ts";
+export type { OrcaEnvelope } from "./orca.ts";
+
 // ── 便捷函数 ──
 import {
   AGENT_MUXY_PANE_ID,
@@ -69,6 +88,7 @@ import {
 } from "./mux.ts";
 import { AGENT_HERDR_PANE_ID } from "./herdr.ts";
 import { AGENT_OTTY_PANE_ID } from "./otty.ts";
+import { AGENT_ORCA_TERMINAL_HANDLE } from "./orca.ts";
 
 /**
  * 返回各后端注入 agent pane 标识的环境变量名（用于错误提示）。
@@ -90,6 +110,8 @@ export function backendAgentPaneEnvVar(backend: MuxBackend): string | null {
       return "HERDR_PANE_ID";
     case "otty":
       return null;
+    case "orca":
+      return "ORCA_TERMINAL_HANDLE";
   }
 }
 
@@ -103,6 +125,7 @@ export function getAgentPaneId(backend?: MuxBackend | null): string | null {
   if (resolved === "muxy") return AGENT_MUXY_PANE_ID ?? null;
   if (resolved === "herdr") return AGENT_HERDR_PANE_ID ?? null;
   if (resolved === "otty") return AGENT_OTTY_PANE_ID ?? null;
+  if (resolved === "orca") return AGENT_ORCA_TERMINAL_HANDLE ?? null;
   if (resolved === "tmux") return process.env.TMUX_PANE ?? null;
   if (resolved === "wezterm") return process.env.WEZTERM_PANE ?? null;
   if (resolved === "zellij") return process.env.ZELLIJ_PANE_ID ?? null;
