@@ -53,6 +53,7 @@ import { sendOttyCommand, sendOttyEscape, readOttyScreen, closeOttySurface, rena
 import { renameOrcaTerminal } from "./backends/orca.ts";
 
 const execFileAsync = promisify(execFile);
+const ORCA_BACKEND: MuxBackend = "orca";
 
 // ── 全键注册表 ──
 
@@ -117,6 +118,8 @@ export function createSurface(name: string): string {
     lastSplitSource = AGENT_MUXY_PANE_ID ?? null;
   } else if (backend === "otty") {
     lastSplitSource = AGENT_OTTY_PANE_ID ?? null;
+  } else if (backend === ORCA_BACKEND) {
+    lastSplitSource = AGENT_ORCA_TERMINAL_HANDLE ?? null;
   } else {
     // tmux / wezterm / zellij / herdr
     lastSplitSource = process.env.TMUX_PANE ?? null;
