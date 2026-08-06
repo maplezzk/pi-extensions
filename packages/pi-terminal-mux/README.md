@@ -72,7 +72,7 @@ If the forced backend's runtime is unavailable, `getMuxBackend()` returns `null`
 
 | Function | Description |
 |----------|-------------|
-| `createSurface(name)` | Smart placement (cmux: first right-split then tabs; zellij: tab-aware tiled/stacked; muxy/otty: breadth-first splits; orca: new tab in the current worktree), returns a surface handle |
+| `createSurface(name)` | Smart placement (cmux: first right-split then tabs; zellij: tab-aware tiled/stacked; muxy/otty/orca: breadth-first splits; orca falls back to a new tab without an agent handle), returns a surface handle |
 | `createSurfaceSplit(name, direction, fromSurface?)` | Split in an explicit direction (left/right/up/down) |
 | `sendCommand(surface, command)` | Send a command and press Enter |
 | `sendLongCommand(surface, command, opts?)` | Write long commands to a script file first; `opts.scriptPreamble` injects env exports; returns the script path |
