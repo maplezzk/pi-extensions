@@ -9,7 +9,8 @@
     "./package.json": "./package.json",
     "./mux": "./src/mux.ts",
     "./herdr": "./src/herdr.ts",
-    "./otty": "./src/otty.ts"
+    "./otty": "./src/otty.ts",
+    "./orca": "./src/orca.ts"
   },
   "files": [
     "index.ts",

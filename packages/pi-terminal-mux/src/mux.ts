@@ -20,6 +20,7 @@ export {
   isWezTermAvailable,
   isHerdrAvailable,
   isOttyAvailable,
+  isOrcaAvailable,
 } from "./detection.ts";
 
 export {

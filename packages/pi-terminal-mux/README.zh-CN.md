@@ -2,7 +2,7 @@
 
 终端多路复用器统一抽象层，供 pi 扩展复用。任何涉及终端交互（分屏、发命令、读屏、关屏、等待退出）的插件都应依赖本包，而不是各自重新实现 backend 探测与命令拼装。
 
-一套统一的 surface API 跨 **muxy、cmux、tmux、zellij、wezterm、herdr、otty** 七个后端，探测不到任何后端时自动降级为 **headless**（后台子进程 + 日志文件）。
+一套统一的 surface API 跨 **muxy、cmux、tmux、zellij、wezterm、herdr、otty、orca** 八个后端，探测不到任何后端时自动降级为 **headless**（后台子进程 + 日志文件）。
 
 [English README](./README.md)
 
@@ -56,10 +56,11 @@ closeSurface(surface);
 | wezterm | `WEZTERM_UNIX_SOCKET` + `wezterm` 命令 |
 | herdr | `HERDR_ENV=1` + `HERDR_PANE_ID` + `herdr` 命令 |
 | otty | `TERM_PROGRAM=otty` + `otty` 命令 |
+| orca | `TERM_PROGRAM=Orca` + `orca` 命令 + Orca runtime 可达 |
 
 默认优先级即上表顺序（muxy 优先）。可用环境变量强制指定后端：
 
-- `PI_TERMINAL_MUX`（推荐）：`muxy | cmux | tmux | zellij | wezterm | herdr | otty`
+- `PI_TERMINAL_MUX`（推荐）：`muxy | cmux | tmux | zellij | wezterm | herdr | otty | orca`
 - `PI_SUBAGENT_MUX`：同上的向后兼容别名
 
 指定的后端运行环境不满足时 `getMuxBackend()` 返回 `null`，不会悄悄降级到其他后端。
@@ -70,7 +71,7 @@ closeSurface(surface);
 
 | 函数 | 说明 |
 |------|------|
-| `createSurface(name)` | 智能放置新 surface（cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty 广度优先分屏），返回 surface 标识 |
+| `createSurface(name)` | 智能放置新 surface（cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty 广度优先分屏、orca 在当前 worktree 新建 tab），返回 surface 标识 |
 | `createSurfaceSplit(name, direction, fromSurface?)` | 指定方向（left/right/up/down）分屏 |
 | `sendCommand(surface, command)` | 发送命令并回车执行 |
 | `sendLongCommand(surface, command, opts?)` | 长命令先写脚本文件再执行；`opts.scriptPreamble` 可注入 env export；返回脚本路径 |
@@ -87,7 +88,7 @@ closeSurface(surface);
 
 ### 后端原生 API
 
-各后端原生函数也从包入口透出（如 `createHerdrSurface`、`splitHerdrPane`、`readHerdrScreen`、`sendOttyCommand`、`renameOttyTab`……），子路径导入亦可：`pi-terminal-mux/mux`、`pi-terminal-mux/herdr`、`pi-terminal-mux/otty`。
+各后端原生函数也从包入口透出（如 `createHerdrSurface`、`splitHerdrPane`、`readHerdrScreen`、`sendOttyCommand`、`renameOttyTab`、`createOrcaSurface`、`sendOrcaCommand`……），子路径导入亦可：`pi-terminal-mux/mux`、`pi-terminal-mux/herdr`、`pi-terminal-mux/otty`、`pi-terminal-mux/orca`。
 
 ## Headless 模式
 
@@ -107,7 +108,7 @@ closeSurface(surface);
 
 - **不绑定具体机器**：全部后端通过运行时探测（环境变量 + 命令存在性）选择，零硬编码本机路径；外部 CLI 缺失时按后端逐个降级，最终落到 headless。
 - **用户文案国际化**：面向用户的提示走 [pi-extensions-i18n](https://www.npmjs.com/package/pi-extensions-i18n) catalog，中英文齐全。
-- **agent pane 锚定**：muxy/herdr/otty 的 agent 自身 pane ID 在模块加载时捕获（`AGENT_MUXY_PANE_ID` 等），不受用户后续焦点切换影响。
+- **agent pane 锚定**：muxy/herdr/otty/orca 的 agent 自身 pane ID 在模块加载时捕获（`AGENT_MUXY_PANE_ID`、`AGENT_ORCA_TERMINAL_HANDLE` 等），不受用户后续焦点切换影响。
 
 ## License
 

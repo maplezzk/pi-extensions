@@ -14,6 +14,7 @@ import { appendFileSync } from "node:fs";
 import { i18n } from "./i18n.ts";
 import { isHerdrRuntimeAvailable } from "./herdr.ts";
 import { isOttyRuntimeAvailable, ottySetupHint } from "./otty.ts";
+import { isOrcaRuntimeAvailable } from "./orca.ts";
 import { hasCommand } from "./backends/shared.ts";
 
 // ── 分屏调试日志 ──
@@ -49,7 +50,7 @@ export const AGENT_MUXY_PANE_ID = process.env.MUXY_PANE_ID;
 
 // ── 后端类型 ──
 
-export type MuxBackend = "cmux" | "muxy" | "tmux" | "zellij" | "wezterm" | "herdr" | "otty";
+export type MuxBackend = "cmux" | "muxy" | "tmux" | "zellij" | "wezterm" | "herdr" | "otty" | "orca";
 
 // 命令可用性检测复用 backends/shared.ts 的 hasCommand（跨平台 + 缓存）。
 
@@ -65,7 +66,8 @@ function muxPreference(): MuxBackend | null {
     pref === "zellij" ||
     pref === "wezterm" ||
     pref === "herdr" ||
-    pref === "otty"
+    pref === "otty" ||
+    pref === "orca"
   )
     return pref;
   return null;
@@ -123,6 +125,10 @@ export function isOttyAvailable(): boolean {
   return isOttyRuntimeAvailable();
 }
 
+export function isOrcaAvailable(): boolean {
+  return isOrcaRuntimeAvailable();
+}
+
 // ── 后端探测入口 ──
 
 export function getMuxBackend(): MuxBackend | null {
@@ -134,6 +140,7 @@ export function getMuxBackend(): MuxBackend | null {
   if (pref === "wezterm") return isWezTermRuntimeAvailable() ? "wezterm" : null;
   if (pref === "herdr") return isHerdrRuntimeAvailable() ? "herdr" : null;
   if (pref === "otty") return isOttyRuntimeAvailable() ? "otty" : null;
+  if (pref === "orca") return isOrcaRuntimeAvailable() ? "orca" : null;
 
   if (isMuxyRuntimeAvailable()) return "muxy";
   if (isCmuxRuntimeAvailable()) return "cmux";
@@ -142,6 +149,7 @@ export function getMuxBackend(): MuxBackend | null {
   if (isWezTermRuntimeAvailable()) return "wezterm";
   if (isHerdrRuntimeAvailable()) return "herdr";
   if (isOttyRuntimeAvailable()) return "otty";
+  if (isOrcaRuntimeAvailable()) return "orca";
   return null;
 }
 

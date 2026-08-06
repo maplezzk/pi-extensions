@@ -11,7 +11,7 @@ pi-extensions/
 │   ├── pi-extensions-tool-display/ # Tool-display host and shared rendering protocol
 │   ├── pi-distill/              # Tool-output distillation
 │   ├── pi-tool-supervisor/      # Post-edit file review
-│   ├── pi-terminal-mux/         # Terminal multiplexer abstraction (muxy/cmux/tmux/zellij/wezterm/herdr/otty + headless fallback)
+│   ├── pi-terminal-mux/         # Terminal multiplexer abstraction (muxy/cmux/tmux/zellij/wezterm/herdr/otty/orca + headless fallback)
 │   ├── pi-metrics/               # Session metrics (live elapsed spinner, per-turn and total run summaries)
 │   └── pi-models-discovery/     # Dynamic model discovery for providers marked with discoverModels
 ├── scripts/                     # Repository checks and workspace helpers
