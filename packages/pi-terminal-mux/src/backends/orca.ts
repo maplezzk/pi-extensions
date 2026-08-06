@@ -18,9 +18,8 @@
  * 与其他 backend 的关键差异：
  *   1. Orca 注入 ORCA_TERMINAL_HANDLE（类似 cmux 的 CMUX_SURFACE_ID），
  *      模块加载时冻结为 AGENT_ORCA_TERMINAL_HANDLE。
- *   2. create() 走"新 tab"而非分屏：Orca 是 worktree 中心的工作台，
- *      官方建议 agent 用 `terminal create` 开新终端；不拆分 agent 自己的
- *      pane，避免压缩 pi 的 UI。因此不使用 shared.ts 的 BFS 分屏状态机。
+ *   2. create() 与 muxy/herdr/otty 一样从 agent terminal 分屏，并通过
+ *      shared.ts 的 BFS 状态机轮转 right/down；没有 agent handle 时回退为新 tab。
  *   3. Escape 通过发送裸 ESC（`\u001b`，即 `0x1b`）字节实现，TUI 会将其解释为 Escape 键。
  *   4. rename 作用于 tab 标题；split 出来的 pane 与源 pane 共享 tab，
  *      所以 createSplit 不做 rename（否则会把 agent 所在 tab 一起改名）。
@@ -32,7 +31,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { createBackendLogger, hasCommand } from "./shared.ts";
+import { tmpdir } from "node:os";
+import { BfsSplitStateManager, createBackendLogger, hasCommand, withFileLock } from "./shared.ts";
 import type { BackendOps } from "./types.ts";
 
 const ORCA_RUNTIME_CHECK_TIMEOUT_MS = 1_500;
@@ -139,6 +139,49 @@ export function orcaSplitDirection(direction: "left" | "right" | "up" | "down"):
   return direction === "left" || direction === "right" ? "vertical" : "horizontal";
 }
 
+// ── Orca BFS 分屏状态 ──
+
+/**
+ * 返回 Orca subagent 分屏状态 marker 路径。
+ * 使用 agent handle 隔离不同 Orca 会话，路径放在系统临时目录中。
+ */
+function orcaStateFile(): string {
+  const agentHandle = AGENT_ORCA_TERMINAL_HANDLE ?? "default";
+  const safe = agentHandle.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `${tmpdir()}/orca-subagent-pane-${safe}.json`;
+}
+
+/**
+ * 从 BFS marker 中移除已关闭的 pane，避免后续 create 使用僵尸 handle。
+ */
+function cleanupOrcaStateForSurface(handle: string): void {
+  try {
+    const state = new BfsSplitStateManager(orcaStateFile());
+    state.remove(handle);
+  } catch (e) {
+    orcaLog(`[state] cleanup failed for ${handle}: ${(e as Error).message}`);
+  }
+}
+
+/**
+ * 调用 `orca terminal create` 新建 tab，作为没有 agent handle 时的回退。
+ */
+function createOrcaTab(name: string): string {
+  try {
+    const raw = orcaExec(["terminal", "create", "--title", name, "--json"]);
+    const handle = extractOrcaCreateHandle(parseOrcaJson(raw));
+    if (!handle) {
+      orcaLog(`[create] no handle in tab response for name=${JSON.stringify(name)}`);
+      return "";
+    }
+    orcaLog(`[create] fallback=tab new=${handle} name=${JSON.stringify(name)}`);
+    return handle;
+  } catch (e) {
+    orcaLog(`[create] fallback tab failed: ${(e as Error).message}`);
+    return "";
+  }
+}
+
 // ── Orca CLI 调用的薄封装 ──
 
 /**
@@ -193,22 +236,62 @@ function orcaExecSilent(args: string[]): void {
 /**
  * 创建一个新的 subagent terminal。
  *
- * 实现：`orca terminal create --title <name>` 在当前 worktree 新建 tab
- * （CLI 语义：不抢焦点）。与 otty/muxy 的 BFS 分屏不同，新 tab 不会压缩
- * agent 自己的 pane，符合 Orca 的 worktree 中心工作流。
+ * 实现：与 muxy/herdr/otty 一致，使用持久化 BFS 状态从 agent terminal 分屏：
+ *   - 第一次从 agent pane 向右分屏；
+ *   - 后续按 BFS 状态机轮转 right/down，均保持 agent 焦点不变（Orca split CLI 默认不抢焦点）。
  *
- * 失败返回 ""（与 otty createSurface 一致，调用方统一处理）。
+ * Orca 没有注入 agent handle 时回退为新建 tab，兼容手动调用原生 API 的场景。
+ * 失败返回 ""（与其他 backend create 一致，调用方统一处理）。
  */
 export function createOrcaSurface(name: string): string {
+  const agentHandle = AGENT_ORCA_TERMINAL_HANDLE;
+  if (!agentHandle) return createOrcaTab(name);
+
+  const markerFile = orcaStateFile();
+  const lockPath = `${markerFile}.lock`;
+
   try {
-    const raw = orcaExec(["terminal", "create", "--title", name, "--json"]);
-    const handle = extractOrcaCreateHandle(parseOrcaJson(raw));
-    if (!handle) {
-      orcaLog(`[create] no handle in response for name=${JSON.stringify(name)}`);
-      return "";
-    }
-    orcaLog(`[create] new=${handle} name=${JSON.stringify(name)}`);
-    return handle;
+    return withFileLock(lockPath, { timeoutMs: 3_000 }, () => {
+      let state = new BfsSplitStateManager(markerFile);
+
+      // 首次 split：从 agent pane 向右分屏。
+      if (state.panes().length === 0) {
+        const newHandle = splitOrcaTerminal("right", agentHandle);
+        if (!newHandle) {
+          orcaLog(`[create] first split failed from=${agentHandle}`);
+          return "";
+        }
+        state.add(newHandle);
+        orcaLog(`[create] mode=first dir=right from=${agentHandle} new=${newHandle} name=${JSON.stringify(name)}`);
+        return newHandle;
+      }
+
+      const next = state.next();
+      if (!next) return "";
+
+      // 正常路径按 BFS 状态机分屏；目标 pane 失效时清空状态并从 agent pane 恢复。
+      let newHandle = splitOrcaTerminal(next.direction, next.source);
+      if (newHandle) {
+        state.advance();
+        state.add(newHandle);
+        orcaLog(
+          `[create] mode=next dir=${next.direction} from=${next.source} new=${newHandle} name=${JSON.stringify(name)}`,
+        );
+        return newHandle;
+      }
+
+      orcaLog(`[create] pane ${next.source} unavailable, reset and retry from agent pane`);
+      for (const pane of state.panes()) state.remove(pane);
+      state = new BfsSplitStateManager(markerFile);
+      newHandle = splitOrcaTerminal("right", agentHandle);
+      if (!newHandle) {
+        orcaLog(`[create] reset split failed from=${agentHandle}`);
+        return "";
+      }
+      state.add(newHandle);
+      orcaLog(`[create] mode=recovered dir=right from=${agentHandle} new=${newHandle} name=${JSON.stringify(name)}`);
+      return newHandle;
+    });
   } catch (e) {
     orcaLog(`[create] failed: ${(e as Error).message}`);
     return "";
@@ -299,36 +382,40 @@ function queryOrcaTerminalExists(handle: string): boolean | null {
 /**
  * 关闭 terminal。
  *
- * create() 生成的 surface 独占一个 tab，split 生成的 pane 共享 tab。
+ * create() 和 createSplit() 生成的 pane 可能与其他 pane 共享 tab。
  * 策略（best-effort，绝不 throw，避免 pollForExit 退出流程被打断）：
  *   1. `terminal close`（关 pane/session）
  *   2. 验证 handle 是否还在列表；不在了则完成
  *   3. 仍在则补 `terminal close --tab`（单 pane tab 的残留情况）
- *   4. 仍失败仅 log warn
+ *   4. 清理 BFS marker；仍失败仅 log warn
  */
 export function closeOrcaSurface(handle: string): void {
-  orcaExecSilent(["terminal", "close", "--terminal", handle, "--json"]);
+  try {
+    orcaExecSilent(["terminal", "close", "--terminal", handle, "--json"]);
 
-  let exists = queryOrcaTerminalExists(handle);
-  if (exists === false) {
-    orcaLog(`[close] terminal ${handle} closed`);
-    return;
-  }
-  if (exists === null) {
-    // 查询失败不能当作已关闭；继续尝试 --tab 兜底
-    orcaLog(`[close] WARN terminal ${handle} list query failed, cannot verify close`);
-  }
+    let exists = queryOrcaTerminalExists(handle);
+    if (exists === false) {
+      orcaLog(`[close] terminal ${handle} closed`);
+      return;
+    }
+    if (exists === null) {
+      // 查询失败不能当作已关闭；继续尝试 --tab 兜底
+      orcaLog(`[close] WARN terminal ${handle} list query failed, cannot verify close`);
+    }
 
-  orcaLog(`[close] terminal ${handle} still present, trying --tab`);
-  orcaExecSilent(["terminal", "close", "--terminal", handle, "--tab", "--json"]);
+    orcaLog(`[close] terminal ${handle} still present, trying --tab`);
+    orcaExecSilent(["terminal", "close", "--terminal", handle, "--tab", "--json"]);
 
-  exists = queryOrcaTerminalExists(handle);
-  if (exists === false) {
-    orcaLog(`[close] terminal ${handle} closed via --tab`);
-  } else if (exists === null) {
-    orcaLog(`[close] WARN terminal ${handle} close sent but unverifiable (list query failed)`);
-  } else {
-    orcaLog(`[close] WARN terminal ${handle} still present after close --tab`);
+    exists = queryOrcaTerminalExists(handle);
+    if (exists === false) {
+      orcaLog(`[close] terminal ${handle} closed via --tab`);
+    } else if (exists === null) {
+      orcaLog(`[close] WARN terminal ${handle} close sent but unverifiable (list query failed)`);
+    } else {
+      orcaLog(`[close] WARN terminal ${handle} still present after close --tab`);
+    }
+  } finally {
+    cleanupOrcaStateForSurface(handle);
   }
 }
 
@@ -345,7 +432,7 @@ export function renameOrcaTerminal(handle: string, name: string): void {
 
 /** BackendOps 适配器：所有方法薄包装 orca 原生函数 */
 export const ops: BackendOps = {
-  /** 创建 orca surface（新 tab，不抢焦点） */
+  /** 创建 orca surface（从 agent terminal BFS 分屏；无 handle 时回退新 tab） */
   create(name: string): string {
     return createOrcaSurface(name);
   },

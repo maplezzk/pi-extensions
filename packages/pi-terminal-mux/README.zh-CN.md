@@ -71,7 +71,7 @@ closeSurface(surface);
 
 | 函数 | 说明 |
 |------|------|
-| `createSurface(name)` | 智能放置新 surface（cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty 广度优先分屏、orca 在当前 worktree 新建 tab），返回 surface 标识 |
+| `createSurface(name)` | 智能放置新 surface（cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty/orca 广度优先分屏；orca 缺少 agent handle 时新建 tab），返回 surface 标识 |
 | `createSurfaceSplit(name, direction, fromSurface?)` | 指定方向（left/right/up/down）分屏 |
 | `sendCommand(surface, command)` | 发送命令并回车执行 |
 | `sendLongCommand(surface, command, opts?)` | 长命令先写脚本文件再执行；`opts.scriptPreamble` 可注入 env export；返回脚本路径 |
