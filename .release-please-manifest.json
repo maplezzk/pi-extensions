@@ -3,9 +3,9 @@
   "packages/pi-distill": "1.5.0",
   "packages/pi-tool-supervisor": "0.3.8",
   "packages/pi-extensions-tool-display": "1.0.1",
-  "packages/pi-terminal-mux": "0.3.0",
+  "packages/pi-terminal-mux": "0.3.1",
   "packages/pi-metrics": "0.2.3",
   "packages/pi-models-discovery": "1.0.1",
   "packages/pi-dynamic-workflows": "1.1.3",
-  "packages/pi-interactive-subagents": "3.8.3"
+  "packages/pi-interactive-subagents": "3.8.4"
 }

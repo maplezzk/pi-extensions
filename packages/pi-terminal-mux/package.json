@@ -1,6 +1,6 @@
 {
   "name": "pi-terminal-mux",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Terminal multiplexer abstraction for pi extensions — unified surface API across muxy, cmux, tmux, zellij, wezterm, herdr, otty and orca, with headless fallback",
   "type": "module",
   "main": "./index.ts",
