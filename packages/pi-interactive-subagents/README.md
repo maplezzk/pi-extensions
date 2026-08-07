@@ -39,6 +39,7 @@ Supported multiplexers:
 - [WezTerm](https://wezfurlong.org/wezterm/) (terminal emulator with built-in multiplexing)
 - [herdr](https://herdr.dev) (terminal-native agent multiplexer)
 - [Otty](https://otty.sh) (macOS terminal emulator with built-in multiplexing)
+- [Orca](https://orca.dev) (agent workbench with built-in terminal multiplexing)
 
 Start pi inside one of them:
 
@@ -54,11 +55,13 @@ zellij --session pi   # then run: pi
 # start herdr (`herdr`), split a pane (prefix+v or prefix+-), then run `pi` in it
 # or
 # just run pi inside Otty — no wrapper needed
+# or
+# just run pi inside Orca — no wrapper needed
 ```
 
-Optional: set `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty` to force a specific backend.
+Optional: set `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca` to force a specific backend.
 
-You can also configure it from inside Pi with `/config:subagent`. Run it without arguments for an interactive menu, or use `/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr|otty` for a direct choice. The selection is persisted in Pi's user extension config directory; explicit `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` environment variables take precedence. `/subagent-config` and `/pi-subagent-config` remain available as compatibility aliases.
+You can also configure it from inside Pi with `/config:subagent`. Run it without arguments for an interactive menu, or use `/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca` for a direct choice. The selection is persisted in Pi's user extension config directory; explicit `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` environment variables take precedence. `/subagent-config` and `/pi-subagent-config` remain available as compatibility aliases.
 
 > **Otty notes:**
 > - Otty sets `TERM_PROGRAM=otty` automatically when pi runs inside it; the backend detects this env var.
@@ -501,6 +504,7 @@ Every sub-agent session displays a compact tools widget showing available and de
   - [WezTerm](https://wezfurlong.org/wezterm/)
   - [herdr](https://herdr.dev) (terminal-native agent multiplexer)
   - [Otty](https://otty.sh) (macOS terminal emulator; needs `ipc-allow-send-keys = true`)
+  - [Orca](https://orca.dev) (agent workbench; sets `TERM_PROGRAM=Orca` automatically)
 
 ```bash
 cmux pi
@@ -514,12 +518,14 @@ zellij --session pi   # then run: pi
 # start herdr (`herdr`), split a pane, then run `pi` in it
 # or
 # just run pi inside Otty
+# or
+# just run pi inside Orca
 ```
 
 Optional backend override:
 
 ```bash
-export PI_SUBAGENT_MUX=cmux   # or tmux, zellij, wezterm, herdr, otty
+export PI_SUBAGENT_MUX=cmux   # or tmux, zellij, wezterm, herdr, otty, orca
 ```
 
 ---

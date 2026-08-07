@@ -20,7 +20,7 @@ subagent({ name: "Scout: DB", agent: "scout", task: "梳理数据库 schema" });
 pi install npm:@maplezzk/pi-interactive-subagents
 ```
 
-支持的终端复用器：[cmux](https://github.com/manaflow-ai/cmux)、[tmux](https://github.com/tmux/tmux)、[zellij](https://zellij.dev)、[WezTerm](https://wezfurlong.org/wezterm/)、[herdr](https://herdr.dev)、[Otty](https://otty.sh)。
+支持的终端复用器：[cmux](https://github.com/manaflow-ai/cmux)、[tmux](https://github.com/tmux/tmux)、[zellij](https://zellij.dev)、[WezTerm](https://wezfurlong.org/wezterm/)、[herdr](https://herdr.dev)、[Otty](https://otty.sh)、[Orca](https://orca.dev)。
 
 在其中启动 pi：
 
@@ -32,10 +32,10 @@ tmux new -A -s pi 'pi'
 zellij --session pi   # 然后运行 pi
 ```
 
-可选：设置 `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty` 强制指定后端。
+可选：设置 `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca` 强制指定后端。
 
 也可以在 Pi 内通过 `/config:subagent` 配置：不带参数打开选择菜单，或直接运行
-`/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr|otty`。选择会保存到 Pi 的用户扩展配置目录；显式设置的 `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` 优先级更高。`/subagent-config` 和 `/pi-subagent-config` 仍作为兼容别名保留。
+`/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca`。选择会保存到 Pi 的用户扩展配置目录；显式设置的 `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` 优先级更高。`/subagent-config` 和 `/pi-subagent-config` 仍作为兼容别名保留。
 
 ## 主要能力
 
