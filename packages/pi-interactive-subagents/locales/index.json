@@ -32,8 +32,8 @@
     "en-US": "Subagent multiplexer set to: {value}"
   },
   "muxInvalid": {
-    "zh-CN": "不支持的 mux：{value}。可选：auto、muxy、cmux、tmux、zellij、wezterm、herdr、otty。",
-    "en-US": "Unsupported mux: {value}. Choose auto, muxy, cmux, tmux, zellij, wezterm, herdr, or otty."
+    "zh-CN": "不支持的 mux：{value}。可选：auto、muxy、cmux、tmux、zellij、wezterm、herdr、otty、orca。",
+    "en-US": "Unsupported mux: {value}. Choose auto, muxy, cmux, tmux, zellij, wezterm, herdr, otty, or orca."
   },
   "muxInteractiveOnly": {
     "zh-CN": "请在支持 UI 的 Pi 会话中运行 /config:subagent。",

@@ -38,6 +38,7 @@ import {
   isWezTermAvailable,
   isHerdrAvailable,
   isOttyAvailable,
+  isOrcaAvailable,
   type MuxBackend,
 } from "pi-terminal-mux";
 
@@ -963,6 +964,7 @@ function isMuxBackendAvailable(backend: MuxBackend): boolean {
     case "wezterm": return isWezTermAvailable();
     case "herdr": return isHerdrAvailable();
     case "otty": return isOttyAvailable();
+    case "orca": return isOrcaAvailable();
   }
 }
 

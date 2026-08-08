@@ -11,7 +11,7 @@ export interface SubagentMuxConfig {
   source: SubagentMuxConfigSource;
 }
 
-const BACKENDS: readonly MuxBackend[] = ["muxy", "cmux", "tmux", "zellij", "wezterm", "herdr", "otty"];
+const BACKENDS: readonly MuxBackend[] = ["muxy", "cmux", "tmux", "zellij", "wezterm", "herdr", "otty", "orca"];
 const CONFIG_FILE = "config.json";
 
 function isMuxBackend(value: unknown): value is MuxBackend {
