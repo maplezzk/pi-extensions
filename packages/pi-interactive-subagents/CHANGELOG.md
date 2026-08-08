@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.9.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.8.4...pi-interactive-subagents-v3.9.0) (2026-08-08)
+
+
+### Features
+
+* **pi-interactive-subagents:** /config:subagent 支持 orca 后端 ([863ce79](https://github.com/maplezzk/pi-extensions/commit/863ce79e35640644e9ecec9c1092c01531697e4a))
+* **pi-interactive-subagents:** /config:subagent 支持 orca 后端 ([561658e](https://github.com/maplezzk/pi-extensions/commit/561658ed0ee3f5a80736727d6e295260e082dcf4))
+
 ## [3.8.4](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.8.3...pi-interactive-subagents-v3.8.4) (2026-08-06)
 
 
