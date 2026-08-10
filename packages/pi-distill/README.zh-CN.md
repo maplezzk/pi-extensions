@@ -112,7 +112,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 2. `tool_call` 事件捕获这个参数，并在交给底层工具前移除它，因此原工具不会收到扩展专用字段。
 3. `tool_result` 事件拿到真实输出后再做判断，不依赖 Agent 对输出长度的预测。
 4. 每次工具调用都必须包含非空的 `outputRequest`；严格的 `RAW` 表示明确要求原文；其他非空 prompt 才允许进入提炼流程。
-5. OpenAI-compatible Completions 提炼请求会通过 `response_format: { "type": "json_object" }` 启用原生 JSON 模式；OpenAI Responses-compatible 请求使用等价的 `text.format`。单次提炼超时后按照 `timeoutRetryCount` 重试，其他异常按照 `errorRetryCount` 重试（两者默认都重试 1 次）；全部尝试失败、没有可用模型或结果收益过低时，扩展保留原始事实，并通过 details 和审计卡片暴露状态；模型用 Markdown 的 JSON 代码围栏（如 `````json … `````）包裹响应时也会兼容解析。
+5. OpenAI-compatible Completions 提炼请求会通过 `response_format: { "type": "json_object" }` 启用原生 JSON 模式；OpenAI Responses-compatible 请求使用等价的 `text.format`。单次提炼超时后按照 `timeoutRetryCount` 重试，其他模型调用异常按照 `errorRetryCount` 重试（两者默认都重试 1 次）；如果模型已经返回文本，但只是 JSON 语法或响应结构校验失败，扩展会把坏响应和校验错误交给一次 JSON-only 修复 prompt，不会再次发送工具输出，也不会重新总结；修复失败、没有可用模型或结果收益过低时，扩展保留原始事实，并通过 details 和审计卡片暴露状态；模型用 Markdown 的 JSON 代码围栏（如 `````json … `````）包裹响应时也会兼容解析。
 
 ## 输出处理契约
 
@@ -191,12 +191,6 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 
 `/pi-distill` 仍作为兼容别名保留。
 | `render.*` | 控制审计卡片、prompt 预览和结果预览。 |
-
-## Session 统计
-
-使用 `/distill:stats` 查看当前 Pi 会话的提炼统计。统计只保存在内存中，在会话开始时重置，不保存原始工具输出。
-
-统计包括工具结果数量、成功/失败/回退次数、模型尝试次数、原始与摘要字符数、压缩比、估算的原文/摘要 Token（启发式：CJK 字符约每字 1 token，其余文本约 4 字符 1 token）、预计节省 Token、提炼实际消耗的 input/output/cache/total Token 和成本。数量达到 1,000 或 1,000,000 时分别使用 `k` 或 `m` 紧凑显示；耗时会根据数值显示为 `ms`、`s` 或 `min`。原文/摘要 Token 是估算值；provider 未返回 usage 时，提炼消耗 Token 或成本字段显示为不可用。
 
 主要环境变量包括 `PI_DISTILL_MODEL`、`PI_DISTILL_MIN_CHARS`、`PI_DISTILL_MAX_CHARS`、`PI_DISTILL_MAX_OUTPUT_CHARS`、`PI_DISTILL_TIMEOUT_SECONDS`、`PI_DISTILL_TIMEOUT_RETRY_COUNT`、`PI_DISTILL_ERROR_RETRY_COUNT`、`PI_DISTILL_MISSED_COMPRESSION_RATIO` 和 `PI_DISTILL_SUMMARIZE_ERRORS`。
 
