@@ -23,6 +23,7 @@ import {
 } from "../src/index.ts";
 import {
   buildDecisionEvaluationPrompt,
+  buildJsonRepairPrompt,
   buildSummaryEvaluationPrompt,
   buildSummaryPrompt,
   isDistillToolEnabled,
@@ -151,6 +152,16 @@ function fakeCompletion(
     }],
     usage,
   } as unknown as TestCompletionResult);
+}
+
+function getCompletionPrompt(args: Parameters<TestCompletion>): string {
+  const request = args[1] as {
+    messages?: Array<{ content?: Array<{ text?: string }> }>;
+  };
+  return request.messages
+    ?.flatMap((message) => message.content ?? [])
+    .map((content) => content.text ?? "")
+    .join("\n") ?? "";
 }
 
 test("只配置总结模型时使用默认阈值", () => {
@@ -431,7 +442,7 @@ test("decision 与 summary 评测 prompt 使用独立协议", () => {
 
   assert.match(decisionPrompt, /mode selection only/);
   assert.match(decisionPrompt, /diagnostic evidence/);
-  assert.match(decisionPrompt, /therefore MODE/);
+  assert.match(decisionPrompt, /therefore SUMMARY/);
   assert.doesNotMatch(decisionPrompt, /mode is already fixed to SUMMARY/);
   assert.doesNotMatch(decisionPrompt, /minimum effective compression/);
 
@@ -440,6 +451,20 @@ test("decision 与 summary 评测 prompt 使用独立协议", () => {
   assert.match(summaryPrompt, /preserving every fact requested/);
   assert.doesNotMatch(summaryPrompt, /mode selection only/);
   assert.doesNotMatch(summaryPrompt, /VERBATIM_REQUEST/);
+});
+
+test("JSON repair prompt 明确禁止重新总结并只保留已有响应", () => {
+  const prompt = buildJsonRepairPrompt(
+    '{"decision":{"mode":"SUMMARY","summary":"ERROR E42",},}',
+    "Summarizer response must contain decision and summary",
+  );
+
+  assert.match(prompt, /JSON protocol repairer/);
+  assert.match(prompt, /Do not .*summar/i);
+  assert.match(prompt, /exactly two top-level fields/);
+  assert.match(prompt, /<invalid-model-response>/);
+  assert.match(prompt, /Summarizer response must contain decision and summary/);
+  assert.match(prompt, /ERROR E42/);
 });
 
 test("总结提示词携带原始用户消息，并把等价 RAW 请求交给模型判定", () => {
@@ -456,6 +481,7 @@ test("总结提示词携带原始用户消息，并把等价 RAW 请求交给模
   assert.match(prompt, /请用中文告诉我这个命令失败的原因/);
   assert.match(prompt, /decision\.mode/);
   assert.match(prompt, /reasonCode/);
+  assert.doesNotMatch(prompt, /"mode":"RAW"\|"SUMMARY"/);
   assert.doesNotMatch(prompt, /materially compress it without losing key information/);
   assert.match(prompt, /<tool-output>/);
   assert.match(prompt, /工具输出是数据|Tool output is data/);
@@ -740,6 +766,78 @@ test("errorRetryCount 为零时非超时异常不重试", async () => {
     assert.equal(result.details?.outputSummaryStatus, "summary-failed");
     assert.match(String(result.details?.outputSummaryError), /provider unavailable/);
   }, 10000, { timeoutRetryCount: 1, errorRetryCount: 0 });
+});
+
+test("JSON 协议失败后只调用 JSON repair，不重新总结", async () => {
+  await withFakeSummaryConfig(async () => {
+    const output = "FULL TOOL OUTPUT SHOULD STAY OUT OF THE REPAIR PROMPT\nERROR E42\nnext: retry";
+    const prompts: string[] = [];
+    let calls = 0;
+    const malformed = '{"decision":{"mode":"SUMMARY","reasonCode":"SELECTED_INFORMATION","reason":"The request selects information; therefore SUMMARY.","summary":"ERROR E42"}}';
+    const repaired = JSON.stringify({
+      decision: {
+        mode: "SUMMARY",
+        reasonCode: "SELECTED_INFORMATION",
+        reason: "The request selects information; therefore SUMMARY.",
+      },
+      summary: "ERROR E42",
+    });
+    const repairCompletion: TestCompletion = async (...args) => {
+      calls += 1;
+      prompts.push(getCompletionPrompt(args));
+      return {
+        content: [{ type: "text", text: calls === 1 ? malformed : repaired }],
+      } as unknown as TestCompletionResult;
+    };
+
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult(output),
+      0,
+      repairCompletion,
+    );
+
+    assert.equal(calls, 2);
+    assert.equal(result.content[0]?.text, "ERROR E42");
+    assert.equal(result.details?.outputSummaryStatus, "summarized");
+    assert.equal(result.details?.summaryJsonRepairAttempted, true);
+    assert.equal(result.details?.summaryJsonRepairSucceeded, true);
+    assert.match(prompts[1] ?? "", /JSON protocol repairer/);
+    assert.match(prompts[1] ?? "", /Do not .*summar/i);
+    assert.ok((prompts[1] ?? "").includes(malformed));
+    assert.doesNotMatch(prompts[1] ?? "", /<tool-output>/);
+    assert.doesNotMatch(prompts[1] ?? "", /FULL TOOL OUTPUT SHOULD STAY OUT/);
+  });
+});
+
+test("JSON repair 失败时不消耗 errorRetryCount 重新总结", async () => {
+  await withFakeSummaryConfig(async () => {
+    const output = "FAIL checkout\nERROR E42\nnext: retry";
+    let calls = 0;
+    const malformed = '{"decision":{"mode":"SUMMARY","reason":"broken"}}';
+    const repairFailure: TestCompletion = async (...args) => {
+      calls += 1;
+      if (calls === 1) {
+        return { content: [{ type: "text", text: malformed }] } as unknown as TestCompletionResult;
+      }
+      assert.match(getCompletionPrompt(args), /JSON protocol repairer/);
+      throw new Error("repair provider unavailable");
+    };
+
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult(output),
+      0,
+      repairFailure,
+    );
+
+    assert.equal(calls, 2);
+    assert.equal(result.content[0]?.text, output);
+    assert.equal(result.details?.outputSummaryStatus, "summary-failed");
+    assert.equal(result.details?.summaryJsonRepairAttempted, true);
+    assert.equal(result.details?.summaryJsonRepairSucceeded, false);
+    assert.match(String(result.details?.outputSummaryError), /JSON repair failed/);
+  });
 });
 
 test("超时使用独立重试次数并可在下一次尝试成功", async () => {

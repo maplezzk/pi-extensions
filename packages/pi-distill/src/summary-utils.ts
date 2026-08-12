@@ -566,3 +566,18 @@ export function buildSummaryPrompt(
     buildSummaryUserPrompt(prompt, output, originalUserPrompt),
   ].join("\n");
 }
+
+/** 构造只修复模型已有 JSON 响应的 prompt；禁止重新判断或重新总结。 */
+export function buildJsonRepairPrompt(
+  invalidResponse: string,
+  validationError: string,
+): string {
+  return [
+    i18n.t("jsonRepairSystem"),
+    i18n.t("jsonRepairRequest"),
+    i18n.t("jsonRepairValidationError", { error: validationError }),
+    "<invalid-model-response>",
+    invalidResponse,
+    "</invalid-model-response>",
+  ].join("\n");
+}

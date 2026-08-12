@@ -48,6 +48,7 @@ import {
   buildSummaryPrompt,
   buildSummarySystemPrompt,
   buildSummaryUserPrompt,
+  buildJsonRepairPrompt,
   decideOutputSummary,
   getDistillConfigPath,
   isRawSummary,
@@ -149,6 +150,8 @@ type SummaryResult = {
   decision: SummaryDecision;
   usage?: SummaryUsage;
   attempts?: number;
+  jsonRepairAttempted?: boolean;
+  jsonRepairSucceeded?: boolean;
 };
 
 type SummaryCompletion = (...args: Parameters<typeof complete>) => ReturnType<typeof complete>;
@@ -208,6 +211,24 @@ class SummaryRetryError extends Error {
   }
 }
 
+/** 模型响应未通过 JSON 协议校验（可尝试 JSON-only 修复）。 */
+class SummaryResponseFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SummaryResponseFormatError";
+  }
+}
+
+/** JSON 修复失败：不再触发完整重试，避免重复总结改写事实。 */
+class SummaryJsonRepairError extends Error {
+  readonly jsonRepairAttempted = true;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "SummaryJsonRepairError";
+  }
+}
+
 type SummaryDiagnostics = {
   toolExecutionMs?: number;
   summaryDurationMs?: number;
@@ -235,6 +256,8 @@ type SummaryDiagnostics = {
   outputSummaryReasonCode?: SummaryReasonCode;
   outputSummaryReason?: string;
   summaryModel?: string;
+  summaryJsonRepairAttempted?: boolean;
+  summaryJsonRepairSucceeded?: boolean;
   originalOutputChars?: number;
   summaryChars?: number;
   compressionRatio?: number;
@@ -640,17 +663,19 @@ function parseSummaryResponse(text: string, summaryModel: string): SummaryResult
   try {
     payload = JSON.parse(normalizedText);
   } catch (error) {
-    throw new Error(`Summarizer returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new SummaryResponseFormatError(
+      `Summarizer returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   if (!payload || typeof payload !== "object") {
-    throw new Error("Summarizer response must be a JSON object");
+    throw new SummaryResponseFormatError("Summarizer response must be a JSON object");
   }
   const record = payload as Record<string, unknown>;
   const decision = record.decision;
   const summary = record.summary;
   if (!decision || typeof decision !== "object" || typeof summary !== "string") {
-    throw new Error("Summarizer response must contain decision and summary");
+    throw new SummaryResponseFormatError("Summarizer response must contain decision and summary");
   }
   const decisionRecord = decision as Record<string, unknown>;
   const mode = decisionRecord.mode;
@@ -665,19 +690,19 @@ function parseSummaryResponse(text: string, summaryModel: string): SummaryResult
     "OTHER",
   ];
   if (mode !== "RAW" && mode !== "SUMMARY") {
-    throw new Error("Summarizer decision.mode must be RAW or SUMMARY");
+    throw new SummaryResponseFormatError("Summarizer decision.mode must be RAW or SUMMARY");
   }
   if (!validReasonCodes.includes(reasonCode as SummaryReasonCode)) {
-    throw new Error("Summarizer decision.reasonCode is invalid");
+    throw new SummaryResponseFormatError("Summarizer decision.reasonCode is invalid");
   }
   if (typeof reason !== "string" || reason.trim().length === 0 || reason.length > 160) {
-    throw new Error("Summarizer decision.reason must be 1-160 characters");
+    throw new SummaryResponseFormatError("Summarizer decision.reason must be 1-160 characters");
   }
   if (mode === "RAW" && summary !== "") {
-    throw new Error("Summarizer RAW decision must have an empty summary");
+    throw new SummaryResponseFormatError("Summarizer RAW decision must have an empty summary");
   }
   if (mode === "SUMMARY" && summary.trim().length === 0) {
-    throw new Error("Summarizer SUMMARY decision must have a non-empty summary");
+    throw new SummaryResponseFormatError("Summarizer SUMMARY decision must have a non-empty summary");
   }
 
   const parsedDecision: SummaryDecision = {
@@ -698,6 +723,45 @@ function unwrapJsonCodeFence(text: string): string {
   const trimmed = text.trim();
   const match = trimmed.match(/^(`{3,})[ \t]*(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n\1[ \t]*$/i);
   return match?.[2]?.trim() ?? trimmed;
+}
+
+async function completeSummaryMessage(
+  completion: SummaryCompletion,
+  model: SummaryCompletionModel,
+  text: string,
+  options: SummaryCompletionOptions,
+): Promise<{ text: string; usage: SummaryUsage | undefined }> {
+  const response = await completion(
+    model,
+    {
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text }],
+          timestamp: Date.now(),
+        },
+      ],
+    },
+    options,
+  );
+
+  if (response.stopReason === "error" || response.stopReason === "aborted") {
+    throw new SummaryAttemptError(
+      response.errorMessage ?? `Summarizer stopped with reason: ${response.stopReason}`,
+      normalizeSummaryUsage(response.usage),
+    );
+  }
+
+  const rawResponse = response.content
+    .filter((content): content is { type: "text"; text: string } => content.type === "text")
+    .map((content) => content.text)
+    .join("\n")
+    .trim();
+
+  if (!rawResponse) {
+    throw new SummaryAttemptError("Summarizer returned no text", normalizeSummaryUsage(response.usage));
+  }
+  return { text: rawResponse, usage: normalizeSummaryUsage(response.usage) };
 }
 
 async function summarizeOutput(
@@ -728,51 +792,55 @@ async function summarizeOutput(
     onPayload: addSummaryJsonResponseFormat,
     signal,
   } satisfies SummaryCompletionOptions;
-  const response = await completion(
+  const { text: rawResponse, usage } = await completeSummaryMessage(
+    completion,
     model,
-    {
-      messages: [
-        {
-          role: "user",
-          content: [{
-            type: "text",
-            text: [
-              buildSummarySystemPrompt(),
-              "",
-              buildSummaryUserPrompt(prompt, output, context.originalUserPrompt),
-            ].join("\n"),
-          }],
-          timestamp: Date.now(),
-        },
-      ],
-    },
+    [
+      buildSummarySystemPrompt(),
+      "",
+      buildSummaryUserPrompt(prompt, output, context.originalUserPrompt),
+    ].join("\n"),
     completionOptions,
   );
 
-  const usage = normalizeSummaryUsage(response.usage);
-  if (response.stopReason === "error" || response.stopReason === "aborted") {
-    throw new SummaryAttemptError(
-      response.errorMessage ?? `Summarizer stopped with reason: ${response.stopReason}`,
-      usage,
-    );
-  }
-
-  const rawResponse = response.content
-    .filter((content): content is { type: "text"; text: string } => content.type === "text")
-    .map((content) => content.text)
-    .join("\n")
-    .trim();
-
-  if (!rawResponse) throw new SummaryAttemptError("Summarizer returned no text", usage);
   const summaryModel = `${model.provider}/${model.id}`;
   let parsed: SummaryResult;
+  let totalUsage = usage;
   try {
     parsed = parseSummaryResponse(rawResponse, summaryModel);
   } catch (error) {
-    throw new SummaryAttemptError(error instanceof Error ? error.message : String(error), usage);
+    if (!(error instanceof SummaryResponseFormatError)) {
+      throw new SummaryAttemptError(error instanceof Error ? error.message : String(error), usage);
+    }
+
+    // 只修复模型已返回的 JSON：不重新发送工具输出，不重新总结，避免二次总结改写事实。
+    let repaired: { text: string; usage: SummaryUsage | undefined };
+    try {
+      repaired = await completeSummaryMessage(
+        completion,
+        model,
+        buildJsonRepairPrompt(rawResponse, error.message),
+        completionOptions,
+      );
+    } catch (repairError) {
+      throw new SummaryJsonRepairError(
+        `Summarizer JSON repair failed: ${repairError instanceof Error ? repairError.message : String(repairError)}`,
+      );
+    }
+
+    try {
+      parsed = parseSummaryResponse(repaired.text, summaryModel);
+    } catch (repairError) {
+      throw new SummaryJsonRepairError(
+        `Summarizer JSON repair returned an invalid response: ${repairError instanceof Error ? repairError.message : String(repairError)}`,
+      );
+    }
+    parsed.jsonRepairAttempted = true;
+    parsed.jsonRepairSucceeded = true;
+    totalUsage = mergeSummaryUsage(usage, repaired.usage);
   }
-  if (parsed.decision.mode === "RAW") return { ...parsed, usage };
-  if (parsed.summaryChars <= config.maxChars) return { ...parsed, usage };
+  if (parsed.decision.mode === "RAW") return { ...parsed, usage: totalUsage };
+  if (parsed.summaryChars <= config.maxChars) return { ...parsed, usage: totalUsage };
 
   const summaryFilePath = await writeSummaryFile(parsed.text);
   return {
@@ -839,6 +907,9 @@ async function summarizeOutputWithRetries(
       if (context.signal?.aborted) {
         throw new SummaryRetryError("Summarization aborted", attempts, totalUsage);
       }
+      // 已有响应只需修复 JSON 时，不再重新触发一次完整总结；否则会增加成本，
+      // 也可能让第二次总结改写原本已经生成的事实。
+      if (error instanceof SummaryJsonRepairError) throw error;
       const retryLimit = timedOut ? config.timeoutRetryCount : config.errorRetryCount;
       const retriesUsed = timedOut ? timeoutRetries : errorRetries;
       if (retriesUsed >= retryLimit) {
@@ -1004,6 +1075,8 @@ export async function processToolResult(
           summaryResultMaxChars: config.maxChars,
           missedCompressionRatio: config.missedCompressionRatio,
           summaryModel: summarized.summaryModel,
+          summaryJsonRepairAttempted: summarized.jsonRepairAttempted,
+          summaryJsonRepairSucceeded: summarized.jsonRepairSucceeded,
           outputSummaryDecisionMode: summarized.decision.mode,
           outputSummaryReasonCode: summarized.decision.reasonCode,
           outputSummaryReason: summarized.decision.reason,
@@ -1042,6 +1115,8 @@ export async function processToolResult(
           summaryResultMaxChars: config.maxChars,
           missedCompressionRatio: config.missedCompressionRatio,
           summaryModel: summarized.summaryModel,
+          summaryJsonRepairAttempted: summarized.jsonRepairAttempted,
+          summaryJsonRepairSucceeded: summarized.jsonRepairSucceeded,
           outputSummaryDecisionMode: summarized.decision.mode,
           outputSummaryReasonCode: summarized.decision.reasonCode,
           outputSummaryReason: summarized.decision.reason,
@@ -1072,6 +1147,8 @@ export async function processToolResult(
         summaryResultMaxChars: config.maxChars,
         missedCompressionRatio: config.missedCompressionRatio,
         summaryModel: summarized.summaryModel,
+        summaryJsonRepairAttempted: summarized.jsonRepairAttempted,
+        summaryJsonRepairSucceeded: summarized.jsonRepairSucceeded,
         outputSummaryDecisionMode: summarized.decision.mode,
         outputSummaryReasonCode: summarized.decision.reasonCode,
         outputSummaryReason: summarized.decision.reason,
@@ -1099,6 +1176,8 @@ export async function processToolResult(
       summaryTriggerMaxChars: null,
       summaryResultMaxChars: config.maxChars,
       missedCompressionRatio: config.missedCompressionRatio,
+      summaryJsonRepairAttempted: error instanceof SummaryJsonRepairError ? true : undefined,
+      summaryJsonRepairSucceeded: error instanceof SummaryJsonRepairError ? false : undefined,
       ...getTokenCompressionDiagnostics(output, output),
       outputSummaryAnomalies: ["summary-failed"],
       outputSummaryAdvice: `Summarization failed; the original output was preserved. Check model configuration or authentication. Requests still running after ${config.timeoutSeconds}s are treated as timed out.`,
