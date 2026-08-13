@@ -189,12 +189,12 @@ test("validateTailStart 对不存在与未完成的索引返回对应错误码",
   assert.equal(incomplete.from, 1);
 });
 
-test("buildSquashTaskPrompt 替换 from/preview 占位符", () => {
+test("buildSquashTaskPrompt 替换 preview 占位符", () => {
   const prompt = buildSquashTaskPrompt(
-    "从 {from} 开始，预览：{preview}",
-    { from: 2, preview: "分析需求" },
+    "开头为 {preview} 的消息",
+    { preview: "分析需求" },
   );
-  assert.equal(prompt, "从 2 开始，预览：分析需求");
+  assert.equal(prompt, "开头为 分析需求 的消息");
 });
 
 test("SESSION_SQUASH_TASK_TYPE 与 SESSION_SQUASH_TYPE 不同", () => {

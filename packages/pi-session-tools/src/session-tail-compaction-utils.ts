@@ -150,18 +150,15 @@ export function formatFileOperations(
 }
 
 export interface SquashTaskPromptInput {
-  from: number;
   preview: string;
 }
 
-/** 用已翻译的模板构造内部任务消息；模板占位符为 {from}/{preview}。 */
+/** 用已翻译的模板构造内部任务消息；模板占位符为 {preview}。 */
 export function buildSquashTaskPrompt(
   template: string,
   input: SquashTaskPromptInput,
 ): string {
-  return template
-    .replaceAll("{from}", String(input.from))
-    .replaceAll("{preview}", input.preview);
+  return template.replaceAll("{preview}", input.preview);
 }
 
 export interface TailCompactionData {

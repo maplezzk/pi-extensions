@@ -338,7 +338,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         (input.content || "").slice(0, USER_MESSAGE_PREVIEW_MAX_CHARS) ||
         i18n.t("imagePlaceholder");
       const taskText = buildSquashTaskPrompt(i18n.t("taskPrompt"), {
-        from: pending.fromUserInputIndex,
         preview,
       });
 
