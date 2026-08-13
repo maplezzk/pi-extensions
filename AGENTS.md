@@ -13,7 +13,8 @@ pi-extensions/
 │   ├── pi-tool-supervisor/      # Post-edit file review
 │   ├── pi-terminal-mux/         # Terminal multiplexer abstraction (muxy/cmux/tmux/zellij/wezterm/herdr/otty/orca + headless fallback)
 │   ├── pi-metrics/               # Session metrics (live elapsed spinner, per-turn and total run summaries)
-│   └── pi-models-discovery/     # Dynamic model discovery for providers marked with discoverModels
+│   ├── pi-models-discovery/     # Dynamic model discovery for providers marked with discoverModels
+│   ├── pi-session-tools/        # Bash pipe output cache and session_log/session_squash conversation squashing
 ├── scripts/                     # Repository checks and workspace helpers
 ├── .github/workflows/           # CI and release automation
 ├── README.md                    # English project documentation
@@ -33,6 +34,7 @@ Each package owns its entrypoint, tests, configuration example, localization res
 - `pi-terminal-mux` owns terminal multiplexer detection and pane/surface operations. Extensions that need terminal interaction depend on it instead of re-implementing backend detection.
 - `pi-metrics` owns session metrics: the live elapsed spinner and per-turn/total summaries listen to Pi's native `input`, `agent_start`, `turn_start`, `turn_end`, `agent_end`, and `agent_settled` events without registering tools.
 - `pi-models-discovery` owns dynamic model discovery: it reads `discoverModels` providers from models.json, fetches `{baseUrl}/models`, persists a startup cache, and exposes `/model-discovery` plus `/model-discovery-refresh` commands.
+- `pi-session-tools` owns the bash pipe output cache (`tool_call` rewrites `grep`/`tail`/`head` pipelines with `tee`) and `session_log`/`session_squash`/`session_squash_finalize` for non-destructive conversation squashing that reuses the main agent's full context to write the handoff summary.
 
 Keep packages composable and independently installable. Avoid coupling one extension to another extension's private implementation details or display state.
 

@@ -13,6 +13,7 @@
     "packages/pi-terminal-mux": {},
     "packages/pi-metrics": {},
     "packages/pi-models-discovery": {},
+    "packages/pi-session-tools": {},
     "packages/pi-dynamic-workflows": {},
     "packages/pi-interactive-subagents": {}
   }
