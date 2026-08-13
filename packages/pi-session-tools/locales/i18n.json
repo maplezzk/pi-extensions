@@ -44,8 +44,8 @@
     "en-US": "Squash the conversation from a chosen message into a summary to free up context. Nothing is deleted; use /tree to go back. Good times to use it: a task just finished, the conversation got long, or a new task is about to start. Run session_log first to pick an index."
   },
   "guidelineBoundary": {
-    "zh-CN": "一个任务做完、对话变长、准备开新任务时，主动调用 session_squash 压缩对话，让新任务在干净的上下文里开始。",
-    "en-US": "Call session_squash when a task is done, the conversation grows long, or a new task is about to start, so the next task begins with a clean context."
+    "zh-CN": "只在任务边界压缩：一个任务已完整交付、准备开新任务时才调用；绝不在任务执行中途压缩，那会丢弃进行中的上下文，后续续做成本更高。",
+    "en-US": "Only squash at a task boundary: when one task is fully delivered and a new one is about to start. Never squash mid-task — it discards in-progress context and makes resuming more expensive."
   },
   "guidelineIndex": {
     "zh-CN": "先调用 session_log 看消息编号，选已完成任务的第一条消息作为 from。",
@@ -96,12 +96,12 @@
     "en-US": "[image]"
   },
   "contextHint": {
-    "zh-CN": "【提示】对话已经很长了（{tokens}）。手头工作告一段落的话，建议先 session_log 再 session_squash 压缩一下；正忙就忽略。",
-    "en-US": "[Notice] The conversation is quite long now ({tokens}). If your work is at a good stopping point, run session_log then session_squash to tidy up; otherwise ignore this."
+    "zh-CN": "【提示】对话已经很长了（{tokens}）。如果你刚完成一个任务、准备开新任务，现在是压缩的好时机：先 session_log 再 session_squash。如果当前任务还在进行中，忽略这个提示——别在任务中途压缩。",
+    "en-US": "[Notice] The conversation is quite long now ({tokens}). If you just finished a task and are about to start a new one, this is a good time to squash: run session_log then session_squash. If you are still mid-task, ignore this — do not squash mid-task."
   },
   "contextHintNotice": {
-    "zh-CN": "对话已达 {tokens}，已提醒主 agent 考虑压缩。",
-    "en-US": "Conversation reached {tokens}; the agent has been nudged to squash."
+    "zh-CN": "对话已达 {tokens}，已提醒主 agent 在任务边界时考虑压缩。",
+    "en-US": "Conversation reached {tokens}; the agent has been reminded to squash at a task boundary."
   },
   "configInvalid": {
     "zh-CN": "配置 {path} 解析失败，已用默认阈值。",
