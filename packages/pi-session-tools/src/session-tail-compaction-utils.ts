@@ -1,5 +1,3 @@
-import { tmpdir } from "os";
-import { join, resolve, sep } from "path";
 import type {
   SessionEntry,
   SessionMessageEntry,
@@ -78,64 +76,92 @@ export function formatTokens(tokens: number): string {
   return String(tokens);
 }
 
-/** 交接文档目录名（位于系统临时目录下，跨平台，不绑定本机）。 */
-const SQUASH_DOC_DIR_NAME = "pi-session-tools";
-
-/** 交接文档文件名前缀。 */
-const SQUASH_DOC_FILE_PREFIX = "squash-";
-
-/** 交接文档文件名中 sessionId 与索引之间的分隔符。 */
-const SQUASH_DOC_FILE_SEPARATOR = "-from-";
-
-/** sessionId 无法用于命名时的回退标识。 */
-const SQUASH_DOC_FILE_FALLBACK = "session";
-
-/** 交接文档扩展名。 */
-const SQUASH_DOC_FILE_EXTENSION = ".md";
-
-/** sessionId 用于文件名时的截断长度。 */
-const SESSION_ID_SHORT_LENGTH = 8;
-
-/** 交接文档目录：系统临时目录下的 pi-session-tools 子目录（跨平台，不绑定本机）。 */
-export function squashDocDir(): string {
-  return join(tmpdir(), SQUASH_DOC_DIR_NAME);
+/** 文件操作集合：read=只读、written=写入、edited=编辑。 */
+export interface FileOps {
+  read: Set<string>;
+  written: Set<string>;
+  edited: Set<string>;
 }
 
-/** 生成唯一的交接文档路径：squash-<sessionId短>-from-<索引>.md。 */
-export function computeSquashDocPath(
-  sessionId: string,
-  fromUserInputIndex: number,
+/**
+ * 从 session entries 中提取 assistant 工具调用的文件路径。
+ * 与 Pi 内置摘要一致：read → 读过、write → 写入、edit → 编辑。
+ */
+export function extractFileOps(entries: SessionEntry[]): FileOps {
+  const fileOps: FileOps = {
+    read: new Set(),
+    written: new Set(),
+    edited: new Set(),
+  };
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    if (entry.message.role !== "assistant") continue;
+    const content = entry.message.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (typeof block !== "object" || block === null) continue;
+      const item = block as {
+        type?: unknown;
+        name?: unknown;
+        arguments?: unknown;
+      };
+      if (item.type !== "toolCall") continue;
+      if (typeof item.name !== "string") continue;
+      const args = item.arguments as { path?: unknown } | undefined;
+      const path = typeof args?.path === "string" ? args.path : undefined;
+      if (!path) continue;
+      if (item.name === "read") fileOps.read.add(path);
+      else if (item.name === "write") fileOps.written.add(path);
+      else if (item.name === "edit") fileOps.edited.add(path);
+    }
+  }
+  return fileOps;
+}
+
+/** 计算最终文件列表：modified = written ∪ edited；readFiles = read - modified（排序）。 */
+export function computeFileLists(fileOps: FileOps): {
+  readFiles: string[];
+  modifiedFiles: string[];
+} {
+  const modified = new Set([...fileOps.written, ...fileOps.edited]);
+  const readFiles = [...fileOps.read]
+    .filter((path) => !modified.has(path))
+    .sort();
+  const modifiedFiles = [...modified].sort();
+  return { readFiles, modifiedFiles };
+}
+
+/** 把文件列表格式化为 <read-files>/<modified-files> XML 块（与 Pi 内置摘要一致）。 */
+export function formatFileOperations(
+  readFiles: string[],
+  modifiedFiles: string[],
 ): string {
-  const short =
-    sessionId.replace(/[^a-zA-Z0-9]/g, "").slice(0, SESSION_ID_SHORT_LENGTH) ||
-    SQUASH_DOC_FILE_FALLBACK;
-  return join(
-    squashDocDir(),
-    `${SQUASH_DOC_FILE_PREFIX}${short}${SQUASH_DOC_FILE_SEPARATOR}${fromUserInputIndex}${SQUASH_DOC_FILE_EXTENSION}`,
-  );
-}
-
-/** 判断文档路径是否位于约定的交接文档目录内（finalize 的安全校验）。 */
-export function isInsideSquashDocDir(path: string): boolean {
-  const resolved = resolve(path);
-  return resolved.startsWith(squashDocDir() + sep);
+  const sections: string[] = [];
+  if (readFiles.length > 0) {
+    sections.push(`<read-files>\n${readFiles.join("\n")}\n</read-files>`);
+  }
+  if (modifiedFiles.length > 0) {
+    sections.push(
+      `<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`,
+    );
+  }
+  if (sections.length === 0) return "";
+  return `\n\n${sections.join("\n\n")}`;
 }
 
 export interface SquashTaskPromptInput {
   from: number;
   preview: string;
-  docPath: string;
 }
 
-/** 用已翻译的模板构造内部任务消息；模板占位符为 {from}/{preview}/{docPath}。 */
+/** 用已翻译的模板构造内部任务消息；模板占位符为 {from}/{preview}。 */
 export function buildSquashTaskPrompt(
   template: string,
   input: SquashTaskPromptInput,
 ): string {
   return template
     .replaceAll("{from}", String(input.from))
-    .replaceAll("{preview}", input.preview)
-    .replaceAll("{docPath}", input.docPath);
+    .replaceAll("{preview}", input.preview);
 }
 
 export interface TailCompactionData {
@@ -146,8 +172,6 @@ export interface TailCompactionData {
   fromUserInputIndex: number;
   summary: string;
   tokensBefore: number;
-  /** 主 agent 生成的交接文档路径（可复用/交接）。 */
-  docPath?: string;
 }
 
 export interface UserInputIndex {

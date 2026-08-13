@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { tmpdir } from "os";
-import { join } from "path";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
   buildSquashTaskPrompt,
-  computeSquashDocPath,
+  computeFileLists,
+  extractFileOps,
+  formatFileOperations,
   formatTokens,
   getTailCompactions,
-  isInsideSquashDocDir,
   listUserInputs,
   parseSquashThresholds,
   resolveThresholdTokens,
@@ -190,29 +189,12 @@ test("validateTailStart 对不存在与未完成的索引返回对应错误码",
   assert.equal(incomplete.from, 1);
 });
 
-test("computeSquashDocPath 生成临时目录内的唯一交接文档路径", () => {
-  const docPath = computeSquashDocPath("019f-xxxx-12345678-abcd", 3);
-  assert.ok(docPath.startsWith(join(tmpdir(), "pi-session-tools")));
-  assert.match(docPath, /squash-019fxxxx-from-3\.md$/);
-});
-
-test("isInsideSquashDocDir 只放行约定目录内的路径", () => {
-  const inside = computeSquashDocPath("019f", 1);
-  assert.equal(isInsideSquashDocDir(inside), true);
-
-  assert.equal(isInsideSquashDocDir(join(tmpdir(), "other", "a.md")), false);
-  assert.equal(
-    isInsideSquashDocDir(join(tmpdir(), "pi-session-tools-extra", "a.md")),
-    false,
-  );
-});
-
-test("buildSquashTaskPrompt 替换 from/preview/docPath 占位符", () => {
+test("buildSquashTaskPrompt 替换 from/preview 占位符", () => {
   const prompt = buildSquashTaskPrompt(
-    "从 {from} 开始，预览：{preview}，写入 {docPath}",
-    { from: 2, preview: "分析需求", docPath: "/tmp/x.md" },
+    "从 {from} 开始，预览：{preview}",
+    { from: 2, preview: "分析需求" },
   );
-  assert.equal(prompt, "从 2 开始，预览：分析需求，写入 /tmp/x.md");
+  assert.equal(prompt, "从 2 开始，预览：分析需求");
 });
 
 test("SESSION_SQUASH_TASK_TYPE 与 SESSION_SQUASH_TYPE 不同", () => {
@@ -260,4 +242,137 @@ test("formatTokens 大数字缩写为 k", () => {
   assert.equal(formatTokens(150000), "150k");
   assert.equal(formatTokens(1500), "1.5k");
   assert.equal(formatTokens(999), "999");
+});
+
+/** 构造一条带 toolCall 块的 assistant message entry。 */
+function assistantWithToolCalls(
+  id: string,
+  calls: Array<{ name: string; path: string }>,
+): SessionEntry {
+  return {
+    type: "message",
+    id,
+    parentId: null,
+    timestamp: `2026-01-01T00:00:${id}Z`,
+    message: {
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text: "done",
+        },
+        ...calls.map((call) => ({
+          type: "toolCall",
+          name: call.name,
+          arguments: { path: call.path },
+        })),
+      ],
+      api: "test",
+      provider: "test",
+      model: "test",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      },
+      stopReason: "stop",
+      timestamp: 1,
+    },
+  } as SessionEntry;
+}
+
+test("extractFileOps 从 assistant 工具调用提取 read/write/edit 路径", () => {
+  const entries: SessionEntry[] = [
+    message({ id: "01", parentId: null, role: "user", content: "改代码" }),
+    assistantWithToolCalls("02", [
+      { name: "read", path: "/a/read-only.ts" },
+      { name: "write", path: "/a/written.ts" },
+      { name: "edit", path: "/a/edited.ts" },
+    ]),
+  ];
+
+  const ops = extractFileOps(entries);
+  assert.deepEqual([...ops.read], ["/a/read-only.ts"]);
+  assert.deepEqual([...ops.written], ["/a/written.ts"]);
+  assert.deepEqual([...ops.edited], ["/a/edited.ts"]);
+});
+
+test("extractFileOps 忽略非 toolCall 块与无 path 的调用", () => {
+  const entries: SessionEntry[] = [
+    assistantWithToolCalls("02", [
+      { name: "read", path: "/a/real.ts" },
+      { name: "grep", path: "/a/grep.ts" },
+    ]),
+    {
+      type: "message",
+      id: "03",
+      parentId: null,
+      timestamp: "2026-01-01T00:00:03Z",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "toolCall", name: "read", arguments: {} },
+          { type: "toolCall", name: "read", arguments: { path: 123 } },
+        ],
+        api: "test",
+        provider: "test",
+        model: "test",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 0,
+          },
+        },
+        stopReason: "stop",
+        timestamp: 1,
+      },
+    } as SessionEntry,
+  ];
+
+  const ops = extractFileOps(entries);
+  assert.deepEqual([...ops.read], ["/a/real.ts"]);
+});
+
+test("computeFileLists 合并 written/edited 为 modified，read 排除已改", () => {
+  const ops = {
+    read: new Set(["/a/only-read.ts", "/a/also-edited.ts"]),
+    written: new Set(["/a/written.ts"]),
+    edited: new Set(["/a/also-edited.ts", "/a/edited.ts"]),
+  };
+  const { readFiles, modifiedFiles } = computeFileLists(ops);
+  assert.deepEqual(readFiles, ["/a/only-read.ts"]);
+  assert.deepEqual(modifiedFiles, [
+    "/a/also-edited.ts",
+    "/a/edited.ts",
+    "/a/written.ts",
+  ]);
+});
+
+test("formatFileOperations 输出与 Pi 一致的 XML 块，空列表返回空串", () => {
+  assert.equal(formatFileOperations([], []), "");
+  assert.equal(
+    formatFileOperations(["/a/r1.ts", "/a/r2.ts"], ["/a/m1.ts"]),
+    "\n\n<read-files>\n/a/r1.ts\n/a/r2.ts\n</read-files>\n\n<modified-files>\n/a/m1.ts\n</modified-files>",
+  );
+  assert.equal(
+    formatFileOperations([], ["/a/m1.ts"]),
+    "\n\n<modified-files>\n/a/m1.ts\n</modified-files>",
+  );
 });

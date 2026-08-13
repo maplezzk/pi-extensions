@@ -30,10 +30,11 @@ import { join } from "path";
 import { Type } from "typebox";
 import {
   buildSquashTaskPrompt,
-  computeSquashDocPath,
+  computeFileLists,
+  extractFileOps,
+  formatFileOperations,
   formatTokens,
   getTailCompactions,
-  isInsideSquashDocDir,
   listUserInputs,
   parseSquashThresholds,
   resolveThresholdTokens,
@@ -167,8 +168,8 @@ function loadSquashThresholds(): SquashThreshold[] {
 const squashThresholds = loadSquashThresholds();
 
 const FinalizeParams = Type.Object({
-  docPath: Type.String({
-    description: i18n.t("finalizeDocPathDescription"),
+  summary: Type.String({
+    description: i18n.t("finalizeSummaryDescription"),
   }),
 });
 
@@ -179,8 +180,9 @@ type PendingTailCompaction = {
   startEntryId: string;
   fromUserInputIndex: number;
   stage: PendingStage;
-  docPath?: string;
   summary?: string;
+  /** 自动提取的文件清单（<read-files>/<modified-files>），finalize 时追加到 summary 尾部。 */
+  fileSection: string;
 };
 
 let pending: PendingTailCompaction | null = null;
@@ -263,6 +265,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         startEntryId: validation.input.entryId,
         fromUserInputIndex: params.from,
         stage: "registered",
+        fileSection: "",
       };
 
       return textResult(
@@ -284,30 +287,15 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       if (pending.stage !== "taskInjected") {
         return textResult(i18n.t("finalizeNotTask"), true);
       }
-      if (!isInsideSquashDocDir(params.docPath)) {
-        return textResult(i18n.t("finalizePathDenied"), true);
-      }
 
-      let content: string;
-      try {
-        content = readFileSync(params.docPath, "utf8");
-      } catch (error) {
-        return textResult(
-          i18n.t("finalizeReadFailed", { error: String(error) }),
-          true,
-        );
-      }
-      if (!content.trim()) {
+      const summary = params.summary.trim();
+      if (!summary) {
         return textResult(i18n.t("finalizeEmpty"), true);
       }
 
-      pending.docPath = params.docPath;
-      pending.summary = content;
+      pending.summary = summary + pending.fileSection;
       return textResult(
-        i18n.t("finalizeOk", {
-          docPath: params.docPath,
-          chars: content.length,
-        }),
+        i18n.t("finalizeOk", { chars: summary.length }),
       );
     },
   });
@@ -334,11 +322,16 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     }
 
     if (pending.stage === "registered") {
-      // 阶段 1：注入内部任务消息，让主 agent 用完整上下文写交接文档。
-      const docPath = computeSquashDocPath(
-        ctx.sessionManager.getSessionId(),
-        pending.fromUserInputIndex,
+      // 阶段 1：注入内部任务消息，让主 agent 用完整上下文产出总结全文；
+      // 同时自动提取被压缩段的文件清单，稍后在 finalize 时追加到 summary。
+      const startIdx = branch.findIndex(
+        (entry) => entry.id === pending.startEntryId,
       );
+      const suffix = startIdx >= 0 ? branch.slice(startIdx) : branch;
+      const { readFiles, modifiedFiles } = computeFileLists(
+        extractFileOps(suffix),
+      );
+      pending.fileSection = formatFileOperations(readFiles, modifiedFiles);
       pending.stage = "taskInjected";
 
       const preview =
@@ -347,7 +340,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       const taskText = buildSquashTaskPrompt(i18n.t("taskPrompt"), {
         from: pending.fromUserInputIndex,
         preview,
-        docPath,
       });
 
       // 进度提示放在编辑器（消息框）上方，而不是 footer status
@@ -358,7 +350,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
           content: [{ type: "text", text: taskText }],
           display: false,
           details: {
-            docPath,
             fromUserInputIndex: pending.fromUserInputIndex,
           },
         },
@@ -389,7 +380,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       fromUserInputIndex: request.fromUserInputIndex,
       summary: request.summary,
       tokensBefore: ctx.getContextUsage()?.tokens ?? 0,
-      docPath: request.docPath,
     };
 
     try {
@@ -420,7 +410,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     ctx.ui.notify(
       i18n.t("done", {
         from: request.fromUserInputIndex,
-        docPath: request.docPath ?? "",
       }),
       "info",
     );
