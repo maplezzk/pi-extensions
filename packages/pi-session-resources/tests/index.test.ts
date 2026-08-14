@@ -59,7 +59,7 @@ function createPiMock(): {
   return { pi, events, commands, shortcuts };
 }
 
-test("uses above-editor placement, standard command naming, and Pi expansion state", async () => {
+test("keeps the widget above the editor and replaces the editor while browsing", async () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const { pi, events, commands, shortcuts } = createPiMock();
   const widgetCalls: unknown[][] = [];
@@ -151,13 +151,5 @@ test("uses above-editor placement, standard command naming, and Pi expansion sta
 
   const shortcut = shortcuts.get("ctrl+up") as SessionResourcesShortcut;
   await shortcut.handler(context);
-  assert.deepEqual(customOptions, {
-    overlay: true,
-    overlayOptions: {
-      anchor: "bottom-center",
-      width: "100%",
-      maxHeight: "100%",
-      margin: { left: 0, right: 0, bottom: 0 },
-    },
-  });
+  assert.equal(customOptions, undefined);
 });

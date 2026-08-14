@@ -1,4 +1,8 @@
 {
+  "panelTitle": {
+    "zh-CN": "会话资源",
+    "en-US": "SESSION RESOURCES"
+  },
   "commandDescription": {
     "zh-CN": "浏览、显示、隐藏或展开会话资源链接",
     "en-US": "Browse, show, hide, or expand session resource links"

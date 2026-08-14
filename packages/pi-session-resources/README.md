@@ -16,16 +16,16 @@ A passive session-context extension for the [Pi coding agent](https://github.com
 Example:
 
 ```text
-────────────────────────────────────────────────────
- ←  [FILE 3]  PR/MR 1  WEB 2  →
-
- FILE src/index.ts                       [write,read]
- FILE docs/session notes.md              [read]
-────────────────────────────────────────────────────
- Ctrl+↑ to browse · Ctrl+O to expand
+╭─ ◆ SESSION RESOURCES ─────────────────────────────╮
+│ ‹  ▤ FILE 3   ⎇ PR/MR 1   ◎ WEB 2  ›             │
+│  ▤ src/index.ts                     [write · read] │
+│  ▤ docs/session notes.md            [read]         │
+├───────────────────────────────────────────────────┤
+│  Ctrl+↑ to browse · Ctrl+O to expand               │
+╰───────────────────────────────────────────────────╯
 ```
 
-The widget stays above the editor and shows one resource type at a time, so files, PR/MR links, and web links are not mixed. Ctrl+Up opens a focused panel styled like `ask_user_question`; use Left/Right to switch tabs and Down or Esc to return to the editor.
+The widget stays above the editor and shows one resource type at a time, so files, PR/MR links, and web links are not mixed. Ctrl+Up temporarily replaces the input editor with the focused browser instead of placing a short overlay below it; the original editor text and focus return when it closes. Use Left/Right to switch tabs and Down or Esc to return.
 
 Collapsed mode shows the 4 most recent resources in the current tab. Expanded mode shows up to 16 and reports how many older resources remain hidden. The widget follows Pi's built-in `app.tools.expand` state, so Ctrl+O expands or collapses tool output and session resources together. If the user remaps that built-in action in `keybindings.json`, the widget follows the remapped key without registering a competing shortcut.
 

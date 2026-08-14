@@ -100,7 +100,7 @@ test("label truncation never cuts the OSC 8 control sequence or target", () => {
     activeTab: "file",
     theme,
   });
-  const resourceLine = lines[3] ?? "";
+  const resourceLine = lines[2] ?? "";
 
   assert.ok(resourceLine.includes(`\x1b]8;;${uri}\x1b\\`));
   assert.ok(resourceLine.includes("\x1b]8;;\x1b\\"));
@@ -145,7 +145,7 @@ test("Chinese action labels use complete words", () => {
     theme,
   });
 
-  assert.match(lines.join("\n"), /\[检查,引用\]/);
+  assert.match(lines.join("\n"), /\[检查 · 引用\]/);
 });
 
 test("collapsed widget limits rows and reports hidden resources", () => {
@@ -168,5 +168,61 @@ test("collapsed widget limits rows and reports hidden resources", () => {
   });
   assert.equal(lines.length, COMPACT_RESOURCE_LIMIT + 6);
   assert.match(lines.find((line) => line.includes("2 more")) ?? "", /2 more not shown/);
-  assert.match(lines.at(-1) ?? "", /Ctrl\+↑ to browse/);
+  assert.match(lines.at(-2) ?? "", /Ctrl\+↑ to browse/);
+});
+
+test("widget renders a framed card with icon tabs and interactive accent colors", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const foregroundColors: string[] = [];
+  const backgroundColors: string[] = [];
+  const styledTheme = {
+    /** Records foreground palette usage while keeping assertions ANSI-free. */
+    fg(color: string, text: string): string {
+      foregroundColors.push(color);
+      return text;
+    },
+    /** Records selected-tab background usage while preserving visible text. */
+    bg(color: string, text: string): string {
+      backgroundColors.push(color);
+      return text;
+    },
+    /** Leaves bold text unchanged because typography is not under test. */
+    bold(text: string): string {
+      return text;
+    },
+  } as unknown as Theme;
+  const resources = [
+    resourceFixture({}),
+    resourceFixture({
+      key: "review:https://github.com/owner/repo/pull/93",
+      kind: "review",
+      target: "https://github.com/owner/repo/pull/93",
+      label: "owner/repo#93",
+      actions: ["opened"],
+    }),
+    resourceFixture({
+      key: "web:https://example.com/docs",
+      kind: "web",
+      target: "https://example.com/docs",
+      label: "example.com/docs",
+      actions: ["opened"],
+    }),
+  ];
+
+  const lines = renderResourceWidget({
+    resources,
+    width: 80,
+    expanded: false,
+    activeTab: "review",
+    interactive: true,
+    theme: styledTheme,
+  });
+
+  assert.match(lines[0] ?? "", /^╭.*SESSION RESOURCES.*╮$/);
+  assert.match(lines[1] ?? "", /^│.*▤ FILE 1.*⎇ PR\/MR 1.*◎ WEB 1.*│$/);
+  assert.match(lines.at(-1) ?? "", /^╰─+╯$/);
+  assert.ok(lines.every((line) => visibleWidth(line) === 80));
+  assert.ok(foregroundColors.includes("borderAccent"));
+  assert.ok(foregroundColors.includes("accent"));
+  assert.ok(backgroundColors.includes("selectedBg"));
 });

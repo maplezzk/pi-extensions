@@ -52,7 +52,7 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
     }));
   }
 
-  /** Opens the focusable ask-style browser while temporarily hiding the passive widget. */
+  /** Replaces the editor with the focusable browser while temporarily hiding the passive widget. */
   async function openResourceBrowser(ctx: ExtensionContext): Promise<void> {
     if (browserOpen) return;
     const snapshot = resources.list();
@@ -65,55 +65,44 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
     browserOpen = true;
     refreshWidget(ctx);
     try {
-      await ctx.ui.custom<boolean>(
-        (tui, theme, keybindings, done) => {
-          /** Reads Pi's canonical Ctrl+O expansion state. */
-          function getExpanded(): boolean {
-            return ctx.ui.getToolsExpanded();
-          }
+      await ctx.ui.custom<boolean>((tui, theme, keybindings, done) => {
+        /** Reads Pi's canonical Ctrl+O expansion state. */
+        function getExpanded(): boolean {
+          return ctx.ui.getToolsExpanded();
+        }
 
-          /** Updates Pi's canonical Ctrl+O expansion state. */
-          function setExpanded(expanded: boolean): void {
-            ctx.ui.setToolsExpanded(expanded);
-          }
+        /** Updates Pi's canonical Ctrl+O expansion state. */
+        function setExpanded(expanded: boolean): void {
+          ctx.ui.setToolsExpanded(expanded);
+        }
 
-          /** Persists the selected resource tab after the browser closes. */
-          function onTabChange(tab: ResourceTab): void {
-            activeTab = tab;
-          }
+        /** Persists the selected resource tab after the browser closes. */
+        function onTabChange(tab: ResourceTab): void {
+          activeTab = tab;
+        }
 
-          /** Closes the overlay and lets Pi restore editor focus. */
-          function onClose(): void {
-            done(true);
-          }
+        /** Closes the browser and lets Pi restore the editor in the same layout slot. */
+        function onClose(): void {
+          done(true);
+        }
 
-          /** Requests an immediate repaint after local browser state changes. */
-          function requestRender(): void {
-            tui.requestRender();
-          }
+        /** Requests an immediate repaint after local browser state changes. */
+        function requestRender(): void {
+          tui.requestRender();
+        }
 
-          return new ResourceBrowser({
-            resources: snapshot,
-            activeTab: activeTab ?? resolveResourceTab(snapshot),
-            theme,
-            keybindings,
-            getExpanded,
-            setExpanded,
-            onTabChange,
-            onClose,
-            requestRender,
-          });
-        },
-        {
-          overlay: true,
-          overlayOptions: {
-            anchor: "bottom-center",
-            width: "100%",
-            maxHeight: "100%",
-            margin: { left: 0, right: 0, bottom: 0 },
-          },
-        },
-      );
+        return new ResourceBrowser({
+          resources: snapshot,
+          activeTab: activeTab ?? resolveResourceTab(snapshot),
+          theme,
+          keybindings,
+          getExpanded,
+          setExpanded,
+          onTabChange,
+          onClose,
+          requestRender,
+        });
+      });
     } finally {
       browserOpen = false;
       refreshWidget(ctx);
