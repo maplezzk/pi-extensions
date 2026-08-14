@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.5.0...pi-distill-v1.6.0) (2026-08-14)
+
+
+### Features
+
+* **distill:** 提炼响应 JSON 修复机制（JSON-only repair） ([6665a86](https://github.com/maplezzk/pi-extensions/commit/6665a867c413b5e6aeadbf213738b189a4c09309))
+* 提炼响应 JSON 修复机制，修复无效 JSON 时只做一次 JSON-only 修复 ([3927d27](https://github.com/maplezzk/pi-extensions/commit/3927d27f19b567455ec4e131047b6ec42cf00715))
+
+
+### Bug Fixes
+
+* 恢复 README 中 /distill:stats 的 Session statistics 文档段落 ([63d0017](https://github.com/maplezzk/pi-extensions/commit/63d0017024cfb9ad732244ef40017d5e30b02553))
+
 ## [1.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.4.0...pi-distill-v1.5.0) (2026-08-05)
 
 
