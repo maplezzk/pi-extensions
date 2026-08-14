@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { fuzzyFilter, hyperlink, visibleWidth } from "@earendil-works/pi-tui";
+import { fuzzyFilter, visibleWidth } from "@earendil-works/pi-tui";
 import type { ResourceAction, ResourceKind, SessionResource } from "./collector.ts";
 import { i18n } from "./i18n.ts";
 
@@ -70,7 +70,10 @@ export function kindColored(kind: ResourceKind, text: string): string {
 
 /** Wraps already-styled text in an OSC 8 hyperlink so styling codes stay inside the link. */
 export function linkUri(text: string, uri: string | undefined): string {
-  return uri ? hyperlink(text, uri) : text;
+  if (!uri) return text;
+  // Use BEL as the OSC terminator for maximum terminal compatibility
+  // (some terminals don't reliably recognize ST \x1b\\ in OSC 8 sequences).
+  return `\x1b]8;;${uri}\x07${text}\x1b]8;;\x07`;
 }
 
 /** Extracts the resource query only when # starts the token under the cursor. */

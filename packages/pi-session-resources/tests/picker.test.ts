@@ -196,14 +196,14 @@ test("picker keeps styling inside the OSC 8 link so selected URLs render once", 
   });
 
   const row = lines.find((line) => line.includes("example.com/docs")) ?? "";
-  const linkStart = row.indexOf("\x1b]8;;https://example.com/docs\x1b\\");
-  const linkEnd = row.indexOf("\x1b]8;;\x1b\\", linkStart);
+  const linkStart = row.indexOf("\x1b]8;;https://example.com/docs\x07");
+  const linkEnd = row.indexOf("\x1b]8;;\x07", linkStart);
   assert.ok(linkStart >= 0);
   assert.ok(linkEnd > linkStart);
   const linkBody = row.slice(linkStart, linkEnd);
   assert.ok(linkBody.includes(BOLD_START));
   assert.ok(linkBody.includes(ACCENT_START));
-  const visibleText = row.replace(/\x1b\][^\x1b]*\x1b\\/g, "");
+  const visibleText = row.replace(/\x1b\][^\x1b]*\x07/g, "");
   assert.equal(visibleText.split("example.com/docs").length - 1, 1);
   assert.ok(lines.every((line) => visibleWidth(line) === 72));
 });
