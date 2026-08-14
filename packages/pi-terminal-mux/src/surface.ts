@@ -34,7 +34,7 @@ import {
   getHeadlessProcessExit,
   drainHeadlessProcess,
 } from "./headless.ts";
-import { shellEscape } from "./shell.ts";
+import { shellEscape, powershellEscape } from "./shell.ts";
 import type { MuxBackend } from "./detection.ts";
 import type { BackendOps } from "./backends/types.ts";
 
@@ -54,6 +54,7 @@ import { renameOrcaTerminal } from "./backends/orca.ts";
 
 const execFileAsync = promisify(execFile);
 const ORCA_BACKEND: MuxBackend = "orca";
+const HERDR_BACKEND: MuxBackend = "herdr";
 
 // ── 全键注册表 ──
 
@@ -129,12 +130,27 @@ export function createSurface(name: string): string {
 }
 
 /**
+ * 分屏来源/激活 options 的公开类型。
+ * activate 仅 wezterm 支持；其他后端忽略该提示并保持既有焦点行为。
+ */
+export interface CreateSurfaceSplitOptions {
+  /** 是否在分屏后激活新创建的 pane（仅 wezterm；默认 false，保持当前焦点） */
+  activate?: boolean;
+}
+
+/**
  * 指定方向分屏创建新 surface。
+ *
+ * 签名沿用法（外部 API 兼容豁免参数数量约束）：前三个位置参数 name/direction/fromSurface 是现有
+ * 公开契约，仓库内调用方（pi-interactive-subagents/test/integration/harness.ts）仍以
+ * createSurfaceSplit(name, direction, fromSurface) 三位置参调用，合并为参数对象会破坏这些调用点的
+ * 源码兼容；因此新增能力只能作为第 4 个可选尾部参数 options 追加，旧 3 参调用类型与行为保持不变。
  */
 export function createSurfaceSplit(
   name: string,
   direction: "left" | "right" | "up" | "down",
   fromSurface?: string,
+  options?: CreateSurfaceSplitOptions,
 ): string {
   const backend = requireMuxBackend();
 
@@ -170,7 +186,7 @@ export function createSurfaceSplit(
     lastSplitSource = source ?? null;
   }
 
-  return backendOps[backend].createSplit(name, direction, fromSurface);
+  return backendOps[backend].createSplit(name, direction, fromSurface, options);
 }
 
 /**
@@ -197,84 +213,162 @@ export function sendEscape(surface: string): void {
 }
 
 /**
+ * sendLongCommand 选项。interpreter 缺省为 "bash"，与既有全部调用方保持兼容；
+ * Windows PowerShell 调用方显式传 "powershell" 才切换到 PowerShell 脚本运行时。
+ */
+export interface SendLongCommandOptions {
+  /** 显式脚本文件路径（原样保留，不自动改扩展名） */
+  scriptPath?: string;
+  /** 脚本前置片段（Shebang 除外；默认 Bash 时用于注入 env export 等） */
+  scriptPreamble?: string;
+  /** 脚本解释器，默认 "bash"；显式 "powershell" 时按 PowerShell 语法生成 .ps1 并执行 */
+  interpreter?: "bash" | "powershell";
+}
+
+// ── 长命令脚本运行时常量 ──
+
+/** 默认解释器：所有平台都保持 Bash，避免改变现有调用方语义 */
+const DEFAULT_SEND_INTERPRETER = "bash";
+const INTERPRETER_POWERSHELL = "powershell";
+
+/** 解析 sendLongCommand 的解释器；省略时始终保持 Bash 兼容默认值。 */
+export function resolveSendInterpreter(
+  interpreter?: "bash" | "powershell",
+): "bash" | "powershell" {
+  return interpreter ?? DEFAULT_SEND_INTERPRETER;
+}
+
+/** 脚本文件写入权限：PowerShell 无需可执行位，Bash 脚本需可执行位 */
+const POWERSHELL_SCRIPT_MODE = 0o644;
+const BASH_SCRIPT_MODE = 0o755;
+
+/** PowerShell -File / -Command 启动器可执行文件名与前导参数 */
+const POWERSHELL_EXECUTABLE = "powershell.exe";
+const POWERSHELL_LAUNCH_PREFIX = ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass"] as const;
+
+/**
+ * 返回按解释器选择的脚本扩展名（.sh / .ps1），用于自动脚本路径的文件后缀。
+ */
+export function sendScriptExtension(interpreter: "bash" | "powershell"): string {
+  return interpreter === INTERPRETER_POWERSHELL ? ".ps1" : ".sh";
+}
+
+/**
+ * 生成脚本内容：Bash 以 shebang + \n 分隔，PowerShell 无 shebang 且以 CRLF 分隔。
+ */
+export function buildSendScriptContent(
+  interpreter: "bash" | "powershell",
+  preamble: string | undefined,
+  command: string,
+): string {
+  if (interpreter === INTERPRETER_POWERSHELL) {
+    const parts: string[] = [];
+    if (preamble) parts.push(preamble.trimEnd());
+    parts.push(command);
+    return parts.join("\r\n") + "\r\n";
+  }
+  const parts = ["#!/bin/bash"];
+  if (preamble) parts.push(preamble.trimEnd());
+  parts.push(command);
+  return parts.join("\n") + "\n";
+}
+
+/**
+ * 构建 mux pane 中执行脚本的 shell 调用：Bash 用 `bash <path>`，PowerShell 用
+ * `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File <path>`。
+ */
+export function buildMuxInvocation(interpreter: "bash" | "powershell", scriptPath: string): string {
+  if (interpreter === INTERPRETER_POWERSHELL) {
+    return `${POWERSHELL_EXECUTABLE} ${POWERSHELL_LAUNCH_PREFIX.join(" ")} -File ${powershellEscape(scriptPath)}`;
+  }
+  return `bash ${shellEscape(scriptPath)}`;
+}
+
+/**
  * 向 surface 发送长命令（通过脚本文件避免终端自动换行问题）。
- * 返回脚本文件路径。
+ * 返回脚本文件路径。默认解释器为 Bash（所有平台）；显式 interpreter:"powershell"
+ * 时按 PowerShell 语法写 .ps1 并执行。
  */
 export function sendLongCommand(
   surface: string,
   command: string,
-  options?: { scriptPath?: string; scriptPreamble?: string },
+  options?: SendLongCommandOptions,
 ): string {
-  // Headless mode: spawn as a background child process
-  if (isHeadlessSurface(surface)) {
-    const logFile = options?.scriptPath
-      ? options.scriptPath.replace(/\.sh$/, ".log")
-      : undefined;
-    const scriptPath =
-      options?.scriptPath ??
-      join(
-        tmpdir(),
-        "pi-subagent-scripts",
-        `cmd-${Date.now()}-${Math.random().toString(16).slice(2, 8)}.sh`,
-      );
-    mkdirSync(dirname(scriptPath), { recursive: true });
-    const scriptParts = ["#!/bin/bash"];
-    if (options?.scriptPreamble) {
-      scriptParts.push(options.scriptPreamble.trimEnd());
-    }
-    scriptParts.push(command);
-    writeFileSync(scriptPath, scriptParts.join("\n") + "\n", { mode: 0o755 });
-
-    spawnHeadlessProcess(surface, "subagent", `bash ${shellEscape(scriptPath)}`, {
-      cwd: process.cwd(),
-      env: { PI_SUBAGENT_HEADLESS: "1" },
-    });
-    return scriptPath;
-  }
+  const interpreter = resolveSendInterpreter(options?.interpreter);
+  const extension = sendScriptExtension(interpreter);
 
   const scriptPath =
     options?.scriptPath ??
     join(
       tmpdir(),
       "pi-subagent-scripts",
-      `cmd-${Date.now()}-${Math.random().toString(16).slice(2, 8)}.sh`,
+      `cmd-${Date.now()}-${Math.random().toString(16).slice(2, 8)}${extension}`,
     );
   mkdirSync(dirname(scriptPath), { recursive: true });
 
-  const scriptParts = ["#!/bin/bash"];
-  if (options?.scriptPreamble) {
-    scriptParts.push(options.scriptPreamble.trimEnd());
-  }
-  scriptParts.push(command);
+  const content = buildSendScriptContent(interpreter, options?.scriptPreamble, command);
+  const mode = interpreter === INTERPRETER_POWERSHELL ? POWERSHELL_SCRIPT_MODE : BASH_SCRIPT_MODE;
+  writeFileSync(scriptPath, content, { mode });
 
-  writeFileSync(scriptPath, scriptParts.join("\n") + "\n", {
-    mode: 0o755,
-  });
-  sendCommand(surface, `bash ${shellEscape(scriptPath)}`);
+  // Headless mode: spawn as a background child process
+  if (isHeadlessSurface(surface)) {
+    const headlessCommand =
+      interpreter === INTERPRETER_POWERSHELL
+        ? `& ${powershellEscape(scriptPath)}`
+        : `bash ${shellEscape(scriptPath)}`;
+    spawnHeadlessProcess(surface, "subagent", headlessCommand, {
+      cwd: process.cwd(),
+      env: { PI_SUBAGENT_HEADLESS: "1" },
+      interpreter,
+    });
+    return scriptPath;
+  }
+
+  sendCommand(surface, buildMuxInvocation(interpreter, scriptPath));
   return scriptPath;
 }
 
 /**
- * 同步读取 surface 屏幕最后 N 行。
+ * 统一读屏 options。source 仅 herdr 后端消费（转发给 herdr pane read --source），
+ * 非 herdr 后端忽略该提示并保持各自既有读屏语义；未提供时 herdr 维持默认 recent。
  */
-export function readScreen(surface: string, lines = 50): string {
+export interface ReadScreenOptions {
+  source?: "recent" | "visible" | "recent_unwrapped";
+}
+
+/**
+ * 同步读取 surface 屏幕最后 N 行。
+ * options.source 仅对 herdr 后端生效（如 "recent_unwrapped"），其他后端忽略。
+ */
+export function readScreen(surface: string, lines = 50, options?: ReadScreenOptions): string {
   if (isHeadlessSurface(surface)) {
     return readHeadlessScreen(surface, lines);
   }
 
   const backend = requireMuxBackend();
+  if (options?.source && backend === HERDR_BACKEND) {
+    return readHerdrScreen(surface, lines, options.source);
+  }
   return backendOps[backend].read(surface, lines);
 }
 
 /**
  * 异步读取 surface 屏幕最后 N 行。
+ * options.source 仅对 herdr 后端生效（如 "recent_unwrapped"），其他后端忽略。
  */
-export async function readScreenAsync(surface: string, lines = 50): Promise<string> {
+export async function readScreenAsync(
+  surface: string,
+  lines = 50,
+  options?: ReadScreenOptions,
+): Promise<string> {
   if (isHeadlessSurface(surface)) {
     return readHeadlessScreenAsync(surface, lines);
   }
 
   const backend = requireMuxBackend();
+  if (options?.source && backend === HERDR_BACKEND) {
+    return readHerdrScreen(surface, lines, options.source);
+  }
   return backendOps[backend].readAsync(surface, lines);
 }
 

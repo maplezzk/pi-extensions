@@ -35,6 +35,15 @@ export function shellEscape(s: string): string {
 }
 
 /**
+ * PowerShell single-quote escape: wraps the string in single quotes,
+ * escaping any embedded single quotes by doubling them ('' in single-quoted strings),
+ * per PowerShell string literal rules.
+ */
+export function powershellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "''") + "'";
+}
+
+/**
  * Return the last N lines of text.
  * 非公开 API，供 readScreen 等内部使用。
  */

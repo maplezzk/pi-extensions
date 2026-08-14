@@ -57,7 +57,12 @@ export {
   getLastSplitSource,
   clearLastSplitSource,
 } from "./surface.ts";
-export type { PollResult } from "./surface.ts";
+export type {
+  PollResult,
+  CreateSurfaceSplitOptions,
+  SendLongCommandOptions,
+  ReadScreenOptions,
+} from "./surface.ts";
 
 // ── Cmux 公开解析函数 ──
 export {

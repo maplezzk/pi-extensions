@@ -309,6 +309,13 @@ export function sendHerdrEscape(paneId: string): void {
 }
 
 /**
+ * 将 herdr source 归一化为 CLI 使用的标志值（recent_unwrapped -> recent-unwrapped，其余原样）。
+ */
+export function herdrSourceFlag(source: "visible" | "recent" | "recent_unwrapped"): string {
+  return source === "recent_unwrapped" ? "recent-unwrapped" : source;
+}
+
+/**
  * 读取 pane 屏幕内容。
  * SKILL.md：`herdr pane read <id> --source <src> --lines N` 直接打印文本（非 JSON）。
  *
@@ -320,8 +327,7 @@ export function sendHerdrEscape(paneId: string): void {
  */
 export function readHerdrScreen(paneId: string, lines = 50, source: "visible" | "recent" | "recent_unwrapped" = "visible"): string {
   // SKILL.md 列出的 source 选项
-  const sourceFlag = source === "recent_unwrapped" ? "recent-unwrapped" : source;
-  return herdrExec(["pane", "read", paneId, "--source", sourceFlag, "--lines", String(lines)]);
+  return herdrExec(["pane", "read", paneId, "--source", herdrSourceFlag(source), "--lines", String(lines)]);
 }
 
 /**

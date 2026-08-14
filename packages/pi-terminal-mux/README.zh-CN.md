@@ -36,6 +36,7 @@ if (!isMuxAvailable()) {
 const surface = createSurface("my-agent");
 
 // 长命令自动落脚本文件，避免终端宽度截断
+// （默认 Bash；Windows 上显式传 interpreter: "powershell" 切到 PowerShell）
 const scriptPath = sendLongCommand(surface, "pi --session abc", {
   scriptPreamble: "export MY_FLAG=1",
 });
@@ -72,11 +73,11 @@ closeSurface(surface);
 | 函数 | 说明 |
 |------|------|
 | `createSurface(name)` | 智能放置新 surface（cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty/orca 广度优先分屏；orca 缺少 agent handle 时新建 tab），返回 surface 标识 |
-| `createSurfaceSplit(name, direction, fromSurface?)` | 指定方向（left/right/up/down）分屏 |
+| `createSurfaceSplit(name, direction, fromSurface?, options?)` | 指定方向（left/right/up/down）分屏；`options.activate`（仅 wezterm，默认 false）分屏后聚焦新 pane |
 | `sendCommand(surface, command)` | 发送命令并回车执行 |
-| `sendLongCommand(surface, command, opts?)` | 长命令先写脚本文件再执行；`opts.scriptPreamble` 可注入 env export；返回脚本路径 |
+| `sendLongCommand(surface, command, opts?)` | 长命令先写脚本文件再执行；`opts.scriptPreamble` 可注入前置片段；`opts.interpreter`（默认 `"bash"`，Windows 可显式 `"powershell"`）选择脚本运行时；返回脚本路径 |
 | `sendEscape(surface)` | 发送一次 ESC |
-| `readScreen(surface, lines?)` / `readScreenAsync` | 读取屏幕尾部 N 行 |
+| `readScreen(surface, lines?, options?)` / `readScreenAsync` | 读取屏幕尾部 N 行；`options.source`（仅 herdr）透传 herdr 读屏来源（如 `"recent_unwrapped"`），其他后端忽略 |
 | `closeSurface(surface)` | 关闭 surface |
 | `renameSurface(surface, name)` / `renameCurrentTab(title)` / `renameAgent(surface, name)` / `renameWorkspace(title)` | 命名（按后端能力降级或跳过） |
 | `pollForExit(surface, signal, opts)` | 等待 surface 内进程退出：优先 `.exit` sidecar 文件，其次屏幕 sentinel（`__SUBAGENT_DONE_<code>__`），headless 走子进程 exit |
@@ -93,6 +94,16 @@ closeSurface(surface);
 ## Headless 模式
 
 探测不到任何后端时，`createSurface` 返回 `headless:` 前缀的 surface，`sendLongCommand` 直接 spawn 后台子进程并把输出写入日志文件，`readScreen`/`pollForExit`/`closeSurface` 语义保持不变，调用方无需特判。
+
+## Windows PowerShell 支持
+
+所有平台默认保持 **Bash** 作为脚本运行时，以不变更现有调用方语义。Windows 11 PowerShell/WezTerm/herdr 组合下显式开启：
+
+- **命令提交（wezterm）**：Enter 终止符在 `win32` 用 `\r`、其他平台用 `\n`，PowerShell 输入只会提交一次，不会停在续行提示。
+- **长命令（`sendLongCommand`）**：传 `interpreter: "powershell"` 会生成 `.ps1`，mux 通过 `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File <path>` 执行、headless 走 `-Command "& <path>"`。显式 `scriptPath` 原样保留；自动路径按解释器选 `.ps1`/`.sh`。未传 interpreter 时保持既有 Bash command、`.sh` 路径与 `$?` 数值哨兵不变。
+- **读屏（`readScreen` / `readScreenAsync`）**：传 `{ source: "recent_unwrapped" }`（仅 herdr）选择 herdr 的软换行合并捕获；不传 options 时 herdr 保持 `recent`，其他后端保持各自读屏语义。
+
+这些都是可选项——既有 Bash 调用方与 `pi-interactive-subagents` 在所有平台继续走默认 Bash 运行时。
 
 ## 环境变量
 
