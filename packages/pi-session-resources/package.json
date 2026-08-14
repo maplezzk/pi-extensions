@@ -1,7 +1,7 @@
 {
   "name": "pi-session-resources",
   "version": "0.1.0",
-  "description": "Clickable Pi session resource tracker for files, browser URLs, and pull or merge requests",
+  "description": "Clickable Pi # autocomplete for session files, browser URLs, and pull or merge requests",
   "type": "module",
   "main": "./index.ts",
   "exports": {
@@ -50,7 +50,8 @@
     "session",
     "context",
     "osc-8",
-    "hyperlinks"
+    "hyperlinks",
+    "autocomplete"
   ],
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",

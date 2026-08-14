@@ -5,34 +5,18 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-  KeybindingsManager,
-  Theme,
 } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import sessionResourcesExtension from "../src/index.ts";
 
 type EventHandler = (...args: unknown[]) => unknown;
-type WidgetFactory = (_tui: unknown, theme: Theme) => { render(width: number): string[] };
 type SessionResourcesCommand = {
   handler(args: string, ctx: ExtensionCommandContext): Promise<void>;
 };
-type SessionResourcesShortcut = {
-  handler(ctx: ExtensionContext): Promise<void> | void;
-};
-type BrowserComponent = { handleInput(data: string): void };
-type BrowserFactory = (
-  tui: { requestRender(): void },
-  theme: Theme,
-  keybindings: Pick<KeybindingsManager, "matches">,
-  done: (result: boolean) => void,
-) => BrowserComponent;
+type AutocompleteProviderFactory = (current: AutocompleteProvider) => AutocompleteProvider;
+type TerminalInputHandler = (data: string) => { consume?: boolean; data?: string } | undefined;
 
-const theme = {
-  fg: (_color: string, text: string) => text,
-  bg: (_color: string, text: string) => text,
-  bold: (text: string) => text,
-} as unknown as Theme;
-
-/** Creates a minimal Pi API mock that captures registered events, commands, and shortcuts. */
+/** Creates a minimal Pi API mock that captures registered events and commands. */
 function createPiMock(): {
   pi: ExtensionAPI;
   events: Map<string, EventHandler>;
@@ -51,7 +35,7 @@ function createPiMock(): {
     registerCommand(name: string, command: unknown): void {
       commands.set(name, command);
     },
-    /** Captures extension-owned shortcuts to guard against overriding Pi's Ctrl+O. */
+    /** Captures any unexpected extension shortcut registration. */
     registerShortcut(name: string, shortcut: unknown): void {
       shortcuts.set(name, shortcut);
     },
@@ -59,53 +43,51 @@ function createPiMock(): {
   return { pi, events, commands, shortcuts };
 }
 
-test("keeps the widget above the editor and replaces the editor while browsing", async () => {
+/** Creates a no-op base provider for autocomplete layering assertions. */
+function createBaseProvider(): AutocompleteProvider {
+  return {
+    /** Returns no base suggestions so only session resources are visible. */
+    async getSuggestions(): Promise<null> {
+      return null;
+    },
+    /** Leaves delegated editor state unchanged. */
+    applyCompletion(lines, cursorLine, cursorCol) {
+      return { lines, cursorLine, cursorCol };
+    },
+  };
+}
+
+test("registers # completion, rewrites Tab to candidate navigation, and removes the persistent widget", async () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const { pi, events, commands, shortcuts } = createPiMock();
-  const widgetCalls: unknown[][] = [];
-  let customOptions: unknown;
-  let toolsExpanded = false;
+  let autocompleteFactory: AutocompleteProviderFactory | undefined;
+  let terminalInputHandler: TerminalInputHandler | undefined;
+  let inputListenerRemoved = false;
+  const notifications: string[] = [];
   const context = {
     mode: "tui",
     cwd: resolve("/workspace/project"),
+    sessionManager: {
+      /** Starts from an empty active branch. */
+      getBranch(): [] {
+        return [];
+      },
+    },
     ui: {
-      /** Captures all setWidget arguments so placement can be asserted. */
-      setWidget(...args: unknown[]): void {
-        widgetCalls.push(args);
+      /** Captures the resource provider layered over Pi's built-in provider. */
+      addAutocompleteProvider(factory: AutocompleteProviderFactory): void {
+        autocompleteFactory = factory;
       },
-      /** Exposes Pi's canonical Ctrl+O expansion state to the widget. */
-      getToolsExpanded(): boolean {
-        return toolsExpanded;
+      /** Captures Tab routing and exposes listener cleanup. */
+      onTerminalInput(handler: TerminalInputHandler): () => void {
+        terminalInputHandler = handler;
+        return () => {
+          inputListenerRemoved = true;
+        };
       },
-      /** Mirrors command-driven expansion through Pi's canonical state. */
-      setToolsExpanded(expanded: boolean): void {
-        toolsExpanded = expanded;
-      },
-      /** Ignores command notifications that are irrelevant to state assertions. */
-      notify(): void {},
-      /** Runs the focused browser once and closes it with the Down key. */
-      async custom(factory: BrowserFactory, options: unknown): Promise<boolean> {
-        customOptions = options;
-        let result = false;
-        const keybindings = {
-          /** Matches only Down for this overlay lifecycle assertion. */
-          matches(data: string, action: string): boolean {
-            return data === "\x1b[B" && action === "tui.select.down";
-          },
-        } as Pick<KeybindingsManager, "matches">;
-        const component = factory(
-          {
-            /** Ignores browser repaint requests in this lifecycle-only test. */
-            requestRender(): void {},
-          },
-          theme,
-          keybindings,
-          (value) => {
-            result = value;
-          },
-        );
-        component.handleInput("\x1b[B");
-        return result;
+      /** Records command feedback. */
+      notify(message: string): void {
+        notifications.push(message);
       },
     },
   } as unknown as ExtensionContext;
@@ -114,42 +96,50 @@ test("keeps the widget above the editor and replaces the editor while browsing",
 
   assert.ok(commands.has("config:session-resources"));
   assert.ok(commands.has("session-resources"));
-  assert.ok(shortcuts.has("ctrl+up"));
-  assert.equal(shortcuts.has("ctrl+o"), false);
+  assert.equal(shortcuts.size, 0);
+  const sessionStart = events.get("session_start");
+  assert.ok(sessionStart);
+  sessionStart({}, context);
+  assert.ok(autocompleteFactory);
+  assert.ok(terminalInputHandler);
+
   const toolResult = events.get("tool_result");
   assert.ok(toolResult);
-  for (let index = 0; index < 6; index += 1) {
-    toolResult(
-      {
-        toolName: "read",
-        input: { path: `docs/session note ${index}.md` },
-        content: [],
-        isError: false,
-      },
-      context,
-    );
-  }
+  toolResult(
+    {
+      toolName: "read",
+      input: { path: "docs/session notes.md" },
+      content: [],
+      isError: false,
+    },
+    context,
+  );
 
-  const activeWidgetCall = widgetCalls.at(-1);
-  assert.equal(activeWidgetCall?.[0], "session-resources");
-  assert.equal(typeof activeWidgetCall?.[1], "function");
-  assert.equal(activeWidgetCall?.length, 2);
+  const provider = autocompleteFactory(createBaseProvider());
+  const text = "inspect #session";
+  const suggestions = await provider.getSuggestions(
+    [text],
+    0,
+    text.length,
+    { signal: new AbortController().signal },
+  );
+  assert.equal(suggestions?.items.length, 1);
+  assert.equal(suggestions?.items[0]?.value, '#"docs/session notes.md"');
+  assert.deepEqual(terminalInputHandler("\t"), { data: "\x1b[B" });
 
-  const widget = (activeWidgetCall?.[1] as WidgetFactory)(undefined, theme);
-  assert.match(widget.render(80).find((line) => line.includes("2 more")) ?? "", /2 more/);
-  toolsExpanded = true;
-  const expandedLines = widget.render(80);
-  assert.equal(expandedLines.length, 11);
-  assert.doesNotMatch(expandedLines.join("\n"), /more/);
-
-  toolsExpanded = false;
   const command = commands.get("config:session-resources") as SessionResourcesCommand;
-  await command.handler("expand", context as unknown as ExtensionCommandContext);
-  assert.equal(toolsExpanded, true);
-  await command.handler("collapse", context as unknown as ExtensionCommandContext);
-  assert.equal(toolsExpanded, false);
+  await command.handler("disable", context as unknown as ExtensionCommandContext);
+  const disabledSuggestions = await provider.getSuggestions(
+    ["#session"],
+    0,
+    "#session".length,
+    { signal: new AbortController().signal },
+  );
+  assert.equal(disabledSuggestions, null);
+  assert.match(notifications.at(-1) ?? "", /disabled/);
 
-  const shortcut = shortcuts.get("ctrl+up") as SessionResourcesShortcut;
-  await shortcut.handler(context);
-  assert.equal(customOptions, undefined);
+  const shutdown = events.get("session_shutdown");
+  assert.ok(shutdown);
+  shutdown({}, context);
+  assert.equal(inputListenerRemoved, true);
 });
