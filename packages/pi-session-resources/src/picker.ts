@@ -431,11 +431,11 @@ export class SessionResourceEditor implements EditorComponent {
       this.options.requestRender();
       return;
     }
-    if (matchesKey(data, Key.shift("tab"))) {
+    if (matchesKey(data, Key.left) || matchesKey(data, Key.shift("tab"))) {
       this.switchKind(-1);
       return;
     }
-    if (this.options.keybindings.matches(data, "tui.input.tab")) {
+    if (matchesKey(data, Key.right) || this.options.keybindings.matches(data, "tui.input.tab")) {
       this.switchKind(1);
       return;
     }

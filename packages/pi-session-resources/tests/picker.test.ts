@@ -47,6 +47,7 @@ const keybindings = {
 class FakeEditor implements EditorComponent {
   onSubmit?: (text: string) => void;
   onChange?: (text: string) => void;
+  readonly handledInputs: string[] = [];
   private text = "";
   private cursor = 0;
 
@@ -80,6 +81,7 @@ class FakeEditor implements EditorComponent {
 
   /** Handles the printable, backspace, and Enter inputs needed by tests. */
   handleInput(data: string): void {
+    this.handledInputs.push(data);
     if (data === "\x7f") {
       if (this.cursor > 0) {
         this.text = `${this.text.slice(0, this.cursor - 1)}${this.text.slice(this.cursor)}`;
@@ -162,7 +164,7 @@ test("picker renders a bordered tab bar with a distinct active type", () => {
   assert.ok(lines.every((line) => visibleWidth(line) <= 72));
 });
 
-test("# opens above the editor, Tab switches type, and Enter inserts the resource", () => {
+test("# opens above the editor, type keys switch tabs, and Enter inserts the resource", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const base = new FakeEditor();
   let renders = 0;
@@ -182,13 +184,21 @@ test("# opens above the editor, Tab switches type, and Enter inserts the resourc
   assert.equal(editor.getActiveKind(), "file");
   assert.match(editor.render(72).at(-1) ?? "", /^EDITOR #$/);
 
+  editor.handleInput("\x1b[C");
+  assert.equal(editor.getActiveKind(), "review");
+  editor.handleInput("\x1b[D");
+  assert.equal(editor.getActiveKind(), "file");
   editor.handleInput("\t");
   assert.equal(editor.getActiveKind(), "review");
+  assert.ok(!base.handledInputs.includes("\x1b[C"));
+  assert.ok(!base.handledInputs.includes("\x1b[D"));
   editor.handleInput("\r");
 
   assert.equal(editor.isPickerOpen(), false);
   assert.equal(editor.getText(), "#https://github.com/owner/repo/pull/93 ");
-  assert.ok(renders >= 3);
+  editor.handleInput("\x1b[D");
+  assert.equal(base.handledInputs.at(-1), "\x1b[D");
+  assert.ok(renders >= 5);
 });
 
 test("picker respects token boundaries and Shift+Tab switches backward", () => {

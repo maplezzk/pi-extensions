@@ -26,13 +26,13 @@ Type `#` at a token boundary in the editor:
 │ → src/index.ts                                write · read │
 │   tests/index.test.ts                                write │
 ├────────────────────────────────────────────────────────┤
-│ Tab/Shift+Tab type · Up/Down select · Enter insert · Esc close │
+│ Left/Right or Tab/Shift+Tab type · Up/Down select · Enter insert │
 └────────────────────────────────────────────────────────┘
 Please inspect #ind
 ```
 
 - Continue typing after `#` to filter the current type live.
-- Tab selects the next type and Shift+Tab selects the previous type.
+- Left/Right switches resource types while the picker is open. Tab selects the next type and Shift+Tab selects the previous type.
 - Up/Down wraps through resources in the current type.
 - Enter inserts the selected reference. Esc closes the picker and keeps the typed text.
 - At most 6 recent matches are shown for the current type.
