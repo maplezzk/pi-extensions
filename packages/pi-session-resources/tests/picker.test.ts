@@ -13,11 +13,11 @@ import {
 
 const SELECTED_BACKGROUND_START = "\x1b[7m";
 const SELECTED_BACKGROUND_END = "\x1b[27m";
-const ACCENT_START = "\x1b[34m";
+const SUBAGENT_ACCENT_START = "\x1b[38;2;77;163;255m";
 const TEXT_START = "\x1b[37m";
-const TOOL_TITLE_START = "\x1b[36m";
 const DIM_START = "\x1b[90m";
 const FOREGROUND_END = "\x1b[39m";
+const ANSI_RESET = "\x1b[0m";
 const BOLD_START = "\x1b[1m";
 const BOLD_END = "\x1b[22m";
 
@@ -25,11 +25,9 @@ const theme: ResourcePickerTheme = {
   /** Applies deterministic test foreground colors for picker hierarchy assertions. */
   fg: (color, text) => {
     const start = {
-      accent: ACCENT_START,
       dim: DIM_START,
       muted: DIM_START,
       text: TEXT_START,
-      toolTitle: TOOL_TITLE_START,
     }[color] ?? "";
     return start ? `${start}${text}${FOREGROUND_END}` : text;
   },
@@ -166,7 +164,7 @@ test("picker renders a bordered tab bar with a distinct active type", () => {
     theme,
   });
 
-  assert.ok((lines[0] ?? "").includes(`${ACCENT_START}╭─ Session resources `));
+  assert.ok((lines[0] ?? "").includes(`${SUBAGENT_ACCENT_START}╭─ Session resources `));
   assert.ok(
     (lines[1] ?? "").includes(
       `${SELECTED_BACKGROUND_START}${TEXT_START} FILE 1 ${FOREGROUND_END}${SELECTED_BACKGROUND_END}`,
@@ -175,13 +173,15 @@ test("picker renders a bordered tab bar with a distinct active type", () => {
   assert.match(lines[1] ?? "", /PR\/MR 1.*URL 1/);
   assert.ok(lines.some((line) => line.includes("src/index.ts")));
   assert.ok(lines.every((line) => !line.includes("FILE ▤")));
-  assert.ok(lines.some((line) => line.includes(`${ACCENT_START}→ ${FOREGROUND_END}`)));
   assert.ok(
-    lines.some((line) => line.includes(`${TOOL_TITLE_START}${BOLD_START}`)),
+    lines.some((line) => line.includes(`${SUBAGENT_ACCENT_START}→ ${ANSI_RESET}`)),
+  );
+  assert.ok(
+    lines.some((line) => line.includes(`${SUBAGENT_ACCENT_START}${BOLD_START}`)),
   );
   assert.ok(lines.some((line) => line.includes(DIM_START)));
   assert.ok(lines.every((line) => visibleWidth(line) === 72));
-  assert.ok((lines.at(-1) ?? "").includes(`${ACCENT_START}╰`));
+  assert.ok((lines.at(-1) ?? "").includes(`${SUBAGENT_ACCENT_START}╰`));
 });
 
 test("picker follows narrow and wide terminal widths without a fixed cap", () => {

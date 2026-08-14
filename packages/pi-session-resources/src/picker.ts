@@ -31,15 +31,15 @@ const TAB_LABELS: Record<ResourceKind, string> = {
   web: "URL",
 };
 const THEME_COLOR = {
-  accent: "accent",
   dim: "dim",
   muted: "muted",
   text: "text",
-  toolTitle: "toolTitle",
 } as const;
 const THEME_BACKGROUND = {
   selected: "selectedBg",
 } as const;
+const SUBAGENT_ACCENT_START = "\x1b[38;2;77;163;255m";
+const ANSI_RESET = "\x1b[0m";
 
 export type ResourcePickerTheme = Pick<Theme, "bg" | "bold" | "fg">;
 
@@ -96,36 +96,35 @@ function padToWidth(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 }
 
-/** Adds accent vertical borders around one fitted panel row. */
-function framedLine(content: string, innerWidth: number, theme: ResourcePickerTheme): string {
-  const fitted = padToWidth(truncateToWidth(content, innerWidth, ""), innerWidth);
-  return `${theme.fg(THEME_COLOR.accent, "│")}${fitted}${theme.fg(THEME_COLOR.accent, "│")}`;
+/** Applies the same fixed blue accent used by the subagent status widget. */
+function subagentAccent(text: string): string {
+  return `${SUBAGENT_ACCENT_START}${text}${ANSI_RESET}`;
 }
 
-/** Renders the picker title inside a rounded accent border. */
-function renderTopBorder(width: number, theme: ResourcePickerTheme): string {
+/** Adds custom-blue vertical borders around one fitted panel row. */
+function framedLine(content: string, innerWidth: number): string {
+  const fitted = padToWidth(truncateToWidth(content, innerWidth, ""), innerWidth);
+  return `${subagentAccent("│")}${fitted}${subagentAccent("│")}`;
+}
+
+/** Renders the picker title inside a rounded custom-blue border. */
+function renderTopBorder(width: number): string {
   const innerWidth = Math.max(0, width - PANEL_BORDER_WIDTH);
   const title = `─ ${i18n.t("pickerTitle")} `;
   const titleWidth = Math.min(visibleWidth(title), innerWidth);
   const fittedTitle = truncateToWidth(title, titleWidth, "");
   const border = `╭${fittedTitle}${"─".repeat(Math.max(0, innerWidth - visibleWidth(fittedTitle)))}╮`;
-  return theme.fg(THEME_COLOR.accent, border);
+  return subagentAccent(border);
 }
 
-/** Renders a horizontal accent divider at the current panel width. */
-function renderDivider(width: number, theme: ResourcePickerTheme): string {
-  return theme.fg(
-    THEME_COLOR.accent,
-    `├${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}┤`,
-  );
+/** Renders a horizontal custom-blue divider at the current panel width. */
+function renderDivider(width: number): string {
+  return subagentAccent(`├${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}┤`);
 }
 
-/** Renders the rounded accent border at the current panel width. */
-function renderBottomBorder(width: number, theme: ResourcePickerTheme): string {
-  return theme.fg(
-    THEME_COLOR.accent,
-    `╰${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}╯`,
-  );
+/** Renders the rounded custom-blue border at the current panel width. */
+function renderBottomBorder(width: number): string {
+  return subagentAccent(`╰${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}╯`);
 }
 
 /** Renders resource type counts and highlights the active type. */
@@ -161,9 +160,9 @@ function renderItem(options: RenderItemOptions): string {
     ? truncateToWidth(description ?? "", descriptionWidth, "…")
     : "";
   const gap = " ".repeat(Math.max(1, labelWidth - visibleWidth(fittedLabel) + gapWidth));
-  const prefix = selected ? theme.fg(THEME_COLOR.accent, rawPrefix) : rawPrefix;
-  const labelText = selected ? theme.bold(fittedLabel) : fittedLabel;
-  const primary = `${prefix}${theme.fg(THEME_COLOR.toolTitle, labelText)}`;
+  const prefix = selected ? subagentAccent(rawPrefix) : rawPrefix;
+  const labelText = selected ? subagentAccent(theme.bold(fittedLabel)) : fittedLabel;
+  const primary = `${prefix}${labelText}`;
   const secondary = showDescription
     ? theme.fg(THEME_COLOR.dim, `${gap}${fittedDescription}`)
     : "";
@@ -183,7 +182,7 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
   ).slice(0, RESOURCE_PICKER_VISIBLE_LIMIT);
   const selectedIndex = Math.max(0, Math.min(options.selectedIndex, Math.max(0, items.length - 1)));
   const lines = [
-    renderTopBorder(panelWidth, theme),
+    renderTopBorder(panelWidth),
     framedLine(
       renderTabs({
         resources,
@@ -192,9 +191,8 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
         theme,
       }),
       innerWidth,
-      theme,
     ),
-    renderDivider(panelWidth, theme),
+    renderDivider(panelWidth),
   ];
 
   if (items.length === 0) {
@@ -202,7 +200,6 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
       framedLine(
         theme.fg(THEME_COLOR.muted, `  ${i18n.t("pickerNoMatches")}`),
         innerWidth,
-        theme,
       ),
     );
   } else {
@@ -217,21 +214,19 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
             theme,
           }),
           innerWidth,
-          theme,
         ),
       );
     }
   }
 
-  lines.push(renderDivider(panelWidth, theme));
+  lines.push(renderDivider(panelWidth));
   lines.push(
     framedLine(
       theme.fg(THEME_COLOR.muted, ` ${i18n.t("pickerHint")}`),
       innerWidth,
-      theme,
     ),
   );
-  lines.push(renderBottomBorder(panelWidth, theme));
+  lines.push(renderBottomBorder(panelWidth));
   return lines;
 }
 
