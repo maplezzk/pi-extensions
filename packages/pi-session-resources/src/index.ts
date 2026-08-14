@@ -1,9 +1,14 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { collectSessionResources, collectToolResources, ResourceIndex } from "./collector.ts";
 import { i18n } from "./i18n.ts";
 import { renderResourceWidget } from "./render.ts";
 
 const WIDGET_KEY = "session-resources";
+const COMMAND_NAMES = ["config:session-resources", "session-resources"] as const;
 const COMMAND_ACTIONS = ["show", "hide", "expand", "collapse"] as const;
 type CommandAction = (typeof COMMAND_ACTIONS)[number];
 
@@ -11,7 +16,6 @@ type CommandAction = (typeof COMMAND_ACTIONS)[number];
 export default function sessionResourcesExtension(pi: ExtensionAPI): void {
   const resources = new ResourceIndex();
   let widgetVisible = true;
-  let widgetExpanded = false;
 
   /** Replaces the widget so Pi requests a render with the latest immutable snapshot. */
   function refreshWidget(ctx: ExtensionContext): void {
@@ -22,18 +26,19 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    ctx.ui.setWidget(
-      WIDGET_KEY,
-      (_tui, theme) => ({
-        /** Renders links from the snapshot captured when the widget was refreshed. */
-        render(width: number): string[] {
-          return renderResourceWidget({ resources: snapshot, width, expanded: widgetExpanded, theme });
-        },
-        /** The widget has no themed cache to invalidate. */
-        invalidate(): void {},
-      }),
-      { placement: "belowEditor" },
-    );
+    ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => ({
+      /** Renders links from the snapshot captured when the widget was refreshed. */
+      render(width: number): string[] {
+        return renderResourceWidget({
+          resources: snapshot,
+          width,
+          expanded: ctx.ui.getToolsExpanded(),
+          theme,
+        });
+      },
+      /** The widget has no themed cache to invalidate. */
+      invalidate(): void {},
+    }));
   }
 
   /** Rebuilds resources from the active branch after start, resume, or tree navigation. */
@@ -70,13 +75,15 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
     resources.clear();
   });
 
-  pi.registerCommand("session-resources", {
+  const command = {
     description: i18n.t("commandDescription"),
-    getArgumentCompletions: (prefix) => {
+    /** Completes only supported visibility and expansion actions. */
+    getArgumentCompletions: (prefix: string) => {
       const matches = COMMAND_ACTIONS.filter((action) => action.startsWith(prefix));
       return matches.length > 0 ? matches.map((action) => ({ value: action, label: action })) : null;
     },
-    handler: async (args, ctx) => {
+    /** Applies the requested in-memory widget state and immediately refreshes the TUI. */
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
       const action = args.trim().toLowerCase();
       if (action && !COMMAND_ACTIONS.includes(action as CommandAction)) {
         ctx.ui.notify(i18n.t("commandUsage"), "warning");
@@ -92,23 +99,20 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
 
       widgetVisible = true;
       if (action === "show") {
-        widgetExpanded = false;
         ctx.ui.notify(i18n.t("shown"), "info");
-      } else if (action === "expand") {
-        widgetExpanded = true;
-        ctx.ui.notify(i18n.t("expanded"), "info");
-      } else if (action === "collapse") {
-        widgetExpanded = false;
-        ctx.ui.notify(i18n.t("collapsed"), "info");
       } else {
-        widgetExpanded = !widgetExpanded;
-        ctx.ui.notify(i18n.t(widgetExpanded ? "expanded" : "collapsed"), "info");
+        let expanded = !ctx.ui.getToolsExpanded();
+        if (action === "expand") expanded = true;
+        else if (action === "collapse") expanded = false;
+        ctx.ui.setToolsExpanded(expanded);
+        ctx.ui.notify(i18n.t(expanded ? "expanded" : "collapsed"), "info");
       }
 
       if (resources.list().length === 0) ctx.ui.notify(i18n.t("empty"), "info");
       refreshWidget(ctx);
     },
-  });
+  };
+  for (const name of COMMAND_NAMES) pi.registerCommand(name, command);
 }
 
 export * from "./collector.ts";

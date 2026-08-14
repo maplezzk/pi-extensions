@@ -1,6 +1,6 @@
 # pi-session-resources
 
-A passive session-context extension for the [Pi coding agent](https://github.com/earendil-works/pi). It collects files and links from successful tool activity and renders them as clickable OSC 8 links below the editor.
+A passive session-context extension for the [Pi coding agent](https://github.com/earendil-works/pi). It collects files and links from successful tool activity and renders them as clickable OSC 8 links above the editor.
 
 [中文文档](./README.zh-CN.md)
 
@@ -22,17 +22,19 @@ MR owner/repo#42  [created]
 WEB developer.mozilla.org/en-US/docs/Web/API  [open]
 ```
 
-The collapsed widget shows the 4 most recent resources. The expanded widget shows up to 16 and reports how many older resources remain hidden.
+The collapsed widget shows the 4 most recent resources. The expanded widget shows up to 16 and reports how many older resources remain hidden. The widget follows Pi's built-in `app.tools.expand` state, so the standard Ctrl+O binding expands or collapses tool output and session resources together. If the user remaps that built-in action in `keybindings.json`, the widget follows the remapped key without registering a competing shortcut.
 
 ## Commands
 
 ```text
-/session-resources             Toggle expanded/collapsed view
-/session-resources show        Show the collapsed widget
-/session-resources hide        Hide the widget
-/session-resources expand      Show more recent resources
-/session-resources collapse    Return to the compact view
+/config:session-resources             Toggle expanded/collapsed view
+/config:session-resources show        Show the widget
+/config:session-resources hide        Hide the widget
+/config:session-resources expand      Show more recent resources
+/config:session-resources collapse    Return to the compact view
 ```
+
+`/session-resources` remains available as a compatibility alias.
 
 ## Install
 

@@ -1,6 +1,6 @@
 # pi-session-resources
 
-面向 [Pi 编码助手](https://github.com/earendil-works/pi) 的被动会话资源扩展。它从成功的工具活动中收集文件和链接，并在编辑器下方通过可点击的 OSC 8 超链接展示。
+面向 [Pi 编码助手](https://github.com/earendil-works/pi) 的被动会话资源扩展。它从成功的工具活动中收集文件和链接，并在编辑器上方通过可点击的 OSC 8 超链接展示。
 
 [English](./README.md)
 
@@ -22,17 +22,19 @@ MR owner/repo#42  [建]
 WEB developer.mozilla.org/en-US/docs/Web/API  [开]
 ```
 
-折叠状态显示最近 4 项，展开状态最多显示 16 项，并提示还有多少较早资源未显示。
+折叠状态显示最近 4 项，展开状态最多显示 16 项，并提示还有多少较早资源未显示。组件直接跟随 Pi 内置的 `app.tools.expand` 状态，因此默认使用 Ctrl+O 同时展开或折叠工具输出与会话资源。用户如果在 `keybindings.json` 中重映射该内置动作，组件也会自动跟随，不会额外注册冲突快捷键。
 
 ## 命令
 
 ```text
-/session-resources             切换展开/折叠
-/session-resources show        显示折叠组件
-/session-resources hide        隐藏组件
-/session-resources expand      显示更多最近资源
-/session-resources collapse    返回紧凑视图
+/config:session-resources             切换展开/折叠
+/config:session-resources show        显示组件
+/config:session-resources hide        隐藏组件
+/config:session-resources expand      显示更多最近资源
+/config:session-resources collapse    返回紧凑视图
 ```
+
+`/session-resources` 继续作为兼容别名保留。
 
 ## 安装
 

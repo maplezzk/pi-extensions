@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { keyText, type Theme } from "@earendil-works/pi-coding-agent";
 import { hyperlink, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ResourceAction, SessionResource } from "./collector.ts";
 import { i18n } from "./i18n.ts";
@@ -7,6 +7,7 @@ import { i18n } from "./i18n.ts";
 export const COMPACT_RESOURCE_LIMIT = 4;
 export const EXPANDED_RESOURCE_LIMIT = 16;
 const MAX_ACTION_LABELS = 2;
+const TOOLS_EXPAND_KEYBINDING = "app.tools.expand";
 
 const ACTION_LABELS: Record<ResourceAction, string> = {
   read: "actionRead",
@@ -40,6 +41,14 @@ function actionLabel(resource: SessionResource): string {
     .slice(0, MAX_ACTION_LABELS)
     .map((action) => i18n.t(ACTION_LABELS[action]))
     .join(",");
+}
+
+/** Uses Pi's configured expansion key, falling back to the standard command when unbound. */
+function expansionHint(): string {
+  const shortcut = keyText(TOOLS_EXPAND_KEYBINDING);
+  return shortcut
+    ? i18n.t("expandShortcut", { shortcut })
+    : i18n.t("expandCommand");
 }
 
 /** Renders one width-safe OSC 8 resource row. */
@@ -84,7 +93,10 @@ export function renderResourceWidget(options: RenderResourceWidgetOptions): stri
   const hiddenCount = resources.length - limit;
   if (hiddenCount > 0) {
     const key = expanded ? "olderResources" : "moreResources";
-    lines.push(truncateToWidth(theme.fg("dim", i18n.t(key, { count: hiddenCount })), width, "…"));
+    lines.push(truncateToWidth(theme.fg("dim", i18n.t(key, {
+      count: hiddenCount,
+      expandHint: expansionHint(),
+    })), width, "…"));
   }
 
   return lines;

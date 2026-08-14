@@ -4,8 +4,8 @@
     "en-US": "Expand, collapse, show, or hide session resource links"
   },
   "commandUsage": {
-    "zh-CN": "用法：/session-resources [show|hide|expand|collapse]",
-    "en-US": "Usage: /session-resources [show|hide|expand|collapse]"
+    "zh-CN": "用法：/config:session-resources [show|hide|expand|collapse]",
+    "en-US": "Usage: /config:session-resources [show|hide|expand|collapse]"
   },
   "widgetTitle": {
     "zh-CN": "会话资源",
@@ -16,8 +16,16 @@
     "en-US": "{files} files · {links} links"
   },
   "moreResources": {
-    "zh-CN": "还有 {count} 项 · /session-resources 展开",
-    "en-US": "{count} more · /session-resources to expand"
+    "zh-CN": "还有 {count} 项 · {expandHint}",
+    "en-US": "{count} more · {expandHint}"
+  },
+  "expandShortcut": {
+    "zh-CN": "{shortcut} 展开",
+    "en-US": "{shortcut} to expand"
+  },
+  "expandCommand": {
+    "zh-CN": "/config:session-resources expand",
+    "en-US": "/config:session-resources expand"
   },
   "olderResources": {
     "zh-CN": "还有 {count} 项较早资源未显示",

@@ -124,5 +124,5 @@ test("collapsed widget limits rows and reports hidden resources", () => {
 
   const lines = renderResourceWidget({ resources, width: 80, expanded: false, theme });
   assert.equal(lines.length, COMPACT_RESOURCE_LIMIT + 2);
-  assert.match(lines.at(-1) ?? "", /2 more/);
+  assert.match(lines.at(-1) ?? "", /2 more · \/config:session-resources expand/);
 });
