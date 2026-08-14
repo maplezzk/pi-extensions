@@ -22,17 +22,19 @@
 import {
   sessionEntryToContextMessages,
   type ExtensionAPI,
+  type ExtensionCommandContext,
   type SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { Type } from "typebox";
 import {
   buildSquashTaskPrompt,
   computeFileLists,
   extractFileOps,
   formatFileOperations,
+  formatThreshold,
   formatTokens,
   getTailCompactions,
   listUserInputs,
@@ -73,9 +75,9 @@ const PROGRESS_WIDGET_KEY = "session-squash-progress";
 /** contextWindow 缺失时的回退值（与 Pi 内置摘要逻辑一致）。 */
 const FALLBACK_CONTEXT_WINDOW = 128000;
 
-/** 默认上下文阈值（绝对 token 值）。 */
+/** 默认上下文阈值（k 单位，跨平台配置友好）。 */
 const DEFAULT_SQUASH_THRESHOLDS: SquashThreshold[] = parseSquashThresholds([
-  150000, 200000, 250000, 300000,
+  "150k", "200k", "250k", "300k",
 ]);
 
 /** 扩展配置文件名（位于 ~/.pi/agent/extensions/<包名>/ 下）。 */
@@ -165,7 +167,40 @@ function loadSquashThresholds(): SquashThreshold[] {
   return DEFAULT_SQUASH_THRESHOLDS;
 }
 
-const squashThresholds = loadSquashThresholds();
+/** 阈值配置文件路径（与 loadSquashThresholds 一致）。 */
+function squashConfigPath(): string {
+  return join(
+    resolveAgentDir(),
+    "extensions",
+    "pi-session-tools",
+    CONFIG_FILE_NAME,
+  );
+}
+
+/** 把阈值数组序列化回配置值（k/百分比），供命令展示与写入。 */
+function serializeThresholds(thresholds: SquashThreshold[]): string[] {
+  return thresholds.map(formatThreshold);
+}
+
+/** 写入阈值配置并刷新运行时状态。 */
+function saveSquashThresholds(thresholds: SquashThreshold[]): string {
+  const configPath = squashConfigPath();
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(
+    configPath,
+    `${JSON.stringify(
+      { [CONFIG_THRESHOLDS_KEY]: serializeThresholds(thresholds) },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  squashThresholds = thresholds;
+  return configPath;
+}
+
+/** 当前生效的阈值配置（命令修改后重新加载）。 */
+let squashThresholds: SquashThreshold[] = loadSquashThresholds();
 
 const FinalizeParams = Type.Object({
   summary: Type.String({
@@ -434,6 +469,67 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       ctx.ui.notify(notice.text, notice.level);
     }
   });
+
+  for (const name of CONFIG_COMMAND_NAMES) {
+    pi.registerCommand(name, {
+      description: i18n.t("configCommandDescription"),
+      handler: handleConfigCommand,
+    });
+  }
+}
+
+/** 配置命令的注册名（双命名，对齐其他公开插件）。 */
+const CONFIG_COMMAND_NAMES = [
+  "config:session-tools",
+  "pi-session-tools",
+] as const;
+
+/** 配置命令：交互式设置压缩阈值（支持 k / 百分比 / 数字）。
+ * 带参数时直接保存并返回；无参数时展示当前值并弹输入框。 */
+async function handleConfigCommand(
+  args: string,
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  if (!ctx.hasUI) {
+    ctx.ui.notify(i18n.t("configNoUi"), "warning");
+    return;
+  }
+  const requested = args.trim();
+  if (requested) {
+    const parsed = parseSquashThresholds(requested.split(","));
+    if (parsed.length === 0) {
+      ctx.ui.notify(i18n.t("configParseError", { value: requested }), "error");
+      return;
+    }
+    const configPath = saveSquashThresholds(parsed);
+    ctx.ui.notify(
+      i18n.t("configSaved", {
+        thresholds: serializeThresholds(parsed).join(", "),
+        path: configPath,
+      }),
+      "info",
+    );
+    return;
+  }
+  const current = serializeThresholds(squashThresholds).join(", ");
+  const value = await ctx.ui.input(
+    i18n.t("configPrompt", { current }),
+    current,
+  );
+  if (value === undefined) return;
+  const parsed = parseSquashThresholds(value.split(","));
+  if (parsed.length === 0) {
+    ctx.ui.notify(i18n.t("configParseError", { value }), "error");
+    return;
+  }
+  const configPath = saveSquashThresholds(parsed);
+  ctx.ui.notify(
+    i18n.t("configSaved", {
+      thresholds: serializeThresholds(parsed).join(", "),
+      path: configPath,
+    }),
+    "info",
+  );
 }
 
 /**

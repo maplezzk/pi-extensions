@@ -111,6 +111,26 @@
     "zh-CN": "环境变量 {env} 解析失败，已用默认阈值。",
     "en-US": "Could not parse env var {env}; default thresholds are used."
   },
+  "configCommandDescription": {
+    "zh-CN": "配置 pi-session-tools（如压缩阈值，支持 150k / 75% / 数字）",
+    "en-US": "Configure pi-session-tools (e.g. squash thresholds; supports 150k / 75% / numbers)"
+  },
+  "configNoUi": {
+    "zh-CN": "当前环境无交互 UI，无法用命令配置，请直接编辑配置文件。",
+    "en-US": "No interactive UI available; edit the config file directly instead."
+  },
+  "configPrompt": {
+    "zh-CN": "输入新的压缩阈值（逗号分隔，支持 150k、75% 或数字；留空取消）：\n当前：{current}",
+    "en-US": "Enter new squash thresholds (comma-separated; supports 150k, 75%, or numbers; leave empty to cancel):\nCurrent: {current}"
+  },
+  "configParseError": {
+    "zh-CN": "阈值解析失败：{value}（示例：150k,200k,75%）",
+    "en-US": "Could not parse thresholds: {value} (example: 150k,200k,75%)"
+  },
+  "configSaved": {
+    "zh-CN": "已保存阈值：{thresholds}\n配置：{path}",
+    "en-US": "Thresholds saved: {thresholds}\nConfig: {path}"
+  },
   "finalizeLabel": {
     "zh-CN": "提交摘要",
     "en-US": "Submit summary"

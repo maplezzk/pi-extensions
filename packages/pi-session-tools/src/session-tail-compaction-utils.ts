@@ -20,9 +20,13 @@ export type SquashThreshold =
 /** 百分比阈值允许的最大值。 */
 const PERCENT_THRESHOLD_MAX = 100;
 
+/** k 后缀换算为 token 数的比例（1k = 1000 token）。 */
+const TOKENS_PER_K = 1000;
+
 /**
  * 解析阈值配置：数组元素支持 number（绝对 token 值）、
- * "75%"（百分比字符串）或 "150000"（数字字符串，供环境变量使用）。
+ * "75%"（百分比字符串）、"150000"（数字字符串）、
+ * 或 "150k"/"1.5k"（k 后缀，供斜杠命令与配置使用，k = 1000）。
  * 非法元素跳过；返回空数组表示配置无效，由调用方降级。
  */
 export function parseSquashThresholds(input: unknown): SquashThreshold[] {
@@ -34,12 +38,20 @@ export function parseSquashThresholds(input: unknown): SquashThreshold[] {
       continue;
     }
     if (typeof item === "string") {
-      const trimmed = item.trim();
+      const trimmed = item.trim().toLowerCase();
       const percentMatch = trimmed.match(/^(\d+(?:\.\d+)?)%$/);
       if (percentMatch) {
         const value = Number.parseFloat(percentMatch[1]);
         if (value > 0 && value <= PERCENT_THRESHOLD_MAX) {
           result.push({ kind: "percent", value });
+        }
+        continue;
+      }
+      const kMatch = trimmed.match(/^(\d+(?:\.\d+)?)k$/);
+      if (kMatch) {
+        const value = Number.parseFloat(kMatch[1]) * TOKENS_PER_K;
+        if (Number.isFinite(value) && value > 0) {
+          result.push({ kind: "tokens", value: Math.floor(value) });
         }
         continue;
       }
@@ -74,6 +86,12 @@ export function formatTokens(tokens: number): string {
     return `${Number.isInteger(k) ? k : k.toFixed(1)}k`;
   }
   return String(tokens);
+}
+
+/** 阈值序列化为可读字符串（k 单位或百分比），与 parseSquashThresholds 可回环。 */
+export function formatThreshold(threshold: SquashThreshold): string {
+  if (threshold.kind === "percent") return `${threshold.value}%`;
+  return formatTokens(threshold.value);
 }
 
 /** 文件操作集合：read=只读、written=写入、edited=编辑。 */

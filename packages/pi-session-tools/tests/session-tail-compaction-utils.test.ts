@@ -6,6 +6,7 @@ import {
   computeFileLists,
   extractFileOps,
   formatFileOperations,
+  formatThreshold,
   formatTokens,
   getTailCompactions,
   listUserInputs,
@@ -212,6 +213,14 @@ test("parseSquashThresholds 支持数字、百分比和数字字符串混合", (
   ]);
 });
 
+test("parseSquashThresholds 支持 k 后缀与小数 k", () => {
+  assert.deepEqual(parseSquashThresholds(["150k", "1.5k", "200K"]), [
+    { kind: "tokens", value: 150000 },
+    { kind: "tokens", value: 1500 },
+    { kind: "tokens", value: 200000 },
+  ]);
+});
+
 test("parseSquashThresholds 跳过非法元素，非数组返回空", () => {
   assert.deepEqual(parseSquashThresholds([0, -1, "abc", "101%", null, "0%"]), []);
   assert.deepEqual(parseSquashThresholds("150000"), []);
@@ -242,6 +251,14 @@ test("formatTokens 大数字缩写为 k", () => {
   assert.equal(formatTokens(150000), "150k");
   assert.equal(formatTokens(1500), "1.5k");
   assert.equal(formatTokens(999), "999");
+});
+
+test("formatThreshold 序列化 k 与百分比，与 parse 可回环", () => {
+  assert.equal(formatThreshold({ kind: "tokens", value: 150000 }), "150k");
+  assert.equal(formatThreshold({ kind: "percent", value: 75 }), "75%");
+  // 回环：150k → 150000 → 150k
+  const parsed = parseSquashThresholds(["150k", "75%"]);
+  assert.deepEqual(parsed.map(formatThreshold), ["150k", "75%"]);
 });
 
 /** 构造一条带 toolCall 块的 assistant message entry。 */
