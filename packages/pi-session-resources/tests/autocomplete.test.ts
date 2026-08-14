@@ -65,8 +65,7 @@ test("resource suggestions avoid repeated type labels and preserve clickable ref
   assert.doesNotMatch(fileItem.label, /FILE|▤/);
   const plainDescription = (fileItem.description ?? "").replace(/\x1b\[[0-9;]*m/g, "");
   assert.match(plainDescription, /write · read · ×3/);
-  assert.ok((fileItem.description ?? "").includes("\x1b[38;2;214;149;52m"));
-  assert.ok((fileItem.description ?? "").includes("\x1b[38;2;96;139;190m"));
+  assert.ok(!(fileItem.description ?? "").includes("\x1b["));
   assert.ok(fileItem.label.includes(`\x1b]8;;${pathToFileURL(fileTarget).href}\x1b\\`));
 
   const reviewItems = resourceSuggestions(resources, "pull");

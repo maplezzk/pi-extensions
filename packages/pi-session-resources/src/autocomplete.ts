@@ -29,29 +29,8 @@ function foreground(color: RgbColor): string {
   return rgb(color.red, color.green, color.blue);
 }
 
-/** Fixed palette shared by picker accents; mid-tones stay readable on light and dark themes. */
-const PALETTE = {
-  file: foreground({ red: 77, green: 163, blue: 255 }),
-  review: foreground({ red: 198, green: 140, blue: 231 }),
-  web: foreground({ red: 38, green: 171, blue: 184 }),
-  actionRead: foreground({ red: 96, green: 139, blue: 190 }),
-  actionChanged: foreground({ red: 214, green: 149, blue: 52 }),
-  actionInspected: foreground({ red: 148, green: 159, blue: 177 }),
-  actionOpened: foreground({ red: 38, green: 171, blue: 184 }),
-  actionCreated: foreground({ red: 64, green: 168, blue: 99 }),
-  actionReferenced: foreground({ red: 148, green: 159, blue: 177 }),
-  usageCount: foreground({ red: 148, green: 159, blue: 177 }),
-} as const;
-
-/** Per-action semantic colors; write operations stand out, reads stay quiet. */
-const ACTION_COLORS: Record<ResourceAction, string> = {
-  read: PALETTE.actionRead,
-  changed: PALETTE.actionChanged,
-  inspected: PALETTE.actionInspected,
-  opened: PALETTE.actionOpened,
-  created: PALETTE.actionCreated,
-  referenced: PALETTE.actionReferenced,
-};
+/** Single fixed subagent blue accent; readable on light and dark themes. */
+const ACCENT = foreground({ red: 77, green: 163, blue: 255 });
 const RESOURCE_QUERY_PATTERN = /(?:^|[\t ])#([^\s#]*)$/;
 const RESOURCE_KIND_LABELS: Record<ResourceKind, string> = {
   file: "FILE",
@@ -76,14 +55,13 @@ export interface ResourceSuggestion {
 }
 
 export const KIND_COLORS: Record<ResourceKind, string> = {
-  file: PALETTE.file,
-  review: PALETTE.review,
-  web: PALETTE.web,
+  file: ACCENT,
+  review: ACCENT,
+  web: ACCENT,
 };
 
-/** Colorizes plain text with the resource type's accent; ANSI input passes through unchanged. */
+/** Colorizes plain text with the shared blue accent. */
 export function kindColored(kind: ResourceKind, text: string): string {
-  if (text.includes("\x1b")) return text;
   return tinted(KIND_COLORS[kind], text);
 }
 
@@ -127,10 +105,8 @@ function resourceSearchText(resource: SessionResource): string {
 /** Formats one resource as a clickable picker row without repeating the active tab type. */
 function resourceItem(resource: SessionResource): ResourceSuggestion {
   const uri = resourceUri(resource);
-  const actions = resource.actions
-    .map((action) => tinted(ACTION_COLORS[action], i18n.t(ACTION_LABELS[action])))
-    .join(" · ");
-  const usage = resource.seenCount > 1 ? tinted(PALETTE.usageCount, ` · ×${resource.seenCount}`) : "";
+  const actions = resource.actions.map((action) => i18n.t(ACTION_LABELS[action])).join(" · ");
+  const usage = resource.seenCount > 1 ? ` · ×${resource.seenCount}` : "";
   const label = resource.label;
   return {
     value: resourceReference(resource),

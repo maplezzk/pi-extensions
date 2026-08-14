@@ -38,7 +38,6 @@ const THEME_COLOR = {
 const THEME_BACKGROUND = {
   selected: "selectedBg",
 } as const;
-const ANSI_ESCAPE = "\x1b";
 const ANSI_RESET = "\x1b[0m";
 
 export type ResourcePickerTheme = Pick<Theme, "bg" | "bold" | "fg">;
@@ -130,7 +129,7 @@ function renderBottomBorder(width: number, accentKind: ResourceKind): string {
   return kindAccent(accentKind, `╰${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}╯`);
 }
 
-/** Renders per-type counts; the active type is inverted and every type keeps its accent. */
+/** Renders per-type counts; the active type is inverted, inactive types stay muted. */
 function renderTabs(options: RenderTabsOptions): string {
   const { resources, activeKind, innerWidth, theme } = options;
   const counts = new Map<ResourceKind, number>();
@@ -142,12 +141,12 @@ function renderTabs(options: RenderTabsOptions): string {
     const text = ` ${TAB_LABELS[kind]} ${counts.get(kind) ?? 0} `;
     return kind === activeKind
       ? theme.bg(THEME_BACKGROUND.selected, kindColored(kind, text))
-      : kindColored(kind, text);
+      : theme.fg(THEME_COLOR.muted, text);
   });
   return truncateToWidth(` ${segments.join(" ")}`, innerWidth, "");
 }
 
-/** Renders one width-safe resource row; pre-colored action metadata stays intact. */
+/** Renders one width-safe resource row with optional dimmed action metadata. */
 function renderItem(options: RenderItemOptions): string {
   const { kind, label, description, selected, innerWidth, theme } = options;
   const rawPrefix = selected ? "→ " : "  ";
@@ -168,11 +167,8 @@ function renderItem(options: RenderItemOptions): string {
   const prefix = selected ? kindAccent(kind, rawPrefix) : rawPrefix;
   const labelText = selected ? kindAccent(kind, theme.bold(fittedLabel)) : fittedLabel;
   const primary = `${prefix}${labelText}`;
-  const hasAnsiDescription = fittedDescription.includes(ANSI_ESCAPE);
   const secondary = showDescription
-    ? hasAnsiDescription
-      ? `${gap}${fittedDescription}`
-      : theme.fg(THEME_COLOR.dim, `${gap}${fittedDescription}`)
+    ? theme.fg(THEME_COLOR.dim, `${gap}${fittedDescription}`)
     : "";
   return padToWidth(`${primary}${secondary}`, innerWidth);
 }
