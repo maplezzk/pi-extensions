@@ -1,15 +1,12 @@
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
 import {
-  createResourceAutocompleteProvider,
-  routeResourceAutocompleteInput,
-  type ResourceAutocompleteState,
-} from "./autocomplete.ts";
+  CustomEditor,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { collectSessionResources, collectToolResources, ResourceIndex } from "./collector.ts";
 import { i18n } from "./i18n.ts";
+import { SessionResourceEditor } from "./picker.ts";
 
 const COMMAND_NAMES = ["config:session-resources", "session-resources"] as const;
 const COMMAND_ACTION = {
@@ -21,29 +18,26 @@ const COMMAND_ACTION = {
 const COMMAND_ACTIONS = Object.values(COMMAND_ACTION);
 type CommandAction = (typeof COMMAND_ACTION)[keyof typeof COMMAND_ACTION];
 
-/** Registers passive collection and # resource-reference autocomplete. */
+/** Registers passive collection and the tabbed # resource picker. */
 export default function sessionResourcesExtension(pi: ExtensionAPI): void {
   const resources = new ResourceIndex();
-  const autocompleteState: ResourceAutocompleteState = { active: false };
-  let autocompleteEnabled = true;
-  let removeTerminalInputListener: (() => void) | undefined;
+  let pickerEnabled = true;
 
-  /** Installs the built-in autocomplete wrapper and Tab-to-next input routing. */
-  function bindAutocomplete(ctx: ExtensionContext): void {
+  /** Wraps the current editor so the resource picker renders directly above it. */
+  function bindResourceEditor(ctx: ExtensionContext): void {
     if (ctx.mode !== "tui") return;
-    ctx.ui.addAutocompleteProvider((current) =>
-      createResourceAutocompleteProvider({
-        current,
-        getResources: () => (autocompleteEnabled ? resources.list() : []),
-        onActiveChange: (active) => {
-          autocompleteState.active = autocompleteEnabled && active;
-        },
-      }),
-    );
-    removeTerminalInputListener?.();
-    removeTerminalInputListener = ctx.ui.onTerminalInput((data) =>
-      routeResourceAutocompleteInput(data, autocompleteState),
-    );
+    const previousEditorFactory = ctx.ui.getEditorComponent();
+    ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+      const baseEditor = previousEditorFactory?.(tui, theme, keybindings)
+        ?? new CustomEditor(tui, theme, keybindings);
+      return new SessionResourceEditor(baseEditor, {
+        theme,
+        keybindings,
+        getResources: () => resources.list(),
+        isEnabled: () => pickerEnabled,
+        requestRender: () => tui.requestRender(),
+      });
+    });
   }
 
   /** Rebuilds resources from the active branch after start, resume, or tree navigation. */
@@ -53,7 +47,7 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     rebuildFromSession(ctx);
-    bindAutocomplete(ctx);
+    bindResourceEditor(ctx);
   });
 
   pi.on("session_tree", (_event, ctx) => {
@@ -75,9 +69,6 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", () => {
-    removeTerminalInputListener?.();
-    removeTerminalInputListener = undefined;
-    autocompleteState.active = false;
     resources.clear();
   });
 
@@ -92,7 +83,7 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const action = args.trim().toLowerCase();
       if (!action) {
-        ctx.ui.notify(i18n.t(autocompleteEnabled ? "referenceHint" : "referenceDisabledHint"), "info");
+        ctx.ui.notify(i18n.t(pickerEnabled ? "referenceHint" : "referenceDisabledHint"), "info");
         return;
       }
       if (!COMMAND_ACTIONS.includes(action as CommandAction)) {
@@ -100,9 +91,8 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      autocompleteEnabled = action === COMMAND_ACTION.enable || action === COMMAND_ACTION.show;
-      if (!autocompleteEnabled) autocompleteState.active = false;
-      ctx.ui.notify(i18n.t(autocompleteEnabled ? "enabled" : "disabled"), "info");
+      pickerEnabled = action === COMMAND_ACTION.enable || action === COMMAND_ACTION.show;
+      ctx.ui.notify(i18n.t(pickerEnabled ? "enabled" : "disabled"), "info");
     },
   };
   for (const name of COMMAND_NAMES) pi.registerCommand(name, command);
@@ -110,3 +100,4 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
 
 export * from "./autocomplete.ts";
 export * from "./collector.ts";
+export * from "./picker.ts";

@@ -1,13 +1,11 @@
 import { pathToFileURL } from "node:url";
-import type { AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions } from "@earendil-works/pi-tui";
-import { fuzzyFilter, hyperlink, isKeyRelease, Key, matchesKey } from "@earendil-works/pi-tui";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { fuzzyFilter, hyperlink } from "@earendil-works/pi-tui";
 import type { ResourceAction, ResourceKind, SessionResource } from "./collector.ts";
 import { i18n } from "./i18n.ts";
 
 export const RESOURCE_AUTOCOMPLETE_LIMIT = 12;
 const RESOURCE_QUERY_PATTERN = /(?:^|[\t ])#([^\s#]*)$/;
-const NEXT_CANDIDATE_INPUT = "\x1b[B";
-const PREVIOUS_CANDIDATE_INPUT = "\x1b[A";
 const RESOURCE_ICONS: Record<ResourceKind, string> = {
   file: "▤",
   review: "⎇",
@@ -26,24 +24,6 @@ const ACTION_LABELS: Record<ResourceAction, string> = {
   created: "actionCreated",
   referenced: "actionReferenced",
 };
-
-export interface ResourceAutocompleteState {
-  active: boolean;
-}
-
-interface CreateResourceAutocompleteProviderOptions {
-  current: AutocompleteProvider;
-  getResources: () => readonly SessionResource[];
-  onActiveChange: (active: boolean) => void;
-}
-
-interface ApplyResourceCompletionOptions {
-  lines: string[];
-  cursorLine: number;
-  cursorCol: number;
-  item: AutocompleteItem;
-  prefix: string;
-}
 
 /** Extracts the resource query only when # starts the token under the cursor. */
 export function extractResourceQuery(textBeforeCursor: string): string | undefined {
@@ -82,7 +62,7 @@ function resourceSearchText(resource: SessionResource): string {
   ].join(" ");
 }
 
-/** Formats one resource as a clickable built-in autocomplete row. */
+/** Formats one resource as a clickable picker row with its type first. */
 function resourceItem(resource: SessionResource): AutocompleteItem {
   const display = `${RESOURCE_KIND_LABELS[resource.kind]} ${RESOURCE_ICONS[resource.kind]} ${resource.label}`;
   const uri = resourceUri(resource);
@@ -95,7 +75,7 @@ function resourceItem(resource: SessionResource): AutocompleteItem {
   };
 }
 
-/** Filters recent resources with Pi's fuzzy matcher and caps the popup height. */
+/** Filters recent resources with Pi's fuzzy matcher and caps the result set. */
 export function resourceSuggestions(
   resources: readonly SessionResource[],
   query: string,
@@ -104,85 +84,4 @@ export function resourceSuggestions(
     ? fuzzyFilter([...resources], query, resourceSearchText)
     : [...resources];
   return matches.slice(0, RESOURCE_AUTOCOMPLETE_LIMIT).map(resourceItem);
-}
-
-/** Applies a # resource completion and leaves the editor ready for continued typing. */
-export function applyResourceCompletion(options: ApplyResourceCompletionOptions): {
-  lines: string[];
-  cursorLine: number;
-  cursorCol: number;
-} {
-  const { lines, cursorLine, cursorCol, item, prefix } = options;
-  const currentLine = lines[cursorLine] ?? "";
-  const beforePrefix = currentLine.slice(0, Math.max(0, cursorCol - prefix.length));
-  const afterCursor = currentLine.slice(cursorCol);
-  const needsSpace = afterCursor.length === 0 || !/^[\s,.;:!?)]/.test(afterCursor);
-  const suffix = needsSpace ? " " : "";
-  const nextLines = [...lines];
-  nextLines[cursorLine] = `${beforePrefix}${item.value}${suffix}${afterCursor}`;
-  return {
-    lines: nextLines,
-    cursorLine,
-    cursorCol: beforePrefix.length + item.value.length + suffix.length,
-  };
-}
-
-/** Layers # resource completion over Pi's existing slash, path, and @ providers. */
-export function createResourceAutocompleteProvider(
-  options: CreateResourceAutocompleteProviderOptions,
-): AutocompleteProvider {
-  const { current, getResources, onActiveChange } = options;
-  let resourceSuggestionsActive = false;
-
-  /** Keeps Tab routing synchronized with the currently visible resource popup. */
-  function setActive(active: boolean): void {
-    resourceSuggestionsActive = active;
-    onActiveChange(active);
-  }
-
-  return {
-    triggerCharacters: [...new Set([...(current.triggerCharacters ?? []), "#"])],
-    async getSuggestions(lines, cursorLine, cursorCol, request): Promise<AutocompleteSuggestions | null> {
-      const currentLine = lines[cursorLine] ?? "";
-      const query = extractResourceQuery(currentLine.slice(0, cursorCol));
-      if (query === undefined) {
-        setActive(false);
-        return current.getSuggestions(lines, cursorLine, cursorCol, request);
-      }
-
-      const items = resourceSuggestions(getResources(), query);
-      if (request.signal.aborted || items.length === 0) {
-        setActive(false);
-        return current.getSuggestions(lines, cursorLine, cursorCol, request);
-      }
-
-      setActive(true);
-      return { items, prefix: `#${query}` };
-    },
-    applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
-      if (!resourceSuggestionsActive) {
-        return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
-      }
-      setActive(false);
-      return applyResourceCompletion({ lines, cursorLine, cursorCol, item, prefix });
-    },
-    shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
-      return current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true;
-    },
-  };
-}
-
-/** Rewrites Tab into wrapped candidate navigation while the # popup is active. */
-export function routeResourceAutocompleteInput(
-  data: string,
-  state: ResourceAutocompleteState,
-): { consume?: boolean; data?: string } | undefined {
-  if (!state.active || isKeyRelease(data)) return undefined;
-  if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-    state.active = false;
-    return undefined;
-  }
-  if (matchesKey(data, Key.shift("tab"))) return { data: PREVIOUS_CANDIDATE_INPUT };
-  if (matchesKey(data, Key.tab)) return { data: NEXT_CANDIDATE_INPUT };
-  return undefined;
 }

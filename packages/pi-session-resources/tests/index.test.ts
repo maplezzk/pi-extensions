@@ -6,15 +6,16 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import sessionResourcesExtension from "../src/index.ts";
 
 type EventHandler = (...args: unknown[]) => unknown;
 type SessionResourcesCommand = {
   handler(args: string, ctx: ExtensionCommandContext): Promise<void>;
 };
-type AutocompleteProviderFactory = (current: AutocompleteProvider) => AutocompleteProvider;
-type TerminalInputHandler = (data: string) => { consume?: boolean; data?: string } | undefined;
+type EditorFactory = Exclude<
+  Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0],
+  undefined
+>;
 
 /** Creates a minimal Pi API mock that captures registered events and commands. */
 function createPiMock(): {
@@ -43,26 +44,11 @@ function createPiMock(): {
   return { pi, events, commands, shortcuts };
 }
 
-/** Creates a no-op base provider for autocomplete layering assertions. */
-function createBaseProvider(): AutocompleteProvider {
-  return {
-    /** Returns no base suggestions so only session resources are visible. */
-    async getSuggestions(): Promise<null> {
-      return null;
-    },
-    /** Leaves delegated editor state unchanged. */
-    applyCompletion(lines, cursorLine, cursorCol) {
-      return { lines, cursorLine, cursorCol };
-    },
-  };
-}
-
-test("registers # completion, rewrites Tab to candidate navigation, and removes the persistent widget", async () => {
+test("registers a composable custom editor picker without persistent widgets or shortcuts", async () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const { pi, events, commands, shortcuts } = createPiMock();
-  let autocompleteFactory: AutocompleteProviderFactory | undefined;
-  let terminalInputHandler: TerminalInputHandler | undefined;
-  let inputListenerRemoved = false;
+  let editorFactory: EditorFactory | undefined;
+  let previousEditorRead = false;
   const notifications: string[] = [];
   const context = {
     mode: "tui",
@@ -74,16 +60,14 @@ test("registers # completion, rewrites Tab to candidate navigation, and removes 
       },
     },
     ui: {
-      /** Captures the resource provider layered over Pi's built-in provider. */
-      addAutocompleteProvider(factory: AutocompleteProviderFactory): void {
-        autocompleteFactory = factory;
+      /** Exposes the current editor factory for extension composition. */
+      getEditorComponent(): undefined {
+        previousEditorRead = true;
+        return undefined;
       },
-      /** Captures Tab routing and exposes listener cleanup. */
-      onTerminalInput(handler: TerminalInputHandler): () => void {
-        terminalInputHandler = handler;
-        return () => {
-          inputListenerRemoved = true;
-        };
+      /** Captures the editor wrapper installed by the extension. */
+      setEditorComponent(factory: EditorFactory): void {
+        editorFactory = factory;
       },
       /** Records command feedback. */
       notify(message: string): void {
@@ -100,8 +84,8 @@ test("registers # completion, rewrites Tab to candidate navigation, and removes 
   const sessionStart = events.get("session_start");
   assert.ok(sessionStart);
   sessionStart({}, context);
-  assert.ok(autocompleteFactory);
-  assert.ok(terminalInputHandler);
+  assert.equal(previousEditorRead, true);
+  assert.ok(editorFactory);
 
   const toolResult = events.get("tool_result");
   assert.ok(toolResult);
@@ -115,31 +99,13 @@ test("registers # completion, rewrites Tab to candidate navigation, and removes 
     context,
   );
 
-  const provider = autocompleteFactory(createBaseProvider());
-  const text = "inspect #session";
-  const suggestions = await provider.getSuggestions(
-    [text],
-    0,
-    text.length,
-    { signal: new AbortController().signal },
-  );
-  assert.equal(suggestions?.items.length, 1);
-  assert.equal(suggestions?.items[0]?.value, '#"docs/session notes.md"');
-  assert.deepEqual(terminalInputHandler("\t"), { data: "\x1b[B" });
-
   const command = commands.get("config:session-resources") as SessionResourcesCommand;
   await command.handler("disable", context as unknown as ExtensionCommandContext);
-  const disabledSuggestions = await provider.getSuggestions(
-    ["#session"],
-    0,
-    "#session".length,
-    { signal: new AbortController().signal },
-  );
-  assert.equal(disabledSuggestions, null);
   assert.match(notifications.at(-1) ?? "", /disabled/);
+  await command.handler("enable", context as unknown as ExtensionCommandContext);
+  assert.match(notifications.at(-1) ?? "", /enabled/);
 
   const shutdown = events.get("session_shutdown");
   assert.ok(shutdown);
   shutdown({}, context);
-  assert.equal(inputListenerRemoved, true);
 });

@@ -1,7 +1,7 @@
 {
   "name": "pi-session-resources",
   "version": "0.1.0",
-  "description": "Clickable Pi # autocomplete for session files, browser URLs, and pull or merge requests",
+  "description": "Clickable tabbed Pi # picker for session files, browser URLs, and pull or merge requests",
   "type": "module",
   "main": "./index.ts",
   "exports": {
