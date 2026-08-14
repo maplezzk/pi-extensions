@@ -1,31 +1,47 @@
 {
   "commandDescription": {
-    "zh-CN": "展开、折叠、显示或隐藏会话资源链接",
-    "en-US": "Expand, collapse, show, or hide session resource links"
+    "zh-CN": "浏览、显示、隐藏或展开会话资源链接",
+    "en-US": "Browse, show, hide, or expand session resource links"
   },
   "commandUsage": {
     "zh-CN": "用法：/config:session-resources [show|hide|expand|collapse]",
     "en-US": "Usage: /config:session-resources [show|hide|expand|collapse]"
   },
-  "widgetTitle": {
-    "zh-CN": "会话资源",
-    "en-US": "Session resources"
-  },
-  "summaryCounts": {
-    "zh-CN": "{files} 个文件 · {links} 个链接",
-    "en-US": "{files} files · {links} links"
-  },
   "moreResources": {
-    "zh-CN": "还有 {count} 项 · {expandHint}",
-    "en-US": "{count} more · {expandHint}"
+    "zh-CN": "还有 {count} 项未显示",
+    "en-US": "{count} more not shown"
   },
   "expandShortcut": {
     "zh-CN": "{shortcut} 展开",
     "en-US": "{shortcut} to expand"
   },
+  "collapseShortcut": {
+    "zh-CN": "{shortcut} 折叠",
+    "en-US": "{shortcut} to collapse"
+  },
   "expandCommand": {
     "zh-CN": "/config:session-resources expand",
     "en-US": "/config:session-resources expand"
+  },
+  "collapseCommand": {
+    "zh-CN": "/config:session-resources collapse",
+    "en-US": "/config:session-resources collapse"
+  },
+  "widgetHint": {
+    "zh-CN": "Ctrl+↑ 浏览 · {expansionHint}",
+    "en-US": "Ctrl+↑ to browse · {expansionHint}"
+  },
+  "browserHint": {
+    "zh-CN": "←/→ 切换 · {expansionHint} · ↓/Esc 返回",
+    "en-US": "←/→ to switch · {expansionHint} · ↓/Esc to return"
+  },
+  "browserShortcutDescription": {
+    "zh-CN": "浏览会话资源 Tab",
+    "en-US": "Browse session resource tabs"
+  },
+  "emptyTab": {
+    "zh-CN": "当前分类暂无资源",
+    "en-US": "No resources in this category"
   },
   "olderResources": {
     "zh-CN": "还有 {count} 项较早资源未显示",

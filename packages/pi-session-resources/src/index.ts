@@ -3,11 +3,17 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { ResourceBrowser } from "./browser.ts";
 import { collectSessionResources, collectToolResources, ResourceIndex } from "./collector.ts";
 import { i18n } from "./i18n.ts";
-import { renderResourceWidget } from "./render.ts";
+import {
+  renderResourceWidget,
+  resolveResourceTab,
+  type ResourceTab,
+} from "./render.ts";
 
 const WIDGET_KEY = "session-resources";
+const BROWSER_SHORTCUT = "ctrl+up";
 const COMMAND_NAMES = ["config:session-resources", "session-resources"] as const;
 const COMMAND_ACTIONS = ["show", "hide", "expand", "collapse"] as const;
 type CommandAction = (typeof COMMAND_ACTIONS)[number];
@@ -16,16 +22,20 @@ type CommandAction = (typeof COMMAND_ACTIONS)[number];
 export default function sessionResourcesExtension(pi: ExtensionAPI): void {
   const resources = new ResourceIndex();
   let widgetVisible = true;
+  let browserOpen = false;
+  let activeTab: ResourceTab | undefined;
 
   /** Replaces the widget so Pi requests a render with the latest immutable snapshot. */
   function refreshWidget(ctx: ExtensionContext): void {
     if (ctx.mode !== "tui") return;
     const snapshot = resources.list();
-    if (!widgetVisible || snapshot.length === 0) {
+    if (!widgetVisible || browserOpen || snapshot.length === 0) {
       ctx.ui.setWidget(WIDGET_KEY, undefined);
       return;
     }
 
+    activeTab = resolveResourceTab(snapshot, activeTab);
+    const selectedTab = activeTab;
     ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => ({
       /** Renders links from the snapshot captured when the widget was refreshed. */
       render(width: number): string[] {
@@ -33,12 +43,81 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
           resources: snapshot,
           width,
           expanded: ctx.ui.getToolsExpanded(),
+          activeTab: selectedTab,
           theme,
         });
       },
       /** The widget has no themed cache to invalidate. */
       invalidate(): void {},
     }));
+  }
+
+  /** Opens the focusable ask-style browser while temporarily hiding the passive widget. */
+  async function openResourceBrowser(ctx: ExtensionContext): Promise<void> {
+    if (browserOpen) return;
+    const snapshot = resources.list();
+    if (snapshot.length === 0) {
+      ctx.ui.notify(i18n.t("empty"), "info");
+      return;
+    }
+
+    activeTab = resolveResourceTab(snapshot, activeTab);
+    browserOpen = true;
+    refreshWidget(ctx);
+    try {
+      await ctx.ui.custom<boolean>(
+        (tui, theme, keybindings, done) => {
+          /** Reads Pi's canonical Ctrl+O expansion state. */
+          function getExpanded(): boolean {
+            return ctx.ui.getToolsExpanded();
+          }
+
+          /** Updates Pi's canonical Ctrl+O expansion state. */
+          function setExpanded(expanded: boolean): void {
+            ctx.ui.setToolsExpanded(expanded);
+          }
+
+          /** Persists the selected resource tab after the browser closes. */
+          function onTabChange(tab: ResourceTab): void {
+            activeTab = tab;
+          }
+
+          /** Closes the overlay and lets Pi restore editor focus. */
+          function onClose(): void {
+            done(true);
+          }
+
+          /** Requests an immediate repaint after local browser state changes. */
+          function requestRender(): void {
+            tui.requestRender();
+          }
+
+          return new ResourceBrowser({
+            resources: snapshot,
+            activeTab: activeTab ?? resolveResourceTab(snapshot),
+            theme,
+            keybindings,
+            getExpanded,
+            setExpanded,
+            onTabChange,
+            onClose,
+            requestRender,
+          });
+        },
+        {
+          overlay: true,
+          overlayOptions: {
+            anchor: "bottom-center",
+            width: "100%",
+            maxHeight: "100%",
+            margin: { left: 0, right: 0, bottom: 0 },
+          },
+        },
+      );
+    } finally {
+      browserOpen = false;
+      refreshWidget(ctx);
+    }
   }
 
   /** Rebuilds resources from the active branch after start, resume, or tree navigation. */
@@ -82,11 +161,15 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
       const matches = COMMAND_ACTIONS.filter((action) => action.startsWith(prefix));
       return matches.length > 0 ? matches.map((action) => ({ value: action, label: action })) : null;
     },
-    /** Applies the requested in-memory widget state and immediately refreshes the TUI. */
+    /** Opens the browser or applies the requested in-memory widget state. */
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const action = args.trim().toLowerCase();
       if (action && !COMMAND_ACTIONS.includes(action as CommandAction)) {
         ctx.ui.notify(i18n.t("commandUsage"), "warning");
+        return;
+      }
+      if (!action) {
+        await openResourceBrowser(ctx);
         return;
       }
 
@@ -113,7 +196,12 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
     },
   };
   for (const name of COMMAND_NAMES) pi.registerCommand(name, command);
+  pi.registerShortcut(BROWSER_SHORTCUT, {
+    description: i18n.t("browserShortcutDescription"),
+    handler: openResourceBrowser,
+  });
 }
 
+export * from "./browser.ts";
 export * from "./collector.ts";
 export * from "./render.ts";

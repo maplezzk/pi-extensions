@@ -10,28 +10,33 @@
 - 跟踪结构化 HTTP(S) URL 字段，以及浏览器、shell、MR/PR 创建工具输出的链接。
 - 识别 GitHub Pull Request 与 GitLab Merge Request，并标记 `gh pr create`、`glab mr create` 等创建动作。
 - 在 reload、resume、fork 或 `/tree` 导航后，从当前会话分支重建状态；不会向模型上下文写入跟踪条目。
-- 将最近资源渲染成 OSC 8 超链接：文件使用 `file://`，网页和 MR/PR 保留原 URL。
+- 将最近资源按文件、PR/MR、网页分成三个 Tab，并渲染成 OSC 8 超链接：文件使用 `file://`，网页和 MR/PR 保留原 URL。
 - 通过 `pi-extensions-i18n` 提供 `zh-CN` 和 `en-US` 文案。
 
 示例：
 
 ```text
-会话资源  3 个文件 · 2 个链接
-FILE src/index.ts  [改,读]
-MR owner/repo#42  [建]
-WEB developer.mozilla.org/en-US/docs/Web/API  [开]
+────────────────────────────────────────────────────
+ ←  [FILE 3]  PR/MR 1  WEB 2  →
+
+ FILE src/index.ts                       [改,读]
+ FILE docs/session notes.md              [读]
+────────────────────────────────────────────────────
+ Ctrl+↑ 浏览 · Ctrl+O 展开
 ```
 
-折叠状态显示最近 4 项，展开状态最多显示 16 项，并提示还有多少较早资源未显示。组件直接跟随 Pi 内置的 `app.tools.expand` 状态，因此默认使用 Ctrl+O 同时展开或折叠工具输出与会话资源。用户如果在 `keybindings.json` 中重映射该内置动作，组件也会自动跟随，不会额外注册冲突快捷键。
+组件固定在编辑器上方，一次只显示一个资源类型，避免文件、PR/MR 与网页混排。按 Ctrl+↑ 打开与 `ask_user_question` 风格一致的焦点面板，使用 ←/→ 切换 Tab，使用 ↓ 或 Esc 返回编辑器。
+
+折叠状态显示当前 Tab 最近 4 项，展开状态最多显示 16 项，并提示还有多少较早资源未显示。组件直接跟随 Pi 内置的 `app.tools.expand` 状态，因此 Ctrl+O 同时展开或折叠工具输出与会话资源。用户如果在 `keybindings.json` 中重映射该内置动作，组件也会自动跟随，不会额外注册冲突快捷键。
 
 ## 命令
 
 ```text
-/config:session-resources             切换展开/折叠
+/config:session-resources             打开资源 Tab 浏览面板
 /config:session-resources show        显示组件
 /config:session-resources hide        隐藏组件
-/config:session-resources expand      显示更多最近资源
-/config:session-resources collapse    返回紧凑视图
+/config:session-resources expand      显示当前 Tab 更多最近资源
+/config:session-resources collapse    返回当前 Tab 紧凑视图
 ```
 
 `/session-resources` 继续作为兼容别名保留。

@@ -10,28 +10,33 @@ A passive session-context extension for the [Pi coding agent](https://github.com
 - Tracks structured HTTP(S) URL fields plus links emitted by browser, shell, and MR/PR creation tools.
 - Recognizes GitHub pull requests and GitLab merge requests and marks creation commands such as `gh pr create` and `glab mr create`.
 - Rebuilds state from the active session branch after reload, resume, fork, or `/tree` navigation. It does not add tracking entries to model context.
-- Renders recent resources as OSC 8 hyperlinks. File links use `file://`; web and review links keep their original URL.
+- Splits recent resources into file, PR/MR, and web tabs and renders them as OSC 8 hyperlinks. File links use `file://`; web and review links keep their original URL.
 - Provides both `zh-CN` and `en-US` UI text through `pi-extensions-i18n`.
 
 Example:
 
 ```text
-Session resources  3 files · 2 links
-FILE src/index.ts  [write,read]
-MR owner/repo#42  [created]
-WEB developer.mozilla.org/en-US/docs/Web/API  [open]
+────────────────────────────────────────────────────
+ ←  [FILE 3]  PR/MR 1  WEB 2  →
+
+ FILE src/index.ts                       [write,read]
+ FILE docs/session notes.md              [read]
+────────────────────────────────────────────────────
+ Ctrl+↑ to browse · Ctrl+O to expand
 ```
 
-The collapsed widget shows the 4 most recent resources. The expanded widget shows up to 16 and reports how many older resources remain hidden. The widget follows Pi's built-in `app.tools.expand` state, so the standard Ctrl+O binding expands or collapses tool output and session resources together. If the user remaps that built-in action in `keybindings.json`, the widget follows the remapped key without registering a competing shortcut.
+The widget stays above the editor and shows one resource type at a time, so files, PR/MR links, and web links are not mixed. Ctrl+Up opens a focused panel styled like `ask_user_question`; use Left/Right to switch tabs and Down or Esc to return to the editor.
+
+Collapsed mode shows the 4 most recent resources in the current tab. Expanded mode shows up to 16 and reports how many older resources remain hidden. The widget follows Pi's built-in `app.tools.expand` state, so Ctrl+O expands or collapses tool output and session resources together. If the user remaps that built-in action in `keybindings.json`, the widget follows the remapped key without registering a competing shortcut.
 
 ## Commands
 
 ```text
-/config:session-resources             Toggle expanded/collapsed view
+/config:session-resources             Open the focused tab browser
 /config:session-resources show        Show the widget
 /config:session-resources hide        Hide the widget
-/config:session-resources expand      Show more recent resources
-/config:session-resources collapse    Return to the compact view
+/config:session-resources expand      Show more resources in the current tab
+/config:session-resources collapse    Return the current tab to compact view
 ```
 
 `/session-resources` remains available as a compatibility alias.

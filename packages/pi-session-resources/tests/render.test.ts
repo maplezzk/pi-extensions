@@ -12,6 +12,7 @@ import {
 
 const theme = {
   fg: (_color: string, text: string) => text,
+  bg: (_color: string, text: string) => text,
   bold: (text: string) => text,
 } as unknown as Theme;
 
@@ -36,28 +37,40 @@ test("widget percent-encodes spaces in OSC 8 file and web targets", () => {
   const fileTarget = resolve("/workspace/project/docs/design notes/context map.md");
   const fileUri = pathToFileURL(fileTarget).href;
   const webUri = "https://example.com/docs/get%20started?q=hello%20world";
-  const lines = renderResourceWidget({
-    resources: [
-      resourceFixture({
-        target: fileTarget,
-        label: "docs/design notes/context map.md",
-      }),
-      resourceFixture({
-        key: `web:${webUri}`,
-        kind: "web",
-        target: webUri,
-        label: "example.com/docs/get started",
-        actions: ["opened"],
-        tools: ["browser_navigate"],
-        lastSeenAt: 2,
-      }),
-    ],
+  const resources = [
+    resourceFixture({
+      target: fileTarget,
+      label: "docs/design notes/context map.md",
+    }),
+    resourceFixture({
+      key: `web:${webUri}`,
+      kind: "web",
+      target: webUri,
+      label: "example.com/docs/get started",
+      actions: ["opened"],
+      tools: ["browser_navigate"],
+      lastSeenAt: 2,
+    }),
+  ];
+  const fileLines = renderResourceWidget({
+    resources,
     width: 80,
     expanded: false,
+    activeTab: "file",
     theme,
   });
-  const output = lines.join("\n");
+  const webLines = renderResourceWidget({
+    resources,
+    width: 80,
+    expanded: false,
+    activeTab: "web",
+    theme,
+  });
+  const output = [...fileLines, ...webLines].join("\n");
 
+  assert.match(fileLines[1] ?? "", /FILE 1.*PR\/MR 0.*WEB 1/);
+  assert.doesNotMatch(fileLines.join("\n"), /example\.com/);
+  assert.doesNotMatch(webLines.join("\n"), /docs\/design notes/);
   assert.ok(fileUri.includes("design%20notes/context%20map.md"));
   assert.ok(output.includes(`\x1b]8;;${fileUri}\x1b\\`));
   assert.ok(output.includes(`\x1b]8;;${webUri}\x1b\\`));
@@ -84,9 +97,10 @@ test("label truncation never cuts the OSC 8 control sequence or target", () => {
     ],
     width: 28,
     expanded: false,
+    activeTab: "file",
     theme,
   });
-  const resourceLine = lines[1] ?? "";
+  const resourceLine = lines[3] ?? "";
 
   assert.ok(resourceLine.includes(`\x1b]8;;${uri}\x1b\\`));
   assert.ok(resourceLine.includes("\x1b]8;;\x1b\\"));
@@ -105,10 +119,20 @@ test("widget rows remain within terminal width", () => {
     ],
     width,
     expanded: false,
+    activeTab: "file",
     theme,
   });
 
   for (const line of lines) assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}`);
+
+  const emptyTabLines = renderResourceWidget({
+    resources: [resourceFixture({})],
+    width: 12,
+    expanded: false,
+    activeTab: "review",
+    theme,
+  });
+  for (const line of emptyTabLines) assert.ok(visibleWidth(line) <= 12, `${visibleWidth(line)} > 12`);
 });
 
 test("collapsed widget limits rows and reports hidden resources", () => {
@@ -122,7 +146,14 @@ test("collapsed widget limits rows and reports hidden resources", () => {
     }),
   ).reverse();
 
-  const lines = renderResourceWidget({ resources, width: 80, expanded: false, theme });
-  assert.equal(lines.length, COMPACT_RESOURCE_LIMIT + 2);
-  assert.match(lines.at(-1) ?? "", /2 more · \/config:session-resources expand/);
+  const lines = renderResourceWidget({
+    resources,
+    width: 80,
+    expanded: false,
+    activeTab: "file",
+    theme,
+  });
+  assert.equal(lines.length, COMPACT_RESOURCE_LIMIT + 6);
+  assert.match(lines.find((line) => line.includes("2 more")) ?? "", /2 more not shown/);
+  assert.match(lines.at(-1) ?? "", /Ctrl\+↑ to browse/);
 });
