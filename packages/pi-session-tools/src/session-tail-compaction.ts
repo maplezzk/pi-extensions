@@ -532,9 +532,12 @@ async function handleConfigCommand(
   );
 }
 
+/** 阈值提示消息的投递模式：agent 停止后立即投递（followUp）并触发下一轮（triggerTurn）。 */
+const HINT_DELIVER_MODE = "followUp" as const;
+
 /**
  * 上下文阈值提示：agent 结束且无压缩任务时，若上下文跨过未提示过的阈值，
- * 注入一条 nextTurn 消息建议主 agent 考虑 session_squash（不打断用户）。
+ * 注入一条 followUp 消息建议主 agent 考虑 session_squash（停止后立即触发）。
  * 上下文跌回阈值以下（如压缩后）自动恢复该档位的可提示状态。
  */
 function checkContextThreshold(
@@ -577,6 +580,7 @@ function checkContextThreshold(
     }),
     "info",
   );
+  // 停止后立即投递并触发下一轮，让主 agent 立即评估是否压缩（不排队等下次用户输入）。
   pi.sendMessage(
     {
       customType: SESSION_SQUASH_HINT_TYPE,
@@ -592,6 +596,6 @@ function checkContextThreshold(
       display: false,
       details: { tokens, threshold: candidate.resolved },
     },
-    { deliverAs: "nextTurn" },
+    { deliverAs: HINT_DELIVER_MODE, triggerTurn: true },
   );
 }
