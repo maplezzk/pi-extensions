@@ -1,0 +1,70 @@
+{
+  "commandDescription": {
+    "zh-CN": "展开、折叠、显示或隐藏会话资源链接",
+    "en-US": "Expand, collapse, show, or hide session resource links"
+  },
+  "commandUsage": {
+    "zh-CN": "用法：/session-resources [show|hide|expand|collapse]",
+    "en-US": "Usage: /session-resources [show|hide|expand|collapse]"
+  },
+  "widgetTitle": {
+    "zh-CN": "会话资源",
+    "en-US": "Session resources"
+  },
+  "summaryCounts": {
+    "zh-CN": "{files} 个文件 · {links} 个链接",
+    "en-US": "{files} files · {links} links"
+  },
+  "moreResources": {
+    "zh-CN": "还有 {count} 项 · /session-resources 展开",
+    "en-US": "{count} more · /session-resources to expand"
+  },
+  "olderResources": {
+    "zh-CN": "还有 {count} 项较早资源未显示",
+    "en-US": "{count} older resources not shown"
+  },
+  "empty": {
+    "zh-CN": "当前会话尚未收集到资源",
+    "en-US": "No resources collected in this session"
+  },
+  "shown": {
+    "zh-CN": "会话资源已显示",
+    "en-US": "Session resources shown"
+  },
+  "hidden": {
+    "zh-CN": "会话资源已隐藏",
+    "en-US": "Session resources hidden"
+  },
+  "expanded": {
+    "zh-CN": "会话资源已展开",
+    "en-US": "Session resources expanded"
+  },
+  "collapsed": {
+    "zh-CN": "会话资源已折叠",
+    "en-US": "Session resources collapsed"
+  },
+  "actionRead": {
+    "zh-CN": "读",
+    "en-US": "read"
+  },
+  "actionChanged": {
+    "zh-CN": "改",
+    "en-US": "write"
+  },
+  "actionInspected": {
+    "zh-CN": "查",
+    "en-US": "inspect"
+  },
+  "actionOpened": {
+    "zh-CN": "开",
+    "en-US": "open"
+  },
+  "actionCreated": {
+    "zh-CN": "建",
+    "en-US": "created"
+  },
+  "actionReferenced": {
+    "zh-CN": "引",
+    "en-US": "ref"
+  }
+}
