@@ -185,6 +185,29 @@ test("picker renders a bordered tab bar with one blue accent", () => {
   assert.ok((lines.at(-1) ?? "").includes(`${ACCENT_START}╰`));
 });
 
+test("picker keeps styling inside the OSC 8 link so selected URLs render once", () => {
+  const lines = renderResourcePicker({
+    resources: resourceSet(),
+    activeKind: "web",
+    query: "",
+    selectedIndex: 0,
+    width: 72,
+    theme,
+  });
+
+  const row = lines.find((line) => line.includes("example.com/docs")) ?? "";
+  const linkStart = row.indexOf("\x1b]8;;https://example.com/docs\x1b\\");
+  const linkEnd = row.indexOf("\x1b]8;;\x1b\\", linkStart);
+  assert.ok(linkStart >= 0);
+  assert.ok(linkEnd > linkStart);
+  const linkBody = row.slice(linkStart, linkEnd);
+  assert.ok(linkBody.includes(BOLD_START));
+  assert.ok(linkBody.includes(ACCENT_START));
+  const visibleText = row.replace(/\x1b\][^\x1b]*\x1b\\/g, "");
+  assert.equal(visibleText.split("example.com/docs").length - 1, 1);
+  assert.ok(lines.every((line) => visibleWidth(line) === 72));
+});
+
 test("picker keeps the same blue accent across resource types", () => {
   for (const kind of ["review", "web"] as const) {
     const lines = renderResourcePicker({

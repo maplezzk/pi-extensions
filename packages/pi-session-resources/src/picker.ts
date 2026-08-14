@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { ResourceKind, SessionResource } from "./collector.ts";
 import { i18n } from "./i18n.ts";
-import { KIND_COLORS, kindColored, resourceSuggestions } from "./autocomplete.ts";
+import { KIND_COLORS, kindColored, linkUri, resourceSuggestions } from "./autocomplete.ts";
 
 export const RESOURCE_PICKER_VISIBLE_LIMIT = 6;
 const PANEL_BORDER_WIDTH = 2;
@@ -87,6 +87,8 @@ interface RenderItemOptions {
   label: string;
   /** Visible width of the plain label; defaults to the ANSI-aware measurement. */
   labelWidth?: number;
+  /** OSC 8 target applied after styling so the clickable text stays intact. */
+  linkUri?: string;
   description?: string;
   selected: boolean;
   innerWidth: number;
@@ -165,7 +167,8 @@ function renderItem(options: RenderItemOptions): string {
     : "";
   const gap = " ".repeat(Math.max(1, labelWidth - (truncated ? labelWidth : plainLabelWidth) + gapWidth));
   const prefix = selected ? kindAccent(kind, rawPrefix) : rawPrefix;
-  const labelText = selected ? kindAccent(kind, theme.bold(fittedLabel)) : fittedLabel;
+  const styledLabel = selected ? kindAccent(kind, theme.bold(fittedLabel)) : fittedLabel;
+  const labelText = linkUri(styledLabel, options.linkUri);
   const primary = `${prefix}${labelText}`;
   const secondary = showDescription
     ? theme.fg(THEME_COLOR.dim, `${gap}${fittedDescription}`)
@@ -216,6 +219,7 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
             kind: activeKind,
             label: item.label,
             labelWidth: item.labelWidth,
+            linkUri: item.linkUri,
             description: item.description,
             selected: index === selectedIndex,
             innerWidth,

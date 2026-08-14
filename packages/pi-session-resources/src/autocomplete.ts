@@ -8,25 +8,25 @@ const ANSI_RESET = "\x1b[0m";
 const ANSI_FOREGROUND_RGB_MODE = 38;
 const ANSI_TRUECOLOR_MODE = 2;
 
-/** One RGB truecolor escape; fixed values match the subagent widget approach. */
-function rgb(red: number, green: number, blue: number): string {
-  return `\x1b[${ANSI_FOREGROUND_RGB_MODE};${ANSI_TRUECOLOR_MODE};${red};${green};${blue}m`;
-}
-
-/** Wraps text in one fixed RGB foreground color. */
-function tinted(start: string, text: string): string {
-  return `${start}${text}${ANSI_RESET}`;
-}
-
 interface RgbColor {
   red: number;
   green: number;
   blue: number;
 }
 
+/** One RGB truecolor escape; fixed values match the subagent widget approach. */
+function rgb(red: number, green: number, blue: number): string {
+  return `\x1b[${ANSI_FOREGROUND_RGB_MODE};${ANSI_TRUECOLOR_MODE};${red};${green};${blue}m`;
+}
+
 /** Builds one foreground escape from a palette entry. */
 function foreground(color: RgbColor): string {
   return rgb(color.red, color.green, color.blue);
+}
+
+/** Wraps text in one fixed RGB foreground color. */
+function tinted(start: string, text: string): string {
+  return `${start}${text}${ANSI_RESET}`;
 }
 
 /** Single fixed subagent blue accent; readable on light and dark themes. */
@@ -48,9 +48,12 @@ const ACTION_LABELS: Record<ResourceAction, string> = {
 
 export interface ResourceSuggestion {
   value: string;
+  /** Plain resource text; pickers should color it first, then wrap with linkUri. */
   label: string;
-  /** Visible width of the plain label, for layout around OSC 8 sequences. */
+  /** Visible width of label, for layout around OSC 8 sequences. */
   labelWidth: number;
+  /** OSC 8 target; undefined when the resource has no safe clickable target. */
+  linkUri?: string;
   description: string;
 }
 
@@ -63,6 +66,11 @@ export const KIND_COLORS: Record<ResourceKind, string> = {
 /** Colorizes plain text with the shared blue accent. */
 export function kindColored(kind: ResourceKind, text: string): string {
   return tinted(KIND_COLORS[kind], text);
+}
+
+/** Wraps already-styled text in an OSC 8 hyperlink so styling codes stay inside the link. */
+export function linkUri(text: string, uri: string | undefined): string {
+  return uri ? hyperlink(text, uri) : text;
 }
 
 /** Extracts the resource query only when # starts the token under the cursor. */
@@ -102,16 +110,16 @@ function resourceSearchText(resource: SessionResource): string {
   ].join(" ");
 }
 
-/** Formats one resource as a clickable picker row without repeating the active tab type. */
+/** Formats one resource as a picker row without repeating the active tab type. */
 function resourceItem(resource: SessionResource): ResourceSuggestion {
-  const uri = resourceUri(resource);
   const actions = resource.actions.map((action) => i18n.t(ACTION_LABELS[action])).join(" · ");
   const usage = resource.seenCount > 1 ? ` · ×${resource.seenCount}` : "";
   const label = resource.label;
   return {
     value: resourceReference(resource),
-    label: uri ? hyperlink(label, uri) : label,
+    label,
     labelWidth: visibleWidth(label),
+    linkUri: resourceUri(resource),
     description: `${actions}${usage}`,
   };
 }
