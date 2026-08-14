@@ -58,6 +58,8 @@ Relative paths embedded only inside an arbitrary shell command are not parsed as
 
 Click behavior depends on the terminal. Pi fullscreen mode can open OSC 8 links directly, while many terminals use Cmd/Ctrl-click in normal mode. Unsupported terminals still show readable labels.
 
+File targets are generated with `pathToFileURL()`, and structured HTTP(S) URL fields are normalized with `URL`, so spaces and other unsafe target characters are percent-encoded before entering OSC 8. Plain-text tool output must still contain a syntactically valid URL; URLs containing spaces should use `%20`, because whitespace is necessarily treated as the boundary between prose and a loose URL.
+
 ## Privacy and portability
 
 The package makes no network requests and starts no background process. Collected state stays in memory and is reconstructed from the current Pi session branch, whose tool calls and results already contain the source data. Labels omit URL query strings, while the clickable target preserves the original URL.

@@ -6,6 +6,16 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 export type ResourceKind = "file" | "review" | "web";
 export type ResourceAction = "read" | "changed" | "inspected" | "opened" | "created" | "referenced";
+const REFERENCE_SYNTAX = {
+  structured: "structured",
+  loose: "loose",
+} as const;
+type ReferenceSyntax = (typeof REFERENCE_SYNTAX)[keyof typeof REFERENCE_SYNTAX];
+const OBSERVATION_SOURCE = {
+  input: "input",
+  output: "output",
+} as const;
+type ObservationSource = (typeof OBSERVATION_SOURCE)[keyof typeof OBSERVATION_SOURCE];
 
 export interface SessionResource {
   key: string;
@@ -46,10 +56,18 @@ interface CollectOperationStringsOptions {
   depth?: number;
 }
 
+interface NormalizeFilePathOptions {
+  rawPath: string;
+  cwd: string;
+  allowMissing: boolean;
+  syntax: ReferenceSyntax;
+}
+
 interface PushFileObservationOptions {
   observations: ResourceObservation[];
   rawPath: string;
-  source: "input" | "output";
+  source: ObservationSource;
+  syntax: ReferenceSyntax;
   context: ToolObservation;
   action: ResourceAction;
 }
@@ -57,6 +75,7 @@ interface PushFileObservationOptions {
 interface PushUrlObservationOptions {
   observations: ResourceObservation[];
   rawUrl: string;
+  syntax: ReferenceSyntax;
   context: ToolObservation;
   createsReview: boolean;
   opensBrowser: boolean;
@@ -65,7 +84,7 @@ interface PushUrlObservationOptions {
 interface ScanValueOptions {
   value: unknown;
   key?: string;
-  source: "input" | "output";
+  source: ObservationSource;
   context: ToolObservation;
   action: ResourceAction;
   createsReview: boolean;
@@ -83,6 +102,7 @@ const MAX_SCAN_DEPTH = 8;
 const BASH_TOOL_NAME = "bash";
 const WINDOWS_PLATFORM = "win32";
 const WINDOWS_DRIVE_PREFIX_PATTERN = /^[A-Za-z]:[\\/]/;
+const FILE_URL_PREFIX = "file://";
 const HTTP_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
 const FILE_URL_PATTERN = /file:\/\/[^\s<>"'`]+/g;
 const POSIX_PATH_PATTERN = /(?:^|[\s"'`([{<])((?:~\/|\/)[^\s"'`<>)}\]]+)/g;
@@ -119,9 +139,13 @@ const PATH_KEYS = new Set([
 
 const URL_KEYS = new Set([
   "url",
+  "urls",
   "uri",
+  "uris",
   "href",
+  "hrefs",
   "link",
+  "links",
   "weburl",
   "htmlurl",
   "browserurl",
@@ -154,6 +178,12 @@ function sanitizeToken(raw: string): string {
   return value;
 }
 
+/** Preserves exact structured values while cleaning prose punctuation from loose matches. */
+function prepareReference(raw: string, syntax: ReferenceSyntax): string {
+  if (syntax === REFERENCE_SYNTAX.loose) return sanitizeToken(raw);
+  return raw.trim().replace(/^@/, "");
+}
+
 /** Prevents control sequences from reaching terminal-rendered labels. */
 function sanitizeLabel(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
@@ -171,11 +201,12 @@ function stripLineSuffix(value: string): string {
 }
 
 /** Resolves a path against the session cwd and canonicalizes existing files. */
-function normalizeFilePath(raw: string, cwd: string, allowMissing: boolean): string | undefined {
-  let candidate = sanitizeToken(raw);
+function normalizeFilePath(options: NormalizeFilePathOptions): string | undefined {
+  const { rawPath, cwd, allowMissing, syntax } = options;
+  let candidate = prepareReference(rawPath, syntax);
   if (!candidate) return undefined;
 
-  if (candidate.startsWith("file://")) {
+  if (candidate.startsWith(FILE_URL_PREFIX)) {
     try {
       candidate = fileURLToPath(candidate);
     } catch {
@@ -213,8 +244,8 @@ function displayFilePath(target: string, cwd: string): string {
 }
 
 /** Accepts only normalized HTTP(S) URLs suitable for OSC 8 links. */
-function normalizeWebUrl(raw: string): string | undefined {
-  const candidate = sanitizeToken(raw);
+function normalizeWebUrl(raw: string, syntax: ReferenceSyntax): string | undefined {
+  const candidate = prepareReference(raw, syntax);
   try {
     const parsed = new URL(candidate);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
@@ -333,8 +364,13 @@ function linkAction(kind: ResourceKind, createsReview: boolean, opensBrowser: bo
 
 /** Normalizes one path and records it when it is safe to expose as a file link. */
 function pushFileObservation(options: PushFileObservationOptions): void {
-  const { observations, rawPath, source, context, action } = options;
-  const target = normalizeFilePath(rawPath, context.cwd, source === "input");
+  const { observations, rawPath, source, syntax, context, action } = options;
+  const target = normalizeFilePath({
+    rawPath,
+    cwd: context.cwd,
+    allowMissing: source === OBSERVATION_SOURCE.input,
+    syntax,
+  });
   if (!target) return;
   observations.push({
     kind: "file",
@@ -348,8 +384,8 @@ function pushFileObservation(options: PushFileObservationOptions): void {
 
 /** Normalizes one HTTP URL and records its review/web classification. */
 function pushUrlObservation(options: PushUrlObservationOptions): void {
-  const { observations, rawUrl, context, createsReview, opensBrowser } = options;
-  const target = normalizeWebUrl(rawUrl);
+  const { observations, rawUrl, syntax, context, createsReview, opensBrowser } = options;
+  const target = normalizeWebUrl(rawUrl, syntax);
   if (!target) return;
   const kind = classifyUrl(target);
   observations.push({
@@ -381,25 +417,82 @@ function scanValue(options: ScanValueOptions): void {
   if (depth > MAX_SCAN_DEPTH) return;
   if (typeof value === "string") {
     const text = value.slice(0, MAX_SCAN_CHARS);
-    if (looseUrls || isUrlKey(key)) {
+    const structuredUrl = isUrlKey(key)
+      ? normalizeWebUrl(text, REFERENCE_SYNTAX.structured)
+      : undefined;
+    if (structuredUrl) {
+      pushUrlObservation({
+        observations,
+        rawUrl: structuredUrl,
+        syntax: REFERENCE_SYNTAX.structured,
+        context,
+        createsReview,
+        opensBrowser,
+      });
+    } else if (looseUrls) {
       for (const match of text.matchAll(HTTP_URL_PATTERN)) {
-        pushUrlObservation({ observations, rawUrl: match[0], context, createsReview, opensBrowser });
+        pushUrlObservation({
+          observations,
+          rawUrl: match[0],
+          syntax: REFERENCE_SYNTAX.loose,
+          context,
+          createsReview,
+          opensBrowser,
+        });
       }
     }
-    if (loosePaths || isPathKey(key) || isUrlKey(key)) {
+    const structuredFileUrl = isUrlKey(key) && text.trim().startsWith(FILE_URL_PREFIX);
+    if (structuredFileUrl) {
+      pushFileObservation({
+        observations,
+        rawPath: text,
+        source,
+        syntax: REFERENCE_SYNTAX.structured,
+        context,
+        action,
+      });
+    } else if (loosePaths) {
       for (const match of text.matchAll(FILE_URL_PATTERN)) {
-        pushFileObservation({ observations, rawPath: match[0], source, context, action });
+        pushFileObservation({
+          observations,
+          rawPath: match[0],
+          source,
+          syntax: REFERENCE_SYNTAX.loose,
+          context,
+          action,
+        });
       }
     }
     if (isPathKey(key)) {
-      pushFileObservation({ observations, rawPath: text, source, context, action });
+      pushFileObservation({
+        observations,
+        rawPath: text,
+        source,
+        syntax: REFERENCE_SYNTAX.structured,
+        context,
+        action,
+      });
     }
     if (loosePaths) {
       for (const match of text.matchAll(POSIX_PATH_PATTERN)) {
-        pushFileObservation({ observations, rawPath: match[1], source, context, action });
+        pushFileObservation({
+          observations,
+          rawPath: match[1],
+          source,
+          syntax: REFERENCE_SYNTAX.loose,
+          context,
+          action,
+        });
       }
       for (const match of text.matchAll(WINDOWS_PATH_PATTERN)) {
-        pushFileObservation({ observations, rawPath: match[0], source, context, action });
+        pushFileObservation({
+          observations,
+          rawPath: match[0],
+          source,
+          syntax: REFERENCE_SYNTAX.loose,
+          context,
+          action,
+        });
       }
     }
     return;
@@ -446,14 +539,15 @@ export function collectToolResources(context: ToolObservation): ResourceObservat
       pushFileObservation({
         observations,
         rawPath: builtinPath,
-        source: "input",
+        source: OBSERVATION_SOURCE.input,
+        syntax: REFERENCE_SYNTAX.structured,
         context,
         action: builtinAction,
       });
     }
     scanValue({
       value: context.input,
-      source: "input",
+      source: OBSERVATION_SOURCE.input,
       context,
       action: inferredAction,
       createsReview,
@@ -467,7 +561,7 @@ export function collectToolResources(context: ToolObservation): ResourceObservat
 
   scanValue({
     value: context.content,
-    source: "output",
+    source: OBSERVATION_SOURCE.output,
     context,
     action: inferredAction,
     createsReview,
@@ -479,7 +573,7 @@ export function collectToolResources(context: ToolObservation): ResourceObservat
   });
   scanValue({
     value: context.details,
-    source: "output",
+    source: OBSERVATION_SOURCE.output,
     context,
     action: inferredAction,
     createsReview,

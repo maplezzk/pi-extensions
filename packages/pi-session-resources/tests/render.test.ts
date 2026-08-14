@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -30,16 +31,22 @@ function resourceFixture(overrides: Partial<SessionResource>): SessionResource {
   };
 }
 
-test("widget emits clickable file and web links", () => {
+test("widget percent-encodes spaces in OSC 8 file and web targets", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const fileTarget = resolve("/workspace/project/docs/design notes/context map.md");
+  const fileUri = pathToFileURL(fileTarget).href;
+  const webUri = "https://example.com/docs/get%20started?q=hello%20world";
   const lines = renderResourceWidget({
     resources: [
-      resourceFixture({}),
       resourceFixture({
-        key: "web:https://example.com/docs",
+        target: fileTarget,
+        label: "docs/design notes/context map.md",
+      }),
+      resourceFixture({
+        key: `web:${webUri}`,
         kind: "web",
-        target: "https://example.com/docs?token=secret",
-        label: "example.com/docs",
+        target: webUri,
+        label: "example.com/docs/get started",
         actions: ["opened"],
         tools: ["browser_navigate"],
         lastSeenAt: 2,
@@ -49,10 +56,41 @@ test("widget emits clickable file and web links", () => {
     expanded: false,
     theme,
   });
+  const output = lines.join("\n");
 
-  assert.match(lines.join("\n"), /\x1b]8;;file:\/\//);
-  assert.match(lines.join("\n"), /\x1b]8;;https:\/\/example\.com\/docs\?token=secret/);
-  assert.doesNotMatch(lines.join("\n"), /example\.com\/docs\?token=secret  \[/);
+  assert.ok(fileUri.includes("design%20notes/context%20map.md"));
+  assert.ok(output.includes(`\x1b]8;;${fileUri}\x1b\\`));
+  assert.ok(output.includes(`\x1b]8;;${webUri}\x1b\\`));
+  const targets = output
+    .split("\x1b]8;;")
+    .slice(1)
+    .map((segment) => segment.split("\x1b\\")[0])
+    .filter(Boolean);
+  assert.deepEqual(targets, [fileUri, webUri]);
+  assert.ok(targets.every((target) => !/\s/.test(target)));
+  assert.doesNotMatch(output, /\x1b]8;;[^\x1b]*docs\/design notes/);
+});
+
+test("label truncation never cuts the OSC 8 control sequence or target", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const target = resolve("/workspace/project/docs/design notes/a very long context map.md");
+  const uri = pathToFileURL(target).href;
+  const lines = renderResourceWidget({
+    resources: [
+      resourceFixture({
+        target,
+        label: "docs/design notes/a very long context map.md",
+      }),
+    ],
+    width: 28,
+    expanded: false,
+    theme,
+  });
+  const resourceLine = lines[1] ?? "";
+
+  assert.ok(resourceLine.includes(`\x1b]8;;${uri}\x1b\\`));
+  assert.ok(resourceLine.includes("\x1b]8;;\x1b\\"));
+  assert.ok(visibleWidth(resourceLine) <= 28);
 });
 
 test("widget rows remain within terminal width", () => {

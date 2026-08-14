@@ -57,6 +57,52 @@ test("browser navigation records a web URL without exposing its query in the lab
   assert.equal(web?.label, "example.com/docs/start");
 });
 
+test("structured URLs preserve spaces by percent-encoding the full value", () => {
+  const resources = collectToolResources({
+    toolName: "browser_navigate",
+    input: { url: " https://example.com/docs/get started_(v2).?q=hello world " },
+    cwd,
+    timestamp: 32,
+  });
+  const web = findKind(resources, "web");
+
+  assert.equal(web?.target, "https://example.com/docs/get%20started_(v2).?q=hello%20world");
+  assert.equal(web?.label, "example.com/docs/get started_(v2).");
+  assert.equal(resources.length, 1);
+});
+
+test("structured file paths with spaces stay intact", () => {
+  const resources = collectToolResources({
+    toolName: "read",
+    input: { path: "docs/design notes/context map (final)" },
+    cwd,
+    timestamp: 33,
+  });
+  const file = findKind(resources, "file");
+
+  assert.equal(file?.target, resolve(cwd, "docs/design notes/context map (final)"));
+  assert.equal(file?.label, "docs/design notes/context map (final)");
+  assert.equal(resources.length, 1);
+});
+
+test("plain-text URLs stop before adjacent whitespace and prose", () => {
+  const resources = collectToolResources({
+    toolName: "bash",
+    input: { command: "open browser" },
+    content: [
+      {
+        type: "text",
+        text: "Opened <https://example.com/docs/get%20started?q=hello%20world>, then continued",
+      },
+    ],
+    cwd,
+    timestamp: 34,
+  });
+
+  assert.equal(resources.length, 1);
+  assert.equal(resources[0]?.target, "https://example.com/docs/get%20started?q=hello%20world");
+});
+
 test("file content does not turn embedded URLs or paths into unrelated resources", () => {
   const resources = collectToolResources({
     toolName: "read",
