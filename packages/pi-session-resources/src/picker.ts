@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { ResourceKind, SessionResource } from "./collector.ts";
 import { i18n } from "./i18n.ts";
-import { resourceSuggestions } from "./autocomplete.ts";
+import { KIND_COLORS, kindColored, resourceSuggestions } from "./autocomplete.ts";
 
 export const RESOURCE_PICKER_VISIBLE_LIMIT = 6;
 const PANEL_BORDER_WIDTH = 2;
@@ -38,7 +38,7 @@ const THEME_COLOR = {
 const THEME_BACKGROUND = {
   selected: "selectedBg",
 } as const;
-const SUBAGENT_ACCENT_START = "\x1b[38;2;77;163;255m";
+const ANSI_ESCAPE = "\x1b";
 const ANSI_RESET = "\x1b[0m";
 
 export type ResourcePickerTheme = Pick<Theme, "bg" | "bold" | "fg">;
@@ -84,7 +84,10 @@ interface RenderTabsOptions {
 }
 
 interface RenderItemOptions {
+  kind: ResourceKind;
   label: string;
+  /** Visible width of the plain label; defaults to the ANSI-aware measurement. */
+  labelWidth?: number;
   description?: string;
   selected: boolean;
   innerWidth: number;
@@ -96,38 +99,38 @@ function padToWidth(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 }
 
-/** Applies the same fixed blue accent used by the subagent status widget. */
-function subagentAccent(text: string): string {
-  return `${SUBAGENT_ACCENT_START}${text}${ANSI_RESET}`;
+/** Applies the active resource type's fixed accent color. */
+function kindAccent(kind: ResourceKind, text: string): string {
+  return `${KIND_COLORS[kind]}${text}${ANSI_RESET}`;
 }
 
-/** Adds custom-blue vertical borders around one fitted panel row. */
-function framedLine(content: string, innerWidth: number): string {
+/** Adds accent-colored vertical borders around one fitted panel row. */
+function framedLine(content: string, innerWidth: number, accentKind: ResourceKind): string {
   const fitted = padToWidth(truncateToWidth(content, innerWidth, ""), innerWidth);
-  return `${subagentAccent("│")}${fitted}${subagentAccent("│")}`;
+  return `${kindAccent(accentKind, "│")}${fitted}${kindAccent(accentKind, "│")}`;
 }
 
-/** Renders the picker title inside a rounded custom-blue border. */
-function renderTopBorder(width: number): string {
+/** Renders the picker title inside a rounded accent border. */
+function renderTopBorder(width: number, accentKind: ResourceKind): string {
   const innerWidth = Math.max(0, width - PANEL_BORDER_WIDTH);
   const title = `─ ${i18n.t("pickerTitle")} `;
   const titleWidth = Math.min(visibleWidth(title), innerWidth);
   const fittedTitle = truncateToWidth(title, titleWidth, "");
   const border = `╭${fittedTitle}${"─".repeat(Math.max(0, innerWidth - visibleWidth(fittedTitle)))}╮`;
-  return subagentAccent(border);
+  return kindAccent(accentKind, border);
 }
 
-/** Renders a horizontal custom-blue divider at the current panel width. */
-function renderDivider(width: number): string {
-  return subagentAccent(`├${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}┤`);
+/** Renders a horizontal accent divider at the current panel width. */
+function renderDivider(width: number, accentKind: ResourceKind): string {
+  return kindAccent(accentKind, `├${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}┤`);
 }
 
-/** Renders the rounded custom-blue border at the current panel width. */
-function renderBottomBorder(width: number): string {
-  return subagentAccent(`╰${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}╯`);
+/** Renders the rounded accent border at the current panel width. */
+function renderBottomBorder(width: number, accentKind: ResourceKind): string {
+  return kindAccent(accentKind, `╰${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}╯`);
 }
 
-/** Renders resource type counts and highlights the active type. */
+/** Renders per-type counts; the active type is inverted and every type keeps its accent. */
 function renderTabs(options: RenderTabsOptions): string {
   const { resources, activeKind, innerWidth, theme } = options;
   const counts = new Map<ResourceKind, number>();
@@ -138,15 +141,15 @@ function renderTabs(options: RenderTabsOptions): string {
   const segments = RESOURCE_TABS.map((kind) => {
     const text = ` ${TAB_LABELS[kind]} ${counts.get(kind) ?? 0} `;
     return kind === activeKind
-      ? theme.bg(THEME_BACKGROUND.selected, theme.fg(THEME_COLOR.text, text))
-      : theme.fg(THEME_COLOR.muted, text);
+      ? theme.bg(THEME_BACKGROUND.selected, kindColored(kind, text))
+      : kindColored(kind, text);
   });
   return truncateToWidth(` ${segments.join(" ")}`, innerWidth, "");
 }
 
-/** Renders one width-safe resource row with optional action metadata. */
+/** Renders one width-safe resource row; pre-colored action metadata stays intact. */
 function renderItem(options: RenderItemOptions): string {
-  const { label, description, selected, innerWidth, theme } = options;
+  const { kind, label, description, selected, innerWidth, theme } = options;
   const rawPrefix = selected ? "→ " : "  ";
   const prefixWidth = visibleWidth(rawPrefix);
   const showDescription = Boolean(description) && innerWidth >= DESCRIPTION_MINIMUM_WIDTH;
@@ -155,16 +158,21 @@ function renderItem(options: RenderItemOptions): string {
     : 0;
   const gapWidth = showDescription ? ITEM_COLUMN_GAP : 0;
   const labelWidth = Math.max(1, innerWidth - prefixWidth - descriptionWidth - gapWidth);
+  const plainLabelWidth = options.labelWidth ?? visibleWidth(label);
+  const truncated = plainLabelWidth > labelWidth;
   const fittedLabel = truncateToWidth(label, labelWidth, "…");
   const fittedDescription = showDescription
     ? truncateToWidth(description ?? "", descriptionWidth, "…")
     : "";
-  const gap = " ".repeat(Math.max(1, labelWidth - visibleWidth(fittedLabel) + gapWidth));
-  const prefix = selected ? subagentAccent(rawPrefix) : rawPrefix;
-  const labelText = selected ? subagentAccent(theme.bold(fittedLabel)) : fittedLabel;
+  const gap = " ".repeat(Math.max(1, labelWidth - (truncated ? labelWidth : plainLabelWidth) + gapWidth));
+  const prefix = selected ? kindAccent(kind, rawPrefix) : rawPrefix;
+  const labelText = selected ? kindAccent(kind, theme.bold(fittedLabel)) : fittedLabel;
   const primary = `${prefix}${labelText}`;
+  const hasAnsiDescription = fittedDescription.includes(ANSI_ESCAPE);
   const secondary = showDescription
-    ? theme.fg(THEME_COLOR.dim, `${gap}${fittedDescription}`)
+    ? hasAnsiDescription
+      ? `${gap}${fittedDescription}`
+      : theme.fg(THEME_COLOR.dim, `${gap}${fittedDescription}`)
     : "";
   return padToWidth(`${primary}${secondary}`, innerWidth);
 }
@@ -182,7 +190,7 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
   ).slice(0, RESOURCE_PICKER_VISIBLE_LIMIT);
   const selectedIndex = Math.max(0, Math.min(options.selectedIndex, Math.max(0, items.length - 1)));
   const lines = [
-    renderTopBorder(panelWidth),
+    renderTopBorder(panelWidth, activeKind),
     framedLine(
       renderTabs({
         resources,
@@ -191,8 +199,9 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
         theme,
       }),
       innerWidth,
+      activeKind,
     ),
-    renderDivider(panelWidth),
+    renderDivider(panelWidth, activeKind),
   ];
 
   if (items.length === 0) {
@@ -200,6 +209,7 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
       framedLine(
         theme.fg(THEME_COLOR.muted, `  ${i18n.t("pickerNoMatches")}`),
         innerWidth,
+        activeKind,
       ),
     );
   } else {
@@ -207,26 +217,30 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
       lines.push(
         framedLine(
           renderItem({
+            kind: activeKind,
             label: item.label,
+            labelWidth: item.labelWidth,
             description: item.description,
             selected: index === selectedIndex,
             innerWidth,
             theme,
           }),
           innerWidth,
+          activeKind,
         ),
       );
     }
   }
 
-  lines.push(renderDivider(panelWidth));
+  lines.push(renderDivider(panelWidth, activeKind));
   lines.push(
     framedLine(
       theme.fg(THEME_COLOR.muted, ` ${i18n.t("pickerHint")}`),
       innerWidth,
+      activeKind,
     ),
   );
-  lines.push(renderBottomBorder(panelWidth));
+  lines.push(renderBottomBorder(panelWidth, activeKind));
   return lines;
 }
 
