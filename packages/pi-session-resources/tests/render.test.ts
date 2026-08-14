@@ -135,6 +135,19 @@ test("widget rows remain within terminal width", () => {
   for (const line of emptyTabLines) assert.ok(visibleWidth(line) <= 12, `${visibleWidth(line)} > 12`);
 });
 
+test("Chinese action labels use complete words", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
+  const lines = renderResourceWidget({
+    resources: [resourceFixture({ actions: ["inspected", "referenced"] })],
+    width: 80,
+    expanded: false,
+    activeTab: "file",
+    theme,
+  });
+
+  assert.match(lines.join("\n"), /\[检查,引用\]/);
+});
+
 test("collapsed widget limits rows and reports hidden resources", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const resources = Array.from({ length: COMPACT_RESOURCE_LIMIT + 2 }, (_value, index) =>

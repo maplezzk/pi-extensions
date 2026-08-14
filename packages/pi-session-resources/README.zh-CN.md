@@ -19,8 +19,8 @@
 ────────────────────────────────────────────────────
  ←  [FILE 3]  PR/MR 1  WEB 2  →
 
- FILE src/index.ts                       [改,读]
- FILE docs/session notes.md              [读]
+ FILE src/index.ts                       [修改,读取]
+ FILE docs/session notes.md              [读取]
 ────────────────────────────────────────────────────
  Ctrl+↑ 浏览 · Ctrl+O 展开
 ```

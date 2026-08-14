@@ -68,27 +68,27 @@
     "en-US": "Session resources collapsed"
   },
   "actionRead": {
-    "zh-CN": "读",
+    "zh-CN": "读取",
     "en-US": "read"
   },
   "actionChanged": {
-    "zh-CN": "改",
+    "zh-CN": "修改",
     "en-US": "write"
   },
   "actionInspected": {
-    "zh-CN": "查",
+    "zh-CN": "检查",
     "en-US": "inspect"
   },
   "actionOpened": {
-    "zh-CN": "开",
+    "zh-CN": "打开",
     "en-US": "open"
   },
   "actionCreated": {
-    "zh-CN": "建",
+    "zh-CN": "创建",
     "en-US": "created"
   },
   "actionReferenced": {
-    "zh-CN": "引",
+    "zh-CN": "引用",
     "en-US": "ref"
   }
 }
