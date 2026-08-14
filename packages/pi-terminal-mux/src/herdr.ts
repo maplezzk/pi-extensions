@@ -12,6 +12,7 @@ export {
   closeHerdrSurface,
   createHerdrSurface,
   herdrSetupHint,
+  herdrSourceFlag,
   isHerdrRuntimeAvailable,
   readHerdrScreen,
   renameHerdrAgent,

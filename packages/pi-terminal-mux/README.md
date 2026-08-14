@@ -37,6 +37,7 @@ if (!isMuxAvailable()) {
 const surface = createSurface("my-agent");
 
 // Long commands are written to a script file first to avoid terminal line wrapping
+// (Bash by default; pass interpreter: "powershell" on Windows for PowerShell)
 const scriptPath = sendLongCommand(surface, "pi --session abc", {
   scriptPreamble: "export MY_FLAG=1",
 });
@@ -73,11 +74,11 @@ If the forced backend's runtime is unavailable, `getMuxBackend()` returns `null`
 | Function | Description |
 |----------|-------------|
 | `createSurface(name)` | Smart placement (cmux: first right-split then tabs; zellij: tab-aware tiled/stacked; muxy/otty/orca: breadth-first splits; orca falls back to a new tab without an agent handle), returns a surface handle |
-| `createSurfaceSplit(name, direction, fromSurface?)` | Split in an explicit direction (left/right/up/down) |
+| `createSurfaceSplit(name, direction, fromSurface?, options?)` | Split in an explicit direction (left/right/up/down). `options.activate` (WezTerm only, default `false`) focuses the new pane after splitting |
 | `sendCommand(surface, command)` | Send a command and press Enter |
-| `sendLongCommand(surface, command, opts?)` | Write long commands to a script file first; `opts.scriptPreamble` injects env exports; returns the script path |
+| `sendLongCommand(surface, command, opts?)` | Write long commands to a script file first. `opts.scriptPreamble` injects leading lines; `opts.interpreter` (`"bash"` default, or `"powershell"` on Windows) selects the scripting runtime; returns the script path |
 | `sendEscape(surface)` | Send one ESC keypress |
-| `readScreen(surface, lines?)` / `readScreenAsync` | Read the last N screen lines |
+| `readScreen(surface, lines?, options?)` / `readScreenAsync` | Read the last N screen lines. `options.source` (herdr-only) forwards a herdr read source such as `"recent_unwrapped"`; other backends ignore it |
 | `closeSurface(surface)` | Close the surface |
 | `renameSurface(surface, name)` / `renameCurrentTab(title)` / `renameAgent(surface, name)` / `renameWorkspace(title)` | Naming, degrading per backend capability |
 | `pollForExit(surface, signal, opts)` | Wait for the process in a surface to exit: `.exit` sidecar file first, then a screen sentinel (`__SUBAGENT_DONE_<code>__`); headless uses child process exit |
@@ -94,6 +95,16 @@ Backend-native functions are also re-exported (e.g. `createHerdrSurface`, `split
 ## Headless mode
 
 When no backend is detected, `createSurface` returns a `headless:`-prefixed surface, `sendLongCommand` spawns a background child process writing to a log file, and `readScreen` / `pollForExit` / `closeSurface` keep the same semantics — callers need no special-casing.
+
+## Windows PowerShell support
+
+All platforms keep **Bash as the default** scripting runtime to preserve existing caller semantics. On Windows 11 PowerShell/WezTerm/herdr, opt in explicitly:
+
+- **Command submission (WezTerm)**: the Enter terminator is `\r` on `win32` and `\n` elsewhere, so PowerShell input is submitted exactly once instead of stopping at the continuation prompt.
+- **Long commands (`sendLongCommand`)**: pass `interpreter: "powershell"` to generate a `.ps1` and run it via `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File <path>` (mux) or `-Command "& <path>"` (headless). Explicit `scriptPath` is preserved as-is; auto paths choose `.ps1`/`.sh` by interpreter. Omitted `interpreter` keeps the existing Bash command, `.sh` paths and `$?` numeric sentinels unchanged.
+- **Screen capture (`readScreen` / `readScreenAsync`)**: pass `{ source: "recent_unwrapped" }` (herdr-only) to select herdr's soft-wrap merged capture; omitted options keep herdr `recent` and other backends keep their own read semantics.
+
+These are opt-in capabilities — existing Bash callers and `pi-interactive-subagents` continue to run under the default Bash runtime on every platform.
 
 ## Environment variables
 

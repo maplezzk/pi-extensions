@@ -15,6 +15,29 @@ const execFileAsync = promisify(execFile);
 /** WezTerm 后端日志（统一格式，写入 /tmp/pi-mux-wezterm.log） */
 const weztermLog = createBackendLogger("wezterm", "/tmp/pi-mux-wezterm.log");
 
+/** WezTerm CLI 基础段 */
+const CLI = "cli";
+/** 激活 pane 的命令段 */
+const ACTIVATE_PANE_CMD = "activate-pane";
+const PANE_ID_FLAG = "--pane-id";
+
+/**
+ * 生成激活 WezTerm pane 的 CLI 参数数组。
+ * 仅当 split 成功取得合法 pane id 后才调用（paneId 校验失败的场景不走到这里）。
+ */
+export function weztermActivateArgs(paneId: string): string[] {
+  return [CLI, ACTIVATE_PANE_CMD, PANE_ID_FLAG, paneId];
+}
+
+/**
+ * 返回命令提交终止符。Windows 的 ConPTY 中 LF 会让 PowerShell 停在续行提示，
+ * 必须用 CR 提交；其他平台继续使用 LF（不用 CRLF，避免多余换行）。
+ * platform 参数可注入以便单元测试，缺省按当前进程平台决策。
+ */
+export function commandTerminator(platform: string = process.platform): string {
+  return platform === "win32" ? "\r" : "\n";
+}
+
 export const ops: BackendOps = {
   create(name: string): string {
     // WezTerm 的 createSurface 退化为 createSurfaceSplit "right"
@@ -22,8 +45,15 @@ export const ops: BackendOps = {
     return ops.createSplit(name, "right", fromSurface);
   },
 
-  // BackendOps 接口定义含 4 参（含可选 fromSurface），此为实现契约。
-  createSplit(name: string, direction: "left" | "right" | "up" | "down", fromSurface?: string): string {
+  // BackendOps 接口定义含 4 参（含可选 fromSurface / options），此为实现契约。
+  // 该签名由统一 surface API 的向后兼容要求强制（fromSurface 保持第 3 位置参数，
+  // activate 只能作为第 4 个尾部 options 追加），故按外部 API 签名豁免参数数量约束。
+  createSplit(
+    name: string,
+    direction: "left" | "right" | "up" | "down",
+    fromSurface?: string,
+    options?: { activate?: boolean },
+  ): string {
     const args = ["cli", "split-pane"];
     if (direction === "left") args.push("--left");
     else if (direction === "right") args.push("--right");
@@ -45,6 +75,9 @@ export const ops: BackendOps = {
     } catch {
       // Optional — tab title is cosmetic.
     }
+    if (options?.activate) {
+      execFileSync("wezterm", weztermActivateArgs(paneId), { encoding: "utf8" });
+    }
     weztermLog(
       `[split] dir=${direction} from=${fromSurface ?? "<unset>"} new=${paneId} name=${JSON.stringify(name)}`,
     );
@@ -54,7 +87,7 @@ export const ops: BackendOps = {
   send(surface: string, command: string): void {
     execFileSync(
       "wezterm",
-      ["cli", "send-text", "--pane-id", surface, "--no-paste", command + "\n"],
+      ["cli", "send-text", "--pane-id", surface, "--no-paste", command + commandTerminator()],
       { encoding: "utf8" },
     );
   },

@@ -37,7 +37,7 @@ export {
   drainHeadlessProcess,
 } from "./headless.ts";
 
-export { isFishShell, shellEscape, exitStatusVar } from "./shell.ts";
+export { isFishShell, shellEscape, powershellEscape, exitStatusVar } from "./shell.ts";
 
 // ── 统一 surface API ──
 export {
@@ -57,7 +57,19 @@ export {
   getLastSplitSource,
   clearLastSplitSource,
 } from "./surface.ts";
-export type { PollResult } from "./surface.ts";
+export type {
+  PollResult,
+  CreateSurfaceSplitOptions,
+  SendLongCommandOptions,
+  ReadScreenOptions,
+} from "./surface.ts";
+
+// ── sendLongCommand 脚本构建辅助（纯函数，供确定性单元测试） ──
+export {
+  sendScriptExtension,
+  buildSendScriptContent,
+  buildMuxInvocation,
+} from "./surface.ts";
 
 // ── Cmux 公开解析函数 ──
 export {
@@ -83,4 +95,5 @@ export {
 export {
   renameHerdrTab,
   renameHerdrWorkspace,
+  herdrSourceFlag,
 } from "./backends/herdr.ts";

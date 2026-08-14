@@ -37,6 +37,7 @@ export {
   sendHerdrCommand,
   sendHerdrEscape,
   readHerdrScreen,
+  herdrSourceFlag,
   closeHerdrSurface,
   herdrSetupHint,
 } from "./herdr.ts";
