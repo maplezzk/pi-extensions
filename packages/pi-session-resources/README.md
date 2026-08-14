@@ -11,7 +11,7 @@ A passive session-resource reference extension for the [Pi coding agent](https:/
 - Recognizes GitHub pull requests and GitLab merge requests and marks creation commands such as `gh pr create` and `glab mr create`.
 - Rebuilds state from the active session branch after reload, resume, fork, or `/tree` navigation. It does not add tracking entries to model context.
 - Shows a rounded, accent-bordered resource picker only after `#` is typed, with no persistent panel. It follows the editor width as the terminal resizes, while files, PR/MR links, and URLs stay in separate tabs.
-- Fuzzy-filters recent resources by label, target, kind, action, and source tool. The active type tab uses the theme's selected background, while each row shows only its resource label and actions.
+- Fuzzy-filters recent resources by label, target, kind, action, and source tool. The active tab uses the selected background; resource labels use the tool-title color, the selected label is bold with an accent arrow, and actions stay dim.
 - Renders candidate labels as OSC 8 hyperlinks. File links use `file://`; web and review links keep their original URL.
 - Provides both `zh-CN` and `en-US` UI text through `pi-extensions-i18n`.
 

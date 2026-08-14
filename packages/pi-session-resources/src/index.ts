@@ -31,12 +31,10 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
       const baseEditor = previousEditorFactory?.(tui, theme, keybindings)
         ?? new CustomEditor(tui, theme, keybindings);
       return new SessionResourceEditor(baseEditor, {
-        theme,
+        theme: ctx.ui.theme,
         keybindings,
         getResources: () => resources.list(),
         isEnabled: () => pickerEnabled,
-        styleActiveTab: (text) => ctx.ui.theme.bg("selectedBg", ctx.ui.theme.fg("text", text)),
-        styleBorder: (text) => ctx.ui.theme.fg("accent", text),
         requestRender: () => tui.requestRender(),
       });
     });

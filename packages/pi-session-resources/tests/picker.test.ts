@@ -2,38 +2,42 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
 import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
-import type { EditorComponent, EditorTheme } from "@earendil-works/pi-tui";
+import type { EditorComponent } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { SessionResource } from "../src/collector.ts";
 import {
   renderResourcePicker,
+  type ResourcePickerTheme,
   SessionResourceEditor,
 } from "../src/picker.ts";
 
-const theme: EditorTheme = {
-  borderColor: (text) => text,
-  selectList: {
-    selectedPrefix: (text) => text,
-    selectedText: (text) => text,
-    description: (text) => text,
-    scrollInfo: (text) => text,
-    noMatch: (text) => text,
+const SELECTED_BACKGROUND_START = "\x1b[7m";
+const SELECTED_BACKGROUND_END = "\x1b[27m";
+const ACCENT_START = "\x1b[34m";
+const TEXT_START = "\x1b[37m";
+const TOOL_TITLE_START = "\x1b[36m";
+const DIM_START = "\x1b[90m";
+const FOREGROUND_END = "\x1b[39m";
+const BOLD_START = "\x1b[1m";
+const BOLD_END = "\x1b[22m";
+
+const theme: ResourcePickerTheme = {
+  /** Applies deterministic test foreground colors for picker hierarchy assertions. */
+  fg: (color, text) => {
+    const start = {
+      accent: ACCENT_START,
+      dim: DIM_START,
+      muted: DIM_START,
+      text: TEXT_START,
+      toolTitle: TOOL_TITLE_START,
+    }[color] ?? "";
+    return start ? `${start}${text}${FOREGROUND_END}` : text;
   },
+  /** Applies the selected background used by the active resource tab. */
+  bg: (_color, text) => `${SELECTED_BACKGROUND_START}${text}${SELECTED_BACKGROUND_END}`,
+  /** Applies deterministic bold styling to the selected resource label. */
+  bold: (text) => `${BOLD_START}${text}${BOLD_END}`,
 };
-const ACTIVE_TAB_START = "\x1b[7m";
-const ACTIVE_TAB_END = "\x1b[27m";
-const BORDER_START = "\x1b[34m";
-const BORDER_END = "\x1b[39m";
-
-/** Applies a visible active-tab marker without changing ANSI-aware widths. */
-function styleActiveTab(text: string): string {
-  return `${ACTIVE_TAB_START}${text}${ACTIVE_TAB_END}`;
-}
-
-/** Applies an ANSI border color without changing visible panel width. */
-function styleBorder(text: string): string {
-  return `${BORDER_START}${text}${BORDER_END}`;
-}
 
 const keybindings = {
   /** Matches only the default keys used by picker tests. */
@@ -160,17 +164,24 @@ test("picker renders a bordered tab bar with a distinct active type", () => {
     selectedIndex: 0,
     width: 72,
     theme,
-    styleActiveTab,
-    styleBorder,
   });
 
-  assert.ok((lines[0] ?? "").includes(`${BORDER_START}╭─ Session resources `));
-  assert.ok((lines[1] ?? "").includes(`${ACTIVE_TAB_START} FILE 1 ${ACTIVE_TAB_END}`));
+  assert.ok((lines[0] ?? "").includes(`${ACCENT_START}╭─ Session resources `));
+  assert.ok(
+    (lines[1] ?? "").includes(
+      `${SELECTED_BACKGROUND_START}${TEXT_START} FILE 1 ${FOREGROUND_END}${SELECTED_BACKGROUND_END}`,
+    ),
+  );
   assert.match(lines[1] ?? "", /PR\/MR 1.*URL 1/);
   assert.ok(lines.some((line) => line.includes("src/index.ts")));
   assert.ok(lines.every((line) => !line.includes("FILE ▤")));
+  assert.ok(lines.some((line) => line.includes(`${ACCENT_START}→ ${FOREGROUND_END}`)));
+  assert.ok(
+    lines.some((line) => line.includes(`${TOOL_TITLE_START}${BOLD_START}`)),
+  );
+  assert.ok(lines.some((line) => line.includes(DIM_START)));
   assert.ok(lines.every((line) => visibleWidth(line) === 72));
-  assert.ok((lines.at(-1) ?? "").includes(`${BORDER_START}╰`));
+  assert.ok((lines.at(-1) ?? "").includes(`${ACCENT_START}╰`));
 });
 
 test("picker follows narrow and wide terminal widths without a fixed cap", () => {
@@ -182,8 +193,6 @@ test("picker follows narrow and wide terminal widths without a fixed cap", () =>
       selectedIndex: 0,
       width,
       theme,
-      styleActiveTab,
-      styleBorder,
     });
 
     assert.ok(lines.length > 0);
@@ -200,8 +209,6 @@ test("# opens above the editor, type keys switch tabs, and Enter inserts the res
     keybindings,
     getResources: resourceSet,
     isEnabled: () => true,
-    styleActiveTab,
-    styleBorder,
     requestRender: () => {
       renders += 1;
     },
@@ -236,8 +243,6 @@ test("picker respects token boundaries and Shift+Tab switches backward", () => {
     keybindings,
     getResources: resourceSet,
     isEnabled: () => true,
-    styleActiveTab,
-    styleBorder,
     requestRender: () => {},
   });
 

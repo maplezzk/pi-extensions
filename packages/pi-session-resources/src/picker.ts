@@ -1,8 +1,7 @@
-import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
+import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import type {
   AutocompleteProvider,
   EditorComponent,
-  EditorTheme,
 } from "@earendil-works/pi-tui";
 import {
   decodeKittyPrintable,
@@ -31,6 +30,18 @@ const TAB_LABELS: Record<ResourceKind, string> = {
   review: "PR/MR",
   web: "URL",
 };
+const THEME_COLOR = {
+  accent: "accent",
+  dim: "dim",
+  muted: "muted",
+  text: "text",
+  toolTitle: "toolTitle",
+} as const;
+const THEME_BACKGROUND = {
+  selected: "selectedBg",
+} as const;
+
+export type ResourcePickerTheme = Pick<Theme, "bg" | "bold" | "fg">;
 
 interface CursorAwareEditor {
   getLines?(): string[];
@@ -49,12 +60,10 @@ interface AppAwareEditor {
 }
 
 export interface SessionResourceEditorOptions {
-  theme: EditorTheme;
+  theme: ResourcePickerTheme;
   keybindings: Pick<KeybindingsManager, "matches">;
   getResources: () => readonly SessionResource[];
   isEnabled: () => boolean;
-  styleActiveTab: (text: string) => string;
-  styleBorder: (text: string) => string;
   requestRender: () => void;
 }
 
@@ -64,17 +73,14 @@ export interface RenderResourcePickerOptions {
   query: string;
   selectedIndex: number;
   width: number;
-  theme: EditorTheme;
-  styleActiveTab: (text: string) => string;
-  styleBorder: (text: string) => string;
+  theme: ResourcePickerTheme;
 }
 
 interface RenderTabsOptions {
   resources: readonly SessionResource[];
   activeKind: ResourceKind;
   innerWidth: number;
-  theme: EditorTheme;
-  styleActiveTab: (text: string) => string;
+  theme: ResourcePickerTheme;
 }
 
 interface RenderItemOptions {
@@ -82,7 +88,7 @@ interface RenderItemOptions {
   description?: string;
   selected: boolean;
   innerWidth: number;
-  theme: EditorTheme;
+  theme: ResourcePickerTheme;
 }
 
 /** Pads one ANSI-aware row without exceeding its assigned width. */
@@ -90,34 +96,41 @@ function padToWidth(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 }
 
-/** Adds themed vertical borders around one fitted panel row. */
-function framedLine(content: string, innerWidth: number, styleBorder: (text: string) => string): string {
+/** Adds accent vertical borders around one fitted panel row. */
+function framedLine(content: string, innerWidth: number, theme: ResourcePickerTheme): string {
   const fitted = padToWidth(truncateToWidth(content, innerWidth, ""), innerWidth);
-  return `${styleBorder("│")}${fitted}${styleBorder("│")}`;
+  return `${theme.fg(THEME_COLOR.accent, "│")}${fitted}${theme.fg(THEME_COLOR.accent, "│")}`;
 }
 
 /** Renders the picker title inside a rounded accent border. */
-function renderTopBorder(width: number, styleBorder: (text: string) => string): string {
+function renderTopBorder(width: number, theme: ResourcePickerTheme): string {
   const innerWidth = Math.max(0, width - PANEL_BORDER_WIDTH);
   const title = `─ ${i18n.t("pickerTitle")} `;
   const titleWidth = Math.min(visibleWidth(title), innerWidth);
   const fittedTitle = truncateToWidth(title, titleWidth, "");
-  return styleBorder(`╭${fittedTitle}${"─".repeat(Math.max(0, innerWidth - visibleWidth(fittedTitle)))}╮`);
+  const border = `╭${fittedTitle}${"─".repeat(Math.max(0, innerWidth - visibleWidth(fittedTitle)))}╮`;
+  return theme.fg(THEME_COLOR.accent, border);
 }
 
-/** Renders a horizontal divider at the current panel width. */
-function renderDivider(width: number, styleBorder: (text: string) => string): string {
-  return styleBorder(`├${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}┤`);
+/** Renders a horizontal accent divider at the current panel width. */
+function renderDivider(width: number, theme: ResourcePickerTheme): string {
+  return theme.fg(
+    THEME_COLOR.accent,
+    `├${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}┤`,
+  );
 }
 
-/** Renders the rounded closing border at the current panel width. */
-function renderBottomBorder(width: number, styleBorder: (text: string) => string): string {
-  return styleBorder(`╰${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}╯`);
+/** Renders the rounded accent border at the current panel width. */
+function renderBottomBorder(width: number, theme: ResourcePickerTheme): string {
+  return theme.fg(
+    THEME_COLOR.accent,
+    `╰${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}╯`,
+  );
 }
 
 /** Renders resource type counts and highlights the active type. */
 function renderTabs(options: RenderTabsOptions): string {
-  const { resources, activeKind, innerWidth, theme, styleActiveTab } = options;
+  const { resources, activeKind, innerWidth, theme } = options;
   const counts = new Map<ResourceKind, number>();
   for (const resource of resources) {
     counts.set(resource.kind, (counts.get(resource.kind) ?? 0) + 1);
@@ -126,8 +139,8 @@ function renderTabs(options: RenderTabsOptions): string {
   const segments = RESOURCE_TABS.map((kind) => {
     const text = ` ${TAB_LABELS[kind]} ${counts.get(kind) ?? 0} `;
     return kind === activeKind
-      ? styleActiveTab(text)
-      : theme.selectList.description(text);
+      ? theme.bg(THEME_BACKGROUND.selected, theme.fg(THEME_COLOR.text, text))
+      : theme.fg(THEME_COLOR.muted, text);
   });
   return truncateToWidth(` ${segments.join(" ")}`, innerWidth, "");
 }
@@ -135,8 +148,8 @@ function renderTabs(options: RenderTabsOptions): string {
 /** Renders one width-safe resource row with optional action metadata. */
 function renderItem(options: RenderItemOptions): string {
   const { label, description, selected, innerWidth, theme } = options;
-  const prefix = selected ? "→ " : "  ";
-  const prefixWidth = visibleWidth(prefix);
+  const rawPrefix = selected ? "→ " : "  ";
+  const prefixWidth = visibleWidth(rawPrefix);
   const showDescription = Boolean(description) && innerWidth >= DESCRIPTION_MINIMUM_WIDTH;
   const descriptionWidth = showDescription
     ? Math.min(DESCRIPTION_MAXIMUM_WIDTH, Math.floor(innerWidth * DESCRIPTION_WIDTH_RATIO))
@@ -148,20 +161,18 @@ function renderItem(options: RenderItemOptions): string {
     ? truncateToWidth(description ?? "", descriptionWidth, "…")
     : "";
   const gap = " ".repeat(Math.max(1, labelWidth - visibleWidth(fittedLabel) + gapWidth));
-  const row = showDescription
-    ? `${prefix}${fittedLabel}${gap}${fittedDescription}`
-    : `${prefix}${fittedLabel}`;
-
-  if (selected) return theme.selectList.selectedText(padToWidth(row, innerWidth));
-  if (!showDescription) return padToWidth(row, innerWidth);
-  const primary = `${prefix}${fittedLabel}`;
-  const secondary = theme.selectList.description(`${gap}${fittedDescription}`);
+  const prefix = selected ? theme.fg(THEME_COLOR.accent, rawPrefix) : rawPrefix;
+  const labelText = selected ? theme.bold(fittedLabel) : fittedLabel;
+  const primary = `${prefix}${theme.fg(THEME_COLOR.toolTitle, labelText)}`;
+  const secondary = showDescription
+    ? theme.fg(THEME_COLOR.dim, `${gap}${fittedDescription}`)
+    : "";
   return padToWidth(`${primary}${secondary}`, innerWidth);
 }
 
 /** Renders the bordered, tabbed picker directly above the wrapped editor. */
 export function renderResourcePicker(options: RenderResourcePickerOptions): string[] {
-  const { resources, activeKind, query, theme, styleBorder } = options;
+  const { resources, activeKind, query, theme } = options;
   const panelWidth = Math.max(0, options.width);
   if (panelWidth < PANEL_MINIMUM_WIDTH) return [];
 
@@ -172,27 +183,26 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
   ).slice(0, RESOURCE_PICKER_VISIBLE_LIMIT);
   const selectedIndex = Math.max(0, Math.min(options.selectedIndex, Math.max(0, items.length - 1)));
   const lines = [
-    renderTopBorder(panelWidth, styleBorder),
+    renderTopBorder(panelWidth, theme),
     framedLine(
       renderTabs({
         resources,
         activeKind,
         innerWidth,
         theme,
-        styleActiveTab: options.styleActiveTab,
       }),
       innerWidth,
-      styleBorder,
+      theme,
     ),
-    renderDivider(panelWidth, styleBorder),
+    renderDivider(panelWidth, theme),
   ];
 
   if (items.length === 0) {
     lines.push(
       framedLine(
-        theme.selectList.noMatch(`  ${i18n.t("pickerNoMatches")}`),
+        theme.fg(THEME_COLOR.muted, `  ${i18n.t("pickerNoMatches")}`),
         innerWidth,
-        styleBorder,
+        theme,
       ),
     );
   } else {
@@ -207,21 +217,21 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
             theme,
           }),
           innerWidth,
-          styleBorder,
+          theme,
         ),
       );
     }
   }
 
-  lines.push(renderDivider(panelWidth, styleBorder));
+  lines.push(renderDivider(panelWidth, theme));
   lines.push(
     framedLine(
-      theme.selectList.scrollInfo(` ${i18n.t("pickerHint")}`),
+      theme.fg(THEME_COLOR.muted, ` ${i18n.t("pickerHint")}`),
       innerWidth,
-      styleBorder,
+      theme,
     ),
   );
-  lines.push(renderBottomBorder(panelWidth, styleBorder));
+  lines.push(renderBottomBorder(panelWidth, theme));
   return lines;
 }
 
@@ -415,8 +425,6 @@ export class SessionResourceEditor implements EditorComponent {
         selectedIndex: this.selectedIndex,
         width,
         theme: this.options.theme,
-        styleActiveTab: this.options.styleActiveTab,
-        styleBorder: this.options.styleBorder,
       }),
       ...editorLines,
     ];
