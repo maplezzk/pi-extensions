@@ -84,14 +84,14 @@ function resourceSearchText(resource: SessionResource): string {
 
 /** Formats one resource as a clickable built-in autocomplete row. */
 function resourceItem(resource: SessionResource): AutocompleteItem {
-  const display = `${RESOURCE_ICONS[resource.kind]} ${resource.label}`;
+  const display = `${RESOURCE_KIND_LABELS[resource.kind]} ${RESOURCE_ICONS[resource.kind]} ${resource.label}`;
   const uri = resourceUri(resource);
   const actions = resource.actions.map((action) => i18n.t(ACTION_LABELS[action])).join(" · ");
   const usage = resource.seenCount > 1 ? ` · ×${resource.seenCount}` : "";
   return {
     value: resourceReference(resource),
     label: uri ? hyperlink(display, uri) : display,
-    description: `${RESOURCE_KIND_LABELS[resource.kind]} · ${actions}${usage}`,
+    description: `${actions}${usage}`,
   };
 }
 

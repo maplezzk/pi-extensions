@@ -82,7 +82,8 @@ test("resource suggestions are fuzzy-filtered, clickable, and preserve safe refe
   const fileItems = resourceSuggestions(resources, "design");
   const fileItem = fileItems.find((item) => item.value === '#"docs/design notes.md"');
   assert.ok(fileItem);
-  assert.match(fileItem.description ?? "", /FILE · write · read · ×3/);
+  assert.match(fileItem.label, /FILE ▤ docs\/design notes\.md/);
+  assert.match(fileItem.description ?? "", /write · read · ×3/);
   assert.ok(fileItem.label.includes(`\x1b]8;;${pathToFileURL(fileTarget).href}\x1b\\`));
 
   const reviewItems = resourceSuggestions(resources, "pull");
