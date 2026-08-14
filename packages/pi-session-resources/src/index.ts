@@ -35,6 +35,7 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
         keybindings,
         getResources: () => resources.list(),
         isEnabled: () => pickerEnabled,
+        styleActiveTab: (text) => ctx.ui.theme.bg("selectedBg", ctx.ui.theme.fg("text", text)),
         requestRender: () => tui.requestRender(),
       });
     });

@@ -11,7 +11,7 @@ A passive session-resource reference extension for the [Pi coding agent](https:/
 - Recognizes GitHub pull requests and GitLab merge requests and marks creation commands such as `gh pr create` and `glab mr create`.
 - Rebuilds state from the active session branch after reload, resume, fork, or `/tree` navigation. It does not add tracking entries to model context.
 - Shows a bordered resource picker only after `#` is typed, with no persistent panel. Files, PR/MR links, and web pages stay in separate tabs.
-- Fuzzy-filters recent resources by label, target, kind, action, and source tool, with the resource type at the start of each row.
+- Fuzzy-filters recent resources by label, target, kind, action, and source tool. The active type tab uses the theme's selected background, while each row shows only its resource label and actions.
 - Renders candidate labels as OSC 8 hyperlinks. File links use `file://`; web and review links keep their original URL.
 - Provides both `zh-CN` and `en-US` UI text through `pi-extensions-i18n`.
 
@@ -23,8 +23,8 @@ Type `#` at a token boundary in the editor:
 ┌ Session resources ─────────────────────────────────────┐
 │  FILE 8   PR/MR 2   WEB 3                              │
 ├────────────────────────────────────────────────────────┤
-│ → FILE ▤ src/index.ts                         write · read │
-│   FILE ▤ tests/index.test.ts                         write │
+│ → src/index.ts                                write · read │
+│   tests/index.test.ts                                write │
 ├────────────────────────────────────────────────────────┤
 │ Tab/Shift+Tab type · Up/Down select · Enter insert · Esc close │
 └────────────────────────────────────────────────────────┘

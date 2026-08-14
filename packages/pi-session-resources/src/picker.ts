@@ -54,6 +54,7 @@ export interface SessionResourceEditorOptions {
   keybindings: Pick<KeybindingsManager, "matches">;
   getResources: () => readonly SessionResource[];
   isEnabled: () => boolean;
+  styleActiveTab: (text: string) => string;
   requestRender: () => void;
 }
 
@@ -64,6 +65,7 @@ export interface RenderResourcePickerOptions {
   selectedIndex: number;
   width: number;
   theme: EditorTheme;
+  styleActiveTab: (text: string) => string;
 }
 
 interface RenderTabsOptions {
@@ -71,6 +73,7 @@ interface RenderTabsOptions {
   activeKind: ResourceKind;
   innerWidth: number;
   theme: EditorTheme;
+  styleActiveTab: (text: string) => string;
 }
 
 interface RenderItemOptions {
@@ -113,7 +116,7 @@ function renderBottomBorder(width: number, theme: EditorTheme): string {
 
 /** Renders resource type counts and highlights the active type. */
 function renderTabs(options: RenderTabsOptions): string {
-  const { resources, activeKind, innerWidth, theme } = options;
+  const { resources, activeKind, innerWidth, theme, styleActiveTab } = options;
   const counts = new Map<ResourceKind, number>();
   for (const resource of resources) {
     counts.set(resource.kind, (counts.get(resource.kind) ?? 0) + 1);
@@ -122,7 +125,7 @@ function renderTabs(options: RenderTabsOptions): string {
   const segments = RESOURCE_TABS.map((kind) => {
     const text = ` ${TAB_LABELS[kind]} ${counts.get(kind) ?? 0} `;
     return kind === activeKind
-      ? theme.selectList.selectedText(text)
+      ? styleActiveTab(text)
       : theme.selectList.description(text);
   });
   return truncateToWidth(` ${segments.join(" ")}`, innerWidth, "");
@@ -169,7 +172,17 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
   const selectedIndex = Math.max(0, Math.min(options.selectedIndex, Math.max(0, items.length - 1)));
   const lines = [
     renderTopBorder(panelWidth, theme),
-    framedLine(renderTabs({ resources, activeKind, innerWidth, theme }), innerWidth, theme),
+    framedLine(
+      renderTabs({
+        resources,
+        activeKind,
+        innerWidth,
+        theme,
+        styleActiveTab: options.styleActiveTab,
+      }),
+      innerWidth,
+      theme,
+    ),
     renderDivider(panelWidth, theme),
   ];
 
@@ -395,6 +408,7 @@ export class SessionResourceEditor implements EditorComponent {
         selectedIndex: this.selectedIndex,
         width,
         theme: this.options.theme,
+        styleActiveTab: this.options.styleActiveTab,
       }),
       ...editorLines,
     ];

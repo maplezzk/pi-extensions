@@ -6,11 +6,6 @@ import { i18n } from "./i18n.ts";
 
 export const RESOURCE_AUTOCOMPLETE_LIMIT = 12;
 const RESOURCE_QUERY_PATTERN = /(?:^|[\t ])#([^\s#]*)$/;
-const RESOURCE_ICONS: Record<ResourceKind, string> = {
-  file: "▤",
-  review: "⎇",
-  web: "◎",
-};
 const RESOURCE_KIND_LABELS: Record<ResourceKind, string> = {
   file: "FILE",
   review: "PR/MR",
@@ -62,15 +57,14 @@ function resourceSearchText(resource: SessionResource): string {
   ].join(" ");
 }
 
-/** Formats one resource as a clickable picker row with its type first. */
+/** Formats one resource as a clickable picker row without repeating the active tab type. */
 function resourceItem(resource: SessionResource): AutocompleteItem {
-  const display = `${RESOURCE_KIND_LABELS[resource.kind]} ${RESOURCE_ICONS[resource.kind]} ${resource.label}`;
   const uri = resourceUri(resource);
   const actions = resource.actions.map((action) => i18n.t(ACTION_LABELS[action])).join(" · ");
   const usage = resource.seenCount > 1 ? ` · ×${resource.seenCount}` : "";
   return {
     value: resourceReference(resource),
-    label: uri ? hyperlink(display, uri) : display,
+    label: uri ? hyperlink(resource.label, uri) : resource.label,
     description: `${actions}${usage}`,
   };
 }

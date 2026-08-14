@@ -32,7 +32,7 @@ test("extractResourceQuery recognizes only a # token at a text boundary", () => 
   assert.equal(extractResourceQuery("word#resource"), undefined);
 });
 
-test("resource suggestions put type first, remain clickable, and preserve safe references", () => {
+test("resource suggestions avoid repeated type labels and preserve clickable references", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const fileTarget = resolve("/workspace/project/docs/design notes.md");
   const resources = [
@@ -61,7 +61,8 @@ test("resource suggestions put type first, remain clickable, and preserve safe r
   const fileItems = resourceSuggestions(resources, "design");
   const fileItem = fileItems.find((item) => item.value === '#"docs/design notes.md"');
   assert.ok(fileItem);
-  assert.match(fileItem.label, /FILE ▤ docs\/design notes\.md/);
+  assert.match(fileItem.label, /docs\/design notes\.md/);
+  assert.doesNotMatch(fileItem.label, /FILE|▤/);
   assert.match(fileItem.description ?? "", /write · read · ×3/);
   assert.ok(fileItem.label.includes(`\x1b]8;;${pathToFileURL(fileTarget).href}\x1b\\`));
 

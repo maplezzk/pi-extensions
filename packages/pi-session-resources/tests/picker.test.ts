@@ -20,6 +20,13 @@ const theme: EditorTheme = {
     noMatch: (text) => text,
   },
 };
+const ACTIVE_TAB_START = "\x1b[7m";
+const ACTIVE_TAB_END = "\x1b[27m";
+
+/** Applies a visible active-tab marker without changing ANSI-aware widths. */
+function styleActiveTab(text: string): string {
+  return `${ACTIVE_TAB_START}${text}${ACTIVE_TAB_END}`;
+}
 
 const keybindings = {
   /** Matches only the default keys used by picker tests. */
@@ -135,7 +142,7 @@ function resourceSet(): SessionResource[] {
   ];
 }
 
-test("picker renders a bordered tab bar above typed-first resource rows", () => {
+test("picker renders a bordered tab bar with a distinct active type", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const lines = renderResourcePicker({
     resources: resourceSet(),
@@ -144,11 +151,14 @@ test("picker renders a bordered tab bar above typed-first resource rows", () => 
     selectedIndex: 0,
     width: 72,
     theme,
+    styleActiveTab,
   });
 
   assert.match(lines[0] ?? "", /^┌ Session resources /);
-  assert.match(lines[1] ?? "", /FILE 1.*PR\/MR 1.*WEB 1/);
-  assert.ok(lines.some((line) => line.includes("FILE ▤ src/index.ts")));
+  assert.ok((lines[1] ?? "").includes(`${ACTIVE_TAB_START} FILE 1 ${ACTIVE_TAB_END}`));
+  assert.match(lines[1] ?? "", /PR\/MR 1.*WEB 1/);
+  assert.ok(lines.some((line) => line.includes("src/index.ts")));
+  assert.ok(lines.every((line) => !line.includes("FILE ▤")));
   assert.ok(lines.every((line) => visibleWidth(line) <= 72));
 });
 
@@ -161,6 +171,7 @@ test("# opens above the editor, Tab switches type, and Enter inserts the resourc
     keybindings,
     getResources: resourceSet,
     isEnabled: () => true,
+    styleActiveTab,
     requestRender: () => {
       renders += 1;
     },
@@ -187,6 +198,7 @@ test("picker respects token boundaries and Shift+Tab switches backward", () => {
     keybindings,
     getResources: resourceSet,
     isEnabled: () => true,
+    styleActiveTab,
     requestRender: () => {},
   });
 
