@@ -22,10 +22,17 @@ const theme: EditorTheme = {
 };
 const ACTIVE_TAB_START = "\x1b[7m";
 const ACTIVE_TAB_END = "\x1b[27m";
+const BORDER_START = "\x1b[34m";
+const BORDER_END = "\x1b[39m";
 
 /** Applies a visible active-tab marker without changing ANSI-aware widths. */
 function styleActiveTab(text: string): string {
   return `${ACTIVE_TAB_START}${text}${ACTIVE_TAB_END}`;
+}
+
+/** Applies an ANSI border color without changing visible panel width. */
+function styleBorder(text: string): string {
+  return `${BORDER_START}${text}${BORDER_END}`;
 }
 
 const keybindings = {
@@ -154,14 +161,34 @@ test("picker renders a bordered tab bar with a distinct active type", () => {
     width: 72,
     theme,
     styleActiveTab,
+    styleBorder,
   });
 
-  assert.match(lines[0] ?? "", /^┌ Session resources /);
+  assert.ok((lines[0] ?? "").includes(`${BORDER_START}╭─ Session resources `));
   assert.ok((lines[1] ?? "").includes(`${ACTIVE_TAB_START} FILE 1 ${ACTIVE_TAB_END}`));
-  assert.match(lines[1] ?? "", /PR\/MR 1.*WEB 1/);
+  assert.match(lines[1] ?? "", /PR\/MR 1.*URL 1/);
   assert.ok(lines.some((line) => line.includes("src/index.ts")));
   assert.ok(lines.every((line) => !line.includes("FILE ▤")));
-  assert.ok(lines.every((line) => visibleWidth(line) <= 72));
+  assert.ok(lines.every((line) => visibleWidth(line) === 72));
+  assert.ok((lines.at(-1) ?? "").includes(`${BORDER_START}╰`));
+});
+
+test("picker follows narrow and wide terminal widths without a fixed cap", () => {
+  for (const width of [48, 128]) {
+    const lines = renderResourcePicker({
+      resources: resourceSet(),
+      activeKind: "file",
+      query: "",
+      selectedIndex: 0,
+      width,
+      theme,
+      styleActiveTab,
+      styleBorder,
+    });
+
+    assert.ok(lines.length > 0);
+    assert.ok(lines.every((line) => visibleWidth(line) === width));
+  }
 });
 
 test("# opens above the editor, type keys switch tabs, and Enter inserts the resource", () => {
@@ -174,6 +201,7 @@ test("# opens above the editor, type keys switch tabs, and Enter inserts the res
     getResources: resourceSet,
     isEnabled: () => true,
     styleActiveTab,
+    styleBorder,
     requestRender: () => {
       renders += 1;
     },
@@ -209,6 +237,7 @@ test("picker respects token boundaries and Shift+Tab switches backward", () => {
     getResources: resourceSet,
     isEnabled: () => true,
     styleActiveTab,
+    styleBorder,
     requestRender: () => {},
   });
 

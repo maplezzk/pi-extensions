@@ -9,7 +9,7 @@ const RESOURCE_QUERY_PATTERN = /(?:^|[\t ])#([^\s#]*)$/;
 const RESOURCE_KIND_LABELS: Record<ResourceKind, string> = {
   file: "FILE",
   review: "PR/MR",
-  web: "WEB",
+  web: "URL",
 };
 const ACTION_LABELS: Record<ResourceAction, string> = {
   read: "actionRead",

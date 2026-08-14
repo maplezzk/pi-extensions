@@ -10,7 +10,7 @@ A passive session-resource reference extension for the [Pi coding agent](https:/
 - Tracks structured HTTP(S) URL fields plus links emitted by browser, shell, and MR/PR creation tools.
 - Recognizes GitHub pull requests and GitLab merge requests and marks creation commands such as `gh pr create` and `glab mr create`.
 - Rebuilds state from the active session branch after reload, resume, fork, or `/tree` navigation. It does not add tracking entries to model context.
-- Shows a bordered resource picker only after `#` is typed, with no persistent panel. Files, PR/MR links, and web pages stay in separate tabs.
+- Shows a rounded, accent-bordered resource picker only after `#` is typed, with no persistent panel. It follows the editor width as the terminal resizes, while files, PR/MR links, and URLs stay in separate tabs.
 - Fuzzy-filters recent resources by label, target, kind, action, and source tool. The active type tab uses the theme's selected background, while each row shows only its resource label and actions.
 - Renders candidate labels as OSC 8 hyperlinks. File links use `file://`; web and review links keep their original URL.
 - Provides both `zh-CN` and `en-US` UI text through `pi-extensions-i18n`.
@@ -20,14 +20,14 @@ A passive session-resource reference extension for the [Pi coding agent](https:/
 Type `#` at a token boundary in the editor:
 
 ```text
-┌ Session resources ─────────────────────────────────────┐
-│  FILE 8   PR/MR 2   WEB 3                              │
+╭─ Session resources ────────────────────────────────────╮
+│  FILE 8   PR/MR 2   URL 3                              │
 ├────────────────────────────────────────────────────────┤
 │ → src/index.ts                                write · read │
 │   tests/index.test.ts                                write │
 ├────────────────────────────────────────────────────────┤
 │ Left/Right or Tab/Shift+Tab type · Up/Down select · Enter insert │
-└────────────────────────────────────────────────────────┘
+╰────────────────────────────────────────────────────────╯
 Please inspect #ind
 ```
 
