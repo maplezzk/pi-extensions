@@ -4,6 +4,7 @@ import { commandTerminator, weztermActivateArgs } from "../src/backends/wezterm.
 import { powershellEscape } from "../src/shell.ts";
 import { herdrSourceFlag } from "../src/backends/herdr.ts";
 import {
+  resolveSendInterpreter,
   sendScriptExtension,
   buildSendScriptContent,
   buildMuxInvocation,
@@ -27,6 +28,15 @@ describe("commandTerminator (U-001)", () => {
 });
 
 // U-002：长命令解释器选择
+describe("resolveSendInterpreter (U-002)", () => {
+  test("省略 interpreter 时保持 Bash 默认值", () => {
+    assert.equal(resolveSendInterpreter(), "bash");
+  });
+  test("显式 PowerShell 时保持调用方选择", () => {
+    assert.equal(resolveSendInterpreter("powershell"), "powershell");
+  });
+});
+
 describe("sendScriptExtension (U-002)", () => {
   test("Bash 使用 .sh 扩展名", () => {
     assert.equal(sendScriptExtension("bash"), ".sh");

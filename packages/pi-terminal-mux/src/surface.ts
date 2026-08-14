@@ -231,6 +231,13 @@ export interface SendLongCommandOptions {
 const DEFAULT_SEND_INTERPRETER = "bash";
 const INTERPRETER_POWERSHELL = "powershell";
 
+/** 解析 sendLongCommand 的解释器；省略时始终保持 Bash 兼容默认值。 */
+export function resolveSendInterpreter(
+  interpreter?: "bash" | "powershell",
+): "bash" | "powershell" {
+  return interpreter ?? DEFAULT_SEND_INTERPRETER;
+}
+
 /** 脚本文件写入权限：PowerShell 无需可执行位，Bash 脚本需可执行位 */
 const POWERSHELL_SCRIPT_MODE = 0o644;
 const BASH_SCRIPT_MODE = 0o755;
@@ -287,15 +294,15 @@ export function sendLongCommand(
   command: string,
   options?: SendLongCommandOptions,
 ): string {
-  const interpreter: "bash" | "powershell" = options?.interpreter ?? DEFAULT_SEND_INTERPRETER;
-  const ext = sendScriptExtension(interpreter);
+  const interpreter = resolveSendInterpreter(options?.interpreter);
+  const extension = sendScriptExtension(interpreter);
 
   const scriptPath =
     options?.scriptPath ??
     join(
       tmpdir(),
       "pi-subagent-scripts",
-      `cmd-${Date.now()}-${Math.random().toString(16).slice(2, 8)}.${ext}`,
+      `cmd-${Date.now()}-${Math.random().toString(16).slice(2, 8)}${extension}`,
     );
   mkdirSync(dirname(scriptPath), { recursive: true });
 
