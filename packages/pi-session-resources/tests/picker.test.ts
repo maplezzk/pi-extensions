@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { EditorComponent } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
 import type { SessionResource } from "../src/collector.ts";
 import {
   renderResourcePicker,
@@ -186,6 +186,8 @@ test("picker renders a bordered tab bar with one blue accent", () => {
 });
 
 test("picker keeps styling inside the OSC 8 link so selected URLs render once", () => {
+  // CI runners don't detect a hyperlink-capable terminal; force-enable for this test.
+  setCapabilities({ images: null, trueColor: true, hyperlinks: true });
   const lines = renderResourcePicker({
     resources: resourceSet(),
     activeKind: "web",
