@@ -1,0 +1,62 @@
+{
+  "commandDescription": {
+    "zh-CN": "管理 # 会话资源选择器",
+    "en-US": "Manage the # session resource picker"
+  },
+  "commandUsage": {
+    "zh-CN": "用法：/config:session-resources [enable|disable]",
+    "en-US": "Usage: /config:session-resources [enable|disable]"
+  },
+  "referenceHint": {
+    "zh-CN": "在输入框键入 # 并继续输入即可筛选会话资源；←/→ 或 Tab/Shift+Tab 切换类型，↑/↓ 选择，Enter 插入引用",
+    "en-US": "Type # in the editor and continue typing to filter session resources; Left/Right or Tab/Shift+Tab switch types, Up/Down selects, and Enter inserts the reference"
+  },
+  "referenceDisabledHint": {
+    "zh-CN": "# 会话资源选择器当前已禁用；使用 /config:session-resources enable 启用",
+    "en-US": "The # session resource picker is disabled; use /config:session-resources enable to enable it"
+  },
+  "enabled": {
+    "zh-CN": "# 会话资源选择器已启用",
+    "en-US": "# session resource picker enabled"
+  },
+  "disabled": {
+    "zh-CN": "# 会话资源选择器已禁用",
+    "en-US": "# session resource picker disabled"
+  },
+  "pickerTitle": {
+    "zh-CN": "会话资源",
+    "en-US": "Session resources"
+  },
+  "pickerNoMatches": {
+    "zh-CN": "当前类型没有匹配的资源",
+    "en-US": "No matching resources in this type"
+  },
+  "pickerHint": {
+    "zh-CN": "←/→ 或 Tab/Shift+Tab 切换类型 · ↑/↓ 选择 · Enter 插入 · Esc 返回",
+    "en-US": "Left/Right or Tab/Shift+Tab type · Up/Down select · Enter insert · Esc close"
+  },
+  "actionRead": {
+    "zh-CN": "读取",
+    "en-US": "read"
+  },
+  "actionChanged": {
+    "zh-CN": "修改",
+    "en-US": "write"
+  },
+  "actionInspected": {
+    "zh-CN": "检查",
+    "en-US": "inspect"
+  },
+  "actionOpened": {
+    "zh-CN": "打开",
+    "en-US": "open"
+  },
+  "actionCreated": {
+    "zh-CN": "创建",
+    "en-US": "created"
+  },
+  "actionReferenced": {
+    "zh-CN": "引用",
+    "en-US": "ref"
+  }
+}
