@@ -1,6 +1,6 @@
 {
   "name": "pi-session-resources",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Clickable tabbed Pi # picker for session files, browser URLs, and pull or merge requests",
   "type": "module",
   "main": "./index.ts",
