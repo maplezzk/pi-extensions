@@ -4,8 +4,8 @@
     "en-US": "[Auto reminder]\n• Done → call subagent_done to finish.\n• Before finishing, self-check: are you spinning in place? If so, converge your result immediately and hand it back to the main agent with caller_ping — don't overthink.\n• Still working → ignore."
   },
   "muxCommandDescription": {
-    "zh-CN": "配置 subagent 使用的终端复用器",
-    "en-US": "Configure the terminal multiplexer used by subagents"
+    "zh-CN": "配置 subagent 使用的终端复用器及 Herdr 布局模式",
+    "en-US": "Configure the subagent multiplexer and Herdr layout mode"
   },
   "muxConfigTitle": {
     "zh-CN": "选择 subagent 终端复用器（当前：{value}）",
@@ -32,8 +32,16 @@
     "en-US": "Subagent multiplexer set to: {value}"
   },
   "muxInvalid": {
-    "zh-CN": "不支持的 mux：{value}。可选：auto、muxy、cmux、tmux、zellij、wezterm、herdr、otty、orca。",
-    "en-US": "Unsupported mux: {value}. Choose auto, muxy, cmux, tmux, zellij, wezterm, herdr, otty, or orca."
+    "zh-CN": "不支持的 mux 配置：{value}。可选：auto、muxy、cmux、tmux、zellij、wezterm、herdr [split|tab]、otty、orca。",
+    "en-US": "Unsupported mux setting: {value}. Choose auto, muxy, cmux, tmux, zellij, wezterm, herdr [split|tab], otty, or orca."
+  },
+  "herdrModeSplit": {
+    "zh-CN": "分屏",
+    "en-US": "split panes"
+  },
+  "herdrModeTab": {
+    "zh-CN": "独立 Tab",
+    "en-US": "separate tabs"
   },
   "muxInteractiveOnly": {
     "zh-CN": "请在支持 UI 的 Pi 会话中运行 /config:subagent。",

@@ -59,9 +59,9 @@ zellij --session pi   # then run: pi
 # just run pi inside Orca — no wrapper needed
 ```
 
-Optional: set `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca` to force a specific backend.
+Optional: set `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca` to force a specific backend. Herdr uses its original split layout by default; set `PI_SUBAGENT_HERDR_MODE=tab` for one background tab per subagent, or `split` to select pane splitting explicitly.
 
-You can also configure it from inside Pi with `/config:subagent`. Run it without arguments for an interactive menu, or use `/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca` for a direct choice. The selection is persisted in Pi's user extension config directory; explicit `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` environment variables take precedence. `/subagent-config` and `/pi-subagent-config` remain available as compatibility aliases.
+You can also configure it from inside Pi with `/config:subagent`. Run it without arguments for an interactive menu, or use `/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr [split|tab]|otty|orca` for a direct choice. For example, `/config:subagent herdr tab` persists both the Herdr backend and tab mode. The selection is persisted in Pi's user extension config directory; explicit `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` and `PI_SUBAGENT_HERDR_MODE` environment variables take precedence. `/subagent-config` and `/pi-subagent-config` remain available as compatibility aliases.
 
 > **Otty notes:**
 > - Otty sets `TERM_PROGRAM=otty` automatically when pi runs inside it; the backend detects this env var.
@@ -159,7 +159,7 @@ These labels are no longer derived from session-file growth. Session JSONL is st
 
 #### Configuration
 
-Status display is controlled by `config.json` in the extension directory. Copy `config.json.example` to get started:
+Subagent settings, including status display and the persisted Herdr mode, are controlled by `config.json` in the extension directory. Copy `config.json.example` to get started:
 
 ```bash
 cp config.json.example config.json
@@ -167,11 +167,14 @@ cp config.json.example config.json
 
 ```json
 {
+  "herdrMode": "split",
   "status": {
     "enabled": true
   }
 }
 ```
+
+`herdrMode` accepts `split` (default, backward-compatible pane layout) or `tab` (one background tab per subagent). The `/config:subagent herdr split|tab` command updates this field.
 
 `config.json` is gitignored so local overrides don't get committed.
 
