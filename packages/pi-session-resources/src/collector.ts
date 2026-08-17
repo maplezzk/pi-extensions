@@ -103,7 +103,7 @@ const BASH_TOOL_NAME = "bash";
 const WINDOWS_PLATFORM = "win32";
 const WINDOWS_DRIVE_PREFIX_PATTERN = /^[A-Za-z]:[\\/]/;
 const FILE_URL_PREFIX = "file://";
-const HTTP_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
+const HTTP_URL_PATTERN = /https?:\/\/[^\s<>"'`，；。：、！？（）【】「」]+/gu;
 const FILE_URL_PATTERN = /file:\/\/[^\s<>"'`]+/g;
 const POSIX_PATH_PATTERN = /(?:^|[\s"'`([{<])((?:~\/|\/)[^\s"'`<>)}\]]+)/g;
 const WINDOWS_PATH_PATTERN = /[A-Za-z]:\\[^\s<>"'`]+/g;
@@ -174,7 +174,7 @@ const BUILTIN_FILE_ACTIONS: Record<string, ResourceAction> = {
 /** Removes common prose punctuation before path or URL parsing. */
 function sanitizeToken(raw: string): string {
   let value = raw.trim().replace(/^[@"'`(<\[]+/, "");
-  value = value.replace(/[>"'`,;.\])}]+$/, "");
+  value = value.replace(/[>"'`,;.\])}。；，：、！？）】」』]+$/u, "");
   return value;
 }
 

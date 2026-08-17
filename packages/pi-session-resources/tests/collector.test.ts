@@ -103,6 +103,24 @@ test("plain-text URLs stop before adjacent whitespace and prose", () => {
   assert.equal(resources[0]?.target, "https://example.com/docs/get%20started?q=hello%20world");
 });
 
+test("loose URLs strip trailing CJK punctuation", () => {
+  const resources = collectToolResources({
+    toolName: "bash",
+    input: { command: "open browser" },
+    content: [
+      {
+        type: "text",
+        text: "MR: https://example.com/erp/wms/-/merge_requests/4966；state: opened",
+      },
+    ],
+    cwd,
+    timestamp: 36,
+  });
+
+  assert.equal(resources.length, 1);
+  assert.equal(resources[0]?.target, "https://example.com/erp/wms/-/merge_requests/4966");
+});
+
 test("file content does not turn embedded URLs or paths into unrelated resources", () => {
   const resources = collectToolResources({
     toolName: "read",
