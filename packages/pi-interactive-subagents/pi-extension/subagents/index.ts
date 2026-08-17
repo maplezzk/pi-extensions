@@ -44,9 +44,14 @@ import {
 
 import {
   applyPersistedMuxPreference,
+  HERDR_SURFACE_MODE_TAB,
+  HERDR_SURFACE_MODES,
+  loadHerdrModeConfig,
   loadMuxConfig,
+  saveHerdrMode,
   saveMuxPreference,
   SUBAGENT_MUX_BACKENDS,
+  type HerdrSurfaceMode,
   type SubagentMuxPreference,
 } from "./mux-config.ts";
 
@@ -968,26 +973,78 @@ function isMuxBackendAvailable(backend: MuxBackend): boolean {
   }
 }
 
-function muxPreferenceLabel(preference: SubagentMuxPreference): string {
-  return preference === "auto" ? i18n.t("muxAuto") : preference;
+const AUTO_MUX_PREFERENCE: SubagentMuxPreference = "auto";
+const HERDR_MUX_BACKEND: MuxBackend = "herdr";
+const MAX_MUX_CONFIG_TOKENS = 2;
+
+interface MuxConfigSelection {
+  preference: SubagentMuxPreference;
+  herdrMode?: HerdrSurfaceMode;
 }
 
+/** 返回本地化的 Herdr surface 模式名称。 */
+function herdrModeLabel(mode: HerdrSurfaceMode): string {
+  return mode === HERDR_SURFACE_MODE_TAB
+    ? i18n.t("herdrModeTab")
+    : i18n.t("herdrModeSplit");
+}
+
+/** 格式化当前 mux；Herdr 同时展示 split/tab 子模式。 */
+function muxPreferenceLabel(preference: SubagentMuxPreference, herdrMode?: HerdrSurfaceMode): string {
+  if (preference === AUTO_MUX_PREFERENCE) return i18n.t("muxAuto");
+  if (preference === HERDR_MUX_BACKEND && herdrMode) {
+    return `herdr (${herdrModeLabel(herdrMode)})`;
+  }
+  return preference;
+}
+
+/** 解析 `/config:subagent` 直接参数，Herdr 可追加 split/tab。 */
+function parseMuxConfigRequest(requested: string): MuxConfigSelection | null {
+  const tokens = requested.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0 || tokens.length > MAX_MUX_CONFIG_TOKENS) return null;
+
+  const requestedMux = tokens[0];
+  const preference = requestedMux === AUTO_MUX_PREFERENCE || (SUBAGENT_MUX_BACKENDS as readonly string[]).includes(requestedMux)
+    ? requestedMux as SubagentMuxPreference
+    : null;
+  if (!preference) return null;
+
+  const requestedMode = tokens[1];
+  if (!requestedMode) return { preference };
+  if (preference !== HERDR_MUX_BACKEND || !(HERDR_SURFACE_MODES as readonly string[]).includes(requestedMode)) {
+    return null;
+  }
+  return { preference, herdrMode: requestedMode as HerdrSurfaceMode };
+}
+
+/** 保存 mux 选择，并在 Herdr 选项携带模式时一并持久化。 */
+function saveMuxConfigSelection(selection: MuxConfigSelection): MuxConfigSelection {
+  const savedMux = saveMuxPreference(selection.preference);
+  const savedMode = selection.herdrMode ? saveHerdrMode(selection.herdrMode).herdrMode : undefined;
+  return { preference: savedMux.mux, herdrMode: savedMode };
+}
+
+/** 注册 mux 配置命令及其兼容别名，并持久化用户选择。 */
 function registerMuxConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("muxCommandDescription"),
     handler: async (args, ctx) => {
-      const requested = args.trim().toLowerCase();
+      const requested = args.trim();
       if (requested) {
-        const preference = requested === "auto" || (SUBAGENT_MUX_BACKENDS as readonly string[]).includes(requested)
-          ? requested as SubagentMuxPreference
-          : null;
-        if (!preference) {
+        const selection = parseMuxConfigRequest(requested);
+        if (!selection) {
           ctx.ui.notify(i18n.t("muxInvalid", { value: requested }), "warning");
           return;
         }
         try {
-          const saved = saveMuxPreference(preference);
-          ctx.ui.notify(i18n.t("muxSaved", { value: muxPreferenceLabel(saved.mux) }), "info");
+          const saved = saveMuxConfigSelection(selection);
+          const herdrMode = saved.preference === HERDR_MUX_BACKEND
+            ? saved.herdrMode ?? loadHerdrModeConfig().herdrMode
+            : undefined;
+          ctx.ui.notify(
+            i18n.t("muxSaved", { value: muxPreferenceLabel(saved.preference, herdrMode) }),
+            "info",
+          );
         } catch (error) {
           ctx.ui.notify(String(error), "error");
         }
@@ -1000,20 +1057,38 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
       }
 
       const current = loadMuxConfig();
+      const currentHerdrMode = loadHerdrModeConfig().herdrMode;
       const detected = getMuxBackend();
-      const options: Array<{ preference: SubagentMuxPreference; label: string }> = [
+      const options: Array<MuxConfigSelection & { label: string }> = [
         {
-          preference: "auto",
-          label: `${current.mux === "auto" ? "●" : "○"} ${i18n.t("muxAuto")} — ${detected ?? i18n.t("muxUnavailable")}`,
+          preference: AUTO_MUX_PREFERENCE,
+          label: `${current.mux === AUTO_MUX_PREFERENCE ? "●" : "○"} ${i18n.t("muxAuto")} — ${detected ?? i18n.t("muxUnavailable")}`,
         },
-        ...SUBAGENT_MUX_BACKENDS.map((backend) => ({
-          preference: backend,
-          label: `${current.mux === backend ? "●" : "○"} ${backend} — ${isMuxBackendAvailable(backend) ? i18n.t("muxAvailable") : i18n.t("muxUnavailable")}`,
-        })),
       ];
+      for (const backend of SUBAGENT_MUX_BACKENDS) {
+        const available = isMuxBackendAvailable(backend)
+          ? i18n.t("muxAvailable")
+          : i18n.t("muxUnavailable");
+        if (backend === HERDR_MUX_BACKEND) {
+          for (const herdrMode of HERDR_SURFACE_MODES) {
+            const selected = current.mux === backend && currentHerdrMode === herdrMode;
+            options.push({
+              preference: backend,
+              herdrMode,
+              label: `${selected ? "●" : "○"} ${muxPreferenceLabel(backend, herdrMode)} — ${available}`,
+            });
+          }
+          continue;
+        }
+        options.push({
+          preference: backend,
+          label: `${current.mux === backend ? "●" : "○"} ${backend} — ${available}`,
+        });
+      }
+
       const exit = i18n.t("muxExit");
       const choice = await ctx.ui.select(
-        i18n.t("muxConfigTitle", { value: muxPreferenceLabel(current.mux) }),
+        i18n.t("muxConfigTitle", { value: muxPreferenceLabel(current.mux, currentHerdrMode) }),
         [...options.map((option) => option.label), exit],
       );
       if (!choice || choice === exit) return;
@@ -1021,8 +1096,13 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
       const selected = options.find((option) => option.label === choice);
       if (!selected) return;
       try {
-        const saved = saveMuxPreference(selected.preference);
-        ctx.ui.notify(i18n.t("muxSaved", { value: muxPreferenceLabel(saved.mux) }), "info");
+        const saved = saveMuxConfigSelection(selected);
+        ctx.ui.notify(
+          i18n.t("muxSaved", {
+            value: muxPreferenceLabel(saved.preference, saved.herdrMode),
+          }),
+          "info",
+        );
       } catch (error) {
         ctx.ui.notify(String(error), "error");
       }
@@ -1035,6 +1115,7 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
 
 export const __test__ = {
   borderLine,
+  parseMuxConfigRequest,
   getShellReadyDelayMs,
   renderSubagentWidgetLines,
   loadAgentDefaults,

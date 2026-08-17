@@ -55,7 +55,7 @@ closeSurface(surface);
 | tmux | `TMUX` + `tmux` 命令 |
 | zellij | `ZELLIJ` / `ZELLIJ_SESSION_NAME` + `zellij` 命令 |
 | wezterm | `WEZTERM_UNIX_SOCKET` + `wezterm` 命令 |
-| herdr | `HERDR_ENV=1` + `HERDR_PANE_ID` + `herdr` 命令 |
+| herdr | `HERDR_ENV=1` + `HERDR_PANE_ID` + `herdr` 命令（`tab` 模式还需要 `HERDR_WORKSPACE_ID`） |
 | otty | `TERM_PROGRAM=otty` + `otty` 命令 |
 | orca | `TERM_PROGRAM=Orca` + `orca` 命令 + Orca runtime 可达 |
 
@@ -66,13 +66,21 @@ closeSurface(surface);
 
 指定的后端运行环境不满足时 `getMuxBackend()` 返回 `null`，不会悄悄降级到其他后端。
 
+### Herdr surface 模式
+
+Herdr 默认保持向后兼容的广度优先分屏模式。设置 `PI_SUBAGENT_HERDR_MODE=tab` 后，每个 subagent 会创建独立后台 Tab；设置为 `split` 可显式选择原有分屏布局。`createSurfaceSplit()` 始终保留显式 pane 分屏语义。
+
+```bash
+export PI_SUBAGENT_HERDR_MODE=tab
+```
+
 ## API 概览
 
 ### 统一 surface API（跨后端语义一致）
 
 | 函数 | 说明 |
 |------|------|
-| `createSurface(name)` | 智能放置新 surface（cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty/orca 广度优先分屏；orca 缺少 agent handle 时新建 tab），返回 surface 标识 |
+| `createSurface(name)` | 智能放置新 surface（herdr 默认广度优先分屏，设置 `PI_SUBAGENT_HERDR_MODE=tab` 后每个 surface 创建独立后台 Tab；cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty/orca 广度优先分屏；orca 缺少 agent handle 时新建 tab），返回 surface 标识 |
 | `createSurfaceSplit(name, direction, fromSurface?, options?)` | 指定方向（left/right/up/down）分屏；`options.activate`（仅 wezterm，默认 false）分屏后聚焦新 pane |
 | `sendCommand(surface, command)` | 发送命令并回车执行 |
 | `sendLongCommand(surface, command, opts?)` | 长命令先写脚本文件再执行；`opts.scriptPreamble` 可注入前置片段；`opts.interpreter`（默认 `"bash"`，Windows 可显式 `"powershell"`）选择脚本运行时；返回脚本路径 |
@@ -112,6 +120,7 @@ closeSurface(surface);
 | `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` | 强制指定后端 |
 | `PI_SUBAGENT_ZELLIJ_MIN_COLUMNS` / `PI_SUBAGENT_ZELLIJ_MIN_ROWS` | zellij 分屏最小可用尺寸（默认 50×10，不满足时改堆叠） |
 | `PI_SUBAGENT_RENAME_TMUX_WINDOW` / `PI_SUBAGENT_RENAME_TMUX_SESSION` | tmux 下允许 renameCurrentTab / renameWorkspace（默认不动用户命名） |
+| `PI_SUBAGENT_HERDR_MODE` | herdr surface 放置模式：`split`（默认）或 `tab` |
 | `PI_SUBAGENT_RENAME_HERDR_WORKSPACE` | herdr 下允许 renameWorkspace |
 | `PI_EXTENSIONS_LOCALE` | 提示文案语言（`zh-CN` / `en-US` / `auto`），由 pi-extensions-i18n 提供 |
 

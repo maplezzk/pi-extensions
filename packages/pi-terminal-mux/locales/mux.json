@@ -46,5 +46,9 @@
   "setupHint.ottySendKeys": {
     "zh-CN": "Otty 的 `ipc-allow-send-keys` 未启用。如需让 pi 驱动子 agent 分屏，请在 ~/.config/otty/config.toml 中添加 `ipc-allow-send-keys = true` 并重新加载 Otty。",
     "en-US": "Otty's `ipc-allow-send-keys` is disabled. To let pi drive subagent panes, add `ipc-allow-send-keys = true` to ~/.config/otty/config.toml and reload Otty."
+  },
+  "error.invalidHerdrMode": {
+    "zh-CN": "不支持的 Herdr surface 模式：{value}。可选值：split、tab。",
+    "en-US": "Unsupported Herdr surface mode: {value}. Choose split or tab."
   }
 }

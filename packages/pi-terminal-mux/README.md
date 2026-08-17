@@ -56,7 +56,7 @@ closeSurface(surface);
 | tmux | `TMUX` + `tmux` command |
 | zellij | `ZELLIJ` / `ZELLIJ_SESSION_NAME` + `zellij` command |
 | wezterm | `WEZTERM_UNIX_SOCKET` + `wezterm` command |
-| herdr | `HERDR_ENV=1` + `HERDR_PANE_ID` + `herdr` command |
+| herdr | `HERDR_ENV=1` + `HERDR_PANE_ID` + `herdr` command (`tab` mode also requires `HERDR_WORKSPACE_ID`) |
 | otty | `TERM_PROGRAM=otty` + `otty` command |
 | orca | `TERM_PROGRAM=Orca` + `orca` command + reachable Orca runtime |
 
@@ -67,13 +67,21 @@ Default priority follows the table order (muxy first). Force a backend with:
 
 If the forced backend's runtime is unavailable, `getMuxBackend()` returns `null` — it never silently falls back to another backend.
 
+### Herdr surface mode
+
+Herdr keeps the backward-compatible breadth-first split mode by default. Set `PI_SUBAGENT_HERDR_MODE=tab` to create one background tab per subagent, or `split` to select the original pane layout explicitly. `createSurfaceSplit()` always remains an explicit pane split.
+
+```bash
+export PI_SUBAGENT_HERDR_MODE=tab
+```
+
 ## API overview
 
 ### Unified surface API (same semantics across backends)
 
 | Function | Description |
 |----------|-------------|
-| `createSurface(name)` | Smart placement (cmux: first right-split then tabs; zellij: tab-aware tiled/stacked; muxy/otty/orca: breadth-first splits; orca falls back to a new tab without an agent handle), returns a surface handle |
+| `createSurface(name)` | Smart placement (herdr: breadth-first splits by default, or one background tab per surface with `PI_SUBAGENT_HERDR_MODE=tab`; cmux: first right-split then tabs; zellij: tab-aware tiled/stacked; muxy/otty/orca: breadth-first splits; orca falls back to a new tab without an agent handle), returns a surface handle |
 | `createSurfaceSplit(name, direction, fromSurface?, options?)` | Split in an explicit direction (left/right/up/down). `options.activate` (WezTerm only, default `false`) focuses the new pane after splitting |
 | `sendCommand(surface, command)` | Send a command and press Enter |
 | `sendLongCommand(surface, command, opts?)` | Write long commands to a script file first. `opts.scriptPreamble` injects leading lines; `opts.interpreter` (`"bash"` default, or `"powershell"` on Windows) selects the scripting runtime; returns the script path |
@@ -113,6 +121,7 @@ These are opt-in capabilities — existing Bash callers and `pi-interactive-suba
 | `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` | Force a backend |
 | `PI_SUBAGENT_ZELLIJ_MIN_COLUMNS` / `PI_SUBAGENT_ZELLIJ_MIN_ROWS` | Minimum usable size for zellij splits (default 50x10; stacks instead when smaller) |
 | `PI_SUBAGENT_RENAME_TMUX_WINDOW` / `PI_SUBAGENT_RENAME_TMUX_SESSION` | Allow renameCurrentTab / renameWorkspace on tmux (user naming untouched by default) |
+| `PI_SUBAGENT_HERDR_MODE` | Herdr surface placement: `split` (default) or `tab` |
 | `PI_SUBAGENT_RENAME_HERDR_WORKSPACE` | Allow renameWorkspace on herdr |
 | `PI_EXTENSIONS_LOCALE` | Hint language (`zh-CN` / `en-US` / `auto`), provided by pi-extensions-i18n |
 

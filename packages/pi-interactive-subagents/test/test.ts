@@ -54,7 +54,10 @@ import {
   shouldAutoExitOnAgentEnd,
 } from "../pi-extension/subagents/subagent-done.ts";
 import {
+  applyPersistedMuxPreference,
+  loadHerdrModeConfig,
   loadMuxConfig,
+  saveHerdrMode,
   saveMuxPreference,
 } from "../pi-extension/subagents/mux-config.ts";
 
@@ -855,6 +858,77 @@ describe("subagent mux config", () => {
         else process.env.PI_SUBAGENT_MUX = previousSubagentMux;
       }
     });
+  });
+
+  it("persists Herdr mode and lets the environment override it", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      const previousHerdrMode = process.env.PI_SUBAGENT_HERDR_MODE;
+      delete process.env.PI_SUBAGENT_HERDR_MODE;
+      try {
+        writeFileSync(configPath, JSON.stringify({ mux: "herdr", herdrMode: "tab" }));
+        assert.deepEqual(loadHerdrModeConfig(configPath), { herdrMode: "tab", source: "file" });
+
+        process.env.PI_SUBAGENT_HERDR_MODE = "split";
+        assert.deepEqual(loadHerdrModeConfig(configPath), { herdrMode: "split", source: "environment" });
+      } finally {
+        if (previousHerdrMode === undefined) delete process.env.PI_SUBAGENT_HERDR_MODE;
+        else process.env.PI_SUBAGENT_HERDR_MODE = previousHerdrMode;
+      }
+    });
+  });
+
+  it("applies and saves the persisted Herdr mode immediately", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      const previousHerdrMode = process.env.PI_SUBAGENT_HERDR_MODE;
+      delete process.env.PI_SUBAGENT_HERDR_MODE;
+      try {
+        writeFileSync(configPath, JSON.stringify({ herdrMode: "tab", status: { enabled: true } }));
+        applyPersistedMuxPreference(configPath);
+        assert.equal(process.env.PI_SUBAGENT_HERDR_MODE, "tab");
+
+        const saved = saveHerdrMode("split", configPath);
+        assert.deepEqual(saved, { herdrMode: "split", source: "file" });
+        assert.equal(process.env.PI_SUBAGENT_HERDR_MODE, "split");
+        assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+          herdrMode: "split",
+          status: { enabled: true },
+        });
+
+        process.env.PI_SUBAGENT_HERDR_MODE = "tiles";
+        applyPersistedMuxPreference(configPath);
+        assert.equal(process.env.PI_SUBAGENT_HERDR_MODE, "tiles");
+      } finally {
+        if (previousHerdrMode === undefined) delete process.env.PI_SUBAGENT_HERDR_MODE;
+        else process.env.PI_SUBAGENT_HERDR_MODE = previousHerdrMode;
+      }
+    });
+  });
+});
+
+describe("subagent mux command parsing", () => {
+  const testApi = (subagentsModule as unknown as {
+    __test__: {
+      parseMuxConfigRequest: (value: string) => {
+        preference: string;
+        herdrMode?: string;
+      } | null;
+    };
+  }).__test__;
+
+  it("accepts Herdr split/tab and rejects modes for other backends", () => {
+    assert.deepEqual(testApi.parseMuxConfigRequest("herdr split"), {
+      preference: "herdr",
+      herdrMode: "split",
+    });
+    assert.deepEqual(testApi.parseMuxConfigRequest("herdr TAB"), {
+      preference: "herdr",
+      herdrMode: "tab",
+    });
+    assert.deepEqual(testApi.parseMuxConfigRequest("herdr"), { preference: "herdr" });
+    assert.equal(testApi.parseMuxConfigRequest("tmux tab"), null);
+    assert.equal(testApi.parseMuxConfigRequest("herdr tiles"), null);
   });
 });
 

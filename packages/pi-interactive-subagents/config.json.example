@@ -1,4 +1,5 @@
 {
+  "herdrMode": "split",
   "status": {
     "enabled": true
   }

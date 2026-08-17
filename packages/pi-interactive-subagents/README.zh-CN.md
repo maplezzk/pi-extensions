@@ -32,10 +32,10 @@ tmux new -A -s pi 'pi'
 zellij --session pi   # 然后运行 pi
 ```
 
-可选：设置 `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca` 强制指定后端。
+可选：设置 `PI_SUBAGENT_MUX=muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca` 强制指定后端。Herdr 默认保持原有分屏布局；设置 `PI_SUBAGENT_HERDR_MODE=tab` 后每个 subagent 创建独立后台 Tab，设置为 `split` 可显式选择分屏模式。
 
 也可以在 Pi 内通过 `/config:subagent` 配置：不带参数打开选择菜单，或直接运行
-`/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr|otty|orca`。选择会保存到 Pi 的用户扩展配置目录；显式设置的 `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` 优先级更高。`/subagent-config` 和 `/pi-subagent-config` 仍作为兼容别名保留。
+`/config:subagent auto|muxy|cmux|tmux|zellij|wezterm|herdr [split|tab]|otty|orca`。例如 `/config:subagent herdr tab` 会同时持久化 Herdr 后端与 Tab 模式。选择会保存到 Pi 的用户扩展配置目录；显式设置的 `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` 与 `PI_SUBAGENT_HERDR_MODE` 优先级更高。`/subagent-config` 和 `/pi-subagent-config` 仍作为兼容别名保留。
 
 ## 主要能力
 
@@ -50,7 +50,7 @@ zellij --session pi   # 然后运行 pi
 
 ## 配置
 
-状态显示由扩展目录下的 `config.json` 控制。复制 `config.json.example` 开始：
+状态显示与持久化 Herdr 模式由扩展目录下的 `config.json` 控制。复制 `config.json.example` 开始：
 
 ```bash
 cp config.json.example config.json
@@ -58,11 +58,14 @@ cp config.json.example config.json
 
 ```json
 {
+  "herdrMode": "split",
   "status": {
     "enabled": true
   }
 }
 ```
+
+`herdrMode` 支持 `split`（默认，兼容原有 pane 布局）和 `tab`（每个 subagent 独立后台 Tab）。`/config:subagent herdr split|tab` 会更新该字段。
 
 ## 致谢
 
