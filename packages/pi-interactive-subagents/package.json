@@ -1,6 +1,6 @@
 {
   "name": "@maplezzk/pi-interactive-subagents",
-  "version": "3.9.1",
+  "version": "3.10.0",
   "description": "Interactive async subagents for pi — spawn, orchestrate, and manage sub-agent sessions in multiplexer panes. Fork of HazAT/pi-interactive-subagents.",
   "type": "module",
   "main": "./index.ts",
@@ -59,7 +59,7 @@
   "dependencies": {
     "ajv": "^8.20.0",
     "pi-extensions-i18n": "^0.3.1",
-    "pi-terminal-mux": "^0.3.2"
+    "pi-terminal-mux": "^0.4.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
