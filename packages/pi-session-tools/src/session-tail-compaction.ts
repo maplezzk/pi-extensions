@@ -32,6 +32,7 @@ import { Type } from "typebox";
 import {
   buildSquashTaskPrompt,
   computeFileLists,
+  didAgentStopNormally,
   extractFileOps,
   formatFileOperations,
   formatThreshold,
@@ -231,6 +232,8 @@ function textResult(text: string, isError = false) {
 }
 
 export default function contextFoldExtension(pi: ExtensionAPI) {
+  let latestAgentRunStoppedNormally = false;
+
   pi.registerTool({
     name: "session_log",
     label: i18n.t("logLabel"),
@@ -335,9 +338,16 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     },
   });
 
+  pi.on("agent_end", (event) => {
+    latestAgentRunStoppedNormally = didAgentStopNormally(event.messages);
+  });
+
   pi.on("agent_settled", async (_event, ctx) => {
+    const shouldCheckContextThreshold = latestAgentRunStoppedNormally;
+    latestAgentRunStoppedNormally = false;
+
     if (!pending) {
-      checkContextThreshold(pi, ctx);
+      if (shouldCheckContextThreshold) checkContextThreshold(pi, ctx);
       return;
     }
 
@@ -536,7 +546,7 @@ async function handleConfigCommand(
 const HINT_DELIVER_MODE = "followUp" as const;
 
 /**
- * 上下文阈值提示：agent 结束且无压缩任务时，若上下文跨过未提示过的阈值，
+ * 上下文阈值提示：agent 主动正常停止且无压缩任务时，若上下文跨过未提示过的阈值，
  * 注入一条 followUp 消息建议主 agent 考虑 session_squash（停止后立即触发）。
  * 上下文跌回阈值以下（如压缩后）自动恢复该档位的可提示状态。
  */

@@ -21,7 +21,7 @@ pi install npm:pi-session-tools
 
 ## Context threshold nudges
 
-When the conversation crosses a threshold (default 150k / 200k / 250k / 300k tokens), the agent is nudged to consider squashing at a task boundary. Configure it:
+When the conversation crosses a threshold (default 150k / 200k / 250k / 300k tokens), the agent is nudged to consider squashing at a task boundary. The nudge runs only after the model stops normally; user aborts and provider errors do not trigger it. Configure it:
 
 ```jsonc
 // ~/.pi/agent/extensions/pi-session-tools/config.json
