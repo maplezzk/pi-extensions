@@ -514,6 +514,162 @@ filePatterns:
   }
 });
 
+test("generic before 即使输入含 path 也只使用无文件模式规则", async () => {
+  type ReviewResult = { details: { fileEditReview: { reviewers: Array<{ name: string; error?: string }>; filePath?: string } } };
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-generic-before-path-"));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesDirectory = join(agentDir, "rules");
+    await mkdir(rulesDirectory, { recursive: true });
+    const genericRule = join(rulesDirectory, "generic.md");
+    const fileRule = join(rulesDirectory, "file.md");
+    await writeFile(genericRule, "# generic\\n");
+    await writeFile(fileRule, "---\\nfilePatterns:\\n  - '**/*.ts'\\n---\\n# file\\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "read-before", model: "provider/model", rulesFiles: [genericRule, fileRule], tools: ["read"], trigger: "before" }],
+    }));
+
+    const handlers = new Map<string, TestHandler>();
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = {
+      cwd: agentDir,
+      modelRegistry: { find: () => undefined },
+    };
+    const input = { path: "src/example.ts", query: "content" };
+    await handlers.get("tool_call")?.({ toolName: "read", toolCallId: "read-path-1", input }, context);
+    const result = await handlers.get("tool_result")?.({
+      toolName: "read",
+      toolCallId: "read-path-1",
+      input,
+      content: [{ type: "text", text: "content" }],
+      details: {},
+      isError: false,
+    }, context) as ReviewResult;
+
+    assert.equal(result.details.fileEditReview.reviewers.length, 1);
+    assert.equal(result.details.fileEditReview.reviewers[0].name, "read-before");
+    assert.match(result.details.fileEditReview.reviewers[0].error, /模型不存在/);
+    assert.equal(result.details.fileEditReview.filePath, undefined);
+  } finally {
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("自定义工具支持精确名和通配符 after 审查并展示审计", async () => {
+  type ReviewResult = { details: { fileEditReview: { reviewers: Array<{ name: string }>; status: string }; source: string } };
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-custom-after-"));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesFile = join(agentDir, "generic.md");
+    await writeFile(rulesFile, "# generic\\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [
+        { name: "exact", model: "provider/model", rulesFile, tools: ["custom-tool"], trigger: "after" },
+        { name: "wildcard", model: "provider/model", rulesFile, tools: ["*"], trigger: "after" },
+      ],
+    }));
+
+    const handlers = new Map<string, TestHandler>();
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = { cwd: agentDir, modelRegistry: { find: () => undefined } };
+    const input = { path: "not-a-file-review-path", value: 1 };
+    await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "custom-1", input }, context);
+    const result = await handlers.get("tool_result")?.({
+      toolName: "custom-tool",
+      toolCallId: "custom-1",
+      input,
+      content: [{ type: "text", text: "ok" }],
+      details: { source: "custom" },
+      isError: false,
+    }, context) as ReviewResult;
+
+    assert.deepEqual(result.details.fileEditReview.reviewers.map((reviewer) => reviewer.name), ["exact", "wildcard"]);
+    assert.equal(result.details.fileEditReview.status, "failed");
+    assert.equal(result.details.source, "custom");
+  } finally {
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("generic 载荷序列化失败形成可见 failed 审计并保持原结果", async () => {
+  type ReviewResult = { content: Array<{ text?: string }>; details: { original: boolean; fileEditReview: { status: string; reviewers: Array<{ error?: string }> } } };
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-serialization-failure-"));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesFile = join(agentDir, "generic.md");
+    await writeFile(rulesFile, "# generic\\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "before", model: "provider/model", rulesFile, tools: ["custom-tool"], trigger: "before" }],
+    }));
+
+    const handlers = new Map<string, TestHandler>();
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = { cwd: agentDir, modelRegistry: { find: () => { throw new Error("不应调用模型"); } } };
+    const input = { toJSON: () => { throw new Error("循环代理失败"); } };
+    await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "custom-serialization-1", input }, context);
+    const result = await handlers.get("tool_result")?.({
+      toolName: "custom-tool",
+      toolCallId: "custom-serialization-1",
+      input,
+      content: [{ type: "text", text: "original" }],
+      details: { original: true },
+      isError: false,
+    }, context) as ReviewResult;
+
+    assert.equal(result.content[0]?.text, "original");
+    assert.equal(result.details.original, true);
+    assert.equal(result.details.fileEditReview.status, "failed");
+    assert.match(result.details.fileEditReview.reviewers[0].error, /序列化失败/);
+  } finally {
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
 test("新配置不存在时读取 pi-file-edit-review 旧配置", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-legacy-config-"));

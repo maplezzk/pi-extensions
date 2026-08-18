@@ -40,6 +40,7 @@ import {
   reviewerIsEditorLocal,
   reviewerMatchesTool,
   reviewerTrigger,
+  safeSerialize,
   type FileEditReviewAudit,
   type FileEditReviewConfig,
   type FileEditReviewReviewerConfig,
@@ -60,9 +61,6 @@ const WRITE_TOOL = "write";
 const ALL_TOOLS = "*";
 const DEFAULT_REVIEW_TOOLS = [EDIT_TOOL, WRITE_TOOL];
 const REVIEW_TRIGGERS = [BEFORE_TRIGGER, AFTER_TRIGGER];
-const FILE_TOOL_NAMES = [EDIT_TOOL, WRITE_TOOL];
-const GENERIC_TOOL_NAMES = ["bash", "read", "grep", "find", "ls"];
-
 type ToolResult = {
   content: Array<{ type?: string; text?: string }>;
   details?: Record<string, unknown>;
@@ -95,27 +93,6 @@ type PendingFileReviewCall = {
   afterReviewers: FileEditReviewReviewerConfig[];
   blockedReason?: string;
 };
-
-const GENERIC_TRUNCATION_SUFFIX = "…[truncated]";
-
-/** Serializes generic input/results with circular-reference handling and bounded output. */
-function serializeGenericPayload(value: unknown, maxChars: number): string {
-  const seen = new WeakSet<object>();
-  try {
-    const serialized = JSON.stringify(value, (_key, current: unknown) => {
-      if (typeof current === "bigint") return `${current}n`;
-      if (typeof current === "object" && current !== null) {
-        if (seen.has(current)) return "[Circular]";
-        seen.add(current);
-      }
-      return current;
-    });
-    if (serialized === undefined) return "[unserializable]";
-    return serialized.length > maxChars ? `${serialized.slice(0, Math.max(0, maxChars - GENERIC_TRUNCATION_SUFFIX.length))}${GENERIC_TRUNCATION_SUFFIX}` : serialized;
-  } catch (error) {
-    return `[serialization failed: ${error instanceof Error ? error.message : String(error)}]`;
-  }
-}
 
 /** Extracts a file path when the selected tool exposes one. */
 function getPath(params: Record<string, unknown>): string | undefined {
@@ -501,20 +478,31 @@ async function runBeforeReview(options: {
   if (reviewers.length === 0) return undefined;
   const startedAt = performance.now();
   const results: FileEditReviewResult[] = [];
-  const payload = filePath
-    ? buildFileEditReviewDiff(filePath, undefined, typeof context.params.content === "string" ? context.params.content : undefined, fallbackDiff)
-    : serializeGenericPayload(context.params, loaded.config.maxOutputChars);
+  const isFileTool = context.toolName === EDIT_TOOL || context.toolName === WRITE_TOOL;
+  const serializedPayload = isFileTool && filePath
+    ? { text: buildFileEditReviewDiff(filePath, undefined, typeof context.params.content === "string" ? context.params.content : undefined, fallbackDiff) }
+    : safeSerialize(context.params, loaded.config.maxOutputChars);
   const warnings = [...loaded.warnings];
   for (const reviewer of reviewers) {
     const loadedRules = loadReviewRules(reviewer, context.ctx.cwd, loaded.config.maxRuleLines);
     const rules = loadedRules.rules.filter((rule) => {
       if (rule.reviewer.enabled === false || !reviewerIsEditorLocal(rule.reviewer)) return false;
-      return filePath ? reviewerAppliesToFile(rule.reviewer, filePath) : (rule.reviewer.filePatterns ?? []).length === 0;
+      return isFileTool && filePath
+        ? reviewerAppliesToFile(rule.reviewer, filePath)
+        : (rule.reviewer.filePatterns ?? []).length === 0;
     });
     warnings.push(...rules.flatMap((rule) => rule.warning ? [rule.warning] : []));
     results.push(...loadedRules.errors);
-    if (rules.length > 0) {
-      results.push(await reviewWithModel({ context, config: loaded.config, reviewer, rules, toolName: context.toolName, filePath, diff: payload, trigger: BEFORE_TRIGGER }));
+    if (rules.length > 0 && serializedPayload.error) {
+      results.push({
+        name: reviewer.name,
+        model: reviewer.model,
+        status: "failed",
+        durationMs: 0,
+        error: serializedPayload.error,
+      });
+    } else if (rules.length > 0) {
+      results.push(await reviewWithModel({ context, config: loaded.config, reviewer, rules, toolName: context.toolName, filePath: isFileTool ? filePath : undefined, diff: serializedPayload.text ?? "", trigger: BEFORE_TRIGGER }));
     } else if (loadedRules.errors.length === 0) {
       results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: "没有适用规则。" });
     }
@@ -543,8 +531,8 @@ async function prepareFileReviewCall(
 
   if (context.signal?.aborted) return pending;
 
-  const filePath = getPath(context.params);
   const isFileTool = context.toolName === EDIT_TOOL || context.toolName === WRITE_TOOL;
+  const filePath = isFileTool ? getPath(context.params) : undefined;
   if (isFileTool && filePath && loaded.config.reviewers.some((reviewer) =>
     reviewer.enabled && reviewerMatchesTool(reviewer, context.toolName) && reviewerAppliesToFile(reviewer, filePath))) {
     const prepared = await createSnapshot(context, context.toolName as typeof EDIT_TOOL | typeof WRITE_TOOL);
@@ -566,13 +554,16 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
     ? reviewers.map((reviewer) => ({ name: reviewer.name, model: reviewer.model, status: SKIPPED_STATUS, durationMs: 0, error: "工具调用失败，跳过 after 审查。" }))
     : [];
   if (!isFailedToolResult(result)) {
-    const payload = serializeGenericPayload({ input: pending.params, result: { content: result.content, details: result.details, isError: result.isError } }, pending.loaded.config.maxOutputChars);
+    const serializedPayload = safeSerialize({ input: pending.params, result: { content: result.content, details: result.details, isError: result.isError } }, pending.loaded.config.maxOutputChars);
     for (const reviewer of reviewers) {
       const loadedRules = loadReviewRules(reviewer, context.ctx.cwd, pending.loaded.config.maxRuleLines);
       const rules = loadedRules.rules.filter((rule) => rule.reviewer.enabled !== false && reviewerIsEditorLocal(rule.reviewer) && (rule.reviewer.filePatterns ?? []).length === 0);
       results.push(...loadedRules.errors);
-      if (rules.length > 0) results.push(await reviewWithModel({ context, config: pending.loaded.config, reviewer, rules, toolName: context.toolName, diff: payload, trigger: AFTER_TRIGGER }));
-      else if (loadedRules.errors.length === 0) results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: "没有适用的通用工具规则。" });
+      if (rules.length > 0 && serializedPayload.error) {
+        results.push({ name: reviewer.name, model: reviewer.model, status: "failed", durationMs: 0, error: serializedPayload.error });
+      } else if (rules.length > 0) {
+        results.push(await reviewWithModel({ context, config: pending.loaded.config, reviewer, rules, toolName: context.toolName, diff: serializedPayload.text ?? "", trigger: AFTER_TRIGGER }));
+      } else if (loadedRules.errors.length === 0) results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: "没有适用的通用工具规则。" });
     }
   }
   const reviewersWithBefore = [...(pending.beforeAudit?.reviewers ?? []), ...results];
@@ -831,14 +822,8 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
     }
   });
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
-    if (!FILE_TOOL_NAMES.includes(event.toolName) && !GENERIC_TOOL_NAMES.includes(event.toolName)) return;
-    const pending = pendingCalls.get(event.toolCallId) ?? {
-      toolName: event.toolName,
-      params: { ...event.input },
-      loaded: loadFileEditReviewConfig(),
-      fallbackDiff: "",
-      afterReviewers: [],
-    };
+    const pending = pendingCalls.get(event.toolCallId);
+    if (!pending) return;
     pendingCalls.delete(event.toolCallId);
     const result = await processFileReviewResult(
       {
