@@ -91,18 +91,12 @@ type PendingFileReviewCall = {
   fallbackDiff: string;
   beforeAudit?: FileEditReviewAudit;
   afterReviewers: FileEditReviewReviewerConfig[];
-  blockedReason?: string;
 };
 
 /** Extracts a file path when the selected tool exposes one. */
 function getPath(params: Record<string, unknown>): string | undefined {
   const value = params.file_path ?? params.path;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-/** Reads optional text fields without coercing arbitrary values. */
-function getText(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
 }
 
 /** Narrows unknown event payloads without trusting arbitrary tool data. */
@@ -130,7 +124,7 @@ async function limitReturnedToolResult(result: ToolResult, maxChars: number): Pr
   try {
     await mkdir(directory, { recursive: true });
     await writeFile(filePath, text, "utf8");
-    const pointer = `工具结果超过 ${maxChars} 个字符，已写入临时文件：${filePath}`;
+    const pointer = i18n.t("oversizedOutputPointer", { maxChars, filePath });
     return {
       ...result,
       content: [{ type: "text", text: pointer.slice(0, maxChars) }],
@@ -202,7 +196,7 @@ function createReviewDiagnostic(
 
   if (rejected.length > 0) {
     lines.push("[文件编辑审查未通过，必须立即修正]");
-    lines.push(`文件：${audit.filePath}`);
+    lines.push(audit.filePath ? `文件：${audit.filePath}` : `工具：${audit.toolName}`);
     for (const reviewer of rejected) {
       lines.push(`规则审查：${reviewer.name}（${reviewer.rulesFiles?.join(", ") ?? reviewer.rulesFile ?? "未指定规则文件"}）`);
       if (reviewer.summary) lines.push(`结论：${reviewer.summary}`);
@@ -217,7 +211,7 @@ function createReviewDiagnostic(
 
   if (failed.length > 0) {
     lines.push("[文件编辑审查未完成，已放行但必须注意]");
-    lines.push(`文件：${audit.filePath}`);
+    lines.push(audit.filePath ? `文件：${audit.filePath}` : `工具：${audit.toolName}`);
     for (const reviewer of failed) {
       lines.push(`- ${reviewer.name}（${reviewer.rulesFiles?.join(", ") ?? reviewer.rulesFile ?? "未指定规则文件"}）：${reviewer.error ?? "审查模型调用失败"}`);
     }
@@ -393,7 +387,7 @@ async function reviewToolResult(options: {
       model: reviewer.model,
       status: SKIPPED_STATUS,
       durationMs: 0,
-      error: "工具调用失败，跳过 after 审查。",
+      error: i18n.t("failedAfterReview"),
     }));
     const reviewers = [...beforeReviewers, ...skippedAfter];
     const audit: FileEditReviewAudit = {
@@ -415,7 +409,7 @@ async function reviewToolResult(options: {
       status: reviewers.length > 0 ? getOverallReviewStatus(reviewers) : SKIPPED_STATUS,
       reviewers,
       durationMs: Math.round(performance.now() - startedAt),
-      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), "文件内容没有变化，跳过审查。"],
+      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("unchangedFileSkipped")],
     };
     const diagnostic = createReviewDiagnostic(audit, configPath);
     return {
@@ -486,7 +480,6 @@ async function reviewToolResult(options: {
   };
 }
 
-/** Prepares pending lifecycle state for matching before and after reviewers. */
 /** Executes matching before reviewers and returns the visible audit used for blocking. */
 async function runBeforeReview(options: {
   context: FileReviewExecutionContext;
@@ -528,7 +521,7 @@ async function runBeforeReview(options: {
     } else if (rules.length > 0) {
       results.push(await reviewWithModel({ context, config: loaded.config, reviewer, rules, toolName: context.toolName, filePath: selectedFilePath, diff: serializedPayload.text ?? "", trigger: BEFORE_TRIGGER }));
     } else if (loadedRules.errors.length === 0) {
-      results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: "没有适用规则。" });
+      results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: i18n.t("noApplicableRules") });
     }
   }
   return { status: getOverallReviewStatus(results), filePath, toolName: context.toolName, trigger: BEFORE_TRIGGER, reviewers: results, durationMs: Math.round(performance.now() - startedAt), warnings };
@@ -576,7 +569,7 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
   const startedAt = performance.now();
   const reviewers = pending.afterReviewers;
   const results: FileEditReviewResult[] = isFailedToolResult(result)
-    ? reviewers.map((reviewer) => ({ name: reviewer.name, model: reviewer.model, status: SKIPPED_STATUS, durationMs: 0, error: "工具调用失败，跳过 after 审查。" }))
+    ? reviewers.map((reviewer) => ({ name: reviewer.name, model: reviewer.model, status: SKIPPED_STATUS, durationMs: 0, error: i18n.t("failedAfterReview") }))
     : [];
   if (!isFailedToolResult(result)) {
     const serializedPayload = safeSerialize({ input: pending.params, result: { content: result.content, details: result.details, isError: result.isError } }, pending.loaded.config.maxOutputChars);
@@ -588,7 +581,7 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
         results.push({ name: reviewer.name, model: reviewer.model, status: "failed", durationMs: 0, error: serializedPayload.error });
       } else if (rules.length > 0) {
         results.push(await reviewWithModel({ context, config: pending.loaded.config, reviewer, rules, toolName: context.toolName, diff: serializedPayload.text ?? "", trigger: AFTER_TRIGGER }));
-      } else if (loadedRules.errors.length === 0) results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: "没有适用的通用工具规则。" });
+      } else if (loadedRules.errors.length === 0) results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: i18n.t("noApplicableGenericRules") });
     }
   }
   const reviewersWithBefore = [...(pending.beforeAudit?.reviewers ?? []), ...results];
@@ -844,7 +837,7 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
     if (pending.beforeAudit?.status === REJECTED_STATUS) {
       pendingCalls.delete(event.toolCallId);
       appendSupervisorFallbackAudit(pi, event.toolName, { fileEditReview: pending.beforeAudit });
-      return { block: true, reason: createReviewDiagnostic(pending.beforeAudit, pending.loaded.configPath) ?? `工具 ${event.toolName} 未通过前置审查。` };
+      return { block: true, reason: createReviewDiagnostic(pending.beforeAudit, pending.loaded.configPath) ?? i18n.t("beforeReviewRejectedFallback", { toolName: event.toolName }) };
     }
   });
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {

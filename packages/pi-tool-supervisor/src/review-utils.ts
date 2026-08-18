@@ -168,15 +168,15 @@ function normalizeReviewer(value: unknown, index: number, warnings: string[] = [
     : [];
   const rawTools = source.tools === undefined ? DEFAULT_REVIEW_TOOLS : source.tools;
   if (!Array.isArray(rawTools) || rawTools.length === 0 || rawTools.some((tool) => typeof tool !== "string" || !tool.trim())) {
-    warnings.push(`审查配置 reviewers[${index}].tools 无效，必须是非空工具名数组。`);
+    warnings.push(i18n.t("invalidToolsConfig", { index }));
     return undefined;
   }
   const tools = rawTools.map((tool) => String(tool).trim());
   const normalizedTools = tools.includes(ALL_TOOLS) ? [ALL_TOOLS] : [...new Set(tools)];
-  if (tools.includes(ALL_TOOLS) && tools.length > 1) warnings.push(`审查配置 reviewers[${index}].tools 含 *，已忽略其他工具名。`);
+  if (tools.includes(ALL_TOOLS) && tools.length > 1) warnings.push(i18n.t("wildcardToolsConfig", { index }));
   const trigger = source.trigger === undefined ? "after" : source.trigger;
   if (!REVIEW_TRIGGERS.includes(trigger as ReviewTrigger)) {
-    warnings.push(`审查配置 reviewers[${index}].trigger 无效，必须是 before 或 after。`);
+    warnings.push(i18n.t("invalidTriggerConfig", { index }));
     return undefined;
   }
   return {
@@ -580,12 +580,12 @@ export function safeSerialize(value: unknown, maxChars: number): { text?: string
       }
       return current;
     });
-    if (serialized === undefined) return { error: "工具输入无法序列化为 JSON。" };
+    if (serialized === undefined) return { error: i18n.t("cannotSerializeToolInput") };
     if (serialized.length <= maxChars) return { text: serialized };
     const suffix = "…[truncated]";
     return { text: `${serialized.slice(0, Math.max(0, maxChars - suffix.length))}${suffix}`, truncated: true };
   } catch (error) {
-    return { error: `工具输入序列化失败：${error instanceof Error ? error.message : String(error)}` };
+    return { error: i18n.t("toolInputSerializationFailed", { message: error instanceof Error ? error.message : String(error) }) };
   }
 }
 
