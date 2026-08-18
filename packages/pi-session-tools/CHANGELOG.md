@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.3.0...pi-session-tools-v0.3.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* suppress reminders after aborted or failed runs ([a23d950](https://github.com/maplezzk/pi-extensions/commit/a23d950c716909a5e563f19d616e150a529fd54e))
+* 忽略异常终止的自动提醒 ([743ac5a](https://github.com/maplezzk/pi-extensions/commit/743ac5a7886165fcc4f98150f648e70202b4f4fe))
+
 ## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.2.0...pi-session-tools-v0.3.0) (2026-08-14)
 
 
