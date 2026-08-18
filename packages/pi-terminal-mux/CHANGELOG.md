@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.3.2...pi-terminal-mux-v0.4.0) (2026-08-17)
+
+
+### Features
+
+* add configurable Herdr subagent layouts ([aa85f53](https://github.com/maplezzk/pi-extensions/commit/aa85f537a36ec71c06d157b7628f7d842afeba65))
+* add configurable Herdr subagent layouts ([94319eb](https://github.com/maplezzk/pi-extensions/commit/94319eb907b4af0a9b8912b9ac5ec53e69d91326))
+
 ## [0.3.2](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.3.1...pi-terminal-mux-v0.3.2) (2026-08-14)
 
 
