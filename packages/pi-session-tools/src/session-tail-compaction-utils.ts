@@ -12,6 +12,25 @@ export const SESSION_SQUASH_TASK_TYPE = "session-squash-task";
 /** 上下文阈值提示消息的 customType：建议主 agent 考虑压缩。 */
 export const SESSION_SQUASH_HINT_TYPE = "session-squash-hint";
 
+const ASSISTANT_ROLE = "assistant";
+const NORMAL_STOP_REASON = "stop";
+
+/** 判断最近一条 assistant 消息是否由模型主动正常停止。 */
+export function didAgentStopNormally(
+  messages: readonly { role?: string; stopReason?: string }[] | undefined,
+): boolean {
+  if (!messages) return false;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === ASSISTANT_ROLE) {
+      return message.stopReason === NORMAL_STOP_REASON;
+    }
+  }
+
+  return false;
+}
+
 /** 阈值类型：绝对 token 值，或相对 contextWindow 的百分比。 */
 export type SquashThreshold =
   | { kind: "tokens"; value: number }

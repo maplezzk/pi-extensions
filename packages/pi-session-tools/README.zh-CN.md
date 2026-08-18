@@ -23,7 +23,7 @@ pi install npm:pi-session-tools
 
 ## 上下文阈值提示
 
-对话变长跨过阈值时（默认 150k / 200k / 250k / 300k tokens），会提醒主 agent 在任务边界时考虑压缩，不强制。可配置：
+对话变长跨过阈值时（默认 150k / 200k / 250k / 300k tokens），会提醒主 agent 在任务边界时考虑压缩，不强制。仅在模型正常停止时触发；用户手动终止或提供方异常不会触发。可配置：
 
 ```jsonc
 // ~/.pi/agent/extensions/pi-session-tools/config.json
