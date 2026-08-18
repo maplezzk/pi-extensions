@@ -520,6 +520,7 @@ test("generic before 即使输入含 path 也只使用无文件模式规则", as
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-generic-before-path-"));
+  const handlers = new Map<string, TestHandler>();
   process.env.PI_CODING_AGENT_DIR = agentDir;
   try {
     const rulesDirectory = join(agentDir, "rules");
@@ -535,7 +536,6 @@ test("generic before 即使输入含 path 也只使用无文件模式规则", as
       reviewers: [{ name: "read-before", model: "provider/model", rulesFiles: [genericRule, fileRule], tools: ["read"], trigger: "before" }],
     }));
 
-    const handlers = new Map<string, TestHandler>();
     const pi = {
       getAllTools: () => [],
       registerCommand: () => undefined,
@@ -576,6 +576,7 @@ test("自定义工具支持精确名和通配符 after 审查并展示审计", a
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-custom-after-"));
+  const handlers = new Map<string, TestHandler>();
   process.env.PI_CODING_AGENT_DIR = agentDir;
   try {
     const rulesFile = join(agentDir, "generic.md");
@@ -590,7 +591,6 @@ test("自定义工具支持精确名和通配符 after 审查并展示审计", a
       ],
     }));
 
-    const handlers = new Map<string, TestHandler>();
     const pi = {
       getAllTools: () => [],
       registerCommand: () => undefined,
@@ -627,6 +627,7 @@ test("generic 载荷序列化失败形成可见 failed 审计并保持原结果"
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-serialization-failure-"));
+  const handlers = new Map<string, TestHandler>();
   process.env.PI_CODING_AGENT_DIR = agentDir;
   try {
     const rulesFile = join(agentDir, "generic.md");
@@ -638,7 +639,6 @@ test("generic 载荷序列化失败形成可见 failed 审计并保持原结果"
       reviewers: [{ name: "before", model: "provider/model", rulesFile, tools: ["custom-tool"], trigger: "before" }],
     }));
 
-    const handlers = new Map<string, TestHandler>();
     const pi = {
       getAllTools: () => [],
       registerCommand: () => undefined,

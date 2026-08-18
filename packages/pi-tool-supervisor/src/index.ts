@@ -362,13 +362,14 @@ async function reviewToolResult(options: {
   const beforeReviewers = beforeAudit?.reviewers ?? [];
   const startedAt = performance.now();
   if (context.signal?.aborted) {
+    const reviewers = [...beforeReviewers];
     const audit: FileEditReviewAudit = {
       filePath: snapshot.filePath,
       toolName,
-      status: "skipped",
-      reviewers: [],
+      status: reviewers.length > 0 ? getOverallReviewStatus(reviewers) : SKIPPED_STATUS,
+      reviewers,
       durationMs: Math.round(performance.now() - startedAt),
-      warnings: [...configWarnings, i18n.t("reviewAborted")],
+      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("reviewAborted")],
     };
     return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit } };
   }
@@ -401,20 +402,27 @@ async function reviewToolResult(options: {
       trigger: AFTER_TRIGGER,
       reviewers,
       durationMs: Math.round(performance.now() - startedAt),
+      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? [])],
     };
     return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit } };
   }
 
   const diff = buildFileEditReviewDiff(snapshot.filePath, snapshot.before, snapshot.after, fallbackDiff);
   if (!diff) {
+    const reviewers = [...beforeReviewers];
     const audit: FileEditReviewAudit = {
       ...auditBase,
-      status: "skipped",
-      reviewers: [],
+      status: reviewers.length > 0 ? getOverallReviewStatus(reviewers) : SKIPPED_STATUS,
+      reviewers,
       durationMs: Math.round(performance.now() - startedAt),
-      warnings: [...configWarnings, "文件内容没有变化，跳过审查。"],
+      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), "文件内容没有变化，跳过审查。"],
     };
-    return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit } };
+    const diagnostic = createReviewDiagnostic(audit, configPath);
+    return {
+      ...result,
+      details: { ...(result.details ?? {}), fileEditReview: audit },
+      content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content,
+    };
   }
 
   const reviewerGroups = selectedReviewers
@@ -430,10 +438,25 @@ async function reviewToolResult(options: {
   const applicableGroups = reviewerGroups.filter((group) => group.rules.length > 0 || group.errors.length > 0);
   const applicableErrors = applicableGroups.flatMap((group) => group.errors);
   if (applicableGroups.length === 0 && applicableErrors.length === 0) {
-    return result;
+    if (!beforeAudit) return result;
+    const audit: FileEditReviewAudit = {
+      ...auditBase,
+      status: getOverallReviewStatus(beforeReviewers),
+      trigger: AFTER_TRIGGER,
+      reviewers: beforeReviewers,
+      durationMs: Math.round(performance.now() - startedAt),
+      warnings: [...configWarnings, ...(beforeAudit.warnings ?? [])],
+    };
+    const diagnostic = createReviewDiagnostic(audit, configPath);
+    return {
+      ...result,
+      details: { ...(result.details ?? {}), fileEditReview: audit },
+      content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content,
+    };
   }
   const warnings = [
     ...configWarnings,
+    ...(beforeAudit?.warnings ?? []),
     ...applicableGroups.flatMap((group) => group.rules.flatMap((rule) => rule.warning ? [rule.warning] : [])),
   ];
   const reviewResults = await Promise.all([
@@ -479,16 +502,17 @@ async function runBeforeReview(options: {
   const startedAt = performance.now();
   const results: FileEditReviewResult[] = [];
   const isFileTool = context.toolName === EDIT_TOOL || context.toolName === WRITE_TOOL;
-  const serializedPayload = isFileTool && filePath
-    ? { text: buildFileEditReviewDiff(filePath, undefined, typeof context.params.content === "string" ? context.params.content : undefined, fallbackDiff) }
+  const selectedFilePath = isFileTool ? getPath(context.params) : undefined;
+  const serializedPayload = selectedFilePath
+    ? { text: buildFileEditReviewDiff(selectedFilePath, undefined, typeof context.params.content === "string" ? context.params.content : undefined, fallbackDiff) }
     : safeSerialize(context.params, loaded.config.maxOutputChars);
   const warnings = [...loaded.warnings];
   for (const reviewer of reviewers) {
     const loadedRules = loadReviewRules(reviewer, context.ctx.cwd, loaded.config.maxRuleLines);
     const rules = loadedRules.rules.filter((rule) => {
       if (rule.reviewer.enabled === false || !reviewerIsEditorLocal(rule.reviewer)) return false;
-      return isFileTool && filePath
-        ? reviewerAppliesToFile(rule.reviewer, filePath)
+      return selectedFilePath
+        ? reviewerAppliesToFile(rule.reviewer, selectedFilePath)
         : (rule.reviewer.filePatterns ?? []).length === 0;
     });
     warnings.push(...rules.flatMap((rule) => rule.warning ? [rule.warning] : []));
@@ -502,7 +526,7 @@ async function runBeforeReview(options: {
         error: serializedPayload.error,
       });
     } else if (rules.length > 0) {
-      results.push(await reviewWithModel({ context, config: loaded.config, reviewer, rules, toolName: context.toolName, filePath: isFileTool ? filePath : undefined, diff: serializedPayload.text ?? "", trigger: BEFORE_TRIGGER }));
+      results.push(await reviewWithModel({ context, config: loaded.config, reviewer, rules, toolName: context.toolName, filePath: selectedFilePath, diff: serializedPayload.text ?? "", trigger: BEFORE_TRIGGER }));
     } else if (loadedRules.errors.length === 0) {
       results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: "没有适用规则。" });
     }
@@ -549,6 +573,7 @@ async function prepareFileReviewCall(
 /** Processes generic tool results with input/result review and before-audit merging. */
 async function processGenericReviewResult(context: FileReviewExecutionContext, pending: PendingFileReviewCall, result: ToolResult): Promise<ToolResult> {
   if (pending.afterReviewers.length === 0 && !pending.beforeAudit) return result;
+  const startedAt = performance.now();
   const reviewers = pending.afterReviewers;
   const results: FileEditReviewResult[] = isFailedToolResult(result)
     ? reviewers.map((reviewer) => ({ name: reviewer.name, model: reviewer.model, status: SKIPPED_STATUS, durationMs: 0, error: "工具调用失败，跳过 after 审查。" }))
@@ -567,7 +592,8 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
     }
   }
   const reviewersWithBefore = [...(pending.beforeAudit?.reviewers ?? []), ...results];
-  const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: pending.beforeAudit?.durationMs ?? 0, warnings: [...pending.loaded.warnings] };
+  const afterDurationMs = Math.round(performance.now() - startedAt);
+  const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings: [...pending.loaded.warnings, ...(pending.beforeAudit?.warnings ?? [])] };
   const diagnostic = createReviewDiagnostic({ ...audit, filePath: context.toolName }, pending.loaded.configPath);
   return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit }, content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content };
 }
