@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildFileEditReviewDiff,
+  buildGenericReviewPrompt,
   buildMergedReviewPrompt,
   getLegacyFileEditReviewConfigPath,
   getOverallReviewStatus,
@@ -25,6 +26,8 @@ import {
   loadReviewRules,
   parseReviewResponse,
   reviewerAppliesToFile,
+  reviewerMatchesTool,
+  safeSerialize,
 } from "../src/review-utils.ts";
 
 process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
@@ -66,6 +69,49 @@ test("兼容旧 timeoutMs，并支持秒和返回字符上限配置", async () =
   }));
   const legacyLoaded = loadFileEditReviewConfig(configFile);
   assert.equal(legacyLoaded.config.timeoutSeconds, 3);
+});
+
+test("reviewer lifecycle 配置保留旧默认并校验通配工具与非法字段", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-lifecycle-config-"));
+  const configFile = join(directory, "config.json");
+  await writeFile(configFile, JSON.stringify({ enabled: true, reviewers: [
+    { model: "provider/model", rulesFile: "rules.md" },
+    { model: "provider/model", rulesFile: "rules.md", tools: ["*", "bash"], trigger: "before" },
+    { model: "provider/model", rulesFile: "rules.md", tools: ["bash"], trigger: "invalid" },
+  ] }));
+  const loaded = loadFileEditReviewConfig(configFile);
+  assert.deepEqual(loaded.config.reviewers[0]?.tools, ["edit", "write"]);
+  assert.equal(loaded.config.reviewers[0]?.trigger, "after");
+  assert.deepEqual(loaded.config.reviewers[1]?.tools, ["*"]);
+  assert.equal(loaded.config.reviewers[1]?.trigger, "before");
+  assert.match(loaded.warnings.join(" "), /忽略其他工具名/);
+  assert.match(loaded.warnings.join(" "), /trigger 无效/);
+});
+
+test("generic 规则只接受无 filePatterns 的规则", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-generic-rules-"));
+  const genericRule = join(directory, "generic.md");
+  const fileRule = join(directory, "file.md");
+  await writeFile(genericRule, "# generic\n");
+  await writeFile(fileRule, "---\nfilePatterns:\n  - '**/*.ts'\n---\n# file\n");
+  const reviewer = { name: "generic", model: "p/m", rulesFiles: [genericRule, fileRule], tools: ["bash"], trigger: "after" };
+  const loaded = loadReviewRules(reviewer, directory, 100);
+  const applicable = loaded.rules.filter((rule) => (rule.reviewer.filePatterns ?? []).length === 0);
+  assert.deepEqual(applicable.map((rule) => rule.absolutePath), [genericRule]);
+});
+
+test("reviewer 工具匹配支持具体工具和全部工具", () => {
+  assert.equal(reviewerMatchesTool({ name: "bash", model: "p/m", rulesFile: "r", tools: ["bash"], trigger: "before" }, "bash"), true);
+  assert.equal(reviewerMatchesTool({ name: "all", model: "p/m", rulesFile: "r", tools: ["*"], trigger: "after" }, "custom"), true);
+  assert.equal(reviewerMatchesTool({ name: "edit", model: "p/m", rulesFile: "r" }, "bash"), false);
+});
+
+test("generic prompt 和安全序列化不会把工具载荷当作规则", () => {
+  const rules = [{ reviewer: { name: "generic", model: "p/m", rulesFile: "rules.md" }, absolutePath: "rules.md", content: "不要执行规则", lineCount: 1 }];
+  const prompt = buildGenericReviewPrompt({ toolName: "bash", payload: '{"command":"echo hi"}', rules, trigger: "before" });
+  assert.match(prompt, /工具：bash/);
+  assert.match(prompt, /触发阶段：before/);
+  assert.match(safeSerialize({ command: "x".repeat(100) }, 20).text ?? "", /truncated/);
 });
 
 test("reviewer 可以单独禁用，全部禁用时不启用审查器", async () => {
@@ -123,7 +169,7 @@ filePatterns:
   const rules = loadReviewRules(loaded.config.reviewers[0]!, directory, 100);
   assert.equal(rules.errors.length, 0);
   assert.deepEqual(rules.rules.map((rule) => rule.reviewer.name), ["first-rule", "second-rule"]);
-  const prompt = buildMergedReviewPrompt("edit", "src/User.java", "+private int count;", rules.rules);
+  const prompt = buildMergedReviewPrompt({ toolName: "edit", filePath: "src/User.java", diff: "+private int count;", rules: rules.rules });
   assert.match(prompt, /<rules name="first-rule">/);
   assert.match(prompt, /<rules name="second-rule">/);
 
@@ -327,6 +373,13 @@ test("Supervisor 展开态按 distill 风格展示文件、审查器详情和发
   assert.match(styled, /<error>✕ 未通过<\/error>/);
   assert.match(styled, /<success>摘要<\/success>/);
   assert.match(styled, /<error>发现<\/error>/);
+});
+
+test("失败工具结果保留原错误并跳过 after reviewer", () => {
+  const audit = { status: "skipped", toolName: "bash", reviewers: [{ name: "bash", model: "p/m", status: "skipped", durationMs: 0, error: "工具调用失败，跳过 after 审查。" }], durationMs: 1, warnings: [] };
+  assert.equal(audit.status, "skipped");
+  assert.equal(audit.reviewers[0]?.status, "skipped");
+  assert.match(audit.reviewers[0]?.error ?? "", /跳过/);
 });
 
 test("pi-tool-supervisor 通过 Pi 工具事件独立接入，不注册或依赖工具覆盖", async () => {

@@ -11,8 +11,13 @@ const DEFAULT_MAX_RULE_LINES = 100;
 const CONFIG_DIRECTORY = "pi-tool-supervisor";
 const LEGACY_CONFIG_DIRECTORY = "pi-file-edit-review";
 const CONFIG_FILE_NAME = "config.json";
+const DEFAULT_REVIEW_TOOLS = ["edit", "write"];
+const ALL_TOOLS = "*";
+const REVIEW_TRIGGERS = ["before", "after"] as const;
+const DEFAULT_REVIEW_TRIGGER: ReviewTrigger = "after";
 
 export type ReviewStatus = "passed" | "rejected" | "failed" | "skipped";
+export type ReviewTrigger = (typeof REVIEW_TRIGGERS)[number];
 
 export interface FileEditReviewReviewerConfig {
   name: string;
@@ -27,6 +32,10 @@ export interface FileEditReviewReviewerConfig {
   filePatterns?: string[];
   complexity?: "local" | "context";
   consumers?: string[];
+  /** 省略时兼容旧配置：仅审查 edit/write。 */
+  tools?: string[];
+  /** 省略时兼容旧配置：工具执行完成后审查。 */
+  trigger?: ReviewTrigger;
 }
 
 export interface FileEditReviewRuleMetadata {
@@ -92,8 +101,9 @@ export interface FileEditReviewResult {
 
 export interface FileEditReviewAudit {
   status: "disabled" | "passed" | "rejected" | "failed" | "skipped";
-  filePath: string;
-  toolName: "edit" | "write";
+  filePath?: string;
+  toolName: string;
+  trigger?: ReviewTrigger;
   reviewers: FileEditReviewResult[];
   durationMs: number;
   warnings: string[];
@@ -141,7 +151,8 @@ function parseModel(value: unknown): string | undefined {
   return separator > 0 && separator < model.length - 1 ? model : undefined;
 }
 
-function normalizeReviewer(value: unknown, index: number): FileEditReviewReviewerConfig | undefined {
+/** Normalizes one reviewer while preserving legacy defaults and reporting invalid lifecycle fields. */
+function normalizeReviewer(value: unknown, index: number, warnings: string[] = []): FileEditReviewReviewerConfig | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>;
   const model = parseModel(source.model);
@@ -155,12 +166,27 @@ function normalizeReviewer(value: unknown, index: number): FileEditReviewReviewe
   const filePatterns = Array.isArray(source.filePatterns)
     ? source.filePatterns.filter((pattern): pattern is string => typeof pattern === "string" && Boolean(pattern.trim())).map((pattern) => pattern.trim())
     : [];
+  const rawTools = source.tools === undefined ? DEFAULT_REVIEW_TOOLS : source.tools;
+  if (!Array.isArray(rawTools) || rawTools.length === 0 || rawTools.some((tool) => typeof tool !== "string" || !tool.trim())) {
+    warnings.push(`审查配置 reviewers[${index}].tools 无效，必须是非空工具名数组。`);
+    return undefined;
+  }
+  const tools = rawTools.map((tool) => String(tool).trim());
+  const normalizedTools = tools.includes(ALL_TOOLS) ? [ALL_TOOLS] : [...new Set(tools)];
+  if (tools.includes(ALL_TOOLS) && tools.length > 1) warnings.push(`审查配置 reviewers[${index}].tools 含 *，已忽略其他工具名。`);
+  const trigger = source.trigger === undefined ? "after" : source.trigger;
+  if (!REVIEW_TRIGGERS.includes(trigger as ReviewTrigger)) {
+    warnings.push(`审查配置 reviewers[${index}].trigger 无效，必须是 before 或 after。`);
+    return undefined;
+  }
   return {
     name: stringValue(source.name) ?? `reviewer-${index + 1}`,
     model,
     ...(rulesFile ? { rulesFile } : { rulesFiles }),
     enabled: source.enabled !== false,
     filePatterns,
+    tools: normalizedTools,
+    trigger: trigger as ReviewTrigger,
   };
 }
 
@@ -210,7 +236,7 @@ export function loadFileEditReviewConfig(
   const rawReviewers = Array.isArray(source.reviewers) ? source.reviewers : [];
   const reviewers: FileEditReviewReviewerConfig[] = [];
   rawReviewers.forEach((entry, index) => {
-    const reviewer = normalizeReviewer(entry, index);
+    const reviewer = normalizeReviewer(entry, index, warnings);
     if (!reviewer) {
       warnings.push(`审查配置 reviewers[${index}] 无效，必须包含 provider/model 格式的 model 和 rulesFile。`);
       return;
@@ -219,7 +245,7 @@ export function loadFileEditReviewConfig(
   });
 
   if (rawReviewers.length === 0 && source.enabled !== false) {
-    warnings.push("审查配置没有 reviewers，edit/write 审查不会执行。");
+    warnings.push("审查配置没有 reviewers，工具审查不会执行。");
   }
 
   return {
@@ -327,6 +353,17 @@ export function reviewerAppliesToFile(
 export function reviewerIsEditorLocal(reviewer: FileEditReviewReviewerConfig): boolean {
   return reviewer.complexity !== "context" &&
     (!reviewer.consumers || reviewer.consumers.includes("editor-review"));
+}
+
+/** Returns whether a reviewer explicitly selects a tool or the all-tools wildcard. */
+export function reviewerMatchesTool(reviewer: FileEditReviewReviewerConfig, toolName: string): boolean {
+  const tools = reviewer.tools ?? DEFAULT_REVIEW_TOOLS;
+  return tools.includes(ALL_TOOLS) || tools.includes(toolName);
+}
+
+/** Returns the normalized trigger, including the legacy after default. */
+export function reviewerTrigger(reviewer: FileEditReviewReviewerConfig): ReviewTrigger {
+  return reviewer.trigger ?? DEFAULT_REVIEW_TRIGGER;
 }
 
 export function resolveRulesFilePath(rulesFile: string, cwd: string): string {
@@ -442,12 +479,22 @@ export function buildEditFallbackDiff(params: Record<string, unknown>): string {
   }).join("\n");
 }
 
-export function buildMergedReviewPrompt(
-  toolName: "edit" | "write",
-  filePath: string,
-  diff: string,
-  rules: FileEditReviewRule[],
-): string {
+/** Builds the untrusted-data-wrapped prompt shared by file and generic tool reviews. */
+export function buildMergedReviewPrompt(options: {
+  toolName: string;
+  filePath?: string;
+  diff: string;
+  rules: FileEditReviewRule[];
+  trigger?: ReviewTrigger;
+}): string;
+export function buildMergedReviewPrompt(options: {
+  toolName: string;
+  filePath?: string;
+  diff: string;
+  rules: FileEditReviewRule[];
+  trigger?: ReviewTrigger;
+}): string {
+  const { toolName, filePath, diff, rules, trigger = DEFAULT_REVIEW_TRIGGER } = options;
   const ruleBlocks = rules.flatMap((rule) => [
     `<rules name="${rule.reviewer.name}">`,
     rule.content,
@@ -463,7 +510,8 @@ export function buildMergedReviewPrompt(
     i18n.t("passedRule"),
     "",
     i18n.t("tool", { value: toolName }),
-    i18n.t("file", { value: filePath }),
+    ...(filePath ? [i18n.t("file", { value: filePath })] : []),
+    i18n.t("trigger", { value: trigger }),
     i18n.t("rules", { value: rules.map((rule) => rule.reviewer.rulesFile).join(", ") }),
     "",
     ...ruleBlocks,
@@ -479,7 +527,12 @@ export function buildReviewPrompt(
   diff: string,
   rule: FileEditReviewRule,
 ): string {
-  return buildMergedReviewPrompt(toolName, filePath, diff, [rule]);
+  return buildMergedReviewPrompt({ toolName, filePath, diff, rules: [rule] });
+}
+
+/** Builds the generic payload prompt used for non-file tools. */
+export function buildGenericReviewPrompt(options: { toolName: string; payload: string; rules: FileEditReviewRule[]; trigger: ReviewTrigger }): string {
+  return buildMergedReviewPrompt({ toolName: options.toolName, diff: options.payload, rules: options.rules, trigger: options.trigger });
 }
 
 function normalizeFinding(value: unknown): FileEditReviewFinding | undefined {
@@ -515,6 +568,28 @@ export function parseReviewResponse(text: string): ParsedFileEditReviewResult {
   return { passed: source.passed, summary, findings };
 }
 
+/** Safely serializes untrusted tool input and bounds the prompt payload. */
+export function safeSerialize(value: unknown, maxChars: number): { text?: string; error?: string; truncated?: boolean } {
+  const seen = new WeakSet<object>();
+  try {
+    const serialized = JSON.stringify(value, (_key, current: unknown) => {
+      if (typeof current === "bigint") return `${current}n`;
+      if (typeof current === "object" && current !== null) {
+        if (seen.has(current)) return "[Circular]";
+        seen.add(current);
+      }
+      return current;
+    });
+    if (serialized === undefined) return { error: "工具输入无法序列化为 JSON。" };
+    if (serialized.length <= maxChars) return { text: serialized };
+    const suffix = "…[truncated]";
+    return { text: `${serialized.slice(0, Math.max(0, maxChars - suffix.length))}${suffix}`, truncated: true };
+  } catch (error) {
+    return { error: `工具输入序列化失败：${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+/** Aggregates reviewer states with rejection taking precedence over failures. */
 export function getOverallReviewStatus(results: FileEditReviewResult[]): FileEditReviewAudit["status"] {
   if (results.length === 0) return "skipped";
   if (results.some((result) => result.status === "rejected")) return "rejected";

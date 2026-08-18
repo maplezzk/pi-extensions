@@ -1,7 +1,7 @@
 {
   "name": "pi-tool-supervisor",
   "version": "0.3.8",
-  "description": "Pi tool supervisor extension with edit/write review and interactive configuration",
+  "description": "Pi tool supervisor extension with configurable lifecycle review for every tool and interactive configuration",
   "type": "module",
   "main": "./index.ts",
   "exports": {

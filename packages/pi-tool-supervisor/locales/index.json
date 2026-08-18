@@ -59,6 +59,22 @@
     "zh-CN": "文件匹配：{value}",
     "en-US": "File patterns: {value}"
   },
+  "tools": {
+    "zh-CN": "工具范围：{value}",
+    "en-US": "Tools: {value}"
+  },
+  "toolsInput": {
+    "zh-CN": "工具范围（逗号分隔，* 表示全部工具）",
+    "en-US": "Tools (comma-separated; * means every tool)"
+  },
+  "triggerConfig": {
+    "zh-CN": "触发阶段：{value}",
+    "en-US": "Trigger: {value}"
+  },
+  "triggerInput": {
+    "zh-CN": "触发阶段",
+    "en-US": "Trigger"
+  },
   "deleteReviewer": {
     "zh-CN": "删除此审查器",
     "en-US": "Delete this reviewer"
@@ -124,8 +140,8 @@
     "en-US": "Maximum rule lines: {value}"
   },
   "commandDescription": {
-    "zh-CN": "通过交互式菜单配置 edit/write 文件评审",
-    "en-US": "Configure edit/write file review through an interactive menu"
+    "zh-CN": "通过交互式菜单配置工具生命周期审查",
+    "en-US": "Configure tool lifecycle review through an interactive menu"
   },
   "interactiveOnly": {
     "zh-CN": "当前模式不支持交互式配置，请使用有 UI 的 Pi 会话。",
