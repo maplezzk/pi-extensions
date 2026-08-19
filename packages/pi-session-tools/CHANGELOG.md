@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.4.0...pi-session-tools-v0.4.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* stop old agent run after session squash ([b7fb971](https://github.com/maplezzk/pi-extensions/commit/b7fb9714a53c5e3f48c0d7c7096ba397b0e42e2c))
+* 提交压缩后终止旧 agent run ([e5b1bb8](https://github.com/maplezzk/pi-extensions/commit/e5b1bb8ad969770b08d8380f41292d6756084eea))
+
 ## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.3.1...pi-session-tools-v0.4.0) (2026-08-19)
 
 
