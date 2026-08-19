@@ -226,6 +226,53 @@ test("reviewer 文件匹配条件只作用于 Java 文件", () => {
   assert.equal(reviewerAppliesToFile(reviewer, "src/main/Order.ts"), false);
 });
 
+test("filePatterns 中任意位置的双星号匹配零层或多层目录", () => {
+  const reviewer = {
+    name: "test-sql",
+    model: "provider/model",
+    rulesFile: "rules.md",
+    filePatterns: ["**/test/**/*.sql", "**/tests/**/*.sql"],
+  };
+
+  assert.equal(reviewerAppliesToFile(reviewer, "test/a.sql"), true);
+  assert.equal(reviewerAppliesToFile(reviewer, "src/test/a.sql"), true);
+  assert.equal(reviewerAppliesToFile(reviewer, "src/test/resources/a.sql"), true);
+  assert.equal(reviewerAppliesToFile(reviewer, "src/test/resources/db/a.sql"), true);
+  assert.equal(reviewerAppliesToFile(reviewer, "src/tests/a.sql"), true);
+  assert.equal(reviewerAppliesToFile(reviewer, "src/main/resources/a.sql"), false);
+  assert.equal(reviewerAppliesToFile(reviewer, "src/test/resources/a.txt"), false);
+});
+
+test("filePatterns 保持单星号边界并归一化路径", () => {
+  const topLevelReviewer = {
+    model: "provider/model",
+    rulesFile: "rules.md",
+    filePatterns: ["*.ts"],
+  };
+  const recursiveReviewer = {
+    model: "provider/model",
+    rulesFile: "rules.md",
+    filePatterns: ["**/*.ts"],
+  };
+  const recursiveSuffixReviewer = {
+    model: "provider/model",
+    rulesFile: "rules.md",
+    filePatterns: ["src/**.ts"],
+  };
+  const windowsReviewer = {
+    model: "provider/model",
+    rulesFile: "rules.md",
+    filePatterns: ["**\\test\\**\\*.sql"],
+  };
+
+  assert.equal(reviewerAppliesToFile(topLevelReviewer, "a.ts"), true);
+  assert.equal(reviewerAppliesToFile(topLevelReviewer, "src/a.ts"), false);
+  assert.equal(reviewerAppliesToFile(recursiveReviewer, "a.ts"), true);
+  assert.equal(reviewerAppliesToFile(recursiveReviewer, "src/deep/a.ts"), true);
+  assert.equal(reviewerAppliesToFile(recursiveSuffixReviewer, "src/deep/a.ts"), true);
+  assert.equal(reviewerAppliesToFile(windowsReviewer, ".\\src\\test\\db\\a.sql"), true);
+});
+
 test("规则文件超过 100 行时返回警告", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-rule-"));
   const ruleFile = join(directory, "rules.md");

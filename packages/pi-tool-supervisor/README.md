@@ -93,6 +93,8 @@ consumers:
 ---
 ```
 
+`filePatterns` uses a simplified glob syntax: `*` does not cross `/`, `**` does, and `**/` at any position matches zero or more directory levels. Backslashes are normalized to `/`, and a leading `./` is ignored.
+
 ## Review semantics
 
 - A before reviewer rejection blocks the native tool call and emits a standalone audit with the complete reason; before failures/skips are fail-open but remain visible on the next tool result.
