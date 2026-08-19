@@ -8,6 +8,8 @@
 
 ## 工作方式
 
+- 每个 reviewer 可选择 `tools` 与 `trigger`；省略时保持旧默认：`edit`/`write` + `after`，`"*"` 匹配全部内建和自定义工具。
+- before reviewer 审查执行前输入，明确拒绝会通过 Pi 原生机制阻断调用；审查失败仍 fail-open 且可见。
 - 在 `edit` / `write` 前捕获文件状态，在工具返回后读取实际文件状态。
 - 构建 diff，并只选择规则文件匹配当前变更文件的 reviewer。
 - 支持多个 reviewer 并行执行，每个 reviewer 可以使用自己的模型和一个或多个规则文件。
@@ -60,7 +62,9 @@ pi install npm:pi-tool-supervisor
       "model": "provider/model",
       "rulesFiles": [
         "/absolute/path/to/rules.md"
-      ]
+      ],
+      "tools": ["edit", "write"],
+      "trigger": "after"
     }
   ]
 }
@@ -74,7 +78,7 @@ pi install npm:pi-tool-supervisor
 | `timeoutSeconds` | 每个 reviewer 模型调用的最长等待时间。 |
 | `maxOutputChars` | 工具结果最大返回长度，超出后写入临时文件。 |
 | `maxRuleLines` | 单条审查规则允许读取的最大行数。 |
-| `reviewers` | reviewer 名称、模型、规则文件和可选匹配条件。 |
+| `reviewers` | reviewer 名称、模型、规则文件、`tools` 与 `trigger`；省略生命周期字段时保持旧的 `edit`/`write` + `after` 行为。 |
 
 规则文件可以通过 front matter 限定适用文件或消费者：
 
@@ -92,8 +96,8 @@ consumers:
 
 ## 审查语义
 
-- 审查拒绝会追加到工具结果并列出发现；Agent 应先处理这些问题再继续。
-- reviewer 调用失败会标记为审查未完成，但会放行原始编辑结果。
+- before reviewer 明确拒绝会阻断 Pi 原生工具调用，并用完整 reason 展示独立审计；before 失败/跳过会放行，但会在后续 tool result 中可见。
+- after 拒绝只提供诊断，不回滚已完成的工具调用；工具失败时跳过 after 审查并保留原始错误。
 - 如果上级 Agent 请求已经终止，会在发起任何审查模型请求前跳过本次审查。
 - 工具调用失败或文件内容没有变化时跳过审查。
 - 扩展不会回滚编辑、阻断操作系统，也不替代 Pi 的权限与沙箱控制。

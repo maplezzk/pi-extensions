@@ -8,8 +8,9 @@ An edit tool can complete successfully while the resulting file still violates l
 
 ## How it works
 
+- Each reviewer selects `tools` and a `trigger`: omitted fields default to `edit`/`write` and `after`; `"*"` matches every built-in or custom tool.
+- Before reviewers inspect the proposed input and an explicit rejection blocks the native Pi tool call; reviewer failures remain fail-open and visible.
 - Captures the file state before `edit` / `write` and the actual file state after the tool result.
-- Builds a diff and selects only reviewers whose rule files match the changed file.
 - Supports multiple reviewers running in parallel, each with its own model and one or more rule files.
 - Reads optional front matter from rule files for `enabled`, `filePatterns`, `complexity`, and `consumers`.
 - Returns `passed`, `rejected`, `failed`, or `skipped` status with summaries, findings, rule groups, and durations.
@@ -60,7 +61,9 @@ Start from [`config.example.json`](./config.example.json):
       "model": "provider/model",
       "rulesFiles": [
         "/absolute/path/to/rules.md"
-      ]
+      ],
+      "tools": ["edit", "write"],
+      "trigger": "after"
     }
   ]
 }
@@ -74,7 +77,7 @@ Each reviewer must have a `provider/model` reference and either `rulesFile` or `
 | `timeoutSeconds` | Maximum time allowed for each reviewer model call. |
 | `maxOutputChars` | Maximum size of the returned tool result; larger output is written to a temporary file. |
 | `maxRuleLines` | Maximum rule-file size accepted for a single review rule. |
-| `reviewers` | Reviewer name, model, rule files, and optional matching behavior. |
+| `reviewers` | Reviewer name, model, rule files, `tools`, and `trigger`. Missing lifecycle fields keep the legacy `edit`/`write` + `after` behavior. |
 
 Rule-file front matter can scope a rule to particular files or consumers:
 
@@ -92,8 +95,8 @@ consumers:
 
 ## Review semantics
 
-- A rejected review is appended to the tool result with findings; the agent is expected to address it before continuing.
-- A reviewer failure is reported as an incomplete review and the original edit result is allowed through.
+- A before reviewer rejection blocks the native tool call and emits a standalone audit with the complete reason; before failures/skips are fail-open but remain visible on the next tool result.
+- An after rejection is diagnostic only and never rolls back a completed tool call; a failed tool skips after review and preserves the original error.
 - If the parent agent request is already aborted, the review is skipped before any reviewer model request is started.
 - A failed tool call or an unchanged file is skipped.
 - The extension does not roll back edits, block the operating system, or replace Pi's permission and sandbox controls.

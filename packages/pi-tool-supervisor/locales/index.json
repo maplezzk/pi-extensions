@@ -59,6 +59,22 @@
     "zh-CN": "文件匹配：{value}",
     "en-US": "File patterns: {value}"
   },
+  "tools": {
+    "zh-CN": "工具范围：{value}",
+    "en-US": "Tools: {value}"
+  },
+  "toolsInput": {
+    "zh-CN": "工具范围（逗号分隔，* 表示全部工具）",
+    "en-US": "Tools (comma-separated; * means every tool)"
+  },
+  "triggerConfig": {
+    "zh-CN": "触发阶段：{value}",
+    "en-US": "Trigger: {value}"
+  },
+  "triggerInput": {
+    "zh-CN": "触发阶段",
+    "en-US": "Trigger"
+  },
   "deleteReviewer": {
     "zh-CN": "删除此审查器",
     "en-US": "Delete this reviewer"
@@ -124,8 +140,8 @@
     "en-US": "Maximum rule lines: {value}"
   },
   "commandDescription": {
-    "zh-CN": "通过交互式菜单配置 edit/write 文件评审",
-    "en-US": "Configure edit/write file review through an interactive menu"
+    "zh-CN": "通过交互式菜单配置工具生命周期审查",
+    "en-US": "Configure tool lifecycle review through an interactive menu"
   },
   "interactiveOnly": {
     "zh-CN": "当前模式不支持交互式配置，请使用有 UI 的 Pi 会话。",
@@ -138,5 +154,29 @@
   "reviewAborted": {
     "zh-CN": "上级请求已终止，未发起审查模型请求。",
     "en-US": "The parent request was aborted; no review-model request was started."
+  },
+  "oversizedOutputPointer": {
+    "zh-CN": "工具结果超过 {maxChars} 个字符，已写入临时文件：{filePath}",
+    "en-US": "Tool result exceeded {maxChars} characters and was written to a temporary file: {filePath}"
+  },
+  "failedAfterReview": {
+    "zh-CN": "工具调用失败，跳过 after 审查。",
+    "en-US": "The tool call failed; after review was skipped."
+  },
+  "unchangedFileSkipped": {
+    "zh-CN": "文件内容没有变化，跳过审查。",
+    "en-US": "The file content did not change; review was skipped."
+  },
+  "noApplicableRules": {
+    "zh-CN": "没有适用规则。",
+    "en-US": "No applicable rules."
+  },
+  "noApplicableGenericRules": {
+    "zh-CN": "没有适用的通用工具规则。",
+    "en-US": "No applicable generic-tool rules."
+  },
+  "beforeReviewRejectedFallback": {
+    "zh-CN": "工具 {toolName} 未通过前置审查。",
+    "en-US": "Tool {toolName} did not pass the before review."
   }
 }

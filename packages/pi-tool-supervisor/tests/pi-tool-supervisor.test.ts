@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import {
   appendSupervisorFallbackAudit,
   buildSupervisorAuditLines,
@@ -16,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildFileEditReviewDiff,
+  buildGenericReviewPrompt,
   buildMergedReviewPrompt,
   getLegacyFileEditReviewConfigPath,
   getOverallReviewStatus,
@@ -25,6 +27,8 @@ import {
   loadReviewRules,
   parseReviewResponse,
   reviewerAppliesToFile,
+  reviewerMatchesTool,
+  safeSerialize,
 } from "../src/review-utils.ts";
 
 process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
@@ -66,6 +70,49 @@ test("兼容旧 timeoutMs，并支持秒和返回字符上限配置", async () =
   }));
   const legacyLoaded = loadFileEditReviewConfig(configFile);
   assert.equal(legacyLoaded.config.timeoutSeconds, 3);
+});
+
+test("reviewer lifecycle 配置保留旧默认并校验通配工具与非法字段", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-lifecycle-config-"));
+  const configFile = join(directory, "config.json");
+  await writeFile(configFile, JSON.stringify({ enabled: true, reviewers: [
+    { model: "provider/model", rulesFile: "rules.md" },
+    { model: "provider/model", rulesFile: "rules.md", tools: ["*", "bash"], trigger: "before" },
+    { model: "provider/model", rulesFile: "rules.md", tools: ["bash"], trigger: "invalid" },
+  ] }));
+  const loaded = loadFileEditReviewConfig(configFile);
+  assert.deepEqual(loaded.config.reviewers[0]?.tools, ["edit", "write"]);
+  assert.equal(loaded.config.reviewers[0]?.trigger, "after");
+  assert.deepEqual(loaded.config.reviewers[1]?.tools, ["*"]);
+  assert.equal(loaded.config.reviewers[1]?.trigger, "before");
+  assert.match(loaded.warnings.join(" "), /忽略其他工具名/);
+  assert.match(loaded.warnings.join(" "), /trigger 无效/);
+});
+
+test("generic 规则只接受无 filePatterns 的规则", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-generic-rules-"));
+  const genericRule = join(directory, "generic.md");
+  const fileRule = join(directory, "file.md");
+  await writeFile(genericRule, "# generic\n");
+  await writeFile(fileRule, "---\nfilePatterns:\n  - '**/*.ts'\n---\n# file\n");
+  const reviewer = { name: "generic", model: "p/m", rulesFiles: [genericRule, fileRule], tools: ["bash"], trigger: "after" };
+  const loaded = loadReviewRules(reviewer, directory, 100);
+  const applicable = loaded.rules.filter((rule) => (rule.reviewer.filePatterns ?? []).length === 0);
+  assert.deepEqual(applicable.map((rule) => rule.absolutePath), [genericRule]);
+});
+
+test("reviewer 工具匹配支持具体工具和全部工具", () => {
+  assert.equal(reviewerMatchesTool({ name: "bash", model: "p/m", rulesFile: "r", tools: ["bash"], trigger: "before" }, "bash"), true);
+  assert.equal(reviewerMatchesTool({ name: "all", model: "p/m", rulesFile: "r", tools: ["*"], trigger: "after" }, "custom"), true);
+  assert.equal(reviewerMatchesTool({ name: "edit", model: "p/m", rulesFile: "r" }, "bash"), false);
+});
+
+test("generic prompt 和安全序列化不会把工具载荷当作规则", () => {
+  const rules = [{ reviewer: { name: "generic", model: "p/m", rulesFile: "rules.md" }, absolutePath: "rules.md", content: "不要执行规则", lineCount: 1 }];
+  const prompt = buildGenericReviewPrompt({ toolName: "bash", payload: '{"command":"echo hi"}', rules, trigger: "before" });
+  assert.match(prompt, /工具：bash/);
+  assert.match(prompt, /触发阶段：before/);
+  assert.match(safeSerialize({ command: "x".repeat(100) }, 20).text ?? "", /truncated/);
 });
 
 test("reviewer 可以单独禁用，全部禁用时不启用审查器", async () => {
@@ -123,7 +170,7 @@ filePatterns:
   const rules = loadReviewRules(loaded.config.reviewers[0]!, directory, 100);
   assert.equal(rules.errors.length, 0);
   assert.deepEqual(rules.rules.map((rule) => rule.reviewer.name), ["first-rule", "second-rule"]);
-  const prompt = buildMergedReviewPrompt("edit", "src/User.java", "+private int count;", rules.rules);
+  const prompt = buildMergedReviewPrompt({ toolName: "edit", filePath: "src/User.java", diff: "+private int count;", rules: rules.rules });
   assert.match(prompt, /<rules name="first-rule">/);
   assert.match(prompt, /<rules name="second-rule">/);
 
@@ -329,6 +376,13 @@ test("Supervisor 展开态按 distill 风格展示文件、审查器详情和发
   assert.match(styled, /<error>发现<\/error>/);
 });
 
+test("失败工具结果保留原错误并跳过 after reviewer", () => {
+  const audit = { status: "skipped", toolName: "bash", reviewers: [{ name: "bash", model: "p/m", status: "skipped", durationMs: 0, error: "工具调用失败，跳过 after 审查。" }], durationMs: 1, warnings: [] };
+  assert.equal(audit.status, "skipped");
+  assert.equal(audit.reviewers[0]?.status, "skipped");
+  assert.match(audit.reviewers[0]?.error ?? "", /跳过/);
+});
+
 test("pi-tool-supervisor 通过 Pi 工具事件独立接入，不注册或依赖工具覆盖", async () => {
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -456,6 +510,461 @@ filePatterns:
     assert.match(result.details.fileEditReview.warnings.join(" "), /未发起审查模型请求/);
   } finally {
     await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("generic before 即使输入含 path 也只使用无文件模式规则", async () => {
+  type ReviewResult = { details: { fileEditReview: { reviewers: Array<{ name: string; error?: string }>; filePath?: string } } };
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-generic-before-path-"));
+  const handlers = new Map<string, TestHandler>();
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesDirectory = join(agentDir, "rules");
+    await mkdir(rulesDirectory, { recursive: true });
+    const genericRule = join(rulesDirectory, "generic.md");
+    const fileRule = join(rulesDirectory, "file.md");
+    await writeFile(genericRule, "# generic\\n");
+    await writeFile(fileRule, "---\\nfilePatterns:\\n  - '**/*.ts'\\n---\\n# file\\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "read-before", model: "provider/model", rulesFiles: [genericRule, fileRule], tools: ["read"], trigger: "before" }],
+    }));
+
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = {
+      cwd: agentDir,
+      modelRegistry: { find: () => undefined },
+    };
+    const input = { path: "src/example.ts", query: "content" };
+    await handlers.get("tool_call")?.({ toolName: "read", toolCallId: "read-path-1", input }, context);
+    const result = await handlers.get("tool_result")?.({
+      toolName: "read",
+      toolCallId: "read-path-1",
+      input,
+      content: [{ type: "text", text: "content" }],
+      details: {},
+      isError: false,
+    }, context) as ReviewResult;
+
+    assert.equal(result.details.fileEditReview.reviewers.length, 1);
+    assert.equal(result.details.fileEditReview.reviewers[0].name, "read-before");
+    assert.match(result.details.fileEditReview.reviewers[0].error, /模型不存在/);
+    assert.equal(result.details.fileEditReview.filePath, undefined);
+  } finally {
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("自定义工具支持精确名和通配符 after 审查并展示审计", async () => {
+  type ReviewResult = { details: { fileEditReview: { reviewers: Array<{ name: string }>; status: string }; source: string } };
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-custom-after-"));
+  const handlers = new Map<string, TestHandler>();
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesFile = join(agentDir, "generic.md");
+    await writeFile(rulesFile, "# generic\\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [
+        { name: "exact", model: "provider/model", rulesFile, tools: ["custom-tool"], trigger: "after" },
+        { name: "wildcard", model: "provider/model", rulesFile, tools: ["*"], trigger: "after" },
+      ],
+    }));
+
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = { cwd: agentDir, modelRegistry: { find: () => undefined } };
+    const input = { path: "not-a-file-review-path", value: 1 };
+    await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "custom-1", input }, context);
+    const result = await handlers.get("tool_result")?.({
+      toolName: "custom-tool",
+      toolCallId: "custom-1",
+      input,
+      content: [{ type: "text", text: "ok" }],
+      details: { source: "custom" },
+      isError: false,
+    }, context) as ReviewResult;
+
+    assert.deepEqual(result.details.fileEditReview.reviewers.map((reviewer) => reviewer.name), ["exact", "wildcard"]);
+    assert.equal(result.details.fileEditReview.status, "failed");
+    assert.equal(result.details.source, "custom");
+  } finally {
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("generic 载荷序列化失败形成可见 failed 审计并保持原结果", async () => {
+  type ReviewResult = { content: Array<{ text?: string }>; details: { original: boolean; fileEditReview: { status: string; reviewers: Array<{ error?: string }> } } };
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-serialization-failure-"));
+  const handlers = new Map<string, TestHandler>();
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesFile = join(agentDir, "generic.md");
+    await writeFile(rulesFile, "# generic\\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "before", model: "provider/model", rulesFile, tools: ["custom-tool"], trigger: "before" }],
+    }));
+
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = { cwd: agentDir, modelRegistry: { find: () => { throw new Error("不应调用模型"); } } };
+    const input = { toJSON: () => { throw new Error("循环代理失败"); } };
+    await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "custom-serialization-1", input }, context);
+    const result = await handlers.get("tool_result")?.({
+      toolName: "custom-tool",
+      toolCallId: "custom-serialization-1",
+      input,
+      content: [{ type: "text", text: "original" }],
+      details: { original: true },
+      isError: false,
+    }, context) as ReviewResult;
+
+    assert.equal(result.content[0]?.text, "original");
+    assert.equal(result.details.original, true);
+    assert.equal(result.details.fileEditReview.status, "failed");
+    assert.match(result.details.fileEditReview.reviewers[0].error, /序列化失败/);
+  } finally {
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("generic before rejected 阻断时诊断使用工具名并追加独立审计", async () => {
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  type BlockResult = { block?: boolean; reason?: string };
+  type AuditEntryData = { toolName: string; audit: { toolName: string } };
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-before-rejected-"));
+  const handlers = new Map<string, TestHandler>();
+  const entries: Array<{ type: string; data: AuditEntryData }> = [];
+  const faux = registerFauxProvider({ provider: "provider", models: [{ id: "model" }] });
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesFile = join(agentDir, "generic.md");
+    await writeFile(rulesFile, "# generic\\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "before", model: "provider/model", rulesFile, tools: ["custom-tool"], trigger: "before" }],
+    }));
+    faux.setResponses([fauxAssistantMessage(JSON.stringify({
+      passed: false,
+      summary: "输入不符合规则",
+      findings: [{ message: "禁止调用该工具" }],
+    }))]);
+
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: (type: string, data: unknown) => entries.push({ type, data: data as AuditEntryData }),
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = {
+      cwd: agentDir,
+      modelRegistry: {
+        find: () => faux.getModel(),
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
+      },
+    };
+    const block = await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "blocked-1", input: { value: 1 } }, context) as BlockResult;
+
+    assert.equal(block.block, true);
+    assert.match(block.reason ?? "", /工具：custom-tool/);
+    assert.doesNotMatch(block.reason, /undefined/);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]?.data.toolName, "custom-tool");
+    assert.equal(entries[0]?.data.audit.toolName, "custom-tool");
+    assert.equal(await handlers.get("tool_result")?.({ toolCallId: "blocked-1" }, context), undefined);
+  } finally {
+    faux.unregister();
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("before failed 和 skipped 放行时在 tool_result 中保留可见审计", async () => {
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-before-status-"));
+  const handlers = new Map<string, TestHandler>();
+  const faux = registerFauxProvider({ provider: "provider", models: [{ id: "model" }] });
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const failedRules = join(agentDir, "failed.md");
+    const skippedRules = join(agentDir, "skipped.md");
+    await writeFile(failedRules, "# failed\n");
+    await writeFile(skippedRules, "---\nfilePatterns:\n  - '**/*.ts'\n---\n# skipped\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [
+        { name: "failed", model: "provider/model", rulesFile: failedRules, tools: ["custom-tool"], trigger: "before" },
+        { name: "skipped", model: "provider/model", rulesFile: skippedRules, tools: ["custom-tool"], trigger: "before" },
+      ],
+    }));
+    faux.setResponses([fauxAssistantMessage(JSON.stringify({ passed: true, summary: "ok", findings: [] }))]);
+
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = {
+      cwd: agentDir,
+      modelRegistry: { find: () => undefined },
+    };
+    await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "status-1", input: { value: 1 } }, context);
+    const result = await handlers.get("tool_result")?.({
+      toolName: "custom-tool",
+      toolCallId: "status-1",
+      input: { value: 1 },
+      content: [{ type: "text", text: "original" }],
+      details: { original: true },
+      isError: false,
+    }, context);
+
+    const reviewResult = result as { details: { fileEditReview: { status: string; reviewers: Array<{ status: string }> } }; content: Array<{ text?: string }> };
+    assert.equal(reviewResult.details.fileEditReview.status, "failed");
+    assert.deepEqual(reviewResult.details.fileEditReview.reviewers.map((reviewer) => reviewer.status), ["failed", "skipped"]);
+    assert.match(reviewResult.content.at(-1)?.text ?? "", /文件：custom-tool/);
+    assert.doesNotMatch(reviewResult.content.at(-1)?.text ?? "", /文件：undefined/);
+  } finally {
+    faux.unregister();
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("edit/write after 使用实际快照 diff，并在无变化时跳过模型", async () => {
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-file-lifecycle-"));
+  const handlers = new Map<string, TestHandler>();
+  const prompts: string[] = [];
+  const faux = registerFauxProvider({ provider: "provider", models: [{ id: "model" }] });
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const target = join(agentDir, "example.ts");
+    const rulesFile = join(agentDir, "file.md");
+    await writeFile(target, "const value = 1;\n");
+    await writeFile(rulesFile, "---\nfilePatterns:\n  - '**/*.ts'\n---\n# file\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "file", model: "provider/model", rulesFile, tools: ["write"], trigger: "after" }],
+    }));
+    faux.setResponses([(reviewContext) => {
+      prompts.push(JSON.stringify(reviewContext.messages));
+      return fauxAssistantMessage(JSON.stringify({ passed: true, summary: "ok", findings: [] }));
+    }]);
+
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = {
+      cwd: agentDir,
+      modelRegistry: {
+        find: () => faux.getModel(),
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
+      },
+    };
+    await handlers.get("tool_call")?.({ toolName: "write", toolCallId: "write-diff", input: { path: "example.ts", content: "const value = 2;\n" } }, context);
+    await writeFile(target, "const value = 2;\n");
+    const changed = await handlers.get("tool_result")?.({ toolName: "write", toolCallId: "write-diff", input: { path: "example.ts", content: "const value = 2;\n" }, content: [{ type: "text", text: "written" }], details: {}, isError: false }, context) as { details: { fileEditReview: { status: string } } };
+    assert.equal(changed.details.fileEditReview.status, "passed");
+    assert.match(prompts[0], /-const value = 1;/);
+    assert.match(prompts[0], /\+const value = 2;/);
+
+    await handlers.get("tool_call")?.({ toolName: "write", toolCallId: "write-same", input: { path: "example.ts", content: "const value = 2;\n" } }, context);
+    const unchanged = await handlers.get("tool_result")?.({ toolName: "write", toolCallId: "write-same", input: { path: "example.ts", content: "const value = 2;\n" }, content: [{ type: "text", text: "unchanged" }], details: {}, isError: false }, context) as { details: { fileEditReview: { status: string } } };
+    assert.equal(unchanged.details.fileEditReview.status, "skipped");
+    assert.equal(faux.state.callCount, 1);
+  } finally {
+    faux.unregister();
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("custom exact 和 wildcard after 成功审查 input/result，并保留工具失败原结果", async () => {
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-generic-success-"));
+  const handlers = new Map<string, TestHandler>();
+  const prompts: string[] = [];
+  const faux = registerFauxProvider({ provider: "provider", models: [{ id: "model" }] });
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const rulesFile = join(agentDir, "generic.md");
+    await writeFile(rulesFile, "# generic\\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [
+        { name: "exact", model: "provider/model", rulesFile, tools: ["custom-tool"], trigger: "after" },
+        { name: "wildcard", model: "provider/model", rulesFile, tools: ["*"], trigger: "after" },
+      ],
+    }));
+    faux.setResponses([
+      (reviewContext) => { prompts.push(JSON.stringify(reviewContext.messages)); return fauxAssistantMessage(JSON.stringify({ passed: true, summary: "exact ok", findings: [] })); },
+      (reviewContext) => { prompts.push(JSON.stringify(reviewContext.messages)); return fauxAssistantMessage(JSON.stringify({ passed: true, summary: "wildcard ok", findings: [] })); },
+    ]);
+
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = {
+      cwd: agentDir,
+      modelRegistry: {
+        find: () => faux.getModel(),
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
+      },
+    };
+    const input = { value: 1 };
+    await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "custom-success", input }, context);
+    const result = await handlers.get("tool_result")?.({ toolName: "custom-tool", toolCallId: "custom-success", input, content: [{ type: "text", text: "ok" }], details: { source: "custom" }, isError: false }, context) as { details: { source: string; fileEditReview: { status: string; reviewers: Array<{ name: string }> } } };
+    const reviewResult = result as { details: { source: string; fileEditReview: { status: string; reviewers: Array<{ name: string }> } } };
+    assert.equal(reviewResult.details.source, "custom");
+    assert.equal(reviewResult.details.fileEditReview.status, "passed");
+    assert.deepEqual(reviewResult.details.fileEditReview.reviewers.map((reviewer) => reviewer.name), ["exact", "wildcard"]);
+    assert.match(prompts[0], /custom-tool/);
+    assert.match(prompts[0], /input/);
+    assert.match(prompts[0], /result/);
+
+    await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "custom-failed", input }, context);
+    const failed = await handlers.get("tool_result")?.({ toolName: "custom-tool", toolCallId: "custom-failed", input, content: [{ type: "text", text: "original error" }], details: { source: "custom" }, isError: true }, context) as { content: Array<{ text?: string }>; details: { fileEditReview: { reviewers: Array<{ status: string }> } } };
+    assert.equal(failed.content[0]?.text, "original error");
+    assert.deepEqual(failed.details.fileEditReview.reviewers.map((reviewer) => reviewer.status), ["skipped", "skipped"]);
+  } finally {
+    faux.unregister();
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+type ConfigCommand = { handler: (args: string, ctx: unknown) => Promise<void> };
+
+test("配置 UI 可以编辑并持久化 reviewer 的 tools 和 trigger", async () => {
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-config-ui-"));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    const configPath = join(configDirectory, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "reviewer", model: "provider/model", rulesFile: "rules.md" }],
+    }));
+    const commands = new Map<string, ConfigCommand>();
+    let configSelections = 0;
+    let editSelections = 0;
+    const pi = {
+      getAllTools: () => [],
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      registerCommand: (name: string, command: ConfigCommand) => commands.set(name, command),
+      on: () => undefined,
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const ctx = {
+      hasUI: true,
+      ui: {
+        select: async (_title: string, choices: string[]) => {
+          if (choices.some((choice) => choice.startsWith("● "))) {
+            return configSelections++ === 0 ? choices.find((choice) => choice.startsWith("● ")) : undefined;
+          }
+          if (editSelections === 0) {
+            editSelections += 1;
+            return choices.find((choice) => choice.startsWith("工具范围："));
+          }
+          if (editSelections === 1) {
+            editSelections += 1;
+            return choices.find((choice) => choice.startsWith("触发阶段："));
+          }
+          if (choices.includes("before") && choices.includes("after")) return "before";
+          return "返回";
+        },
+        input: async (title: string, current: string) => title.startsWith("工具范围") ? "bash, *" : current,
+        confirm: async () => false,
+        notify: () => undefined,
+      },
+    };
+    await commands.get("config:tool-supervisor")?.handler("", ctx);
+    const saved = JSON.parse(await (await import("node:fs/promises")).readFile(configPath, "utf8"));
+    assert.deepEqual(saved.reviewers[0].tools, ["*"]);
+    assert.equal(saved.reviewers[0].trigger, "before");
+  } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   }

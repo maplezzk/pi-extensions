@@ -38,15 +38,29 @@ import {
   parseReviewResponse,
   reviewerAppliesToFile,
   reviewerIsEditorLocal,
+  reviewerMatchesTool,
+  reviewerTrigger,
+  safeSerialize,
   type FileEditReviewAudit,
   type FileEditReviewConfig,
   type FileEditReviewReviewerConfig,
   type FileEditReviewResult,
   type FileEditReviewRule,
+  type ReviewTrigger,
 } from "./review-utils.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
-
+const AFTER_TRIGGER: ReviewTrigger = "after";
+const BEFORE_TRIGGER: ReviewTrigger = "before";
+const MILLISECONDS_PER_SECOND = 1000;
+const REVIEW_MAX_TOKENS = 1200;
+const REJECTED_STATUS = "rejected" as const;
+const SKIPPED_STATUS = "skipped" as const;
+const EDIT_TOOL = "edit";
+const WRITE_TOOL = "write";
+const ALL_TOOLS = "*";
+const DEFAULT_REVIEW_TOOLS = [EDIT_TOOL, WRITE_TOOL];
+const REVIEW_TRIGGERS = [BEFORE_TRIGGER, AFTER_TRIGGER];
 type ToolResult = {
   content: Array<{ type?: string; text?: string }>;
   details?: Record<string, unknown>;
@@ -54,7 +68,7 @@ type ToolResult = {
 };
 
 type FileReviewExecutionContext = {
-  toolName: "edit" | "write";
+  toolName: string;
   toolCallId: string;
   params: Record<string, unknown>;
   signal?: AbortSignal;
@@ -70,28 +84,29 @@ type FileSnapshot = {
 };
 
 type PendingFileReviewCall = {
-  toolName: "edit" | "write";
+  toolName: string;
   params: Record<string, unknown>;
   loaded: ReturnType<typeof loadFileEditReviewConfig>;
   snapshot?: FileSnapshot;
   fallbackDiff: string;
+  beforeAudit?: FileEditReviewAudit;
+  afterReviewers: FileEditReviewReviewerConfig[];
 };
 
+/** Extracts a file path when the selected tool exposes one. */
 function getPath(params: Record<string, unknown>): string | undefined {
   const value = params.file_path ?? params.path;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function getText(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
+/** Narrows unknown event payloads without trusting arbitrary tool data. */
 function getRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
 }
 
+/** Joins text content for bounded result forwarding. */
 function getTextContent(result: ToolResult): string {
   return result.content
     .filter((content) => content.type === "text" && typeof content.text === "string")
@@ -99,6 +114,7 @@ function getTextContent(result: ToolResult): string {
     .join("\n");
 }
 
+/** Preserves oversized output in a temp file or visibly truncates it on write failure. */
 async function limitReturnedToolResult(result: ToolResult, maxChars: number): Promise<ToolResult> {
   const text = getTextContent(result);
   if (text.length <= maxChars) return result;
@@ -108,7 +124,7 @@ async function limitReturnedToolResult(result: ToolResult, maxChars: number): Pr
   try {
     await mkdir(directory, { recursive: true });
     await writeFile(filePath, text, "utf8");
-    const pointer = `工具结果超过 ${maxChars} 个字符，已写入临时文件：${filePath}`;
+    const pointer = i18n.t("oversizedOutputPointer", { maxChars, filePath });
     return {
       ...result,
       content: [{ type: "text", text: pointer.slice(0, maxChars) }],
@@ -135,10 +151,12 @@ async function limitReturnedToolResult(result: ToolResult, maxChars: number): Pr
   }
 }
 
+/** Detects tool execution failure without inspecting arbitrary detail fields. */
 function isFailedToolResult(result: ToolResult): boolean {
   return result.isError === true || getRecord(result).isError === true;
 }
 
+/** Reads a snapshot target and returns explicit errors for missing or inaccessible files. */
 async function readOptionalFile(filePath: string): Promise<{ content?: string; error?: string }> {
   try {
     return { content: await readFile(filePath, "utf8") };
@@ -148,10 +166,12 @@ async function readOptionalFile(filePath: string): Promise<{ content?: string; e
   }
 }
 
+/** Captures the file state immediately before an edit or write executes. */
 async function captureBefore(filePath: string): Promise<{ content?: string; error?: string }> {
   return readOptionalFile(filePath);
 }
 
+/** Captures the post-tool file state, using write input only as a narrow fallback. */
 async function captureAfter(
   toolName: "edit" | "write",
   filePath: string,
@@ -165,6 +185,7 @@ async function captureAfter(
   return result;
 }
 
+/** Produces visible diagnostics for rejected and failed reviewers. */
 function createReviewDiagnostic(
   audit: FileEditReviewAudit,
   configPath?: string,
@@ -175,7 +196,7 @@ function createReviewDiagnostic(
 
   if (rejected.length > 0) {
     lines.push("[文件编辑审查未通过，必须立即修正]");
-    lines.push(`文件：${audit.filePath}`);
+    lines.push(audit.filePath ? `文件：${audit.filePath}` : `工具：${audit.toolName}`);
     for (const reviewer of rejected) {
       lines.push(`规则审查：${reviewer.name}（${reviewer.rulesFiles?.join(", ") ?? reviewer.rulesFile ?? "未指定规则文件"}）`);
       if (reviewer.summary) lines.push(`结论：${reviewer.summary}`);
@@ -190,7 +211,7 @@ function createReviewDiagnostic(
 
   if (failed.length > 0) {
     lines.push("[文件编辑审查未完成，已放行但必须注意]");
-    lines.push(`文件：${audit.filePath}`);
+    lines.push(audit.filePath ? `文件：${audit.filePath}` : `工具：${audit.toolName}`);
     for (const reviewer of failed) {
       lines.push(`- ${reviewer.name}（${reviewer.rulesFiles?.join(", ") ?? reviewer.rulesFile ?? "未指定规则文件"}）：${reviewer.error ?? "审查模型调用失败"}`);
     }
@@ -200,15 +221,18 @@ function createReviewDiagnostic(
   return lines.length > 0 ? lines.join("\n") : undefined;
 }
 
-async function reviewWithModel(
-  context: FileReviewExecutionContext,
-  config: FileEditReviewConfig,
-  reviewer: FileEditReviewRule["reviewer"],
-  rules: FileEditReviewRule[],
-  toolName: "edit" | "write",
-  filePath: string,
-  diff: string,
-): Promise<FileEditReviewResult> {
+/** Executes one reviewer with parent cancellation and timeout fail-open behavior. */
+async function reviewWithModel(options: {
+  context: FileReviewExecutionContext;
+  config: FileEditReviewConfig;
+  reviewer: FileEditReviewRule["reviewer"];
+  rules: FileEditReviewRule[];
+  toolName: string;
+  filePath?: string;
+  diff: string;
+  trigger?: ReviewTrigger;
+}): Promise<FileEditReviewResult> {
+  const { context, config, reviewer, rules, toolName, filePath, diff, trigger = AFTER_TRIGGER } = options;
   const startedAt = performance.now();
   const base = {
     name: reviewer.name,
@@ -236,9 +260,10 @@ async function reviewWithModel(
   }
 
   const controller = new AbortController();
+  /** Propagates the parent abort signal to the reviewer request. */
   const abortFromParent = () => controller.abort();
   context.signal?.addEventListener("abort", abortFromParent, { once: true });
-  const timeout = setTimeout(() => controller.abort(), config.timeoutSeconds * 1000);
+  const timeout = setTimeout(() => controller.abort(), config.timeoutSeconds * MILLISECONDS_PER_SECOND);
   try {
     const auth = await context.ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (auth.ok === false) throw new Error(`审查模型鉴权失败：${auth.error}`);
@@ -254,7 +279,7 @@ async function reviewWithModel(
       {
         messages: [{
           role: "user",
-          content: [{ type: "text", text: buildMergedReviewPrompt(toolName, filePath, diff, rules) }],
+          content: [{ type: "text", text: buildMergedReviewPrompt({ toolName, filePath, diff, rules, trigger }) }],
           timestamp: Date.now(),
         }],
       },
@@ -262,7 +287,7 @@ async function reviewWithModel(
         apiKey: auth.apiKey,
         headers: auth.headers,
         env: auth.env,
-        maxTokens: 1200,
+        maxTokens: REVIEW_MAX_TOKENS,
         signal: controller.signal,
       },
     );
@@ -294,6 +319,7 @@ async function reviewWithModel(
   }
 }
 
+/** Captures the pre-tool file state and a fallback edit payload. */
 async function createSnapshot(
   context: FileReviewExecutionContext,
   toolName: "edit" | "write",
@@ -312,25 +338,32 @@ async function createSnapshot(
   };
 }
 
-async function reviewToolResult(
-  context: FileReviewExecutionContext,
-  toolName: "edit" | "write",
-  config: FileEditReviewConfig,
-  configPath: string,
-  configWarnings: string[],
-  snapshot: FileSnapshot,
-  fallbackDiff: string,
-  result: ToolResult,
-): Promise<ToolResult> {
+/** Reviews a successful file result while preserving the original tool result on failures. */
+async function reviewToolResult(options: {
+  context: FileReviewExecutionContext;
+  toolName: "edit" | "write";
+  config: FileEditReviewConfig;
+  configPath: string;
+  configWarnings: string[];
+  snapshot: FileSnapshot;
+  fallbackDiff: string;
+  result: ToolResult;
+  afterReviewers?: FileEditReviewReviewerConfig[];
+  beforeAudit?: FileEditReviewAudit;
+}): Promise<ToolResult> {
+  const { context, toolName, config, configPath, configWarnings, snapshot, fallbackDiff, result, afterReviewers, beforeAudit } = options;
+  const selectedReviewers = afterReviewers ?? config.reviewers.filter((reviewer) => reviewer.enabled !== false && reviewerTrigger(reviewer) === AFTER_TRIGGER && reviewerMatchesTool(reviewer, toolName));
+  const beforeReviewers = beforeAudit?.reviewers ?? [];
   const startedAt = performance.now();
   if (context.signal?.aborted) {
+    const reviewers = [...beforeReviewers];
     const audit: FileEditReviewAudit = {
       filePath: snapshot.filePath,
       toolName,
-      status: "skipped",
-      reviewers: [],
+      status: reviewers.length > 0 ? getOverallReviewStatus(reviewers) : SKIPPED_STATUS,
+      reviewers,
       durationMs: Math.round(performance.now() - startedAt),
-      warnings: [...configWarnings, i18n.t("reviewAborted")],
+      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("reviewAborted")],
     };
     return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit } };
   }
@@ -349,29 +382,44 @@ async function reviewToolResult(
   } satisfies Pick<FileEditReviewAudit, "filePath" | "toolName" | "warnings">;
 
   if (isFailedToolResult(result)) {
+    const skippedAfter = selectedReviewers.map((reviewer) => ({
+      name: reviewer.name,
+      model: reviewer.model,
+      status: SKIPPED_STATUS,
+      durationMs: 0,
+      error: i18n.t("failedAfterReview"),
+    }));
+    const reviewers = [...beforeReviewers, ...skippedAfter];
     const audit: FileEditReviewAudit = {
       ...auditBase,
-      status: "skipped",
-      reviewers: [],
+      status: getOverallReviewStatus(reviewers),
+      trigger: AFTER_TRIGGER,
+      reviewers,
       durationMs: Math.round(performance.now() - startedAt),
+      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? [])],
     };
     return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit } };
   }
 
   const diff = buildFileEditReviewDiff(snapshot.filePath, snapshot.before, snapshot.after, fallbackDiff);
   if (!diff) {
+    const reviewers = [...beforeReviewers];
     const audit: FileEditReviewAudit = {
       ...auditBase,
-      status: "skipped",
-      reviewers: [],
+      status: reviewers.length > 0 ? getOverallReviewStatus(reviewers) : SKIPPED_STATUS,
+      reviewers,
       durationMs: Math.round(performance.now() - startedAt),
-      warnings: [...configWarnings, "文件内容没有变化，跳过审查。"],
+      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("unchangedFileSkipped")],
     };
-    return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit } };
+    const diagnostic = createReviewDiagnostic(audit, configPath);
+    return {
+      ...result,
+      details: { ...(result.details ?? {}), fileEditReview: audit },
+      content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content,
+    };
   }
 
-  const reviewerGroups = config.reviewers
-    .filter((reviewer) => reviewer.enabled !== false)
+  const reviewerGroups = selectedReviewers
     .map((reviewer) => {
       const loaded = loadReviewRules(reviewer, context.ctx.cwd, config.maxRuleLines);
       const applicableRules = loaded.rules.filter((rule) =>
@@ -381,25 +429,41 @@ async function reviewToolResult(
       );
       return { reviewer, rules: applicableRules, errors: loaded.errors };
     });
-  const applicableGroups = reviewerGroups.filter((group) => group.rules.length > 0);
+  const applicableGroups = reviewerGroups.filter((group) => group.rules.length > 0 || group.errors.length > 0);
   const applicableErrors = applicableGroups.flatMap((group) => group.errors);
   if (applicableGroups.length === 0 && applicableErrors.length === 0) {
-    return result;
+    if (!beforeAudit) return result;
+    const audit: FileEditReviewAudit = {
+      ...auditBase,
+      status: getOverallReviewStatus(beforeReviewers),
+      trigger: AFTER_TRIGGER,
+      reviewers: beforeReviewers,
+      durationMs: Math.round(performance.now() - startedAt),
+      warnings: [...configWarnings, ...(beforeAudit.warnings ?? [])],
+    };
+    const diagnostic = createReviewDiagnostic(audit, configPath);
+    return {
+      ...result,
+      details: { ...(result.details ?? {}), fileEditReview: audit },
+      content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content,
+    };
   }
   const warnings = [
     ...configWarnings,
+    ...(beforeAudit?.warnings ?? []),
     ...applicableGroups.flatMap((group) => group.rules.flatMap((rule) => rule.warning ? [rule.warning] : [])),
   ];
   const reviewResults = await Promise.all([
     ...applicableGroups.map((group) =>
-      reviewWithModel(context, config, group.reviewer, group.rules, toolName, snapshot.filePath, diff),
+      reviewWithModel({ context, config, reviewer: group.reviewer, rules: group.rules, toolName, filePath: snapshot.filePath, diff }),
     ),
     ...applicableErrors.map((error) => Promise.resolve(error)),
   ]);
   const audit: FileEditReviewAudit = {
     ...auditBase,
     status: getOverallReviewStatus(reviewResults),
-    reviewers: reviewResults,
+    trigger: AFTER_TRIGGER,
+    reviewers: [...beforeReviewers, ...reviewResults],
     durationMs: Math.round(performance.now() - startedAt),
     warnings,
   };
@@ -416,6 +480,54 @@ async function reviewToolResult(
   };
 }
 
+/** Executes matching before reviewers and returns the visible audit used for blocking. */
+async function runBeforeReview(options: {
+  context: FileReviewExecutionContext;
+  loaded: ReturnType<typeof loadFileEditReviewConfig>;
+  filePath?: string;
+  fallbackDiff: string;
+}): Promise<FileEditReviewAudit | undefined> {
+  const { context, loaded, filePath, fallbackDiff } = options;
+  const reviewers = loaded.config.reviewers.filter((reviewer) =>
+    reviewer.enabled !== false && reviewerTrigger(reviewer) === BEFORE_TRIGGER && reviewerMatchesTool(reviewer, context.toolName),
+  );
+  if (reviewers.length === 0) return undefined;
+  const startedAt = performance.now();
+  const results: FileEditReviewResult[] = [];
+  const isFileTool = context.toolName === EDIT_TOOL || context.toolName === WRITE_TOOL;
+  const selectedFilePath = isFileTool ? getPath(context.params) : undefined;
+  const serializedPayload = selectedFilePath
+    ? { text: buildFileEditReviewDiff(selectedFilePath, undefined, typeof context.params.content === "string" ? context.params.content : undefined, fallbackDiff) }
+    : safeSerialize(context.params, loaded.config.maxOutputChars);
+  const warnings = [...loaded.warnings];
+  for (const reviewer of reviewers) {
+    const loadedRules = loadReviewRules(reviewer, context.ctx.cwd, loaded.config.maxRuleLines);
+    const rules = loadedRules.rules.filter((rule) => {
+      if (rule.reviewer.enabled === false || !reviewerIsEditorLocal(rule.reviewer)) return false;
+      return selectedFilePath
+        ? reviewerAppliesToFile(rule.reviewer, selectedFilePath)
+        : (rule.reviewer.filePatterns ?? []).length === 0;
+    });
+    warnings.push(...rules.flatMap((rule) => rule.warning ? [rule.warning] : []));
+    results.push(...loadedRules.errors);
+    if (rules.length > 0 && serializedPayload.error) {
+      results.push({
+        name: reviewer.name,
+        model: reviewer.model,
+        status: "failed",
+        durationMs: 0,
+        error: serializedPayload.error,
+      });
+    } else if (rules.length > 0) {
+      results.push(await reviewWithModel({ context, config: loaded.config, reviewer, rules, toolName: context.toolName, filePath: selectedFilePath, diff: serializedPayload.text ?? "", trigger: BEFORE_TRIGGER }));
+    } else if (loadedRules.errors.length === 0) {
+      results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: i18n.t("noApplicableRules") });
+    }
+  }
+  return { status: getOverallReviewStatus(results), filePath, toolName: context.toolName, trigger: BEFORE_TRIGGER, reviewers: results, durationMs: Math.round(performance.now() - startedAt), warnings };
+}
+
+/** Prepares snapshots, before audits, and after reviewer state for one tool call. */
 async function prepareFileReviewCall(
   context: FileReviewExecutionContext,
 ): Promise<PendingFileReviewCall> {
@@ -425,6 +537,7 @@ async function prepareFileReviewCall(
     params: { ...context.params },
     loaded,
     fallbackDiff: "",
+    afterReviewers: [],
   };
   if (!loaded.config.enabled) {
     if (loaded.warnings.length > 0) {
@@ -435,36 +548,75 @@ async function prepareFileReviewCall(
 
   if (context.signal?.aborted) return pending;
 
-  const filePath = getPath(context.params);
-  if (!filePath || !loaded.config.reviewers.some((reviewer) =>
-    reviewer.enabled && reviewerAppliesToFile(reviewer, filePath))) {
-    return pending;
+  const isFileTool = context.toolName === EDIT_TOOL || context.toolName === WRITE_TOOL;
+  const filePath = isFileTool ? getPath(context.params) : undefined;
+  if (isFileTool && filePath && loaded.config.reviewers.some((reviewer) =>
+    reviewer.enabled && reviewerMatchesTool(reviewer, context.toolName) && reviewerAppliesToFile(reviewer, filePath))) {
+    const prepared = await createSnapshot(context, context.toolName as typeof EDIT_TOOL | typeof WRITE_TOOL);
+    pending.snapshot = prepared.snapshot;
+    pending.fallbackDiff = prepared.fallbackDiff;
   }
-  const prepared = await createSnapshot(context, context.toolName);
-  pending.snapshot = prepared.snapshot;
-  pending.fallbackDiff = prepared.fallbackDiff;
+  pending.afterReviewers = loaded.config.reviewers.filter((reviewer) =>
+    reviewer.enabled !== false && reviewerTrigger(reviewer) === AFTER_TRIGGER && reviewerMatchesTool(reviewer, context.toolName),
+  );
+  pending.beforeAudit = await runBeforeReview({ context, loaded, filePath, fallbackDiff: pending.fallbackDiff });
   return pending;
 }
 
+/** Processes generic tool results with input/result review and before-audit merging. */
+async function processGenericReviewResult(context: FileReviewExecutionContext, pending: PendingFileReviewCall, result: ToolResult): Promise<ToolResult> {
+  if (pending.afterReviewers.length === 0 && !pending.beforeAudit) return result;
+  const startedAt = performance.now();
+  const reviewers = pending.afterReviewers;
+  const results: FileEditReviewResult[] = isFailedToolResult(result)
+    ? reviewers.map((reviewer) => ({ name: reviewer.name, model: reviewer.model, status: SKIPPED_STATUS, durationMs: 0, error: i18n.t("failedAfterReview") }))
+    : [];
+  if (!isFailedToolResult(result)) {
+    const serializedPayload = safeSerialize({ input: pending.params, result: { content: result.content, details: result.details, isError: result.isError } }, pending.loaded.config.maxOutputChars);
+    for (const reviewer of reviewers) {
+      const loadedRules = loadReviewRules(reviewer, context.ctx.cwd, pending.loaded.config.maxRuleLines);
+      const rules = loadedRules.rules.filter((rule) => rule.reviewer.enabled !== false && reviewerIsEditorLocal(rule.reviewer) && (rule.reviewer.filePatterns ?? []).length === 0);
+      results.push(...loadedRules.errors);
+      if (rules.length > 0 && serializedPayload.error) {
+        results.push({ name: reviewer.name, model: reviewer.model, status: "failed", durationMs: 0, error: serializedPayload.error });
+      } else if (rules.length > 0) {
+        results.push(await reviewWithModel({ context, config: pending.loaded.config, reviewer, rules, toolName: context.toolName, diff: serializedPayload.text ?? "", trigger: AFTER_TRIGGER }));
+      } else if (loadedRules.errors.length === 0) results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: i18n.t("noApplicableGenericRules") });
+    }
+  }
+  const reviewersWithBefore = [...(pending.beforeAudit?.reviewers ?? []), ...results];
+  const afterDurationMs = Math.round(performance.now() - startedAt);
+  const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings: [...pending.loaded.warnings, ...(pending.beforeAudit?.warnings ?? [])] };
+  const diagnostic = createReviewDiagnostic({ ...audit, filePath: context.toolName }, pending.loaded.configPath);
+  return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit }, content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content };
+}
+
+/** Completes the file review lifecycle and applies the configured output bound. */
 async function processFileReviewResult(
   context: FileReviewExecutionContext,
   pending: PendingFileReviewCall,
   result: ToolResult,
 ): Promise<ToolResult> {
   const { loaded } = pending;
+  /** Bounds the returned tool text without changing the original error flag. */
   const finish = (candidate: ToolResult) =>
     limitReturnedToolResult(candidate, loaded.config.maxOutputChars);
-  if (!pending.snapshot) return finish(result);
-  return finish(await reviewToolResult(
+  if (pending.beforeAudit && pending.beforeAudit.status === REJECTED_STATUS) {
+    return finish({ ...result, details: { ...(result.details ?? {}), fileEditReview: pending.beforeAudit } });
+  }
+  if (!pending.snapshot) return finish(await processGenericReviewResult(context, pending, result));
+  return finish(await reviewToolResult({
     context,
-    pending.toolName,
-    loaded.config,
-    loaded.configPath,
-    loaded.warnings,
-    pending.snapshot,
-    pending.fallbackDiff,
+    toolName: pending.toolName as typeof EDIT_TOOL | typeof WRITE_TOOL,
+    config: loaded.config,
+    configPath: loaded.configPath,
+    configWarnings: loaded.warnings,
+    snapshot: pending.snapshot,
+    fallbackDiff: pending.fallbackDiff,
     result,
-  ));
+    afterReviewers: pending.afterReviewers,
+    beforeAudit: pending.beforeAudit,
+  }));
 }
 
 async function inputPositiveInteger(
@@ -511,6 +663,7 @@ async function inputList(
   return items;
 }
 
+/** Edits reviewer lifecycle fields and persists validated user choices through the caller. */
 async function editReviewer(
   ctx: ExtensionCommandContext,
   reviewer: FileEditReviewReviewerConfig,
@@ -522,6 +675,8 @@ async function editReviewer(
       i18n.t("name", { value: reviewer.name }),
       i18n.t("model", { value: reviewer.model }),
       i18n.t("rules", { value: rulesFiles.join(", ") }),
+      i18n.t("tools", { value: (reviewer.tools ?? DEFAULT_REVIEW_TOOLS).join(", ") }),
+      i18n.t("triggerConfig", { value: reviewerTrigger(reviewer) }),
       i18n.t("patterns", { value: reviewer.filePatterns?.join(", ") || i18n.t("allFiles") }),
       i18n.t("deleteReviewer"),
       i18n.t("back"),
@@ -544,9 +699,15 @@ async function editReviewer(
         reviewer.rulesFiles = value;
       }
     } else if (choice === choices[4]) {
+      const value = await inputList(ctx, i18n.t("toolsInput"), reviewer.tools ?? DEFAULT_REVIEW_TOOLS, true);
+      if (value !== undefined) reviewer.tools = value.includes(ALL_TOOLS) ? [ALL_TOOLS] : value;
+    } else if (choice === choices[5]) {
+      const value = await ctx.ui.select(i18n.t("triggerInput"), REVIEW_TRIGGERS);
+      if (value) reviewer.trigger = value as ReviewTrigger;
+    } else if (choice === choices[6]) {
       const value = await inputList(ctx, i18n.t("listInputOptional"), reviewer.filePatterns ?? [], false);
       if (value !== undefined) reviewer.filePatterns = value;
-    } else if (choice === choices[5]) {
+    } else if (choice === choices[7]) {
       const confirmed = await ctx.ui.confirm(
         i18n.t("deleteTitle"),
         i18n.t("deleteMessage", { name: reviewer.name }),
@@ -579,7 +740,7 @@ async function addReviewer(
   if (!model) return false;
   const rulesFiles = await inputList(ctx, i18n.t("listInput"), [], true);
   if (!rulesFiles) return false;
-  reviewers.push({ name: name.trim(), model, rulesFiles, enabled: true });
+  reviewers.push({ name: name.trim(), model, rulesFiles, enabled: true, tools: [...DEFAULT_REVIEW_TOOLS], trigger: AFTER_TRIGGER });
   return true;
 }
 
@@ -664,7 +825,6 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
   const disposeToolDisplayMiddleware = registerSupervisorToolDisplayMiddleware();
   registerSupervisorFallbackRenderer(pi);
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName !== "edit" && event.toolName !== "write") return;
     const context: FileReviewExecutionContext = {
       toolName: event.toolName,
       toolCallId: event.toolCallId,
@@ -672,16 +832,17 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
       signal: ctx.signal,
       ctx,
     };
-    pendingCalls.set(event.toolCallId, await prepareFileReviewCall(context));
+    const pending = await prepareFileReviewCall(context);
+    pendingCalls.set(event.toolCallId, pending);
+    if (pending.beforeAudit?.status === REJECTED_STATUS) {
+      pendingCalls.delete(event.toolCallId);
+      appendSupervisorFallbackAudit(pi, event.toolName, { fileEditReview: pending.beforeAudit });
+      return { block: true, reason: createReviewDiagnostic(pending.beforeAudit, pending.loaded.configPath) ?? i18n.t("beforeReviewRejectedFallback", { toolName: event.toolName }) };
+    }
   });
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
-    if (event.toolName !== "edit" && event.toolName !== "write") return;
-    const pending = pendingCalls.get(event.toolCallId) ?? {
-      toolName: event.toolName,
-      params: { ...event.input },
-      loaded: loadFileEditReviewConfig(),
-      fallbackDiff: "",
-    };
+    const pending = pendingCalls.get(event.toolCallId);
+    if (!pending) return;
     pendingCalls.delete(event.toolCallId);
     const result = await processFileReviewResult(
       {

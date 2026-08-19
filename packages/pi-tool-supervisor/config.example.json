@@ -9,7 +9,9 @@
       "model": "provider/model",
       "rulesFiles": [
         "/absolute/path/to/rules.md"
-      ]
+      ],
+      "tools": ["edit", "write"],
+      "trigger": "after"
     }
   ]
 }
