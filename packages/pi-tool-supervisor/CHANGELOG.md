@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.8...pi-tool-supervisor-v0.4.0) (2026-08-19)
+
+
+### Features
+
+* **pi-tool-supervisor:** generalize tool review lifecycle ([6b062ee](https://github.com/maplezzk/pi-extensions/commit/6b062ee72c24181e7cb4faf61c2ea5c7c40cc89c))
+* **pi-tool-supervisor:** support configurable tool review lifecycle ([077b3cf](https://github.com/maplezzk/pi-extensions/commit/077b3cfcffc440140eefff5a42d60ed6e273a093))
+
+
+### Bug Fixes
+
+* correct generic tool review lifecycle ([33d7390](https://github.com/maplezzk/pi-extensions/commit/33d7390633af9cc0f97862b1305eb58d01b6fba4))
+* **pi-tool-supervisor:** complete lifecycle review coverage ([54a1fec](https://github.com/maplezzk/pi-extensions/commit/54a1fec1d84394a38c9608e2699fa6dc5ca6d802))
+* 保留工具审查生命周期审计 ([2bbc69d](https://github.com/maplezzk/pi-extensions/commit/2bbc69d1f903b209ce41edcc845e415fd1ab37ca))
+
 ## [0.3.8](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.7...pi-tool-supervisor-v0.3.8) (2026-07-28)
 
 
