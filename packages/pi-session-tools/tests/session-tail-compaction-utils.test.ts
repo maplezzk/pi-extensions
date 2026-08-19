@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
-  buildSquashTaskPrompt,
   computeFileLists,
   extractFileOps,
   formatFileOperations,
@@ -13,7 +12,6 @@ import {
   parseSquashThresholds,
   resolveThresholdTokens,
   SESSION_SQUASH_HINT_TYPE,
-  SESSION_SQUASH_TASK_TYPE,
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
   thresholdKey,
@@ -190,18 +188,8 @@ test("validateTailStart 对不存在与未完成的索引返回对应错误码",
   assert.equal(incomplete.from, 1);
 });
 
-test("buildSquashTaskPrompt 替换 preview 占位符", () => {
-  const prompt = buildSquashTaskPrompt(
-    "开头为 {preview} 的消息",
-    { preview: "分析需求" },
-  );
-  assert.equal(prompt, "开头为 分析需求 的消息");
-});
-
-test("SESSION_SQUASH_TASK_TYPE 与 SESSION_SQUASH_TYPE 不同", () => {
-  assert.equal(SESSION_SQUASH_TASK_TYPE, "session-squash-task");
+test("SESSION_SQUASH_HINT_TYPE 与 SESSION_SQUASH_TYPE 不同", () => {
   assert.equal(SESSION_SQUASH_HINT_TYPE, "session-squash-hint");
-  assert.notEqual(SESSION_SQUASH_TASK_TYPE, SESSION_SQUASH_TYPE);
   assert.notEqual(SESSION_SQUASH_HINT_TYPE, SESSION_SQUASH_TYPE);
 });
 

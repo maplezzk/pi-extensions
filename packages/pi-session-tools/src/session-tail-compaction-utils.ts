@@ -6,9 +6,6 @@ import type {
 /** 作为 custom_message.customType 使用，同时也是折叠操作的持久化标识。 */
 export const SESSION_SQUASH_TYPE = "session-squash";
 
-/** 内部任务消息的 customType：让主 agent 生成交接文档。 */
-export const SESSION_SQUASH_TASK_TYPE = "session-squash-task";
-
 /** 上下文阈值提示消息的 customType：建议主 agent 考虑压缩。 */
 export const SESSION_SQUASH_HINT_TYPE = "session-squash-hint";
 
@@ -184,18 +181,6 @@ export function formatFileOperations(
   }
   if (sections.length === 0) return "";
   return `\n\n${sections.join("\n\n")}`;
-}
-
-export interface SquashTaskPromptInput {
-  preview: string;
-}
-
-/** 用已翻译的模板构造内部任务消息；模板占位符为 {preview}。 */
-export function buildSquashTaskPrompt(
-  template: string,
-  input: SquashTaskPromptInput,
-): string {
-  return template.replaceAll("{preview}", input.preview);
 }
 
 export interface TailCompactionData {

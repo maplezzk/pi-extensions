@@ -1,16 +1,12 @@
 /**
  * Session Squash — 在同一个 session tree 中非破坏性压缩当前会话后缀
  *
- * 提供三个 agent 工具：
+ * 提供两个 agent 工具：
  * - session_log：列出当前 active branch 的 user turn 和索引
- * - session_squash：从指定 user turn 索引开始，压缩到当前 active leaf
- * - session_squash_finalize：内部任务专用，主 agent 写入交接文档后提交路径
+ * - session_squash：接收摘要，从指定 user turn 索引压缩到当前 active leaf
  *
- * 摘要生成不使用独立 LLM 请求，而是复用主 agent 自身：折叠登记后，
- * 注入一条内部任务消息（triggerTurn）让主 agent 用完整上下文（天然命中
- * 前缀缓存）写一份交接文档到系统临时目录，再通过 finalize 工具提交；
- * 下一个 agent_settled 时读取文档全文作为摘要完成折叠。失败兜底：主
- * agent 未提交则放弃并通知，可再次调用重试。
+ * 摘要由主 agent 在调用 session_squash 时直接提交，不发起独立 LLM 请求。
+ * 工具登记折叠后，当前 agent 结束时完成分支切换并自动继续。
  *
  * 折叠不是覆盖当前历史，而是复用 Pi 的 SessionManager.branch：
  * - 原始后缀保留为旧 branch；
@@ -30,7 +26,6 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import { Type } from "typebox";
 import {
-  buildSquashTaskPrompt,
   computeFileLists,
   didAgentStopNormally,
   extractFileOps,
@@ -42,7 +37,6 @@ import {
   parseSquashThresholds,
   resolveThresholdTokens,
   SESSION_SQUASH_HINT_TYPE,
-  SESSION_SQUASH_TASK_TYPE,
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
   thresholdKey,
@@ -65,13 +59,11 @@ const TailCompactionParams = Type.Object({
     minimum: 0,
     description: i18n.t("squashFromDescription"),
   }),
+  summary: Type.String({
+    minLength: 1,
+    description: i18n.t("squashSummaryDescription"),
+  }),
 });
-
-/** 任务消息中用户消息预览的最大字符数。 */
-const USER_MESSAGE_PREVIEW_MAX_CHARS = 120;
-
-/** 编辑器上方进度提示的 widget key。 */
-const PROGRESS_WIDGET_KEY = "session-squash-progress";
 
 /** contextWindow 缺失时的回退值（与 Pi 内置摘要逻辑一致）。 */
 const FALLBACK_CONTEXT_WINDOW = 128000;
@@ -203,22 +195,11 @@ function saveSquashThresholds(thresholds: SquashThreshold[]): string {
 /** 当前生效的阈值配置（命令修改后重新加载）。 */
 let squashThresholds: SquashThreshold[] = loadSquashThresholds();
 
-const FinalizeParams = Type.Object({
-  summary: Type.String({
-    description: i18n.t("finalizeSummaryDescription"),
-  }),
-});
-
-type PendingStage = "registered" | "taskInjected";
-
 type PendingTailCompaction = {
   sessionId: string;
   startEntryId: string;
   fromUserInputIndex: number;
-  stage: PendingStage;
-  summary?: string;
-  /** 自动提取的文件清单（<read-files>/<modified-files>），finalize 时追加到 summary 尾部。 */
-  fileSection: string;
+  summary: string;
 };
 
 let pending: PendingTailCompaction | null = null;
@@ -274,6 +255,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       i18n.t("guidelineBoundary"),
       i18n.t("guidelineIndex"),
+      i18n.t("guidelineSummary"),
       i18n.t("guidelineLeaf"),
       i18n.t("guidelineContinue"),
     ],
@@ -298,42 +280,20 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         );
       }
 
+      const summary = params.summary.trim();
+      if (!summary) {
+        return textResult(i18n.t("squashSummaryEmpty"), true);
+      }
+
       pending = {
         sessionId: ctx.sessionManager.getSessionId(),
         startEntryId: validation.input.entryId,
         fromUserInputIndex: params.from,
-        stage: "registered",
-        fileSection: "",
+        summary,
       };
 
       return textResult(
         i18n.t("registered", { from: params.from }),
-      );
-    },
-  });
-
-  pi.registerTool({
-    name: "session_squash_finalize",
-    label: i18n.t("finalizeLabel"),
-    description: i18n.t("finalizeDescription"),
-    promptSnippet: i18n.t("finalizeSnippet"),
-    parameters: FinalizeParams,
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      if (!pending) {
-        return textResult(i18n.t("finalizeNoPending"), true);
-      }
-      if (pending.stage !== "taskInjected") {
-        return textResult(i18n.t("finalizeNotTask"), true);
-      }
-
-      const summary = params.summary.trim();
-      if (!summary) {
-        return textResult(i18n.t("finalizeEmpty"), true);
-      }
-
-      pending.summary = summary + pending.fileSection;
-      return textResult(
-        i18n.t("finalizeOk", { chars: summary.length }),
       );
     },
   });
@@ -353,7 +313,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
 
     if (pending.sessionId !== ctx.sessionManager.getSessionId()) {
       pending = null;
-      ctx.ui.setWidget(PROGRESS_WIDGET_KEY, undefined);
       ctx.ui.notify(i18n.t("switched"), "warning");
       return;
     }
@@ -366,51 +325,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       throw new Error(i18n.t("noInput"));
     }
 
-    if (pending.stage === "registered") {
-      // 阶段 1：注入内部任务消息，让主 agent 用完整上下文产出总结全文；
-      // 同时自动提取被压缩段的文件清单，稍后在 finalize 时追加到 summary。
-      const startIdx = branch.findIndex(
-        (entry) => entry.id === pending.startEntryId,
-      );
-      const suffix = startIdx >= 0 ? branch.slice(startIdx) : branch;
-      const { readFiles, modifiedFiles } = computeFileLists(
-        extractFileOps(suffix),
-      );
-      pending.fileSection = formatFileOperations(readFiles, modifiedFiles);
-      pending.stage = "taskInjected";
-
-      const preview =
-        (input.content || "").slice(0, USER_MESSAGE_PREVIEW_MAX_CHARS) ||
-        i18n.t("imagePlaceholder");
-      const taskText = buildSquashTaskPrompt(i18n.t("taskPrompt"), {
-        preview,
-      });
-
-      // 进度提示放在编辑器（消息框）上方，而不是 footer status
-      ctx.ui.setWidget(PROGRESS_WIDGET_KEY, [i18n.t("generatingDoc")]);
-      pi.sendMessage(
-        {
-          customType: SESSION_SQUASH_TASK_TYPE,
-          content: [{ type: "text", text: taskText }],
-          display: false,
-          details: {
-            fromUserInputIndex: pending.fromUserInputIndex,
-          },
-        },
-        { triggerTurn: true },
-      );
-      return;
-    }
-
-    // 阶段 2：主 agent 任务轮结束。
-    ctx.ui.setWidget(PROGRESS_WIDGET_KEY, undefined);
-    if (!pending.summary) {
-      // 主 agent 未通过 finalize 提交文档：放弃并通知，可再次调用重试。
-      pending = null;
-      ctx.ui.notify(i18n.t("abandoned"), "warning");
-      return;
-    }
-
     const sourceLeafId = ctx.sessionManager.getLeafId();
     if (!sourceLeafId) {
       pending = null;
@@ -418,11 +332,20 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     }
 
     const request = pending;
+    const startIdx = branch.findIndex(
+      (entry) => entry.id === request.startEntryId,
+    );
+    const suffix = startIdx >= 0 ? branch.slice(startIdx) : branch;
+    const { readFiles, modifiedFiles } = computeFileLists(
+      extractFileOps(suffix),
+    );
+    const summary =
+      request.summary + formatFileOperations(readFiles, modifiedFiles);
     const data: TailCompactionData = {
       startEntryId: request.startEntryId,
       sourceLeafId,
       fromUserInputIndex: request.fromUserInputIndex,
-      summary: request.summary,
+      summary,
       tokensBefore: ctx.getContextUsage()?.tokens ?? 0,
     };
 
@@ -439,7 +362,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       pi.sendMessage(
         {
           customType: SESSION_SQUASH_TYPE,
-          content: request.summary,
+          content: summary,
           display: true,
           details: data,
         },

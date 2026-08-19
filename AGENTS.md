@@ -35,7 +35,7 @@ Each package owns its entrypoint, tests, configuration example, localization res
 - `pi-terminal-mux` owns terminal multiplexer detection and pane/surface operations. Extensions that need terminal interaction depend on it instead of re-implementing backend detection.
 - `pi-metrics` owns session metrics: the live elapsed spinner and per-turn/total summaries listen to Pi's native `input`, `agent_start`, `turn_start`, `turn_end`, `agent_end`, and `agent_settled` events without registering tools.
 - `pi-models-discovery` owns dynamic model discovery: it reads `discoverModels` providers from models.json, fetches `{baseUrl}/models`, persists a startup cache, and exposes `/model-discovery` plus `/model-discovery-refresh` commands.
-- `pi-session-tools` owns the bash pipe output cache (`tool_call` rewrites `grep`/`tail`/`head` pipelines with `tee`) and `session_log`/`session_squash`/`session_squash_finalize` for non-destructive conversation squashing that reuses the main agent's full context to write the handoff summary.
+- `pi-session-tools` owns the bash pipe output cache (`tool_call` rewrites `grep`/`tail`/`head` pipelines with `tee`) and `session_log`/`session_squash` for non-destructive conversation squashing; the main agent writes the handoff summary directly into the `session_squash` call.
 - `pi-session-resources` observes successful tool results, rebuilds resources from the active session branch, and exposes file, browser, and PR/MR targets through a clickable, tabbed `#` picker above the editor without adding model-context messages.
 
 Keep packages composable and independently installable. Avoid coupling one extension to another extension's private implementation details or display state.
