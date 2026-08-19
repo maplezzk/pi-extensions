@@ -258,6 +258,24 @@ export function listUserInputs(
   });
 }
 
+/**
+ * 列出 session_log 应展示的用户消息。
+ * 已作为压缩起点写入摘要的消息仍保留在 session tree 中供 /tree 恢复，
+ * 但不再作为候选返回；索引沿用原始 user message 索引，避免重新编号。
+ */
+export function listSquashCandidates(
+  branch: SessionEntry[],
+  imagePlaceholder: string,
+): UserInputIndex[] {
+  const compactedStartEntryIds = new Set(
+    getTailCompactions(branch).map(({ data }) => data.startEntryId),
+  );
+  return listUserInputs(branch, imagePlaceholder).filter(
+    (input) => !compactedStartEntryIds.has(input.entryId),
+  );
+}
+
+/** 校验 custom message details 是否包含完整、可用的尾部压缩元数据。 */
 function isTailCompactionData(value: unknown): value is TailCompactionData {
   if (!value || typeof value !== "object") return false;
   const data = value as Partial<TailCompactionData>;
@@ -291,21 +309,16 @@ export function getTailCompactions(branch: SessionEntry[]): Array<{
 export const TAIL_START_ERROR = {
   inputNotFound: "inputNotFound",
   inputIncomplete: "inputIncomplete",
-  overlapWithExisting: "overlapWithExisting",
 } as const;
 
 /** validateTailStart 失败原因编码类型。 */
 export type TailStartErrorCode =
   (typeof TAIL_START_ERROR)[keyof typeof TAIL_START_ERROR];
 
-/**
- * 当前 MVP 只允许在已有尾部折叠之后继续折叠更新的 user turn，
- * 不允许重新覆盖已经折叠的历史范围。
- */
+/** 校验指定索引存在且对应回合已经完成；允许从更早索引重新压缩。 */
 export function validateTailStart(
   inputs: UserInputIndex[],
   from: number,
-  branch: SessionEntry[],
 ):
   | { ok: true; input: UserInputIndex }
   | { ok: false; code: TailStartErrorCode; from: number } {
@@ -315,11 +328,6 @@ export function validateTailStart(
   }
   if (!input.complete) {
     return { ok: false, code: TAIL_START_ERROR.inputIncomplete, from };
-  }
-
-  const latest = getTailCompactions(branch).at(-1);
-  if (latest && from <= latest.data.fromUserInputIndex) {
-    return { ok: false, code: TAIL_START_ERROR.overlapWithExisting, from };
   }
 
   return { ok: true, input };

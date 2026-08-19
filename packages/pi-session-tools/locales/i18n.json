@@ -23,17 +23,13 @@
     "zh-CN": "user message {from} 尚未完成，不能压缩未完成的 turn。",
     "en-US": "User message {from} is not complete yet; cannot squash an unfinished turn."
   },
-  "validateOverlap": {
-    "zh-CN": "索引 {from} 已落在已有后缀折叠范围内；当前 MVP 只允许从上一次折叠之后的新 user turn 开始。",
-    "en-US": "Index {from} is already inside an existing squash range; the current MVP only allows starting from a new user turn after the previous squash."
-  },
   "logDescription": {
-    "zh-CN": "列出对话里你的每条消息（编号、内容、是否已回复），给 session_squash 挑压缩起点用。",
-    "en-US": "List your messages in the conversation (index, content, replied or not) so session_squash can pick a starting point."
+    "zh-CN": "列出对话里尚未作为压缩起点的用户消息（原编号、内容、是否已回复），给 session_squash 挑起点用。已压缩消息仍可通过 /tree 找回。",
+    "en-US": "List user messages not already used as squash starting points (original index, content, replied or not) so session_squash can pick a start. Squashed messages remain available through /tree."
   },
   "logSnippet": {
-    "zh-CN": "列出你的消息和可压缩起点",
-    "en-US": "List your messages and squash starting points"
+    "zh-CN": "列出未压缩消息和可选起点",
+    "en-US": "List unsquashed messages and starting points"
   },
   "squashLabel": {
     "zh-CN": "压缩对话",

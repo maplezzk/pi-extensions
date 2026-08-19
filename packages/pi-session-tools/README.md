@@ -7,11 +7,11 @@ Session tooling for the [Pi coding agent](https://github.com/earendil-works/pi):
 ## Features
 
 - When a bash pipeline filters output through `grep`, `tail`, or `head`, the full pre-filter output is written to the system temp directory under `pi-pipe-cache/` and the path is appended to the tool result, so you can re-filter the cached file instead of re-running the command.
-- Provides `session_log`: lists your messages in the conversation and the valid squash starting points.
+- Provides `session_log`: lists unsquashed user messages and valid starting points using their original indices. Messages already used as squash starting points are hidden but remain recoverable through `/tree`.
 - Provides `session_squash`: accepts the summary and squashes the conversation from a chosen message to free up context. Nothing is deleted; use `/tree` to go back.
 - The main agent generates the summary from the full conversation context and submits it directly in the `session_squash` call (no separate LLM request or finalize step); file paths read/modified in the squashed range are appended automatically.
 
-Call `session_log` first, use the index of a finished turn as `from`, and pass the complete structured summary to `session_squash`. The agent keeps working automatically after the squash. Only squash at a task boundary (a finished task about to start a new one), never mid-task.
+Call `session_log` first, use the index of a finished turn as `from`, and pass the complete structured summary to `session_squash`. A later squash may start from an earlier index to replace a broader range; it is not restricted to messages after the previous squash point. The agent keeps working automatically after the squash. Only squash at a task boundary (a finished task about to start a new one), never mid-task.
 
 ## Install
 

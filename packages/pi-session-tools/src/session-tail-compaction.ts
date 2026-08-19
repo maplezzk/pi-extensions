@@ -33,6 +33,7 @@ import {
   formatThreshold,
   formatTokens,
   getTailCompactions,
+  listSquashCandidates,
   listUserInputs,
   parseSquashThresholds,
   resolveThresholdTokens,
@@ -51,7 +52,6 @@ import { i18n } from "./i18n.ts";
 const TAIL_START_ERROR_I18N_KEY: Record<TailStartErrorCode, string> = {
   [TAIL_START_ERROR.inputNotFound]: "validateInputNotFound",
   [TAIL_START_ERROR.inputIncomplete]: "validateInputIncomplete",
-  [TAIL_START_ERROR.overlapWithExisting]: "validateOverlap",
 };
 
 const TailCompactionParams = Type.Object({
@@ -204,6 +204,7 @@ type PendingTailCompaction = {
 
 let pending: PendingTailCompaction | null = null;
 
+/** 构造 Pi 工具的纯文本结果，并按需标记业务错误。 */
 function textResult(text: string, isError = false) {
   return {
     content: [{ type: "text" as const, text }],
@@ -212,6 +213,7 @@ function textResult(text: string, isError = false) {
   };
 }
 
+/** 注册会话日志、尾部压缩工具及其生命周期处理器。 */
 export default function contextFoldExtension(pi: ExtensionAPI) {
   let latestAgentRunStoppedNormally = false;
 
@@ -223,9 +225,10 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch();
-      const inputs = listUserInputs(branch, i18n.t("imagePlaceholder"));
-      const existing = getTailCompactions(branch);
-      const latest = existing.at(-1)?.data;
+      const inputs = listSquashCandidates(
+        branch,
+        i18n.t("imagePlaceholder"),
+      );
 
       return textResult(
         JSON.stringify(
@@ -236,9 +239,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
               index: input.index,
               content: input.content,
               complete: input.complete,
-              canStartFold:
-                input.complete &&
-                (!latest || input.index > latest.fromUserInputIndex),
+              canStartFold: input.complete,
             })),
           },
           null,
@@ -263,7 +264,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch();
       const inputs = listUserInputs(branch, i18n.t("imagePlaceholder"));
-      const validation = validateTailStart(inputs, params.from, branch);
+      const validation = validateTailStart(inputs, params.from);
 
       if (validation.ok === false) {
         return textResult(
