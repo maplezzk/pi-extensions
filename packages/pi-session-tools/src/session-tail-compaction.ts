@@ -445,7 +445,8 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
 
       return {
         ...textResult(i18n.t("registered", { from: params.from })),
-        terminate: forceState !== null,
+        // 先结束旧分支上的 agent run，agent_settled 才能立即切分支并注入摘要。
+        terminate: true,
       };
     },
   });

@@ -40,7 +40,7 @@ type RegisteredCommand = {
   handler: (args: string, context: unknown) => Promise<void>;
 };
 
-test("强制模式限制工具并持续要求 session_squash，成功后恢复工具", async (t) => {
+test("强制模式限制工具并持续要求压缩，普通模式提交后也终止当前 agent", async (t) => {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-session-tools-force-"));
   const configDir = join(agentDir, "extensions", "pi-session-tools");
   mkdirSync(configDir, { recursive: true });
@@ -268,4 +268,15 @@ test("强制模式限制工具并持续要求 session_squash，成功后恢复�
   );
   assert.equal(sent.details.summary, sent.content);
   assert.ok(notifications.length >= 5);
+
+  await configCommand.handler("force off", context);
+  const normalResult = await squashTool.execute(
+    "tool-2",
+    { from: 0, summary: "## Goal\n普通模式压缩" },
+    undefined,
+    undefined,
+    context,
+  );
+  assert.equal(normalResult.isError, false);
+  assert.equal(normalResult.terminate, true);
 });
