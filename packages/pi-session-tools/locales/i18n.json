@@ -112,8 +112,8 @@
     "en-US": "The session changed; forced squash for the previous session was cancelled and tools were restored."
   },
   "forceConfigInvalid": {
-    "zh-CN": "配置 {path} 中的强制压缩阈值无效，强制压缩保持关闭。",
-    "en-US": "The forced squash threshold in {path} is invalid; forced squash remains disabled."
+    "zh-CN": "配置 {path} 中的强制压缩比例无效；必须是 0 到 1 的 JSON 数字，强制压缩保持关闭。",
+    "en-US": "The forced squash ratio in {path} is invalid; it must be a JSON number from 0 to 1, so forced squash remains disabled."
   },
   "configInvalid": {
     "zh-CN": "配置 {path} 解析失败，已用默认阈值。",
@@ -124,8 +124,8 @@
     "en-US": "Could not parse env var {env}; default thresholds are used."
   },
   "configCommandDescription": {
-    "zh-CN": "配置提醒或强制压缩阈值（force 90% / force off）",
-    "en-US": "Configure reminder or forced squash thresholds (force 90% / force off)"
+    "zh-CN": "配置提醒阈值或强制压缩比例（force 0.9 / force off）",
+    "en-US": "Configure reminder thresholds or forced squash ratio (force 0.9 / force off)"
   },
   "configNoUi": {
     "zh-CN": "当前环境无交互 UI，无法用命令配置，请直接编辑配置文件。",
@@ -144,16 +144,16 @@
     "en-US": "Thresholds saved: {thresholds}\nConfig: {path}"
   },
   "configForceUsage": {
-    "zh-CN": "用法：/config:session-tools force <150k|75%|数字|off>",
-    "en-US": "Usage: /config:session-tools force <150k|75%|number|off>"
+    "zh-CN": "用法：/config:session-tools force <0到1的数字|off>",
+    "en-US": "Usage: /config:session-tools force <number from 0 to 1|off>"
   },
   "configForceParseError": {
-    "zh-CN": "强制压缩阈值解析失败：{value}（示例：force 180k、force 90%、force off）",
-    "en-US": "Could not parse forced squash threshold: {value} (examples: force 180k, force 90%, force off)"
+    "zh-CN": "强制压缩比例无效：{value}；请输入 0 到 1 的数字（示例：force 0.9、force off）。",
+    "en-US": "Invalid forced squash ratio: {value}; enter a number from 0 to 1 (examples: force 0.9, force off)."
   },
   "configForceSaved": {
-    "zh-CN": "已启用强制压缩阈值：{threshold}\n配置：{path}",
-    "en-US": "Forced squash threshold enabled: {threshold}\nConfig: {path}"
+    "zh-CN": "已启用强制压缩比例：{ratio}\n配置：{path}",
+    "en-US": "Forced squash ratio enabled: {ratio}\nConfig: {path}"
   },
   "configForceDisabled": {
     "zh-CN": "已关闭强制压缩。\n配置：{path}",

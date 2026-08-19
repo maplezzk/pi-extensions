@@ -34,16 +34,16 @@ The environment variable `PI_SESSION_TOOLS_SQUASH_THRESHOLDS` (comma separated, 
 
 ## Forced squash
 
-Forced squash is disabled by default. Enable it with one threshold in the same config file:
+Forced squash is disabled by default. Enable it with a JSON number from `0` to `1`, representing the fraction of the model context window:
 
 ```jsonc
 {
   "squashContextThresholds": ["150k", "200k", "75%"],
-  "forceSquashContextThreshold": "90%" // also accepts 180k or a number; null disables it
+  "forceSquashContextThreshold": 0.9 // 90% of the context window; null disables it
 }
 ```
 
-Or run `/config:session-tools force 90%`; use `/config:session-tools force off` to disable it.
+Or run `/config:session-tools force 0.9`; use `/config:session-tools force off` to disable it. Percentage strings such as `"90%"` are not accepted for forced squash.
 
 After each completed assistant tool batch, the extension checks context usage. At the forced threshold it aborts the current agent loop before another model turn, saves the active tool set, and permits only `session_log` and `session_squash`. Other tool calls are blocked. If the agent stops without squashing, another forced turn starts automatically. The restriction remains until `session_squash` succeeds, then the previous tools are restored and work continues from the summary. Already-running tools are allowed to finish so file mutations are not interrupted halfway.
 

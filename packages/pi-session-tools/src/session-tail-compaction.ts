@@ -81,8 +81,14 @@ const CONFIG_FILE_NAME = "config.json";
 /** 配置中的提醒阈值字段名。 */
 const CONFIG_THRESHOLDS_KEY = "squashContextThresholds";
 
-/** 配置中的强制压缩阈值字段名；缺失或 null 表示关闭。 */
+/** 配置中的强制压缩比例字段名；缺失或 null 表示关闭。 */
 const CONFIG_FORCE_THRESHOLD_KEY = "forceSquashContextThreshold";
+
+/** 强制压缩比例最小值；0 表示首次获得有效上下文用量后立即触发。 */
+const FORCE_SQUASH_RATIO_MIN = 0;
+
+/** 强制压缩比例最大值；1 表示达到完整上下文窗口时触发。 */
+const FORCE_SQUASH_RATIO_MAX = 1;
 
 /** 强制压缩期间唯一允许调用的工具。 */
 const FORCE_ALLOWED_TOOLS = ["session_log", "session_squash"] as const;
@@ -181,8 +187,18 @@ function squashConfigPath(): string {
   );
 }
 
-/** 加载可选强制压缩阈值；缺失或 null 时保持关闭。 */
-function loadForceSquashThreshold(): SquashThreshold | null {
+/** 判断配置值是否为 0 到 1 的有限数字比例。 */
+function isForceSquashRatio(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= FORCE_SQUASH_RATIO_MIN &&
+    value <= FORCE_SQUASH_RATIO_MAX
+  );
+}
+
+/** 加载可选强制压缩比例；缺失或 null 时保持关闭。 */
+function loadForceSquashRatio(): number | null {
   const configPath = squashConfigPath();
   try {
     if (!existsSync(configPath)) return null;
@@ -192,8 +208,7 @@ function loadForceSquashThreshold(): SquashThreshold | null {
     >;
     const configured = raw[CONFIG_FORCE_THRESHOLD_KEY];
     if (configured === undefined || configured === null) return null;
-    const parsed = parseSquashThresholds([configured]);
-    if (parsed.length === 1) return parsed[0];
+    if (isForceSquashRatio(configured)) return configured;
     pendingNotices.push({
       text: i18n.t("forceConfigInvalid", { path: configPath }),
       level: "warning",
@@ -247,24 +262,20 @@ function saveSquashThresholds(thresholds: SquashThreshold[]): string {
   return configPath;
 }
 
-/** 写入强制压缩阈值配置并刷新运行时状态。 */
-function saveForceSquashThreshold(
-  threshold: SquashThreshold | null,
-): string {
+/** 写入强制压缩比例配置并刷新运行时状态。 */
+function saveForceSquashRatio(ratio: number | null): string {
   const configPath = writeSquashConfig({
-    [CONFIG_FORCE_THRESHOLD_KEY]: threshold
-      ? formatThreshold(threshold)
-      : null,
+    [CONFIG_FORCE_THRESHOLD_KEY]: ratio,
   });
-  forceSquashThreshold = threshold;
+  forceSquashRatio = ratio;
   return configPath;
 }
 
 /** 当前生效的提醒阈值配置（命令修改后重新加载）。 */
 let squashThresholds: SquashThreshold[] = loadSquashThresholds();
 
-/** 当前生效的强制压缩阈值；默认关闭。 */
-let forceSquashThreshold: SquashThreshold | null = loadForceSquashThreshold();
+/** 当前生效的强制压缩比例；默认关闭。 */
+let forceSquashRatio: number | null = loadForceSquashRatio();
 
 type PendingTailCompaction = {
   sessionId: string;
@@ -449,14 +460,11 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
   });
 
   pi.on("turn_end", (_event, ctx) => {
-    if (!forceSquashThreshold || forceState || pending) return;
+    if (forceSquashRatio === null || forceState || pending) return;
     const tokens = ctx.getContextUsage()?.tokens ?? 0;
     if (tokens <= 0) return;
     const contextWindow = ctx.model?.contextWindow || FALLBACK_CONTEXT_WINDOW;
-    const threshold = resolveThresholdTokens(
-      forceSquashThreshold,
-      contextWindow,
-    );
+    const threshold = Math.floor(contextWindow * forceSquashRatio);
     if (tokens < threshold) return;
     enterForceMode(ctx, tokens, threshold);
   });
@@ -623,7 +631,7 @@ async function handleConfigCommand(
         return;
       }
       if (FORCE_CONFIG_DISABLED_VALUES.has(forceValue)) {
-        const configPath = saveForceSquashThreshold(null);
+        const configPath = saveForceSquashRatio(null);
         onForceDisabled();
         ctx.ui.notify(
           i18n.t("configForceDisabled", { path: configPath }),
@@ -631,18 +639,18 @@ async function handleConfigCommand(
         );
         return;
       }
-      const forceThreshold = parseSquashThresholds([forceValue]);
-      if (forceThreshold.length !== 1) {
+      const forceRatio = Number(forceValue);
+      if (!isForceSquashRatio(forceRatio)) {
         ctx.ui.notify(
           i18n.t("configForceParseError", { value: forceValue }),
           "error",
         );
         return;
       }
-      const configPath = saveForceSquashThreshold(forceThreshold[0]);
+      const configPath = saveForceSquashRatio(forceRatio);
       ctx.ui.notify(
         i18n.t("configForceSaved", {
-          threshold: formatThreshold(forceThreshold[0]),
+          ratio: forceRatio,
           path: configPath,
         }),
         "info",

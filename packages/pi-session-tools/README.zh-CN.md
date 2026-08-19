@@ -36,16 +36,16 @@ pi install npm:pi-session-tools
 
 ## 强制压缩
 
-强制压缩默认关闭。在同一个配置文件中设置一个阈值即可启用：
+强制压缩默认关闭。在同一个配置文件中设置 `0` 到 `1` 的 JSON 数字，表示模型上下文窗口占比：
 
 ```jsonc
 {
   "squashContextThresholds": ["150k", "200k", "75%"],
-  "forceSquashContextThreshold": "90%" // 也支持 180k 或数字；null 表示关闭
+  "forceSquashContextThreshold": 0.9 // 表示上下文窗口的 90%；null 表示关闭
 }
 ```
 
-也可执行 `/config:session-tools force 90%`；使用 `/config:session-tools force off` 关闭。
+也可执行 `/config:session-tools force 0.9`；使用 `/config:session-tools force off` 关闭。强制压缩不再接受 `"90%"` 这类百分比字符串。
 
 每个 assistant 工具批执行完成后，扩展都会检查上下文用量。达到强制阈值时，会在下一次模型调用前中止当前 agent loop，保存原活动工具集合，并只开放 `session_log` 和 `session_squash`；其他工具调用会被阻止。如果 agent 停止但没有压缩，扩展会自动再次触发强制回合，限制持续到 `session_squash` 成功。成功后恢复原工具并基于摘要继续。已经开始执行的工具会先完成，避免文件修改停在半完成状态。
 

@@ -46,7 +46,7 @@ test("强制模式限制工具并持续要求 session_squash，成功后恢复�
   mkdirSync(configDir, { recursive: true });
   writeFileSync(
     join(configDir, "config.json"),
-    JSON.stringify({ forceSquashContextThreshold: "50%" }),
+    JSON.stringify({ forceSquashContextThreshold: 0.5 }),
     "utf8",
   );
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -206,18 +206,29 @@ test("强制模式限制工具并持续要求 session_squash，成功后恢复�
   await settled({}, context);
   assert.equal(sentMessages.length, 0);
 
-  await configCommand.handler("force 50%", context);
+  await configCommand.handler("force 90%", context);
+  await turnEnd({}, context);
+  assert.equal(abortCount, 1);
+  assert.deepEqual(activeTools, ["read", "bash", "session_log", "session_squash"]);
+
+  await configCommand.handler("force 0", context);
+  await turnEnd({}, context);
+  assert.equal(abortCount, 2);
+  assert.deepEqual(activeTools, ["session_log", "session_squash"]);
+  await configCommand.handler("force off", context);
+
+  await configCommand.handler("force 0.5", context);
   const persistedConfig: unknown = JSON.parse(
     readFileSync(join(configDir, "config.json"), "utf8"),
   );
   assert.ok(persistedConfig && typeof persistedConfig === "object");
   assert.equal(
-    (persistedConfig as { forceSquashContextThreshold?: string })
+    (persistedConfig as { forceSquashContextThreshold?: number })
       .forceSquashContextThreshold,
-    "50%",
+    0.5,
   );
   await turnEnd({}, context);
-  assert.equal(abortCount, 2);
+  assert.equal(abortCount, 3);
   assert.deepEqual(activeTools, ["session_log", "session_squash"]);
 
   await settled({}, context);
