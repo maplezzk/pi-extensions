@@ -1,16 +1,12 @@
 /**
  * Session Squash — 在同一个 session tree 中非破坏性压缩当前会话后缀
  *
- * 提供三个 agent 工具：
+ * 提供两个 agent 工具：
  * - session_log：列出当前 active branch 的 user turn 和索引
- * - session_squash：从指定 user turn 索引开始，压缩到当前 active leaf
- * - session_squash_finalize：内部任务专用，主 agent 写入交接文档后提交路径
+ * - session_squash：接收摘要，从指定 user turn 索引压缩到当前 active leaf
  *
- * 摘要生成不使用独立 LLM 请求，而是复用主 agent 自身：折叠登记后，
- * 注入一条内部任务消息（triggerTurn）让主 agent 用完整上下文（天然命中
- * 前缀缓存）写一份交接文档到系统临时目录，再通过 finalize 工具提交；
- * 下一个 agent_settled 时读取文档全文作为摘要完成折叠。失败兜底：主
- * agent 未提交则放弃并通知，可再次调用重试。
+ * 摘要由主 agent 在调用 session_squash 时直接提交，不发起独立 LLM 请求。
+ * 工具登记折叠后，当前 agent 结束时完成分支切换并自动继续。
  *
  * 折叠不是覆盖当前历史，而是复用 Pi 的 SessionManager.branch：
  * - 原始后缀保留为旧 branch；
@@ -23,6 +19,7 @@ import {
   sessionEntryToContextMessages,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  type ExtensionContext,
   type SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -30,7 +27,6 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import { Type } from "typebox";
 import {
-  buildSquashTaskPrompt,
   computeFileLists,
   didAgentStopNormally,
   extractFileOps,
@@ -38,11 +34,12 @@ import {
   formatThreshold,
   formatTokens,
   getTailCompactions,
+  listSquashCandidates,
   listUserInputs,
   parseSquashThresholds,
   resolveThresholdTokens,
+  SESSION_SQUASH_FORCE_TYPE,
   SESSION_SQUASH_HINT_TYPE,
-  SESSION_SQUASH_TASK_TYPE,
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
   thresholdKey,
@@ -57,7 +54,6 @@ import { i18n } from "./i18n.ts";
 const TAIL_START_ERROR_I18N_KEY: Record<TailStartErrorCode, string> = {
   [TAIL_START_ERROR.inputNotFound]: "validateInputNotFound",
   [TAIL_START_ERROR.inputIncomplete]: "validateInputIncomplete",
-  [TAIL_START_ERROR.overlapWithExisting]: "validateOverlap",
 };
 
 const TailCompactionParams = Type.Object({
@@ -65,13 +61,11 @@ const TailCompactionParams = Type.Object({
     minimum: 0,
     description: i18n.t("squashFromDescription"),
   }),
+  summary: Type.String({
+    minLength: 1,
+    description: i18n.t("squashSummaryDescription"),
+  }),
 });
-
-/** 任务消息中用户消息预览的最大字符数。 */
-const USER_MESSAGE_PREVIEW_MAX_CHARS = 120;
-
-/** 编辑器上方进度提示的 widget key。 */
-const PROGRESS_WIDGET_KEY = "session-squash-progress";
 
 /** contextWindow 缺失时的回退值（与 Pi 内置摘要逻辑一致）。 */
 const FALLBACK_CONTEXT_WINDOW = 128000;
@@ -84,8 +78,23 @@ const DEFAULT_SQUASH_THRESHOLDS: SquashThreshold[] = parseSquashThresholds([
 /** 扩展配置文件名（位于 ~/.pi/agent/extensions/<包名>/ 下）。 */
 const CONFIG_FILE_NAME = "config.json";
 
-/** 配置中的阈值字段名。 */
+/** 配置中的提醒阈值字段名。 */
 const CONFIG_THRESHOLDS_KEY = "squashContextThresholds";
+
+/** 配置中的强制压缩比例字段名；缺失或 null 表示关闭。 */
+const CONFIG_FORCE_THRESHOLD_KEY = "forceSquashContextThreshold";
+
+/** 强制压缩比例最小值；0 表示首次获得有效上下文用量后立即触发。 */
+const FORCE_SQUASH_RATIO_MIN = 0;
+
+/** 强制压缩比例最大值；1 表示达到完整上下文窗口时触发。 */
+const FORCE_SQUASH_RATIO_MAX = 1;
+
+/** 强制压缩期间唯一允许调用的工具。 */
+const FORCE_ALLOWED_TOOLS = ["session_log", "session_squash"] as const;
+
+/** 强制压缩工具名集合，供 tool_call 门禁快速判断。 */
+const FORCE_ALLOWED_TOOL_SET = new Set<string>(FORCE_ALLOWED_TOOLS);
 
 /** 阈值环境变量（逗号分隔，支持 "150000" 与 "75%"）。 */
 const THRESHOLDS_ENV_VAR = "PI_SESSION_TOOLS_SQUASH_THRESHOLDS";
@@ -178,51 +187,114 @@ function squashConfigPath(): string {
   );
 }
 
+/** 判断配置值是否为 0 到 1 的有限数字比例。 */
+function isForceSquashRatio(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= FORCE_SQUASH_RATIO_MIN &&
+    value <= FORCE_SQUASH_RATIO_MAX
+  );
+}
+
+/** 加载可选强制压缩比例；缺失或 null 时保持关闭。 */
+function loadForceSquashRatio(): number | null {
+  const configPath = squashConfigPath();
+  try {
+    if (!existsSync(configPath)) return null;
+    const raw = JSON.parse(readFileSync(configPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const configured = raw[CONFIG_FORCE_THRESHOLD_KEY];
+    if (configured === undefined || configured === null) return null;
+    if (isForceSquashRatio(configured)) return configured;
+    pendingNotices.push({
+      text: i18n.t("forceConfigInvalid", { path: configPath }),
+      level: "warning",
+    });
+  } catch {
+    // loadSquashThresholds 已为同一个无效配置文件登记通知，避免重复提示。
+  }
+  return null;
+}
+
 /** 把阈值数组序列化回配置值（k/百分比），供命令展示与写入。 */
 function serializeThresholds(thresholds: SquashThreshold[]): string[] {
   return thresholds.map(formatThreshold);
 }
 
-/** 写入阈值配置并刷新运行时状态。 */
-function saveSquashThresholds(thresholds: SquashThreshold[]): string {
+/** 读取配置供命令合并写回；损坏文件会在启动通知后由显式保存覆盖。 */
+function readSquashConfigForWrite(configPath: string): Record<string, unknown> {
+  try {
+    if (!existsSync(configPath)) return {};
+    const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    return parsed && typeof parsed === "object"
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 合并写入配置，避免修改一个阈值时丢失另一个阈值。 */
+function writeSquashConfig(values: Record<string, unknown>): string {
   const configPath = squashConfigPath();
+  const config = {
+    ...readSquashConfigForWrite(configPath),
+    ...values,
+  };
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(
     configPath,
-    `${JSON.stringify(
-      { [CONFIG_THRESHOLDS_KEY]: serializeThresholds(thresholds) },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(config, null, 2)}\n`,
     "utf8",
   );
+  return configPath;
+}
+
+/** 写入提醒阈值配置并刷新运行时状态。 */
+function saveSquashThresholds(thresholds: SquashThreshold[]): string {
+  const configPath = writeSquashConfig({
+    [CONFIG_THRESHOLDS_KEY]: serializeThresholds(thresholds),
+  });
   squashThresholds = thresholds;
   return configPath;
 }
 
-/** 当前生效的阈值配置（命令修改后重新加载）。 */
+/** 写入强制压缩比例配置并刷新运行时状态。 */
+function saveForceSquashRatio(ratio: number | null): string {
+  const configPath = writeSquashConfig({
+    [CONFIG_FORCE_THRESHOLD_KEY]: ratio,
+  });
+  forceSquashRatio = ratio;
+  return configPath;
+}
+
+/** 当前生效的提醒阈值配置（命令修改后重新加载）。 */
 let squashThresholds: SquashThreshold[] = loadSquashThresholds();
 
-const FinalizeParams = Type.Object({
-  summary: Type.String({
-    description: i18n.t("finalizeSummaryDescription"),
-  }),
-});
-
-type PendingStage = "registered" | "taskInjected";
+/** 当前生效的强制压缩比例；默认关闭。 */
+let forceSquashRatio: number | null = loadForceSquashRatio();
 
 type PendingTailCompaction = {
   sessionId: string;
   startEntryId: string;
   fromUserInputIndex: number;
-  stage: PendingStage;
-  summary?: string;
-  /** 自动提取的文件清单（<read-files>/<modified-files>），finalize 时追加到 summary 尾部。 */
-  fileSection: string;
+  summary: string;
+};
+
+type ForceSquashState = {
+  sessionId: string;
+  previousActiveTools: string[];
+  tokens: number;
+  threshold: number;
+  attempt: number;
 };
 
 let pending: PendingTailCompaction | null = null;
 
+/** 构造 Pi 工具的纯文本结果，并按需标记业务错误。 */
 function textResult(text: string, isError = false) {
   return {
     content: [{ type: "text" as const, text }],
@@ -231,8 +303,69 @@ function textResult(text: string, isError = false) {
   };
 }
 
+/** 注册会话日志、尾部压缩工具及其生命周期处理器。 */
 export default function contextFoldExtension(pi: ExtensionAPI) {
   let latestAgentRunStoppedNormally = false;
+  let forceState: ForceSquashState | null = null;
+
+  /** 退出强制模式并恢复进入前的活动工具集合。 */
+  function restoreToolsAfterForce(): void {
+    if (!forceState) return;
+    pi.setActiveTools(forceState.previousActiveTools);
+    forceState = null;
+  }
+
+  /** 在 agent 已停止后投递强制压缩任务；未压缩时会再次调用。 */
+  function triggerForcedSquashTurn(): void {
+    if (!forceState) return;
+    forceState.attempt += 1;
+    pi.sendMessage(
+      {
+        customType: SESSION_SQUASH_FORCE_TYPE,
+        content: [
+          {
+            type: "text",
+            text: i18n.t("forceTaskPrompt", {
+              tokens: formatTokens(forceState.tokens),
+              threshold: formatTokens(forceState.threshold),
+              attempt: forceState.attempt,
+            }),
+          },
+        ],
+        display: false,
+        details: {
+          tokens: forceState.tokens,
+          threshold: forceState.threshold,
+          attempt: forceState.attempt,
+        },
+      },
+      { triggerTurn: true },
+    );
+  }
+
+  /** 达到强制阈值时限制工具，并在当前工具批结束处中止 agent。 */
+  function enterForceMode(
+    ctx: ExtensionContext,
+    tokens: number,
+    threshold: number,
+  ): void {
+    forceState = {
+      sessionId: ctx.sessionManager.getSessionId(),
+      previousActiveTools: pi.getActiveTools(),
+      tokens,
+      threshold,
+      attempt: 0,
+    };
+    pi.setActiveTools([...FORCE_ALLOWED_TOOLS]);
+    ctx.ui.notify(
+      i18n.t("forceInterruptNotice", {
+        tokens: formatTokens(tokens),
+        threshold: formatTokens(threshold),
+      }),
+      "warning",
+    );
+    ctx.abort();
+  }
 
   pi.registerTool({
     name: "session_log",
@@ -242,9 +375,10 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch();
-      const inputs = listUserInputs(branch, i18n.t("imagePlaceholder"));
-      const existing = getTailCompactions(branch);
-      const latest = existing.at(-1)?.data;
+      const inputs = listSquashCandidates(
+        branch,
+        i18n.t("imagePlaceholder"),
+      );
 
       return textResult(
         JSON.stringify(
@@ -255,9 +389,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
               index: input.index,
               content: input.content,
               complete: input.complete,
-              canStartFold:
-                input.complete &&
-                (!latest || input.index > latest.fromUserInputIndex),
+              canStartFold: input.complete,
             })),
           },
           null,
@@ -274,6 +406,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       i18n.t("guidelineBoundary"),
       i18n.t("guidelineIndex"),
+      i18n.t("guidelineSummary"),
       i18n.t("guidelineLeaf"),
       i18n.t("guidelineContinue"),
     ],
@@ -281,7 +414,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch();
       const inputs = listUserInputs(branch, i18n.t("imagePlaceholder"));
-      const validation = validateTailStart(inputs, params.from, branch);
+      const validation = validateTailStart(inputs, params.from);
 
       if (validation.ok === false) {
         return textResult(
@@ -298,44 +431,42 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         );
       }
 
+      const summary = params.summary.trim();
+      if (!summary) {
+        return textResult(i18n.t("squashSummaryEmpty"), true);
+      }
+
       pending = {
         sessionId: ctx.sessionManager.getSessionId(),
         startEntryId: validation.input.entryId,
         fromUserInputIndex: params.from,
-        stage: "registered",
-        fileSection: "",
+        summary,
       };
 
-      return textResult(
-        i18n.t("registered", { from: params.from }),
-      );
+      return {
+        ...textResult(i18n.t("registered", { from: params.from })),
+        terminate: forceState !== null,
+      };
     },
   });
 
-  pi.registerTool({
-    name: "session_squash_finalize",
-    label: i18n.t("finalizeLabel"),
-    description: i18n.t("finalizeDescription"),
-    promptSnippet: i18n.t("finalizeSnippet"),
-    parameters: FinalizeParams,
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      if (!pending) {
-        return textResult(i18n.t("finalizeNoPending"), true);
-      }
-      if (pending.stage !== "taskInjected") {
-        return textResult(i18n.t("finalizeNotTask"), true);
-      }
+  pi.on("tool_call", (event) => {
+    if (!forceState || FORCE_ALLOWED_TOOL_SET.has(event.toolName)) return;
+    return {
+      block: true,
+      terminate: true,
+      reason: i18n.t("forceToolBlocked", { tool: event.toolName }),
+    };
+  });
 
-      const summary = params.summary.trim();
-      if (!summary) {
-        return textResult(i18n.t("finalizeEmpty"), true);
-      }
-
-      pending.summary = summary + pending.fileSection;
-      return textResult(
-        i18n.t("finalizeOk", { chars: summary.length }),
-      );
-    },
+  pi.on("turn_end", (_event, ctx) => {
+    if (forceSquashRatio === null || forceState || pending) return;
+    const tokens = ctx.getContextUsage()?.tokens ?? 0;
+    if (tokens <= 0) return;
+    const contextWindow = ctx.model?.contextWindow || FALLBACK_CONTEXT_WINDOW;
+    const threshold = Math.floor(contextWindow * forceSquashRatio);
+    if (tokens < threshold) return;
+    enterForceMode(ctx, tokens, threshold);
   });
 
   pi.on("agent_end", (event) => {
@@ -347,13 +478,22 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     latestAgentRunStoppedNormally = false;
 
     if (!pending) {
+      if (forceState) {
+        if (forceState.sessionId !== ctx.sessionManager.getSessionId()) {
+          restoreToolsAfterForce();
+          ctx.ui.notify(i18n.t("forceSwitched"), "warning");
+          return;
+        }
+        triggerForcedSquashTurn();
+        return;
+      }
       if (shouldCheckContextThreshold) checkContextThreshold(pi, ctx);
       return;
     }
 
     if (pending.sessionId !== ctx.sessionManager.getSessionId()) {
       pending = null;
-      ctx.ui.setWidget(PROGRESS_WIDGET_KEY, undefined);
+      restoreToolsAfterForce();
       ctx.ui.notify(i18n.t("switched"), "warning");
       return;
     }
@@ -366,51 +506,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       throw new Error(i18n.t("noInput"));
     }
 
-    if (pending.stage === "registered") {
-      // 阶段 1：注入内部任务消息，让主 agent 用完整上下文产出总结全文；
-      // 同时自动提取被压缩段的文件清单，稍后在 finalize 时追加到 summary。
-      const startIdx = branch.findIndex(
-        (entry) => entry.id === pending.startEntryId,
-      );
-      const suffix = startIdx >= 0 ? branch.slice(startIdx) : branch;
-      const { readFiles, modifiedFiles } = computeFileLists(
-        extractFileOps(suffix),
-      );
-      pending.fileSection = formatFileOperations(readFiles, modifiedFiles);
-      pending.stage = "taskInjected";
-
-      const preview =
-        (input.content || "").slice(0, USER_MESSAGE_PREVIEW_MAX_CHARS) ||
-        i18n.t("imagePlaceholder");
-      const taskText = buildSquashTaskPrompt(i18n.t("taskPrompt"), {
-        preview,
-      });
-
-      // 进度提示放在编辑器（消息框）上方，而不是 footer status
-      ctx.ui.setWidget(PROGRESS_WIDGET_KEY, [i18n.t("generatingDoc")]);
-      pi.sendMessage(
-        {
-          customType: SESSION_SQUASH_TASK_TYPE,
-          content: [{ type: "text", text: taskText }],
-          display: false,
-          details: {
-            fromUserInputIndex: pending.fromUserInputIndex,
-          },
-        },
-        { triggerTurn: true },
-      );
-      return;
-    }
-
-    // 阶段 2：主 agent 任务轮结束。
-    ctx.ui.setWidget(PROGRESS_WIDGET_KEY, undefined);
-    if (!pending.summary) {
-      // 主 agent 未通过 finalize 提交文档：放弃并通知，可再次调用重试。
-      pending = null;
-      ctx.ui.notify(i18n.t("abandoned"), "warning");
-      return;
-    }
-
     const sourceLeafId = ctx.sessionManager.getLeafId();
     if (!sourceLeafId) {
       pending = null;
@@ -418,11 +513,20 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     }
 
     const request = pending;
+    const startIdx = branch.findIndex(
+      (entry) => entry.id === request.startEntryId,
+    );
+    const suffix = startIdx >= 0 ? branch.slice(startIdx) : branch;
+    const { readFiles, modifiedFiles } = computeFileLists(
+      extractFileOps(suffix),
+    );
+    const summary =
+      request.summary + formatFileOperations(readFiles, modifiedFiles);
     const data: TailCompactionData = {
       startEntryId: request.startEntryId,
       sourceLeafId,
       fromUserInputIndex: request.fromUserInputIndex,
-      summary: request.summary,
+      summary,
       tokensBefore: ctx.getContextUsage()?.tokens ?? 0,
     };
 
@@ -436,10 +540,11 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       // branch() 只改变持久化 tree 的 leaf；sendMessage 同时把 summary
       // 追加到 AgentSession 的内存消息和当前新 leaf，避免下一轮仍使用旧后缀。
       // 压缩完成后固定自动继续一轮，主 agent 基于交接文档摘要继续工作。
+      restoreToolsAfterForce();
       pi.sendMessage(
         {
           customType: SESSION_SQUASH_TYPE,
-          content: request.summary,
+          content: summary,
           display: true,
           details: data,
         },
@@ -457,6 +562,10 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       }),
       "info",
     );
+  });
+
+  pi.on("session_shutdown", () => {
+    restoreToolsAfterForce();
   });
 
   // branch() 发生在 agent_settled 事件中，Pi 的 AgentSession 内存消息仍可能
@@ -483,7 +592,8 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
   for (const name of CONFIG_COMMAND_NAMES) {
     pi.registerCommand(name, {
       description: i18n.t("configCommandDescription"),
-      handler: handleConfigCommand,
+      handler: (args, ctx) =>
+        handleConfigCommand(args, ctx, restoreToolsAfterForce),
     });
   }
 }
@@ -494,11 +604,18 @@ const CONFIG_COMMAND_NAMES = [
   "pi-session-tools",
 ] as const;
 
+/** 强制阈值配置子命令。 */
+const FORCE_CONFIG_COMMAND = "force";
+
+/** 关闭强制阈值时接受的值。 */
+const FORCE_CONFIG_DISABLED_VALUES = new Set(["off", "none", "disabled"]);
+
 /** 配置命令：交互式设置压缩阈值（支持 k / 百分比 / 数字）。
  * 带参数时直接保存并返回；无参数时展示当前值并弹输入框。 */
 async function handleConfigCommand(
   args: string,
   ctx: ExtensionCommandContext,
+  onForceDisabled: () => void,
 ): Promise<void> {
   if (!ctx.hasUI) {
     ctx.ui.notify(i18n.t("configNoUi"), "warning");
@@ -506,6 +623,41 @@ async function handleConfigCommand(
   }
   const requested = args.trim();
   if (requested) {
+    const [command, ...commandArgs] = requested.split(/\s+/);
+    if (command.toLowerCase() === FORCE_CONFIG_COMMAND) {
+      const forceValue = commandArgs.join(" ").trim().toLowerCase();
+      if (!forceValue) {
+        ctx.ui.notify(i18n.t("configForceUsage"), "error");
+        return;
+      }
+      if (FORCE_CONFIG_DISABLED_VALUES.has(forceValue)) {
+        const configPath = saveForceSquashRatio(null);
+        onForceDisabled();
+        ctx.ui.notify(
+          i18n.t("configForceDisabled", { path: configPath }),
+          "info",
+        );
+        return;
+      }
+      const forceRatio = Number(forceValue);
+      if (!isForceSquashRatio(forceRatio)) {
+        ctx.ui.notify(
+          i18n.t("configForceParseError", { value: forceValue }),
+          "error",
+        );
+        return;
+      }
+      const configPath = saveForceSquashRatio(forceRatio);
+      ctx.ui.notify(
+        i18n.t("configForceSaved", {
+          ratio: forceRatio,
+          path: configPath,
+        }),
+        "info",
+      );
+      return;
+    }
+
     const parsed = parseSquashThresholds(requested.split(","));
     if (parsed.length === 0) {
       ctx.ui.notify(i18n.t("configParseError", { value: requested }), "error");
