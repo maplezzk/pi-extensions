@@ -11,6 +11,7 @@
  * 4. package.json has required fields (name, version, description, main, exports, files, license)
  * 5. i18n catalogs have both zh-CN and en-US for every key
  * 6. package.json "files" includes README.md and README.zh-CN.md
+ * 7. The root Pi package excludes library-only workspace entrypoints
  */
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
@@ -108,6 +109,13 @@ const packageDirs = readdirSync(PACKAGES_DIR, { withFileTypes: true })
   .filter((d) => d.isDirectory() && existsSync(join(PACKAGES_DIR, d.name, "package.json")))
   .map((d) => d.name);
 
+const rootPackageJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const rootExtensionEntries = rootPackageJson.pi?.extensions ?? [];
+const WORKSPACE_PACKAGES_PATH = "packages";
+const EXTENSION_ENTRY_FILE = "index.ts";
+const PACKAGE_EXTENSION_ENTRY = `./${EXTENSION_ENTRY_FILE}`;
+const ROOT_EXTENSION_GLOB = `${WORKSPACE_PACKAGES_PATH}/*/${EXTENSION_ENTRY_FILE}`;
+const rootLoadsAllPackageIndexes = rootExtensionEntries.includes(ROOT_EXTENSION_GLOB);
 const REQUIRED_FILES = ["package.json", "index.ts", "README.md", "README.zh-CN.md", "tsconfig.json"];
 const REQUIRED_PKG_FIELDS = ["name", "version", "description", "main", "exports", "files", "license"];
 
@@ -115,6 +123,14 @@ for (const dir of packageDirs) {
   const pkgRoot = join(PACKAGES_DIR, dir);
   const pkgJson = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
   const label = pkgJson.name ?? dir;
+
+  // The root Git package uses a workspace glob. Utility packages still have
+  // index.ts library entrypoints, so they must be excluded from Pi's loader.
+  const exposesIndexAsExtension = pkgJson.pi?.extensions?.includes(PACKAGE_EXTENSION_ENTRY) ?? false;
+  const rootExclusion = `!${WORKSPACE_PACKAGES_PATH}/${dir}/${EXTENSION_ENTRY_FILE}`;
+  if (rootLoadsAllPackageIndexes && !exposesIndexAsExtension && !rootExtensionEntries.includes(rootExclusion)) {
+    error(`${label}: root Pi manifest must exclude library-only entrypoint "${rootExclusion.slice(1)}"`);
+  }
 
   // 3. Required files
   for (const file of REQUIRED_FILES) {

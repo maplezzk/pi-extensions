@@ -34,7 +34,7 @@
 pi install git:github.com/maplezzk/pi-extensions
 ```
 
-仓库根目录本身也是一个 Pi package。它通过 manifest 自动加载所有 `packages/*/index.ts`，因此上面的命令会安装当前全部扩展；以后新增包也会自动包含，不需要再修改根 README 或安装命令。
+仓库根目录本身也是一个 Pi package。它通过 manifest 加载 `packages/*/index.ts` 下的扩展入口，并排除 `pi-terminal-mux` 等纯库包，因此上面的命令会安装当前全部扩展，但不会误把共享库作为扩展加载。
 
 安装后重新加载 Pi：
 
