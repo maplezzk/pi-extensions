@@ -6,11 +6,30 @@ import type {
 /** 作为 custom_message.customType 使用，同时也是折叠操作的持久化标识。 */
 export const SESSION_SQUASH_TYPE = "session-squash";
 
-/** 内部任务消息的 customType：让主 agent 生成交接文档。 */
-export const SESSION_SQUASH_TASK_TYPE = "session-squash-task";
-
 /** 上下文阈值提示消息的 customType：建议主 agent 考虑压缩。 */
 export const SESSION_SQUASH_HINT_TYPE = "session-squash-hint";
+
+/** 强制压缩任务消息的 customType：要求主 agent 立即压缩。 */
+export const SESSION_SQUASH_FORCE_TYPE = "session-squash-force";
+
+const ASSISTANT_ROLE = "assistant";
+const NORMAL_STOP_REASON = "stop";
+
+/** 判断最近一条 assistant 消息是否由模型主动正常停止。 */
+export function didAgentStopNormally(
+  messages: readonly { role?: string; stopReason?: string }[] | undefined,
+): boolean {
+  if (!messages) return false;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === ASSISTANT_ROLE) {
+      return message.stopReason === NORMAL_STOP_REASON;
+    }
+  }
+
+  return false;
+}
 
 /** 阈值类型：绝对 token 值，或相对 contextWindow 的百分比。 */
 export type SquashThreshold =
@@ -167,18 +186,6 @@ export function formatFileOperations(
   return `\n\n${sections.join("\n\n")}`;
 }
 
-export interface SquashTaskPromptInput {
-  preview: string;
-}
-
-/** 用已翻译的模板构造内部任务消息；模板占位符为 {preview}。 */
-export function buildSquashTaskPrompt(
-  template: string,
-  input: SquashTaskPromptInput,
-): string {
-  return template.replaceAll("{preview}", input.preview);
-}
-
 export interface TailCompactionData {
   /** 被保留在新 active branch 中的起始 user entry。 */
   startEntryId: string;
@@ -254,6 +261,24 @@ export function listUserInputs(
   });
 }
 
+/**
+ * 列出 session_log 应展示的用户消息。
+ * 已作为压缩起点写入摘要的消息仍保留在 session tree 中供 /tree 恢复，
+ * 但不再作为候选返回；索引沿用原始 user message 索引，避免重新编号。
+ */
+export function listSquashCandidates(
+  branch: SessionEntry[],
+  imagePlaceholder: string,
+): UserInputIndex[] {
+  const compactedStartEntryIds = new Set(
+    getTailCompactions(branch).map(({ data }) => data.startEntryId),
+  );
+  return listUserInputs(branch, imagePlaceholder).filter(
+    (input) => !compactedStartEntryIds.has(input.entryId),
+  );
+}
+
+/** 校验 custom message details 是否包含完整、可用的尾部压缩元数据。 */
 function isTailCompactionData(value: unknown): value is TailCompactionData {
   if (!value || typeof value !== "object") return false;
   const data = value as Partial<TailCompactionData>;
@@ -287,21 +312,16 @@ export function getTailCompactions(branch: SessionEntry[]): Array<{
 export const TAIL_START_ERROR = {
   inputNotFound: "inputNotFound",
   inputIncomplete: "inputIncomplete",
-  overlapWithExisting: "overlapWithExisting",
 } as const;
 
 /** validateTailStart 失败原因编码类型。 */
 export type TailStartErrorCode =
   (typeof TAIL_START_ERROR)[keyof typeof TAIL_START_ERROR];
 
-/**
- * 当前 MVP 只允许在已有尾部折叠之后继续折叠更新的 user turn，
- * 不允许重新覆盖已经折叠的历史范围。
- */
+/** 校验指定索引存在且对应回合已经完成；允许从更早索引重新压缩。 */
 export function validateTailStart(
   inputs: UserInputIndex[],
   from: number,
-  branch: SessionEntry[],
 ):
   | { ok: true; input: UserInputIndex }
   | { ok: false; code: TailStartErrorCode; from: number } {
@@ -311,11 +331,6 @@ export function validateTailStart(
   }
   if (!input.complete) {
     return { ok: false, code: TAIL_START_ERROR.inputIncomplete, from };
-  }
-
-  const latest = getTailCompactions(branch).at(-1);
-  if (latest && from <= latest.data.fromUserInputIndex) {
-    return { ok: false, code: TAIL_START_ERROR.overlapWithExisting, from };
   }
 
   return { ok: true, input };

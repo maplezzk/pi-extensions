@@ -1,6 +1,6 @@
 {
   "name": "@maplezzk/pi-interactive-subagents",
-  "version": "3.10.0",
+  "version": "3.10.1",
   "description": "Interactive async subagents for pi — spawn, orchestrate, and manage sub-agent sessions in multiplexer panes. Fork of HazAT/pi-interactive-subagents.",
   "type": "module",
   "main": "./index.ts",
@@ -17,7 +17,7 @@
     "README.zh-CN.md"
   ],
   "scripts": {
-    "test": "tsx --test test/test.ts",
+    "test": "tsx --test test/subagent-done-nudge.test.ts test/test.ts",
     "test:integration": "tsx --test --test-concurrency=1 test/integration/*.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",

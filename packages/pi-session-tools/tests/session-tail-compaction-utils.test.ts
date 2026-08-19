@@ -2,18 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
-  buildSquashTaskPrompt,
   computeFileLists,
   extractFileOps,
   formatFileOperations,
   formatThreshold,
   formatTokens,
   getTailCompactions,
+  listSquashCandidates,
   listUserInputs,
   parseSquashThresholds,
   resolveThresholdTokens,
+  SESSION_SQUASH_FORCE_TYPE,
   SESSION_SQUASH_HINT_TYPE,
-  SESSION_SQUASH_TASK_TYPE,
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
   thresholdKey,
@@ -145,7 +145,7 @@ test("能够从 active branch 读取真正的 fold custom message", () => {
   assert.equal(folds[0]?.data.sourceLeafId, "02");
 });
 
-test("已有后缀折叠时，不允许从旧范围内重新开始", () => {
+test("已有后缀折叠时，允许从更早索引重新压缩", () => {
   const branch = [
     message({ id: "01", parentId: null, role: "user", content: "实现代码" }),
     message({ id: "02", parentId: "01", role: "assistant", content: "完成" }),
@@ -162,13 +162,31 @@ test("已有后缀折叠时，不允许从旧范围内重新开始", () => {
   ];
 
   const inputs = listUserInputs(branch, "[图片]");
-  const rejected = validateTailStart(inputs, 1, branch);
-  assert.equal(rejected.ok, false);
-  assert.equal(rejected.code, TAIL_START_ERROR.overlapWithExisting);
-  assert.equal(rejected.from, 1);
+  assert.equal(validateTailStart(inputs, 0).ok, true);
+  assert.equal(validateTailStart(inputs, 1).ok, true);
+  assert.equal(validateTailStart(inputs, 2).ok, true);
+});
 
-  const accepted = validateTailStart(inputs, 2, branch);
-  assert.equal(accepted.ok, true);
+test("session_log 候选隐藏已压缩起点并保留原索引", () => {
+  const branch = [
+    message({ id: "01", parentId: null, role: "user", content: "实现代码" }),
+    message({ id: "02", parentId: "01", role: "assistant", content: "完成" }),
+    message({ id: "03", parentId: "02", role: "user", content: "review" }),
+    tailFoldMessage({
+      id: "04",
+      parentId: "03",
+      startEntryId: "03",
+      sourceLeafId: "02",
+      fromUserInputIndex: 1,
+    }),
+    message({ id: "05", parentId: "04", role: "user", content: "下一项任务" }),
+    message({ id: "06", parentId: "05", role: "assistant", content: "继续" }),
+  ];
+
+  assert.deepEqual(listSquashCandidates(branch, "[图片]"), [
+    { index: 0, entryId: "01", content: "实现代码", complete: true },
+    { index: 2, entryId: "05", content: "下一项任务", complete: true },
+  ]);
 });
 
 test("validateTailStart 对不存在与未完成的索引返回对应错误码", () => {
@@ -179,30 +197,22 @@ test("validateTailStart 对不存在与未完成的索引返回对应错误码",
   ];
   const inputs = listUserInputs(branch, "[图片]");
 
-  const notFound = validateTailStart(inputs, 5, branch);
+  const notFound = validateTailStart(inputs, 5);
   assert.equal(notFound.ok, false);
   assert.equal(notFound.code, TAIL_START_ERROR.inputNotFound);
   assert.equal(notFound.from, 5);
 
-  const incomplete = validateTailStart(inputs, 1, branch);
+  const incomplete = validateTailStart(inputs, 1);
   assert.equal(incomplete.ok, false);
   assert.equal(incomplete.code, TAIL_START_ERROR.inputIncomplete);
   assert.equal(incomplete.from, 1);
 });
 
-test("buildSquashTaskPrompt 替换 preview 占位符", () => {
-  const prompt = buildSquashTaskPrompt(
-    "开头为 {preview} 的消息",
-    { preview: "分析需求" },
-  );
-  assert.equal(prompt, "开头为 分析需求 的消息");
-});
-
-test("SESSION_SQUASH_TASK_TYPE 与 SESSION_SQUASH_TYPE 不同", () => {
-  assert.equal(SESSION_SQUASH_TASK_TYPE, "session-squash-task");
+test("提示与强制消息类型均和压缩摘要类型不同", () => {
   assert.equal(SESSION_SQUASH_HINT_TYPE, "session-squash-hint");
-  assert.notEqual(SESSION_SQUASH_TASK_TYPE, SESSION_SQUASH_TYPE);
+  assert.equal(SESSION_SQUASH_FORCE_TYPE, "session-squash-force");
   assert.notEqual(SESSION_SQUASH_HINT_TYPE, SESSION_SQUASH_TYPE);
+  assert.notEqual(SESSION_SQUASH_FORCE_TYPE, SESSION_SQUASH_TYPE);
 });
 
 test("parseSquashThresholds 支持数字、百分比和数字字符串混合", () => {

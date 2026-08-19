@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.10.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.10.0...pi-interactive-subagents-v3.10.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* suppress reminders after aborted or failed runs ([a23d950](https://github.com/maplezzk/pi-extensions/commit/a23d950c716909a5e563f19d616e150a529fd54e))
+* 忽略异常终止的自动提醒 ([743ac5a](https://github.com/maplezzk/pi-extensions/commit/743ac5a7886165fcc4f98150f648e70202b4f4fe))
+
 ## [3.10.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.9.1...pi-interactive-subagents-v3.10.0) (2026-08-17)
 
 

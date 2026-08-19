@@ -13,7 +13,7 @@
  *   现在不论 autoExit env 如何，agent 都必须主动调用 subagent_done 或 caller_ping
  *   才能结束。如果 agent 不调，会被 nudge 提醒。
  */
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { writeFileSync } from "node:fs";
@@ -22,23 +22,41 @@ import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 import { createSubagentActivityRecorder } from "./activity.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../../locales/index.json", import.meta.url)));
+const ASSISTANT_ROLE = "assistant";
+const NORMAL_STOP_REASON = "stop";
+const ABORTED_STOP_REASON = "aborted";
 
+/** Treat input as manual takeover only after the first agent run has started. */
 export function shouldMarkUserTookOver(agentStarted: boolean): boolean {
   return agentStarted;
 }
 
+/** Return true only when the latest assistant message ended by the model stopping normally. */
+export function shouldScheduleAgentEndNudge(
+  messages: readonly { role?: string; stopReason?: string }[] | undefined,
+): boolean {
+  if (!messages) return false;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === ASSISTANT_ROLE) {
+      return message.stopReason === NORMAL_STOP_REASON;
+    }
+  }
+
+  return false;
+}
+
+/** Preserve the former auto-exit decision for callers that still use this helper. */
 export function shouldAutoExitOnAgentEnd(
   _userTookOver: boolean,
-  messages: any[] | undefined,
+  messages: readonly { role?: string; stopReason?: string }[] | undefined,
 ): boolean {
-  // Manual input should not strand an auto-exit subagent. If the latest agent
-  // turn completed normally, close the session. Escape/abort still leaves it
-  // open for inspection or another prompt.
   if (messages) {
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg?.role === "assistant") {
-        return msg.stopReason !== "aborted";
+      const message = messages[i];
+      if (message?.role === ASSISTANT_ROLE) {
+        return message.stopReason !== ABORTED_STOP_REASON;
       }
     }
   }
@@ -46,6 +64,7 @@ export function shouldAutoExitOnAgentEnd(
   return true;
 }
 
+/** Parse the comma-separated denied-tool setting and discard blank entries. */
 export function parseDeniedTools(rawValue: string | undefined): string[] {
   return (rawValue ?? "")
     .split(",")
@@ -81,6 +100,7 @@ export default function (pi: ExtensionAPI) {
   let userInputAfterAgentEnd = false;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Cancel and forget the pending completion reminder, if any. */
   function clearNudgeTimer(): void {
     if (nudgeTimer !== null) {
       clearTimeout(nudgeTimer);
@@ -89,18 +109,17 @@ export default function (pi: ExtensionAPI) {
   }
 
   /**
-   * After a non-auto-exit subagent finishes generating, schedule a nudge
-   * reminding it to call subagent_done if it hasn't already.
+   * After a subagent stops normally, schedule a nudge reminding it to call
+   * subagent_done if it hasn't already. Error and aborted runs are excluded.
    *
    * Each call replaces any pending nudge, so repeated agent_end events
-   * (e.g. during multi-turn tool use) automatically reset the timer.
-   * The nudge only fires if no new agent activity or user input arrives
-   * within NUDGE_DELAY_MS.
+   * automatically reset the timer. The nudge only fires if no new agent
+   * activity or user input arrives within NUDGE_DELAY_MS.
    */
   function scheduleAgentEndNudge(): void {
     clearNudgeTimer();
     // 不论 autoExit 是否启用，都必须 nudge — autoExit 已被移除，
-    // agent 结束 turn 后只能靠主动调用 subagent_done 才能真正退出。
+    // agent 正常结束 turn 后只能靠主动调用 subagent_done 才能真正退出。
     if (NUDGE_DISABLED || doneCalled) return;
 
     nudgeTimer = setTimeout(() => {
@@ -114,10 +133,11 @@ export default function (pi: ExtensionAPI) {
     }, NUDGE_DELAY_MS);
   }
 
-  function renderWidget(ctx: { ui: { setWidget: Function } }, _theme: any) {
+  /** Render the subagent identity and tool availability widget. */
+  function renderWidget(ctx: Pick<ExtensionContext, "ui">): void {
     ctx.ui.setWidget(
       "subagent-tools",
-      (_tui: any, theme: any) => {
+      (_tui, theme) => {
         const box = new Box(1, 0, (text: string) => theme.bg("toolSuccessBg", text));
 
         const label = subagentAgent || subagentName;
@@ -178,7 +198,7 @@ export default function (pi: ExtensionAPI) {
     toolNames = tools.map((t) => t.name).sort();
     denied = parseDeniedTools(deniedToolsValue);
 
-    renderWidget(ctx, null);
+    renderWidget(ctx);
   });
 
   pi.on("input", () => {
@@ -216,10 +236,13 @@ export default function (pi: ExtensionAPI) {
     // subagent_done（或 caller_ping）。如果 agent 不调，下面会有 nudge 提醒。
     recorder.agentEndWaiting();
 
-    // For non-auto-exit agents: schedule a nudge in case the AI forgot to call
-    // subagent_done. This is automatically cleared/reset on any subsequent
-    // agent activity or user input.
-    scheduleAgentEndNudge();
+    // Only a normal model stop means the agent itself chose to finish.
+    // Provider errors and user aborts must stay quiet.
+    if (shouldScheduleAgentEndNudge(event.messages)) {
+      scheduleAgentEndNudge();
+    } else {
+      clearNudgeTimer();
+    }
   });
 
   pi.on("turn_start", (event) => {
@@ -272,7 +295,7 @@ export default function (pi: ExtensionAPI) {
     description: "Toggle subagent tools widget",
     handler: (ctx) => {
       expanded = !expanded;
-      renderWidget(ctx, null);
+      renderWidget(ctx);
     },
   });
 
