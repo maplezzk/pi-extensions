@@ -12,6 +12,7 @@ import {
   listUserInputs,
   parseSquashThresholds,
   resolveThresholdTokens,
+  SESSION_SQUASH_FORCE_TYPE,
   SESSION_SQUASH_HINT_TYPE,
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
@@ -207,9 +208,11 @@ test("validateTailStart 对不存在与未完成的索引返回对应错误码",
   assert.equal(incomplete.from, 1);
 });
 
-test("SESSION_SQUASH_HINT_TYPE 与 SESSION_SQUASH_TYPE 不同", () => {
+test("提示与强制消息类型均和压缩摘要类型不同", () => {
   assert.equal(SESSION_SQUASH_HINT_TYPE, "session-squash-hint");
+  assert.equal(SESSION_SQUASH_FORCE_TYPE, "session-squash-force");
   assert.notEqual(SESSION_SQUASH_HINT_TYPE, SESSION_SQUASH_TYPE);
+  assert.notEqual(SESSION_SQUASH_FORCE_TYPE, SESSION_SQUASH_TYPE);
 });
 
 test("parseSquashThresholds 支持数字、百分比和数字字符串混合", () => {

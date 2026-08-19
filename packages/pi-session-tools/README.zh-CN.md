@@ -19,7 +19,7 @@ pi install npm:pi-session-tools
 - 提供 `session_squash`：接收总结，并把从指定消息开始的对话压缩为该总结。原对话不删，可通过 Pi 的 `/tree` 找回。
 - 总结由主 agent 基于完整对话上下文生成，并直接随 `session_squash` 调用提交（不发独立 LLM 请求，也没有 finalize 步骤）；被压缩范围内读/改过的文件清单会自动附上。
 
-调用 `session_squash` 前先调用 `session_log`，用已完成回合的编号作为 `from`，并把完整结构化总结传给 `session_squash`。后续压缩可以从更早的索引重新开始并覆盖更大范围，不再限制必须晚于上一次压缩点。压缩完成后自动继续干活。只在任务边界压缩（一个任务完整交付、准备开新任务时），绝不在任务执行中途压缩。
+调用 `session_squash` 前先调用 `session_log`，用已完成回合的编号作为 `from`，并把完整结构化总结传给 `session_squash`。后续压缩可以从更早的索引重新开始并覆盖更大范围，不再限制必须晚于上一次压缩点。压缩完成后自动继续干活。通常只在任务边界压缩；强制压缩模式是唯一例外，摘要必须保留进行中任务的准确停点。
 
 ## 上下文阈值提示
 
@@ -33,6 +33,21 @@ pi install npm:pi-session-tools
 也可用交互式命令 `/config:session-tools`（别名 `/pi-session-tools`）配置。
 
 也支持环境变量 `PI_SESSION_TOOLS_SQUASH_THRESHOLDS`（逗号分隔，如 `150k,75%`）。
+
+## 强制压缩
+
+强制压缩默认关闭。在同一个配置文件中设置一个阈值即可启用：
+
+```jsonc
+{
+  "squashContextThresholds": ["150k", "200k", "75%"],
+  "forceSquashContextThreshold": "90%" // 也支持 180k 或数字；null 表示关闭
+}
+```
+
+也可执行 `/config:session-tools force 90%`；使用 `/config:session-tools force off` 关闭。
+
+每个 assistant 工具批执行完成后，扩展都会检查上下文用量。达到强制阈值时，会在下一次模型调用前中止当前 agent loop，保存原活动工具集合，并只开放 `session_log` 和 `session_squash`；其他工具调用会被阻止。如果 agent 停止但没有压缩，扩展会自动再次触发强制回合，限制持续到 `session_squash` 成功。成功后恢复原工具并基于摘要继续。已经开始执行的工具会先完成，避免文件修改停在半完成状态。
 
 ## 本地化
 

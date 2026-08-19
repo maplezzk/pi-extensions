@@ -40,8 +40,8 @@
     "en-US": "Squash the conversation from a chosen message into the supplied summary to free up context. Nothing is deleted; use /tree to go back. Good times to use it: a task just finished, the conversation got long, or a new task is about to start. Run session_log first, then generate and submit the summary in this call."
   },
   "guidelineBoundary": {
-    "zh-CN": "只在任务边界压缩：一个任务已完整交付、准备开新任务时才调用；绝不在任务执行中途压缩，那会丢弃进行中的上下文，后续续做成本更高。",
-    "en-US": "Only squash at a task boundary: when one task is fully delivered and a new one is about to start. Never squash mid-task — it discards in-progress context and makes resuming more expensive."
+    "zh-CN": "通常只在任务边界压缩：一个任务已完整交付、准备开新任务时才调用。唯一例外是收到【强制压缩】消息，此时必须立即压缩，并在摘要中保留进行中任务的准确停点。",
+    "en-US": "Normally squash only at a task boundary, after a task is fully delivered and before starting another. The only exception is a [Forced squash] message: squash immediately and preserve the exact in-progress stopping point in the summary."
   },
   "guidelineIndex": {
     "zh-CN": "先调用 session_log 看消息编号，选已完成任务的第一条消息作为 from。",
@@ -95,6 +95,26 @@
     "zh-CN": "对话已达 {tokens}，已提醒主 agent 在任务边界时考虑压缩。",
     "en-US": "Conversation reached {tokens}; the agent has been reminded to squash at a task boundary."
   },
+  "forceInterruptNotice": {
+    "zh-CN": "上下文已达 {tokens}（强制阈值 {threshold}），当前工具批结束后已中止任务并进入强制压缩模式。",
+    "en-US": "Context reached {tokens} (forced threshold {threshold}); the task was interrupted after the current tool batch and forced squash mode is now active."
+  },
+  "forceTaskPrompt": {
+    "zh-CN": "【强制压缩｜第 {attempt} 次】上下文已达 {tokens}，超过强制阈值 {threshold}。立即停止原任务；在压缩成功前不得继续实现、解释或调用其他工具。\n\n你现在只能：\n1. 调用 session_log，选择一个已完成且足以释放上下文的起点；\n2. 基于当前完整上下文生成精确摘要；\n3. 调用 session_squash，把 from 和完整 summary 一次提交。\n\nsummary 必须保留进行中任务的准确停点、用户目标与约束、已完成和未完成工作、关键决策、错误与风险、文件/分支/提交状态及下一步，并使用以下结构：## Goal、## Constraints & Preferences、## Progress（含 Done / In Progress / Blocked）、## Key Decisions、## Next Steps、## Critical Context。即使任务尚未完成也必须现在压缩。不要只回复文字，必须完成 session_squash 调用。",
+    "en-US": "[Forced squash | attempt {attempt}] Context reached {tokens}, exceeding the forced threshold {threshold}. Stop the original task immediately. Until squash succeeds, do not continue implementation, explain, or call any other tools.\n\nYou may only:\n1. Call session_log and choose a completed starting point that frees enough context;\n2. Generate a precise summary from the full current context;\n3. Call session_squash once with both from and the complete summary.\n\nThe summary must preserve the exact in-progress stopping point, user goals and constraints, completed and unfinished work, key decisions, errors and risks, file/branch/commit state, and next steps. Use these sections: ## Goal, ## Constraints & Preferences, ## Progress (Done / In Progress / Blocked), ## Key Decisions, ## Next Steps, and ## Critical Context. Squash now even if the task is unfinished. Do not merely reply with text; complete the session_squash call."
+  },
+  "forceToolBlocked": {
+    "zh-CN": "强制压缩期间禁止调用 {tool}；只能调用 session_log 和 session_squash。",
+    "en-US": "Tool {tool} is blocked during forced squash; only session_log and session_squash are allowed."
+  },
+  "forceSwitched": {
+    "zh-CN": "会话已切换，原会话的强制压缩模式已取消并恢复工具。",
+    "en-US": "The session changed; forced squash for the previous session was cancelled and tools were restored."
+  },
+  "forceConfigInvalid": {
+    "zh-CN": "配置 {path} 中的强制压缩阈值无效，强制压缩保持关闭。",
+    "en-US": "The forced squash threshold in {path} is invalid; forced squash remains disabled."
+  },
   "configInvalid": {
     "zh-CN": "配置 {path} 解析失败，已用默认阈值。",
     "en-US": "Failed to parse {path}; default thresholds are used."
@@ -104,8 +124,8 @@
     "en-US": "Could not parse env var {env}; default thresholds are used."
   },
   "configCommandDescription": {
-    "zh-CN": "配置 pi-session-tools（如压缩阈值，支持 150k / 75% / 数字）",
-    "en-US": "Configure pi-session-tools (e.g. squash thresholds; supports 150k / 75% / numbers)"
+    "zh-CN": "配置提醒或强制压缩阈值（force 90% / force off）",
+    "en-US": "Configure reminder or forced squash thresholds (force 90% / force off)"
   },
   "configNoUi": {
     "zh-CN": "当前环境无交互 UI，无法用命令配置，请直接编辑配置文件。",
@@ -122,6 +142,22 @@
   "configSaved": {
     "zh-CN": "已保存阈值：{thresholds}\n配置：{path}",
     "en-US": "Thresholds saved: {thresholds}\nConfig: {path}"
+  },
+  "configForceUsage": {
+    "zh-CN": "用法：/config:session-tools force <150k|75%|数字|off>",
+    "en-US": "Usage: /config:session-tools force <150k|75%|number|off>"
+  },
+  "configForceParseError": {
+    "zh-CN": "强制压缩阈值解析失败：{value}（示例：force 180k、force 90%、force off）",
+    "en-US": "Could not parse forced squash threshold: {value} (examples: force 180k, force 90%, force off)"
+  },
+  "configForceSaved": {
+    "zh-CN": "已启用强制压缩阈值：{threshold}\n配置：{path}",
+    "en-US": "Forced squash threshold enabled: {threshold}\nConfig: {path}"
+  },
+  "configForceDisabled": {
+    "zh-CN": "已关闭强制压缩。\n配置：{path}",
+    "en-US": "Forced squash disabled.\nConfig: {path}"
   },
   "branchFailed": {
     "zh-CN": "压缩失败：{error}",

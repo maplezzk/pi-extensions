@@ -9,6 +9,9 @@ export const SESSION_SQUASH_TYPE = "session-squash";
 /** 上下文阈值提示消息的 customType：建议主 agent 考虑压缩。 */
 export const SESSION_SQUASH_HINT_TYPE = "session-squash-hint";
 
+/** 强制压缩任务消息的 customType：要求主 agent 立即压缩。 */
+export const SESSION_SQUASH_FORCE_TYPE = "session-squash-force";
+
 const ASSISTANT_ROLE = "assistant";
 const NORMAL_STOP_REASON = "stop";
 
