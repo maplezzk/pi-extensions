@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.4.0...pi-terminal-mux-v0.4.1) (2026-08-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.3.1 to ^0.4.0
+
 ## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.3.2...pi-terminal-mux-v0.4.0) (2026-08-17)
 
 

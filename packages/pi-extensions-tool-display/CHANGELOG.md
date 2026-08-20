@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.0.1...pi-extensions-tool-display-v1.1.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
 ## [1.0.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.0.0...pi-extensions-tool-display-v1.0.1) (2026-07-23)
 
 

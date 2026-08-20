@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.4.1...pi-session-tools-v0.5.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* **session-tools:** improve squash guidance ([0994876](https://github.com/maplezzk/pi-extensions/commit/099487670e99658be1746953d584dd7ac853f06c))
+* **session-tools:** improve squash guidance ([2aff695](https://github.com/maplezzk/pi-extensions/commit/2aff695b0d4e44bd88700e9b05f053d8f45bdb7b))
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.3.1 to ^0.4.0
+
 ## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.4.0...pi-session-tools-v0.4.1) (2026-08-19)
 
 

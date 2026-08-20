@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.11.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.10.1...pi-interactive-subagents-v3.11.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.3.1 to ^0.4.0
+    * pi-terminal-mux bumped from ^0.4.0 to ^0.4.1
+
 ## [3.10.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.10.0...pi-interactive-subagents-v3.10.1) (2026-08-18)
 
 
