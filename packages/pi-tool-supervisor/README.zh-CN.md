@@ -1,6 +1,6 @@
 # pi-tool-supervisor
 
-`pi-tool-supervisor` 是 Pi 的编辑后审查扩展。它会根据 `edit` 或 `write` 实际产生的文件变化，对照项目规则执行审查，并把结构化审计结果返回给 Agent。
+`pi-tool-supervisor` 是 Pi 的可配置工具生命周期审查扩展。它可以在选定工具执行前后按规则审查，并对 `edit`、`write` 使用真实文件变化。
 
 ## 解决什么问题
 
@@ -15,7 +15,7 @@
 - 支持多个 reviewer 并行执行，每个 reviewer 可以使用自己的模型和一个或多个规则文件。
 - 读取规则文件可选的 front matter：`enabled`、`filePatterns`、`complexity` 和 `consumers`。
 - 返回 `passed`、`rejected`、`failed` 或 `skipped` 状态，以及结论、发现、规则组和耗时。
-- 每次 edit/write 都重新读取配置，因此配置修改会在下一次操作立即生效。
+- 每次工具调用都重新读取配置，因此配置修改会在下一次匹配操作立即生效。
 - 当前 Pi 展示中间件可用时显示审计卡片，否则使用 fallback renderer。展示协议由公共运行库 `pi-extensions-tool-display` 提供。
 
 它监听 Pi 原生事件，不会注册替代版 `edit` 或 `write` 工具。

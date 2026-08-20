@@ -12,6 +12,7 @@
  * 5. i18n catalogs have both zh-CN and en-US for every key
  * 6. package.json "files" includes README.md and README.zh-CN.md
  * 7. The root Pi package excludes library-only workspace entrypoints
+ * 8. Every extension package publishes and registers one configuration SKILL.md
  */
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
@@ -33,6 +34,32 @@ function warn(msg) {
   warnings.push(`⚠️  ${msg}`);
 }
 
+const MAX_SKILL_NAME_LENGTH = 64;
+const SKILL_FILE_NAME = "SKILL.md";
+const skillNames = new Map();
+
+/** Validates the load-bearing SKILL.md frontmatter and records unique names. */
+function validateSkillFrontmatter(skillPath, label) {
+  const content = readFileSync(skillPath, "utf8");
+  const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!frontmatter) {
+    error(`${label}: SKILL.md must start with closed YAML frontmatter`);
+    return;
+  }
+  const name = frontmatter[1].match(/^name:\s*["']?([^"'\r\n]+)["']?\s*$/m)?.[1]?.trim();
+  const description = frontmatter[1].match(/^description:\s*(.+)$/m)?.[1]?.trim().replace(/^(["'])(.*)\1$/, "$2");
+  if (!name || name.length > MAX_SKILL_NAME_LENGTH || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+    error(`${label}: SKILL.md name must be 1-64 lowercase letters, digits, or single hyphens`);
+  } else if (skillNames.has(name)) {
+    error(`${label}: SKILL.md name "${name}" duplicates ${skillNames.get(name)}`);
+  } else {
+    skillNames.set(name, label);
+  }
+  if (!description) {
+    error(`${label}: SKILL.md must declare a non-empty description`);
+  }
+}
+
 function collectTypeScriptFiles(root) {
   if (!existsSync(root)) return [];
   const files = [];
@@ -40,6 +67,18 @@ function collectTypeScriptFiles(root) {
     const path = join(root, entry.name);
     if (entry.isDirectory()) files.push(...collectTypeScriptFiles(path));
     else if (entry.isFile() && path.endsWith(".ts")) files.push(path);
+  }
+  return files;
+}
+
+/** Recursively collects Agent Skill entry files below one package skills directory. */
+function collectSkillFiles(root) {
+  if (!existsSync(root)) return [];
+  const files = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) files.push(...collectSkillFiles(path));
+    else if (entry.isFile() && entry.name === SKILL_FILE_NAME) files.push(path);
   }
   return files;
 }
@@ -103,7 +142,7 @@ if (!existsSync(rpConfigPath)) {
 }
 
 // ---------------------------------------------------------------------------
-// 3-6. Per-package checks
+// 3-8. Per-package checks
 // ---------------------------------------------------------------------------
 const packageDirs = readdirSync(PACKAGES_DIR, { withFileTypes: true })
   .filter((d) => d.isDirectory() && existsSync(join(PACKAGES_DIR, d.name, "package.json")))
@@ -111,11 +150,18 @@ const packageDirs = readdirSync(PACKAGES_DIR, { withFileTypes: true })
 
 const rootPackageJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const rootExtensionEntries = rootPackageJson.pi?.extensions ?? [];
+const rootSkillEntries = rootPackageJson.pi?.skills ?? [];
 const WORKSPACE_PACKAGES_PATH = "packages";
 const EXTENSION_ENTRY_FILE = "index.ts";
+const SKILLS_DIRECTORY = "skills";
 const PACKAGE_EXTENSION_ENTRY = `./${EXTENSION_ENTRY_FILE}`;
+const PACKAGE_SKILL_ENTRY = `./${SKILLS_DIRECTORY}`;
 const ROOT_EXTENSION_GLOB = `${WORKSPACE_PACKAGES_PATH}/*/${EXTENSION_ENTRY_FILE}`;
+const ROOT_SKILL_GLOB = `${WORKSPACE_PACKAGES_PATH}/*/${SKILLS_DIRECTORY}/*/${SKILL_FILE_NAME}`;
 const rootLoadsAllPackageIndexes = rootExtensionEntries.includes(ROOT_EXTENSION_GLOB);
+if (!rootSkillEntries.includes(ROOT_SKILL_GLOB)) {
+  error(`Root Pi manifest must register extension configuration skills with "${ROOT_SKILL_GLOB}"`);
+}
 const REQUIRED_FILES = ["package.json", "index.ts", "README.md", "README.zh-CN.md", "tsconfig.json"];
 const REQUIRED_PKG_FIELDS = ["name", "version", "description", "main", "exports", "files", "license"];
 
@@ -130,6 +176,21 @@ for (const dir of packageDirs) {
   const rootExclusion = `!${WORKSPACE_PACKAGES_PATH}/${dir}/${EXTENSION_ENTRY_FILE}`;
   if (rootLoadsAllPackageIndexes && !exposesIndexAsExtension && !rootExtensionEntries.includes(rootExclusion)) {
     error(`${label}: root Pi manifest must exclude library-only entrypoint "${rootExclusion.slice(1)}"`);
+  }
+
+  if (exposesIndexAsExtension) {
+    const skillFiles = collectSkillFiles(join(pkgRoot, SKILLS_DIRECTORY));
+    if (skillFiles.length !== 1) {
+      error(`${label}: extension package must contain exactly one configuration ${SKILL_FILE_NAME} under ${SKILLS_DIRECTORY}/`);
+    } else {
+      validateSkillFrontmatter(skillFiles[0], label);
+    }
+    if (!pkgJson.pi?.skills?.includes(PACKAGE_SKILL_ENTRY)) {
+      error(`${label}: Pi manifest must register configuration skills directory "${PACKAGE_SKILL_ENTRY}"`);
+    }
+    if (!pkgJson.files?.includes(SKILLS_DIRECTORY)) {
+      error(`${label}: package.json "files" must publish ${SKILLS_DIRECTORY}`);
+    }
   }
 
   // 3. Required files

@@ -9,12 +9,12 @@ A small collection of composable extensions for the [Pi coding agent](https://gi
 
 ## Packages
 
-Each package is independently installable and keeps its detailed behavior, configuration, examples, and tests in its own README.
+Each package is independently installable and keeps its detailed behavior, configuration, examples, and tests in its own README. Every extension package also publishes a `SKILL.md` that Pi loads to guide agents through configuration and verification.
 
 | Package | Description | Documentation |
 | --- | --- | --- |
 | [`pi-distill`](./packages/pi-distill) | Compacts verbose output from every active object-schema tool before it consumes the context window. | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
-| [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | Reviews `edit` and `write` changes against matching project rules and returns structured findings. | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
+| [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | Reviews selected tools before or after execution against matching rules, with diff-aware handling for `edit` and `write`. | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
 | [`pi-metrics`](./packages/pi-metrics) | Shows a live session elapsed timer in the working spinner plus per-turn and total run summaries. | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |
 | [`pi-models-discovery`](./packages/pi-models-discovery) | Discovers models from `{baseUrl}/models` for providers marked with `discoverModels` in models.json, with a persistent startup cache and a manual refresh command. | [English](./packages/pi-models-discovery/README.md) · [中文](./packages/pi-models-discovery/README.zh-CN.md) |
 | [`pi-session-tools`](./packages/pi-session-tools) | Caches the full pre-filter output of bash `grep`/`tail`/`head` pipelines and provides `session_log` / `session_squash` for squashing long conversations with main-agent handoff summaries. | [English](./packages/pi-session-tools/README.md) · [中文](./packages/pi-session-tools/README.zh-CN.md) |
@@ -50,13 +50,9 @@ pi install npm:<package-name>
 
 ## Configuration
 
-Extensions keep configuration under the standard Pi agent directory:
+Most configurable extensions keep state under the Pi agent directory; exact paths, command names, environment precedence, and verification steps differ by package.
 
-```text
-~/.pi/agent/extensions/<package-name>/config.json
-```
-
-See [`packages/`](./packages) for package-level configuration examples and documentation.
+Pi loads each installed extension package's `SKILL.md` so an agent can follow the package-specific configuration workflow. See [`packages/`](./packages) for configuration examples and detailed documentation.
 
 ## Development
 

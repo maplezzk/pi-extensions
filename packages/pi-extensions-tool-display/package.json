@@ -15,6 +15,7 @@
     "config.example.json",
     "README.md",
     "README.zh-CN.md",
+    "skills",
     "tsconfig.json"
   ],
   "scripts": {
@@ -53,6 +54,9 @@
   "pi": {
     "extensions": [
       "./index.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "devDependencies": {
