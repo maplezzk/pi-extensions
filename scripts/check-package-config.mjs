@@ -71,18 +71,6 @@ function collectTypeScriptFiles(root) {
   return files;
 }
 
-/** Recursively collects Agent Skill entry files below one package skills directory. */
-function collectSkillFiles(root) {
-  if (!existsSync(root)) return [];
-  const files = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const path = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...collectSkillFiles(path));
-    else if (entry.isFile() && entry.name === SKILL_FILE_NAME) files.push(path);
-  }
-  return files;
-}
-
 // ---------------------------------------------------------------------------
 // 1. Load release-please-config.json
 // ---------------------------------------------------------------------------
@@ -153,11 +141,10 @@ const rootExtensionEntries = rootPackageJson.pi?.extensions ?? [];
 const rootSkillEntries = rootPackageJson.pi?.skills ?? [];
 const WORKSPACE_PACKAGES_PATH = "packages";
 const EXTENSION_ENTRY_FILE = "index.ts";
-const SKILLS_DIRECTORY = "skills";
 const PACKAGE_EXTENSION_ENTRY = `./${EXTENSION_ENTRY_FILE}`;
-const PACKAGE_SKILL_ENTRY = `./${SKILLS_DIRECTORY}`;
+const PACKAGE_SKILL_ENTRY = `./${SKILL_FILE_NAME}`;
 const ROOT_EXTENSION_GLOB = `${WORKSPACE_PACKAGES_PATH}/*/${EXTENSION_ENTRY_FILE}`;
-const ROOT_SKILL_GLOB = `${WORKSPACE_PACKAGES_PATH}/*/${SKILLS_DIRECTORY}/*/${SKILL_FILE_NAME}`;
+const ROOT_SKILL_GLOB = `${WORKSPACE_PACKAGES_PATH}/*/${SKILL_FILE_NAME}`;
 const rootLoadsAllPackageIndexes = rootExtensionEntries.includes(ROOT_EXTENSION_GLOB);
 if (!rootSkillEntries.includes(ROOT_SKILL_GLOB)) {
   error(`Root Pi manifest must register extension configuration skills with "${ROOT_SKILL_GLOB}"`);
@@ -179,17 +166,17 @@ for (const dir of packageDirs) {
   }
 
   if (exposesIndexAsExtension) {
-    const skillFiles = collectSkillFiles(join(pkgRoot, SKILLS_DIRECTORY));
-    if (skillFiles.length !== 1) {
-      error(`${label}: extension package must contain exactly one configuration ${SKILL_FILE_NAME} under ${SKILLS_DIRECTORY}/`);
+    const skillPath = join(pkgRoot, SKILL_FILE_NAME);
+    if (!existsSync(skillPath)) {
+      error(`${label}: extension package is missing package-level ${SKILL_FILE_NAME}`);
     } else {
-      validateSkillFrontmatter(skillFiles[0], label);
+      validateSkillFrontmatter(skillPath, label);
     }
     if (!pkgJson.pi?.skills?.includes(PACKAGE_SKILL_ENTRY)) {
-      error(`${label}: Pi manifest must register configuration skills directory "${PACKAGE_SKILL_ENTRY}"`);
+      error(`${label}: Pi manifest must register package-level skill "${PACKAGE_SKILL_ENTRY}"`);
     }
-    if (!pkgJson.files?.includes(SKILLS_DIRECTORY)) {
-      error(`${label}: package.json "files" must publish ${SKILLS_DIRECTORY}`);
+    if (!pkgJson.files?.includes(SKILL_FILE_NAME)) {
+      error(`${label}: package.json "files" must publish ${SKILL_FILE_NAME}`);
     }
   }
 

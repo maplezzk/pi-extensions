@@ -15,7 +15,7 @@
     "config.example.json",
     "README.md",
     "README.zh-CN.md",
-    "skills"
+    "SKILL.md"
   ],
   "scripts": {
     "test": "tsx --test tests/bash-output-summary.test.ts",
@@ -30,7 +30,7 @@
       "../pi-extensions-tool-display/index.ts"
     ],
     "skills": [
-      "./skills"
+      "./SKILL.md"
     ]
   },
   "engines": {

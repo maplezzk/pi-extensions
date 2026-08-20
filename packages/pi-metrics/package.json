@@ -13,7 +13,7 @@
     "locales",
     "README.md",
     "README.zh-CN.md",
-    "skills"
+    "SKILL.md"
   ],
   "scripts": {
     "test": "tsx --test tests/*.test.ts",
@@ -27,7 +27,7 @@
       "../pi-extensions-i18n/index.ts"
     ],
     "skills": [
-      "./skills"
+      "./SKILL.md"
     ]
   },
   "engines": {

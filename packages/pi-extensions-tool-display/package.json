@@ -15,7 +15,7 @@
     "config.example.json",
     "README.md",
     "README.zh-CN.md",
-    "skills",
+    "SKILL.md",
     "tsconfig.json"
   ],
   "scripts": {
@@ -56,7 +56,7 @@
       "./index.ts"
     ],
     "skills": [
-      "./skills"
+      "./SKILL.md"
     ]
   },
   "devDependencies": {
