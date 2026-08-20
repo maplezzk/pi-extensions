@@ -11,7 +11,9 @@ Session tooling for the [Pi coding agent](https://github.com/earendil-works/pi):
 - Provides `session_squash`: accepts the summary and squashes the conversation from a chosen message to free up context. Nothing is deleted; use `/tree` to go back.
 - The main agent generates the summary from the full conversation context and submits it directly in the `session_squash` call (no separate LLM request or finalize step); file paths read/modified in the squashed range are appended automatically.
 
-Call `session_log` first, use the index of a finished turn as `from`, and pass the complete structured summary to `session_squash`. A later squash may start from an earlier index to replace a broader range; it is not restricted to messages after the previous squash point. The agent keeps working automatically after the squash. Normally squash only at a task boundary; forced squash mode is the exception and preserves the exact in-progress stopping point.
+Call `session_log` first, use the index of a completed turn as `from`, and pass a complete task-state snapshot to `session_squash`. A later squash may start from an earlier index to replace a broader range; it is not restricted to messages after the previous squash point. The agent keeps working automatically after the squash.
+
+Squash at a safe task or phase checkpoint, such as after a phase or verification completes, a key decision is settled, or before entering the next phase; the whole task need not be delivered. The snapshot should focus on what was done in the squashed range, its target, final outcomes, and verification, then state the exact stopping point, remaining work, artifact state, and next action. Completed work must not be repeated under remaining work. Use `VERIFIED`, `INFERRED`, `UNKNOWN`, `NOT VERIFIED`, or `BLOCKED` when needed. Preserve effective task state rather than maintenance mechanics such as context thresholds, `session_log`, `session_squash`, or session switching. The automatic continuation message also tells the agent not to repeat completed work; if the snapshot conflicts with workspace, Git, or test evidence, the evidence wins and the conflict must be reported.
 
 ## Install
 
@@ -21,7 +23,7 @@ pi install npm:pi-session-tools
 
 ## Context threshold nudges
 
-When the conversation crosses a threshold (default 150k / 200k / 250k / 300k tokens), the agent is nudged to consider squashing at a task boundary. The nudge runs only after the model stops normally; user aborts and provider errors do not trigger it. Configure it:
+When the conversation crosses a threshold (default 150k / 200k / 250k / 300k tokens), the nudge shows the agent `used tokens / context window (percentage)` and asks it to squash at the nearest safe task or phase checkpoint without waiting for the whole task to finish. The nudge is advisory and runs only after the model stops normally; user aborts and provider errors do not trigger it. Configure it:
 
 ```jsonc
 // ~/.pi/agent/extensions/pi-session-tools/config.json
