@@ -12,11 +12,14 @@ import test from "node:test";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
   SESSION_SQUASH_FORCE_TYPE,
+  SESSION_SQUASH_HINT_TYPE,
   SESSION_SQUASH_TYPE,
 } from "../src/session-tail-compaction-utils.ts";
 
 type RegisteredTool = {
   name: string;
+  description: string;
+  promptGuidelines?: string[];
   parameters: { required?: string[] };
   execute: (
     toolCallId: string,
@@ -32,7 +35,10 @@ type RegisteredTool = {
 };
 
 type EventHandler = (
-  event: { toolName?: string },
+  event: {
+    toolName?: string;
+    messages?: Array<{ role?: string; stopReason?: string }>;
+  },
   context: unknown,
 ) => unknown | Promise<unknown>;
 
@@ -104,6 +110,16 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
   const squashTool = tools.find((tool) => tool.name === "session_squash");
   assert.ok(squashTool);
   assert.deepEqual(squashTool.parameters.required, ["from", "summary"]);
+  assert.ok(
+    squashTool.promptGuidelines?.some((guideline) =>
+      guideline.includes("Work Completed")
+    ),
+  );
+  assert.ok(
+    squashTool.promptGuidelines?.every((guideline) =>
+      guideline.includes("session_squash")
+    ),
+  );
 
   const branch: SessionEntry[] = [
     {
@@ -167,7 +183,11 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
     sessionManager,
     model: { contextWindow: 2000 },
     hasUI: true,
-    getContextUsage: () => ({ tokens: 1234 }),
+    getContextUsage: () => ({
+      tokens: 1234,
+      contextWindow: 4000,
+      percent: 30.85,
+    }),
     /** 记录工具批结束后的强制中止。 */
     abort() {
       abortCount += 1;
@@ -182,9 +202,11 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
 
   const turnEnd = handlers.get("turn_end");
   const toolCall = handlers.get("tool_call");
+  const agentEnd = handlers.get("agent_end");
   const settled = handlers.get("agent_settled");
   assert.ok(turnEnd);
   assert.ok(toolCall);
+  assert.ok(agentEnd);
   assert.ok(settled);
 
   await turnEnd({}, context);
@@ -205,6 +227,19 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
   assert.deepEqual(activeTools, ["read", "bash", "session_log", "session_squash"]);
   await settled({}, context);
   assert.equal(sentMessages.length, 0);
+
+  await configCommand.handler("1k", context);
+  await agentEnd(
+    { messages: [{ role: "assistant", stopReason: "stop" }] },
+    context,
+  );
+  await settled({}, context);
+  const hintMessage = sentMessages.find(({ message }) =>
+    (message as { customType?: string }).customType === SESSION_SQUASH_HINT_TYPE
+  )?.message as { content: Array<{ type: "text"; text: string }> } | undefined;
+  assert.ok(hintMessage);
+  assert.match(hintMessage.content[0]?.text ?? "", /1\.2k \/ 4k/);
+  assert.match(hintMessage.content[0]?.text ?? "", /30\.9%/);
 
   await configCommand.handler("force 90%", context);
   await turnEnd({}, context);
@@ -237,10 +272,15 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
     (message as { customType?: string }).customType === SESSION_SQUASH_FORCE_TYPE
   );
   assert.equal(forceMessages.length, 2);
+  const forceText = (forceMessages[0]?.message as {
+    content: Array<{ type: "text"; text: string }>;
+  }).content[0]?.text ?? "";
+  assert.match(forceText, /Work Completed/);
+  assert.match(forceText, /Completed.*Remaining.*Resume/s);
 
   const result = await squashTool.execute(
     "tool-1",
-    { from: 0, summary: "## Goal\n完成压缩" },
+    { from: 0, summary: "## Work Completed\n已更新提示文案并通过测试" },
     undefined,
     undefined,
     context,
@@ -262,9 +302,13 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
     details: { summary: string };
   };
   assert.equal(sent.customType, SESSION_SQUASH_TYPE);
-  assert.equal(
-    sent.content,
-    "## Goal\n完成压缩\n\n<read-files>\n/tmp/context.ts\n</read-files>",
+  assert.match(sent.content, /任务状态快照|Task state snapshot/);
+  assert.match(sent.content, /禁止重复|do not repeat/);
+  assert.doesNotMatch(sent.content, /session_log|session_squash|上下文阈值/);
+  assert.ok(
+    sent.content.endsWith(
+      "## Work Completed\n已更新提示文案并通过测试\n\n<read-files>\n/tmp/context.ts\n</read-files>",
+    ),
   );
   assert.equal(sent.details.summary, sent.content);
   assert.ok(notifications.length >= 5);

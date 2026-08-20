@@ -4,7 +4,9 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
   computeFileLists,
   extractFileOps,
+  formatContextPercentage,
   formatFileOperations,
+  formatPercentage,
   formatThreshold,
   formatTokens,
   getTailCompactions,
@@ -261,6 +263,13 @@ test("formatTokens 大数字缩写为 k", () => {
   assert.equal(formatTokens(150000), "150k");
   assert.equal(formatTokens(1500), "1.5k");
   assert.equal(formatTokens(999), "999");
+});
+
+test("百分比格式最多保留一位小数", () => {
+  assert.equal(formatPercentage(76.54), "76.5%");
+  assert.equal(formatContextPercentage(153000, 200000), "76.5%");
+  assert.equal(formatContextPercentage(150000, 200000), "75%");
+  assert.equal(formatContextPercentage(100, 0), "0%");
 });
 
 test("formatThreshold 序列化 k 与百分比，与 parse 可回环", () => {

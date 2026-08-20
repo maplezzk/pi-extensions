@@ -39,6 +39,9 @@ export type SquashThreshold =
 /** 百分比阈值允许的最大值。 */
 const PERCENT_THRESHOLD_MAX = 100;
 
+/** 比例换算为百分数时使用的基数。 */
+const PERCENTAGE_SCALE = 100;
+
 /** k 后缀换算为 token 数的比例（1k = 1000 token）。 */
 const TOKENS_PER_K = 1000;
 
@@ -89,7 +92,7 @@ export function resolveThresholdTokens(
   contextWindow: number,
 ): number {
   if (threshold.kind === "tokens") return threshold.value;
-  return Math.floor((contextWindow * threshold.value) / 100);
+  return Math.floor((contextWindow * threshold.value) / PERCENTAGE_SCALE);
 }
 
 /** 阈值去重/记录用的稳定 key。 */
@@ -105,6 +108,20 @@ export function formatTokens(tokens: number): string {
     return `${Number.isInteger(k) ? k : k.toFixed(1)}k`;
   }
   return String(tokens);
+}
+
+/** 百分数最多保留一位小数。 */
+export function formatPercentage(percentage: number): string {
+  return `${Number.isInteger(percentage) ? percentage : percentage.toFixed(1)}%`;
+}
+
+/** 上下文用量占 context window 的百分比。 */
+export function formatContextPercentage(
+  tokens: number,
+  contextWindow: number,
+): string {
+  if (contextWindow <= 0) return "0%";
+  return formatPercentage((tokens * PERCENTAGE_SCALE) / contextWindow);
 }
 
 /** 阈值序列化为可读字符串（k 单位或百分比），与 parseSquashThresholds 可回环。 */

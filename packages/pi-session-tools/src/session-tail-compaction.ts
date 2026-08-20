@@ -30,7 +30,9 @@ import {
   computeFileLists,
   didAgentStopNormally,
   extractFileOps,
+  formatContextPercentage,
   formatFileOperations,
+  formatPercentage,
   formatThreshold,
   formatTokens,
   getTailCompactions,
@@ -407,6 +409,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       i18n.t("guidelineBoundary"),
       i18n.t("guidelineIndex"),
       i18n.t("guidelineSummary"),
+      i18n.t("guidelineSummaryIntegrity"),
       i18n.t("guidelineLeaf"),
       i18n.t("guidelineContinue"),
     ],
@@ -521,8 +524,9 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     const { readFiles, modifiedFiles } = computeFileLists(
       extractFileOps(suffix),
     );
-    const summary =
+    const taskState =
       request.summary + formatFileOperations(readFiles, modifiedFiles);
+    const summary = `${i18n.t("continuationInstruction")}\n\n${taskState}`;
     const data: TailCompactionData = {
       startEntryId: request.startEntryId,
       sourceLeafId,
@@ -707,7 +711,8 @@ function checkContextThreshold(
   pi: ExtensionAPI,
   ctx: Parameters<Parameters<ExtensionAPI["on"]>[1]>[1],
 ): void {
-  const tokens = ctx.getContextUsage()?.tokens ?? 0;
+  const usage = ctx.getContextUsage();
+  const tokens = usage?.tokens ?? 0;
   if (tokens <= 0) return;
 
   const sessionId = ctx.sessionManager.getSessionId();
@@ -716,7 +721,9 @@ function checkContextThreshold(
     hintSessionId = sessionId;
   }
 
-  const contextWindow = ctx.model?.contextWindow || FALLBACK_CONTEXT_WINDOW;
+  const contextWindow = usage?.contextWindow ||
+    ctx.model?.contextWindow ||
+    FALLBACK_CONTEXT_WINDOW;
   let candidate: { key: string; resolved: number } | null = null;
   for (const threshold of squashThresholds) {
     const resolved = resolveThresholdTokens(threshold, contextWindow);
@@ -735,10 +742,18 @@ function checkContextThreshold(
   notifiedThresholds.add(candidate.key);
 
   const tokensText = formatTokens(tokens);
+  const contextWindowText = formatTokens(contextWindow);
+  const measuredPercentage = usage?.percent;
+  const contextPercentage =
+    measuredPercentage === null || measuredPercentage === undefined
+      ? formatContextPercentage(tokens, contextWindow)
+      : formatPercentage(measuredPercentage);
   const thresholdText = formatTokens(candidate.resolved);
   ctx.ui.notify(
     i18n.t("contextHintNotice", {
       tokens: tokensText,
+      contextWindow: contextWindowText,
+      contextPercentage,
       threshold: thresholdText,
     }),
     "info",
@@ -752,6 +767,8 @@ function checkContextThreshold(
           type: "text",
           text: i18n.t("contextHint", {
             tokens: tokensText,
+            contextWindow: contextWindowText,
+            contextPercentage,
             threshold: thresholdText,
           }),
         },
