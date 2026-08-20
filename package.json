@@ -16,6 +16,9 @@
     "extensions": [
       "packages/*/index.ts",
       "!packages/pi-terminal-mux/index.ts"
+    ],
+    "skills": [
+      "packages/*/SKILL.md"
     ]
   },
   "peerDependencies": {

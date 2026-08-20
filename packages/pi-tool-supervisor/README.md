@@ -1,6 +1,6 @@
 # pi-tool-supervisor
 
-`pi-tool-supervisor` is a post-edit review extension for Pi. It checks the actual file change produced by `edit` or `write` against project rules and returns a structured review audit to the agent.
+`pi-tool-supervisor` is a configurable tool-lifecycle review extension for Pi. It can review selected tools before or after execution and uses the actual file change for `edit` and `write` audits.
 
 ## What it solves
 
@@ -14,7 +14,7 @@ An edit tool can complete successfully while the resulting file still violates l
 - Supports multiple reviewers running in parallel, each with its own model and one or more rule files.
 - Reads optional front matter from rule files for `enabled`, `filePatterns`, `complexity`, and `consumers`.
 - Returns `passed`, `rejected`, `failed`, or `skipped` status with summaries, findings, rule groups, and durations.
-- Re-reads the configuration for every edit/write, so configuration changes apply to the next operation.
+- Re-reads the configuration for every tool call, so configuration changes apply to the next matching operation.
 - Shows an audit card through Pi's display middleware or a fallback renderer. The shared display protocol is provided by `pi-extensions-tool-display`.
 
 It observes Pi's native events and does not register a replacement `edit` or `write` tool.
