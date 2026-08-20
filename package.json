@@ -14,7 +14,8 @@
   ],
   "pi": {
     "extensions": [
-      "packages/*/index.ts"
+      "packages/*/index.ts",
+      "!packages/pi-terminal-mux/index.ts"
     ]
   },
   "peerDependencies": {

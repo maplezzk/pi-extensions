@@ -34,7 +34,7 @@ Requirements: Pi with the compatible extension API and Node.js 22 or newer.
 pi install git:github.com/maplezzk/pi-extensions
 ```
 
-The repository root is also a Pi package. Its manifest loads every `packages/*/index.ts`, so the command above installs all current extensions and automatically includes new packages added to this repository.
+The repository root is also a Pi package. Its manifest loads extension entrypoints under `packages/*/index.ts` while excluding library-only packages such as `pi-terminal-mux`, so the command above installs all current extensions without trying to load shared libraries as extensions.
 
 Reload Pi after installation:
 
