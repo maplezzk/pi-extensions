@@ -332,14 +332,40 @@ function parseRuleFile(rawContent: string): ParsedRuleFile {
   return { metadata, content };
 }
 
+/** Converts the supported glob subset while preserving directory boundaries for a single star. */
+function filePatternToRegExp(pattern: string): RegExp {
+  const singleSegmentWildcard = "*";
+  const recursiveWildcard = "**";
+  const recursiveDirectoryWildcard = "**/";
+  let expression = "";
+  for (let index = 0; index < pattern.length;) {
+    const character = pattern[index];
+    if (character !== singleSegmentWildcard) {
+      expression += /[\\^$.*+?()[\]{}|]/.test(character) ? `\\${character}` : character;
+      index += 1;
+      continue;
+    }
+    if (!pattern.startsWith(recursiveWildcard, index)) {
+      expression += "[^/]*";
+      index += singleSegmentWildcard.length;
+      continue;
+    }
+    if (pattern.startsWith(recursiveDirectoryWildcard, index)) {
+      expression += "(?:.*/)?";
+      index += recursiveDirectoryWildcard.length;
+      continue;
+    }
+    expression += ".*";
+    index += recursiveWildcard.length;
+  }
+  return new RegExp(`^${expression}$`);
+}
+
+/** Matches a normalized file path against one configured file pattern. */
 function matchesFilePattern(filePath: string, pattern: string): boolean {
   const normalizedPath = normalizeFilePath(filePath);
   const normalizedPattern = normalizeFilePath(pattern);
-  const patternBody = normalizedPattern.startsWith("**/") ? normalizedPattern.slice(3) : normalizedPattern;
-  const escaped = patternBody.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  const expression = escaped.replaceAll("*", "[^/]*");
-  const prefix = normalizedPattern.startsWith("**/") ? "(?:.*/)?" : "";
-  return new RegExp(`^${prefix}${expression}$`).test(normalizedPath);
+  return filePatternToRegExp(normalizedPattern).test(normalizedPath);
 }
 
 export function reviewerAppliesToFile(

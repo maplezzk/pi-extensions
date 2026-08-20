@@ -94,6 +94,8 @@ consumers:
 ---
 ```
 
+`filePatterns` 使用简化 glob：`*` 不跨 `/`，`**` 可以跨目录，任意位置的 `**/` 都可匹配零层或多层目录。反斜杠会归一化为 `/`，开头的 `./` 会被忽略。
+
 ## 审查语义
 
 - before reviewer 明确拒绝会阻断 Pi 原生工具调用，并用完整 reason 展示独立审计；before 失败/跳过会放行，但会在后续 tool result 中可见。
