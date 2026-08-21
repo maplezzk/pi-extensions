@@ -1,6 +1,6 @@
 {
   "name": "pi-metrics",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Pi metrics extension: elapsed-time HUD and resilient TPS telemetry",
   "type": "module",
   "main": "./index.ts",
@@ -62,7 +62,7 @@
     "@earendil-works/pi-tui": ">=0.80.0 <0.81.0"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.3.1"
+    "pi-extensions-i18n": "^0.4.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.80.10",

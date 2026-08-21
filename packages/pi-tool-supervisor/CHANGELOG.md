@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.4.0...pi-tool-supervisor-v0.5.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* **pi-tool-supervisor:** support recursive globstars ([167acc0](https://github.com/maplezzk/pi-extensions/commit/167acc0aa53d3764b650b835f098eb9a00ab9d6f))
+* **pi-tool-supervisor:** support recursive globstars ([2bf7be2](https://github.com/maplezzk/pi-extensions/commit/2bf7be2b864bf5cd5eab127ef4f0e114686c4a5f))
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.3.1 to ^0.4.0
+    * pi-extensions-tool-display bumped from ^1.0.1 to ^1.1.0
+
 ## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.8...pi-tool-supervisor-v0.4.0) (2026-08-19)
 
 

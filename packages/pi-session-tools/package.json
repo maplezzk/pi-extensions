@@ -1,6 +1,6 @@
 {
   "name": "pi-session-tools",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Pi session tools: bash pipe output cache and session squash extensions",
   "type": "module",
   "main": "./index.ts",
@@ -61,7 +61,7 @@
     "typebox": "*"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.3.1"
+    "pi-extensions-i18n": "^0.4.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.80.10",
