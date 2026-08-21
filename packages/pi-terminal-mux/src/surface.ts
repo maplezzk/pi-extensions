@@ -55,6 +55,10 @@ import { renameOrcaTerminal } from "./backends/orca.ts";
 const execFileAsync = promisify(execFile);
 const ORCA_BACKEND: MuxBackend = "orca";
 const HERDR_BACKEND: MuxBackend = "herdr";
+const TMUX_WINDOW_RENAME_SETTING = "PI_SUBAGENT_RENAME_TMUX_WINDOW";
+const TMUX_SESSION_RENAME_SETTING = "PI_SUBAGENT_RENAME_TMUX_SESSION";
+const HERDR_WORKSPACE_RENAME_SETTING = "PI_SUBAGENT_RENAME_HERDR_WORKSPACE";
+const ENABLED_SETTING_VALUE = "1";
 
 // ── 全键注册表 ──
 
@@ -90,10 +94,12 @@ function requireMuxBackend(): MuxBackend {
  */
 let lastSplitSource: string | null = null;
 
+/** 返回最近一次分屏来源，不修改当前记录。 */
 export function getLastSplitSource(): string | null {
   return lastSplitSource;
 }
 
+/** 清空最近一次分屏来源记录。 */
 export function clearLastSplitSource(): void {
   lastSplitSource = null;
 }
@@ -406,139 +412,158 @@ export function renameAgent(surface: string, name: string): void {
   }
 }
 
-/**
- * 重命名当前 tab / window。
- */
-export function renameCurrentTab(title: string): void {
-  if (isHeadlessMode()) return;
+export type RenameOperation = "tab" | "workspace";
+export type RenameTarget = "tab" | "window" | "pane" | "workspace" | "session" | "terminal";
+export type RenameBackend = MuxBackend | "headless";
 
-  const backend = requireMuxBackend();
+export type RenameCapability =
+  | { status: "supported"; backend: MuxBackend; operation: RenameOperation; target: RenameTarget }
+  | { status: "unsupported"; backend: RenameBackend; operation: RenameOperation }
+  | { status: "disabled"; backend: MuxBackend; operation: RenameOperation; setting: string };
 
-  if (backend === "cmux") {
-    const surfaceId = process.env.CMUX_SURFACE_ID;
-    if (!surfaceId) throw new Error("CMUX_SURFACE_ID not set");
-    execSync(`cmux rename-tab --surface ${shellEscape(surfaceId)} ${shellEscape(title)}`, {
-      encoding: "utf8",
-    });
-    return;
-  }
+export type RenameResult =
+  | { status: "renamed"; backend: MuxBackend; operation: RenameOperation; target: RenameTarget }
+  | { status: "unsupported"; backend: RenameBackend; operation: RenameOperation }
+  | { status: "disabled"; backend: MuxBackend; operation: RenameOperation; setting: string }
+  | { status: "failed"; backend: MuxBackend; operation: RenameOperation; target: RenameTarget; error: string };
 
-  if (backend === "muxy") {
-    const paneId = AGENT_MUXY_PANE_ID;
-    if (!paneId) throw new Error("MUXY_PANE_ID not set");
-    execFileSync("muxy", ["rename-pane", "--pane", paneId, title], { encoding: "utf8" });
-    return;
-  }
+/** 返回指定后端的真实重命名语义，不执行终端命令。 */
+export function getRenameCapability(
+  operation: RenameOperation,
+  backend: MuxBackend | null = getMuxBackend(),
+  env: NodeJS.ProcessEnv = process.env,
+): RenameCapability {
+  if (!backend) return { status: "unsupported", backend: "headless", operation };
 
-  if (backend === "tmux") {
-    if (process.env.PI_SUBAGENT_RENAME_TMUX_WINDOW !== "1") {
-      return;
+  if (operation === "tab") {
+    if (backend === "tmux" && env[TMUX_WINDOW_RENAME_SETTING] !== ENABLED_SETTING_VALUE) {
+      return { status: "disabled", backend, operation, setting: TMUX_WINDOW_RENAME_SETTING };
     }
-    const paneId = process.env.TMUX_PANE;
-    if (!paneId) throw new Error("TMUX_PANE not set");
-    const windowId = execFileSync("tmux", ["display-message", "-p", "-t", paneId, "#{window_id}"], {
-      encoding: "utf8",
-    }).trim();
-    execFileSync("tmux", ["rename-window", "-t", windowId, title], { encoding: "utf8" });
-    return;
+    const target: Record<MuxBackend, RenameTarget> = {
+      muxy: "pane",
+      cmux: "tab",
+      tmux: "window",
+      zellij: "pane",
+      wezterm: "tab",
+      herdr: "tab",
+      otty: "tab",
+      orca: "terminal",
+    };
+    return { status: "supported", backend, operation, target: target[backend] };
   }
 
-  if (backend === "wezterm") {
-    const paneId = process.env.WEZTERM_PANE;
-    const args = ["cli", "set-tab-title"];
-    if (paneId) args.push("--pane-id", paneId);
-    args.push(title);
-    execFileSync("wezterm", args, { encoding: "utf8" });
-    return;
+  if (backend === "tmux" && env[TMUX_SESSION_RENAME_SETTING] !== ENABLED_SETTING_VALUE) {
+    return { status: "disabled", backend, operation, setting: TMUX_SESSION_RENAME_SETTING };
   }
-
-  if (backend === "herdr") {
-    renameHerdrTab(AGENT_HERDR_PANE_ID ?? "", title);
-    return;
+  if (backend === "herdr" && env[HERDR_WORKSPACE_RENAME_SETTING] !== ENABLED_SETTING_VALUE) {
+    return { status: "disabled", backend, operation, setting: HERDR_WORKSPACE_RENAME_SETTING };
   }
+  if (backend === "cmux") return { status: "supported", backend, operation, target: "workspace" };
+  if (backend === "tmux") return { status: "supported", backend, operation, target: "session" };
+  if (backend === "wezterm") return { status: "supported", backend, operation, target: "window" };
+  if (backend === "herdr") return { status: "supported", backend, operation, target: "workspace" };
+  return { status: "unsupported", backend, operation };
+}
 
-  if (backend === "otty") {
-    renameOttyTab(AGENT_OTTY_PANE_ID ?? "", title);
-    return;
-  }
+/** 将终端命令异常封装为可判别的失败结果。 */
+function failedRenameResult(capability: Extract<RenameCapability, { status: "supported" }>, error: unknown): RenameResult {
+  return {
+    status: "failed",
+    backend: capability.backend,
+    operation: capability.operation,
+    target: capability.target,
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
 
-  if (backend === "orca") {
-    if (!AGENT_ORCA_TERMINAL_HANDLE) throw new Error("ORCA_TERMINAL_HANDLE not set");
-    renameOrcaTerminal(AGENT_ORCA_TERMINAL_HANDLE, title);
-    return;
-  }
+/** 重命名当前 tab/window/pane，并返回实际目标与执行结果。 */
+export function renameCurrentTab(title: string): RenameResult {
+  const capability = getRenameCapability("tab");
+  if (capability.status !== "supported") return capability;
 
-  // zellij: rename the agent's own pane
-  const paneId = process.env.ZELLIJ_PANE_ID;
-  if (paneId) {
-    execFileSync("zellij", ["action", "rename-pane", title, "--pane-id", paneId], { encoding: "utf8" });
-  } else {
-    execFileSync("zellij", ["action", "rename-pane", title], { encoding: "utf8" });
+  try {
+    const backend = capability.backend;
+    if (backend === "cmux") {
+      const surfaceId = process.env.CMUX_SURFACE_ID;
+      if (!surfaceId) throw new Error("CMUX_SURFACE_ID not set");
+      execSync(`cmux rename-tab --surface ${shellEscape(surfaceId)} ${shellEscape(title)}`, {
+        encoding: "utf8",
+      });
+    } else if (backend === "muxy") {
+      const paneId = AGENT_MUXY_PANE_ID;
+      if (!paneId) throw new Error("MUXY_PANE_ID not set");
+      execFileSync("muxy", ["rename-pane", "--pane", paneId, title], { encoding: "utf8" });
+    } else if (backend === "tmux") {
+      const paneId = process.env.TMUX_PANE;
+      if (!paneId) throw new Error("TMUX_PANE not set");
+      const windowId = execFileSync("tmux", ["display-message", "-p", "-t", paneId, "#{window_id}"], {
+        encoding: "utf8",
+      }).trim();
+      execFileSync("tmux", ["rename-window", "-t", windowId, title], { encoding: "utf8" });
+    } else if (backend === "wezterm") {
+      const paneId = process.env.WEZTERM_PANE;
+      const args = ["cli", "set-tab-title"];
+      if (paneId) args.push("--pane-id", paneId);
+      args.push(title);
+      execFileSync("wezterm", args, { encoding: "utf8" });
+    } else if (backend === "herdr") {
+      if (!renameHerdrTab(AGENT_HERDR_PANE_ID ?? "", title)) {
+        throw new Error("Herdr tab rename did not complete");
+      }
+    } else if (backend === "otty") {
+      if (!renameOttyTab(AGENT_OTTY_PANE_ID ?? "", title)) {
+        throw new Error("Otty tab rename did not complete");
+      }
+    } else if (backend === "orca") {
+      if (!AGENT_ORCA_TERMINAL_HANDLE) throw new Error("ORCA_TERMINAL_HANDLE not set");
+      renameOrcaTerminal(AGENT_ORCA_TERMINAL_HANDLE, title);
+    } else {
+      const paneId = process.env.ZELLIJ_PANE_ID;
+      const args = ["action", "rename-pane", title];
+      if (paneId) args.push("--pane-id", paneId);
+      execFileSync("zellij", args, { encoding: "utf8" });
+    }
+    return { status: "renamed", backend, operation: capability.operation, target: capability.target };
+  } catch (error) {
+    return failedRenameResult(capability, error);
   }
 }
 
-/**
- * 重命名当前 workspace / session。
- */
-export function renameWorkspace(title: string): void {
-  if (isHeadlessMode()) return;
+/** 重命名当前 workspace/session/window，并明确报告不支持或未启用。 */
+export function renameWorkspace(title: string): RenameResult {
+  const capability = getRenameCapability("workspace");
+  if (capability.status !== "supported") return capability;
 
-  const backend = requireMuxBackend();
-
-  if (backend === "cmux") {
-    execSync(`cmux workspace-action --action rename --title ${shellEscape(title)}`, {
-      encoding: "utf8",
-    });
-    return;
-  }
-
-  if (backend === "muxy") {
-    return;
-  }
-
-  if (backend === "tmux") {
-    if (process.env.PI_SUBAGENT_RENAME_TMUX_SESSION !== "1") {
-      return;
-    }
-    const paneId = process.env.TMUX_PANE;
-    if (!paneId) throw new Error("TMUX_PANE not set");
-    const sessionId = execFileSync(
-      "tmux",
-      ["display-message", "-p", "-t", paneId, "#{session_id}"],
-      { encoding: "utf8" },
-    ).trim();
-    execFileSync("tmux", ["rename-session", "-t", sessionId, title], { encoding: "utf8" });
-    return;
-  }
-
-  if (backend === "wezterm") {
-    const paneId = process.env.WEZTERM_PANE;
-    const args = ["cli", "set-window-title"];
-    if (paneId) args.push("--pane-id", paneId);
-    args.push(title);
-    try {
+  try {
+    const backend = capability.backend;
+    if (backend === "cmux") {
+      execSync(`cmux workspace-action --action rename --title ${shellEscape(title)}`, {
+        encoding: "utf8",
+      });
+    } else if (backend === "tmux") {
+      const paneId = process.env.TMUX_PANE;
+      if (!paneId) throw new Error("TMUX_PANE not set");
+      const sessionId = execFileSync(
+        "tmux",
+        ["display-message", "-p", "-t", paneId, "#{session_id}"],
+        { encoding: "utf8" },
+      ).trim();
+      execFileSync("tmux", ["rename-session", "-t", sessionId, title], { encoding: "utf8" });
+    } else if (backend === "wezterm") {
+      const paneId = process.env.WEZTERM_PANE;
+      const args = ["cli", "set-window-title"];
+      if (paneId) args.push("--pane-id", paneId);
+      args.push(title);
       execFileSync("wezterm", args, { encoding: "utf8" });
-    } catch {
-      // Optional.
+    } else if (backend === "herdr") {
+      if (!renameHerdrWorkspace(title)) {
+        throw new Error("Herdr workspace rename did not complete");
+      }
     }
-    return;
+    return { status: "renamed", backend, operation: capability.operation, target: capability.target };
+  } catch (error) {
+    return failedRenameResult(capability, error);
   }
-
-  if (backend === "herdr") {
-    renameHerdrWorkspace(title);
-    return;
-  }
-
-  if (backend === "otty") {
-    return;
-  }
-
-  if (backend === "orca") {
-    // orca: 无独立 workspace 概念（worktree 由 Orca 管理），跳过
-    return;
-  }
-
-  // zellij: skip session rename
 }
 
 export { renameHerdrTab, renameHerdrWorkspace };
