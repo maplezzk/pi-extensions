@@ -6,7 +6,7 @@
   "packages/pi-terminal-mux": "0.4.1",
   "packages/pi-metrics": "0.3.0",
   "packages/pi-models-discovery": "1.1.0",
-  "packages/pi-session-tools": "0.5.0",
+  "packages/pi-session-tools": "0.5.1",
   "packages/pi-session-resources": "0.3.0",
   "packages/pi-dynamic-workflows": "1.2.0",
   "packages/pi-interactive-subagents": "3.11.0"

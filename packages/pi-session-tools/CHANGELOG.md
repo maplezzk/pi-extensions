@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.0...pi-session-tools-v0.5.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **session-tools:** allow reusing squash anchors ([2e87d10](https://github.com/maplezzk/pi-extensions/commit/2e87d10316c18222fa0237ba4796b1d8a72126ca))
+* **session-tools:** avoid replay after completed squash ([34a59fb](https://github.com/maplezzk/pi-extensions/commit/34a59fb8c81750f5f48542e52720e4d8298810a1))
+* **session-tools:** improve squash continuation ([c527589](https://github.com/maplezzk/pi-extensions/commit/c5275890fd3c6c188bec540e11c06009945b19f2))
+
 ## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.4.1...pi-session-tools-v0.5.0) (2026-08-20)
 
 
