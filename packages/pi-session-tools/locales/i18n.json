@@ -28,12 +28,12 @@
     "en-US": "User message {from} is not complete yet; cannot squash an unfinished turn."
   },
   "logDescription": {
-    "zh-CN": "列出对话里尚未作为压缩起点的用户消息（原编号、内容、是否已回复），给 session_squash 挑起点用。已压缩消息仍可通过 /tree 找回。",
-    "en-US": "List user messages not already used as squash starting points (original index, content, replied or not) so session_squash can pick a start. Squashed messages remain available through /tree."
+    "zh-CN": "列出当前 active branch 的用户消息（原编号、内容、是否已回复），给 session_squash 挑起点用。已作为压缩起点保留的 user anchor 仍会返回，可再次选择以折叠其后的新增内容；原分支可通过 /tree 找回。",
+    "en-US": "List user messages on the current active branch (original index, content, replied or not) so session_squash can pick a start. A retained user anchor previously used for squashing is returned again and may be reused to fold newer content after it; the original branch remains available through /tree."
   },
   "logSnippet": {
-    "zh-CN": "列出未压缩消息和可选起点",
-    "en-US": "List unsquashed messages and starting points"
+    "zh-CN": "列出 active branch 消息和可复用起点",
+    "en-US": "List active-branch messages and reusable starts"
   },
   "squashLabel": {
     "zh-CN": "压缩对话",
@@ -48,8 +48,8 @@
     "en-US": "Call session_squash at a safe task or phase boundary: after a phase or verification completes, a key decision is settled, or before the next phase. The whole task need not be delivered. When context is high, reach the nearest safe checkpoint and squash instead of waiting for task completion; call session_squash immediately on a [Forced squash] message."
   },
   "guidelineIndex": {
-    "zh-CN": "调用 session_squash 前先用 session_log 看消息编号，选择要压缩的已完成任务或阶段的第一条消息作为 from；进行中阶段也必须从已完成的 user turn 开始。",
-    "en-US": "Before session_squash, call session_log and use the first message of the completed task or phase as from; an in-progress phase must still start from a completed user turn."
+    "zh-CN": "调用 session_squash 前先用 session_log 看消息编号，选择要压缩的已完成任务或阶段的第一条消息作为 from；进行中阶段也必须从已完成的 user turn 开始。若上次快照后、下一条 user turn 前已有自动续接内容，应复用 session_log 返回的既有 user anchor，把这些新增内容一并重新折叠。",
+    "en-US": "Before session_squash, call session_log and use the first message of the completed task or phase as from; an in-progress phase must still start from a completed user turn. If automatic continuation added work after the previous snapshot and before the next user turn, reuse the retained user anchor returned by session_log so that newer work is folded too."
   },
   "guidelineSummary": {
     "zh-CN": "调用 session_squash 时直接把完整任务状态快照放进 summary；重点先写 Work Completed（做了什么、作用对象、最终结果和验证，且禁止重复），再写 Current State（In Progress 的准确停点、Remaining、Blocked / Unknown）、仍有效的决策与制品，以及 Resume 的第一步动作和完成条件；不再有后续 finalize 步骤。",

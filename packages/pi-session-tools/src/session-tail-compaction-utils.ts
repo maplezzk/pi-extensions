@@ -279,20 +279,15 @@ export function listUserInputs(
 }
 
 /**
- * 列出 session_log 应展示的用户消息。
- * 已作为压缩起点写入摘要的消息仍保留在 session tree 中供 /tree 恢复，
- * 但不再作为候选返回；索引沿用原始 user message 索引，避免重新编号。
+ * 列出 session_log 应展示的 active-branch 用户消息。
+ * 已作为压缩起点的 user turn 仍是稳定分支锚点，必须允许重复选择，
+ * 才能把上次快照之后、下一条 user turn 之前的自动续接内容重新折叠。
  */
 export function listSquashCandidates(
   branch: SessionEntry[],
   imagePlaceholder: string,
 ): UserInputIndex[] {
-  const compactedStartEntryIds = new Set(
-    getTailCompactions(branch).map(({ data }) => data.startEntryId),
-  );
-  return listUserInputs(branch, imagePlaceholder).filter(
-    (input) => !compactedStartEntryIds.has(input.entryId),
-  );
+  return listUserInputs(branch, imagePlaceholder);
 }
 
 /** 校验 custom message details 是否包含完整、可用的尾部压缩元数据。 */
