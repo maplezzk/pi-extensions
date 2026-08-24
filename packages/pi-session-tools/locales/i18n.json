@@ -15,6 +15,10 @@
     "zh-CN": "压缩后的任务状态快照。重点说明已做工作、最终结果与验证，并明确当前停点、剩余事项和下一步；不要记录压缩过程。",
     "en-US": "Task-state snapshot after squashing. Focus on work completed, final outcomes, and verification, then state the exact stopping point, remaining work, and next action. Do not record the squash process."
   },
+  "squashContinuationDescription": {
+    "zh-CN": "压缩后的接续模式。仍有可立即执行的 Resume 时使用 auto；当前任务已完成且必须等待用户新输入时使用 next-user，只保存快照而不触发模型回合。旧版调用省略此字段时兼容为 auto。",
+    "en-US": "Continuation mode after squashing. Use auto when Resume has immediately actionable work; use next-user when work is complete and must await new user input, saving the snapshot without triggering a model turn. Legacy calls that omit this field fall back to auto."
+  },
   "validateInputNotFound": {
     "zh-CN": "找不到 user message 索引 {from}。",
     "en-US": "User message {from} was not found."
@@ -24,12 +28,12 @@
     "en-US": "User message {from} is not complete yet; cannot squash an unfinished turn."
   },
   "logDescription": {
-    "zh-CN": "列出对话里尚未作为压缩起点的用户消息（原编号、内容、是否已回复），给 session_squash 挑起点用。已压缩消息仍可通过 /tree 找回。",
-    "en-US": "List user messages not already used as squash starting points (original index, content, replied or not) so session_squash can pick a start. Squashed messages remain available through /tree."
+    "zh-CN": "列出当前 active branch 的用户消息（原编号、内容、是否已回复），给 session_squash 挑起点用。已作为压缩起点保留的 user anchor 仍会返回，可再次选择以折叠其后的新增内容；原分支可通过 /tree 找回。",
+    "en-US": "List user messages on the current active branch (original index, content, replied or not) so session_squash can pick a start. A retained user anchor previously used for squashing is returned again and may be reused to fold newer content after it; the original branch remains available through /tree."
   },
   "logSnippet": {
-    "zh-CN": "列出未压缩消息和可选起点",
-    "en-US": "List unsquashed messages and starting points"
+    "zh-CN": "列出 active branch 消息和可复用起点",
+    "en-US": "List active-branch messages and reusable starts"
   },
   "squashLabel": {
     "zh-CN": "压缩对话",
@@ -44,8 +48,8 @@
     "en-US": "Call session_squash at a safe task or phase boundary: after a phase or verification completes, a key decision is settled, or before the next phase. The whole task need not be delivered. When context is high, reach the nearest safe checkpoint and squash instead of waiting for task completion; call session_squash immediately on a [Forced squash] message."
   },
   "guidelineIndex": {
-    "zh-CN": "调用 session_squash 前先用 session_log 看消息编号，选择要压缩的已完成任务或阶段的第一条消息作为 from；进行中阶段也必须从已完成的 user turn 开始。",
-    "en-US": "Before session_squash, call session_log and use the first message of the completed task or phase as from; an in-progress phase must still start from a completed user turn."
+    "zh-CN": "调用 session_squash 前先用 session_log 看消息编号，选择要压缩的已完成任务或阶段的第一条消息作为 from；进行中阶段也必须从已完成的 user turn 开始。若上次快照后、下一条 user turn 前已有自动续接内容，应复用 session_log 返回的既有 user anchor，把这些新增内容一并重新折叠。",
+    "en-US": "Before session_squash, call session_log and use the first message of the completed task or phase as from; an in-progress phase must still start from a completed user turn. If automatic continuation added work after the previous snapshot and before the next user turn, reuse the retained user anchor returned by session_log so that newer work is folded too."
   },
   "guidelineSummary": {
     "zh-CN": "调用 session_squash 时直接把完整任务状态快照放进 summary；重点先写 Work Completed（做了什么、作用对象、最终结果和验证，且禁止重复），再写 Current State（In Progress 的准确停点、Remaining、Blocked / Unknown）、仍有效的决策与制品，以及 Resume 的第一步动作和完成条件；不再有后续 finalize 步骤。",
@@ -60,12 +64,12 @@
     "en-US": "session_squash covers everything from the selected from turn to the latest message, including all later content."
   },
   "guidelineContinue": {
-    "zh-CN": "session_squash 完成后会自动继续干活；接续时不得重复 Work Completed，必须从准确停点或 Resume 开始。想停下来就直接打断。",
-    "en-US": "The agent keeps working automatically after session_squash; it must not repeat Work Completed and must resume from the exact stopping point or Resume action. Interrupt it if you want to pause."
+    "zh-CN": "调用 session_squash 时按 Resume 选择 continuation：仍有可立即执行的工作用 auto；Current State 已完成且必须等待用户新输入时用 next-user，禁止为保持自动接续而重复 Work Completed。",
+    "en-US": "When calling session_squash, choose continuation from Resume: use auto when work can continue immediately; use next-user when Current State is complete and must await new user input. Never repeat Work Completed merely to keep automatic continuation active."
   },
   "continuationInstruction": {
-    "zh-CN": "【任务状态快照】以下内容是当前有效任务状态。先确认 Work Completed，禁止重复其中的工作；从 Current State 的准确停点或 Resume 继续。若状态快照与实际 workspace、Git 或测试证据冲突，以实际证据为准并明确报告。",
-    "en-US": "[Task state snapshot] The content below is the current effective task state. Read Work Completed first and do not repeat it; continue from the exact Current State stopping point or Resume action. If the snapshot conflicts with workspace, Git, or test evidence, follow the evidence and report the conflict."
+    "zh-CN": "【任务状态快照】以下内容是当前有效任务状态。先确认 Work Completed，禁止重复其中的工作；从 Current State 的准确停点或 Resume 继续。若当前没有可执行工作，不得改为复述 Work Completed。若状态快照与实际 workspace、Git 或测试证据冲突，以实际证据为准并明确报告。",
+    "en-US": "[Task state snapshot] The content below is the current effective task state. Read Work Completed first and do not repeat it; continue from the exact Current State stopping point or Resume action. If no actionable work remains, do not restate Work Completed instead. If the snapshot conflicts with workspace, Git, or test evidence, follow the evidence and report the conflict."
   },
   "pending": {
     "zh-CN": "已经有一个压缩请求在排队，等这轮说完就执行，别重复调用。",
@@ -108,8 +112,8 @@
     "en-US": "Context reached {tokens} (forced threshold {threshold}); the task was interrupted after the current tool batch and forced squash mode is now active."
   },
   "forceTaskPrompt": {
-    "zh-CN": "【强制压缩｜第 {attempt} 次】上下文已达 {tokens}，超过强制阈值 {threshold}。立即停止原任务；在压缩成功前不得继续实现、解释或调用其他工具。\n\n你现在只能：\n1. 调用 session_log，选择一个已完成且足以释放上下文的起点；\n2. 基于当前完整上下文生成任务状态快照；\n3. 调用 session_squash，把 from 和完整 summary 一次提交。\n\nsummary 必须使用以下结构：## Goal & Constraints；## Work Completed（重点说明做了什么、作用对象、最终结果和验证，且禁止重复）；## Current State（含 In Progress 的准确停点、Remaining、Blocked / Unknown）；## Decisions & Evidence；## Artifacts（文件、分支、提交和日志状态）；## Resume（第一步动作和完成条件）。Completed 不得再次放入 Remaining 或 Resume；必要时标记 VERIFIED、INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED。只记录继续任务所需的有效状态，吸收旧摘要中的任务事实，但不得记录压缩、上下文阈值、session_log、session_squash 或会话切换过程。即使任务尚未完成也必须现在压缩。不要只回复文字，必须完成 session_squash 调用。",
-    "en-US": "[Forced squash | attempt {attempt}] Context reached {tokens}, exceeding the forced threshold {threshold}. Stop the original task immediately. Until squash succeeds, do not continue implementation, explain, or call any other tools.\n\nYou may only:\n1. Call session_log and choose a completed starting point that frees enough context;\n2. Generate a task-state snapshot from the full current context;\n3. Call session_squash once with both from and the complete summary.\n\nUse these sections: ## Goal & Constraints; ## Work Completed (focus on what was done, its target, final outcome, and verification; do not repeat it); ## Current State (the exact In Progress stopping point, Remaining, and Blocked / Unknown); ## Decisions & Evidence; ## Artifacts (file, branch, commit, and log state); and ## Resume (first action and completion criteria). Completed work must not reappear under Remaining or Resume. Use VERIFIED, INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED when needed. Record only effective state needed to continue, absorbing task facts from earlier summaries while omitting squash, context-threshold, session_log, session_squash, and session-switching mechanics. Squash now even if the task is unfinished. Do not merely reply with text; complete the session_squash call."
+    "zh-CN": "【强制压缩｜第 {attempt} 次】上下文已达 {tokens}，超过强制阈值 {threshold}。立即停止原任务；在压缩成功前不得继续实现、解释或调用其他工具。\n\n你现在只能：\n1. 调用 session_log，选择一个已完成且足以释放上下文的起点；\n2. 基于当前完整上下文生成任务状态快照；\n3. 调用 session_squash，把 from、完整 summary 和 continuation 一次提交；仍有可立即执行的 Resume 时用 auto，必须等待用户新输入时用 next-user。\n\nsummary 必须使用以下结构：## Goal & Constraints；## Work Completed（重点说明做了什么、作用对象、最终结果和验证，且禁止重复）；## Current State（含 In Progress 的准确停点、Remaining、Blocked / Unknown）；## Decisions & Evidence；## Artifacts（文件、分支、提交和日志状态）；## Resume（第一步动作和完成条件）。Completed 不得再次放入 Remaining 或 Resume；必要时标记 VERIFIED、INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED。只记录继续任务所需的有效状态，吸收旧摘要中的任务事实，但不得记录压缩、上下文阈值、session_log、session_squash 或会话切换过程。即使任务尚未完成也必须现在压缩。不要只回复文字，必须完成 session_squash 调用。",
+    "en-US": "[Forced squash | attempt {attempt}] Context reached {tokens}, exceeding the forced threshold {threshold}. Stop the original task immediately. Until squash succeeds, do not continue implementation, explain, or call any other tools.\n\nYou may only:\n1. Call session_log and choose a completed starting point that frees enough context;\n2. Generate a task-state snapshot from the full current context;\n3. Call session_squash once with from, the complete summary, and continuation: use auto for immediately actionable Resume work, or next-user when new user input is required.\n\nUse these sections: ## Goal & Constraints; ## Work Completed (focus on what was done, its target, final outcome, and verification; do not repeat it); ## Current State (the exact In Progress stopping point, Remaining, and Blocked / Unknown); ## Decisions & Evidence; ## Artifacts (file, branch, commit, and log state); and ## Resume (first action and completion criteria). Completed work must not reappear under Remaining or Resume. Use VERIFIED, INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED when needed. Record only effective state needed to continue, absorbing task facts from earlier summaries while omitting squash, context-threshold, session_log, session_squash, and session-switching mechanics. Squash now even if the task is unfinished. Do not merely reply with text; complete the session_squash call."
   },
   "forceToolBlocked": {
     "zh-CN": "强制压缩期间禁止调用 {tool}；只能调用 session_log 和 session_squash。",

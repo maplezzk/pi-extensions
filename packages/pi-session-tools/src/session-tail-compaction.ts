@@ -6,11 +6,11 @@
  * - session_squash：接收摘要，从指定 user turn 索引压缩到当前 active leaf
  *
  * 摘要由主 agent 在调用 session_squash 时直接提交，不发起独立 LLM 请求。
- * 工具登记折叠后，当前 agent 结束时完成分支切换并自动继续。
+ * 工具登记折叠后，当前 agent 结束时完成分支切换，并按 continuation 接续。
  *
  * 折叠不是覆盖当前历史，而是复用 Pi 的 SessionManager.branch：
  * - 原始后缀保留为旧 branch；
- * - 当前 leaf 回到折叠起点；
+ * - 当前 leaf 回到折叠起点，保持 user turn 索引稳定；
  * - summary custom message 成为新的 active branch；
  * - /tree 可以回到原始后缀。
  */
@@ -58,6 +58,13 @@ const TAIL_START_ERROR_I18N_KEY: Record<TailStartErrorCode, string> = {
   [TAIL_START_ERROR.inputIncomplete]: "validateInputIncomplete",
 };
 
+const CONTINUATION_AUTO = "auto";
+const CONTINUATION_NEXT_USER = "next-user";
+
+type SquashContinuation =
+  | typeof CONTINUATION_AUTO
+  | typeof CONTINUATION_NEXT_USER;
+
 const TailCompactionParams = Type.Object({
   from: Type.Integer({
     minimum: 0,
@@ -67,6 +74,12 @@ const TailCompactionParams = Type.Object({
     minLength: 1,
     description: i18n.t("squashSummaryDescription"),
   }),
+  continuation: Type.Optional(Type.Union([
+    Type.Literal(CONTINUATION_AUTO),
+    Type.Literal(CONTINUATION_NEXT_USER),
+  ], {
+    description: i18n.t("squashContinuationDescription"),
+  })),
 });
 
 /** contextWindow 缺失时的回退值（与 Pi 内置摘要逻辑一致）。 */
@@ -284,6 +297,7 @@ type PendingTailCompaction = {
   startEntryId: string;
   fromUserInputIndex: number;
   summary: string;
+  continuation: SquashContinuation;
 };
 
 type ForceSquashState = {
@@ -414,6 +428,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       i18n.t("guidelineContinue"),
     ],
     parameters: TailCompactionParams,
+    /** 校验并登记压缩请求；实际分支切换在 agent_settled 后执行。 */
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch();
       const inputs = listUserInputs(branch, i18n.t("imagePlaceholder"));
@@ -444,6 +459,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         startEntryId: validation.input.entryId,
         fromUserInputIndex: params.from,
         summary,
+        continuation: params.continuation ?? CONTINUATION_AUTO,
       };
 
       return {
@@ -520,7 +536,12 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     const startIdx = branch.findIndex(
       (entry) => entry.id === request.startEntryId,
     );
-    const suffix = startIdx >= 0 ? branch.slice(startIdx) : branch;
+    const startEntry = branch[startIdx];
+    if (!startEntry) {
+      pending = null;
+      throw new Error(i18n.t("noInput"));
+    }
+    const suffix = branch.slice(startIdx);
     const { readFiles, modifiedFiles } = computeFileLists(
       extractFileOps(suffix),
     );
@@ -536,15 +557,14 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     };
 
     try {
-      // ExtensionContext 暴露的是只读类型，但底层对象就是 Pi 的
-      // SessionManager。这里复用它公开的 branch()，保持同一个 JSONL tree。
+      // 起始 user turn 作为新分支锚点保留，确保后续 session_log 索引稳定；
+      // continuation=next-user 会阻止已完成任务立即重答这条旧 prompt。
       const sessionManager =
         ctx.sessionManager as unknown as SessionManager;
       sessionManager.branch(request.startEntryId);
 
-      // branch() 只改变持久化 tree 的 leaf；sendMessage 同时把 summary
-      // 追加到 AgentSession 的内存消息和当前新 leaf，避免下一轮仍使用旧后缀。
-      // 压缩完成后固定自动继续一轮，主 agent 基于交接文档摘要继续工作。
+      // sendMessage 同时把 summary 追加到 AgentSession 内存和当前新 leaf。
+      // 已完成且等待用户的新阶段只保存快照，不额外触发一轮旧任务回复。
       restoreToolsAfterForce();
       pi.sendMessage(
         {
@@ -553,7 +573,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
           display: true,
           details: data,
         },
-        { triggerTurn: true },
+        { triggerTurn: request.continuation === CONTINUATION_AUTO },
       );
       pending = null;
     } catch (error) {

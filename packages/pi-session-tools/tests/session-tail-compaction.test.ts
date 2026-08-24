@@ -20,10 +20,17 @@ type RegisteredTool = {
   name: string;
   description: string;
   promptGuidelines?: string[];
-  parameters: { required?: string[] };
+  parameters: {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  };
   execute: (
     toolCallId: string,
-    params: { from: number; summary: string },
+    params: {
+      from: number;
+      summary: string;
+      continuation?: "auto" | "next-user";
+    },
     signal: undefined,
     onUpdate: undefined,
     context: unknown,
@@ -46,7 +53,8 @@ type RegisteredCommand = {
   handler: (args: string, context: unknown) => Promise<void>;
 };
 
-test("强制模式限制工具并持续要求压缩，普通模式提交后也终止当前 agent", async (t) => {
+/** 验证强制门禁、稳定的压缩锚点和两种接续模式。 */
+test("强制模式限制工具，并按 continuation 控制压缩后接续", async (t) => {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-session-tools-force-"));
   const configDir = join(agentDir, "extensions", "pi-session-tools");
   mkdirSync(configDir, { recursive: true });
@@ -110,6 +118,7 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
   const squashTool = tools.find((tool) => tool.name === "session_squash");
   assert.ok(squashTool);
   assert.deepEqual(squashTool.parameters.required, ["from", "summary"]);
+  assert.ok(squashTool.parameters.properties?.continuation);
   assert.ok(
     squashTool.promptGuidelines?.some((guideline) =>
       guideline.includes("Work Completed")
@@ -118,6 +127,11 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
   assert.ok(
     squashTool.promptGuidelines?.every((guideline) =>
       guideline.includes("session_squash")
+    ),
+  );
+  assert.ok(
+    squashTool.promptGuidelines?.some((guideline) =>
+      guideline.includes("next-user")
     ),
   );
 
@@ -280,7 +294,11 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
 
   const result = await squashTool.execute(
     "tool-1",
-    { from: 0, summary: "## Work Completed\n已更新提示文案并通过测试" },
+    {
+      from: 0,
+      summary: "## Work Completed\n已更新提示文案并通过测试",
+      continuation: "next-user",
+    },
     undefined,
     undefined,
     context,
@@ -295,7 +313,7 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
     (message as { customType?: string }).customType === SESSION_SQUASH_TYPE
   );
   assert.equal(squashMessages.length, 1);
-  assert.deepEqual(squashMessages[0]?.options, { triggerTurn: true });
+  assert.deepEqual(squashMessages[0]?.options, { triggerTurn: false });
   const sent = squashMessages[0]?.message as {
     customType: string;
     content: string;
@@ -316,11 +334,22 @@ test("强制模式限制工具并持续要求压缩，普通模式提交后也�
   await configCommand.handler("force off", context);
   const normalResult = await squashTool.execute(
     "tool-2",
-    { from: 0, summary: "## Goal\n普通模式压缩" },
+    {
+      from: 0,
+      summary: "## Current State\n继续实现",
+    },
     undefined,
     undefined,
     context,
   );
   assert.equal(normalResult.isError, false);
   assert.equal(normalResult.terminate, true);
+  await settled({}, context);
+
+  assert.deepEqual(branchTargets, ["u1", "u1"]);
+  const allSquashMessages = sentMessages.filter(({ message }) =>
+    (message as { customType?: string }).customType === SESSION_SQUASH_TYPE
+  );
+  assert.equal(allSquashMessages.length, 2);
+  assert.deepEqual(allSquashMessages[1]?.options, { triggerTurn: true });
 });
