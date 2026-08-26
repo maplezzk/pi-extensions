@@ -16,6 +16,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildCurrentFileContext,
   buildFileEditReviewDiff,
   buildGenericReviewPrompt,
   buildMergedReviewPrompt,
@@ -45,23 +46,26 @@ test("只加载有效的侧边审查配置，并提供默认参数", async () =>
   assert.equal(loaded.config.enabled, true);
   assert.equal(loaded.config.timeoutSeconds, 10);
   assert.equal(loaded.config.maxOutputChars, 10000);
+  assert.equal(loaded.config.maxFileContextChars, 50000);
   assert.equal(loaded.config.maxRuleLines, 100);
   assert.deepEqual(loaded.config.reviewers[0]?.name, "language");
   assert.deepEqual(loaded.warnings, []);
 });
 
-test("兼容旧 timeoutMs，并支持秒和返回字符上限配置", async () => {
+test("兼容旧 timeoutMs，并支持秒、返回字符和文件上下文上限配置", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-timeout-"));
   const configFile = join(directory, "config.json");
   await writeFile(configFile, JSON.stringify({
     enabled: true,
     timeoutSeconds: 7,
     maxChars: 3210,
+    maxFileContextChars: 43210,
     reviewers: [{ model: "provider/model", rulesFile: "rules.md" }],
   }));
   const loaded = loadFileEditReviewConfig(configFile);
   assert.equal(loaded.config.timeoutSeconds, 7);
   assert.equal(loaded.config.maxOutputChars, 3210);
+  assert.equal(loaded.config.maxFileContextChars, 43210);
 
   await writeFile(configFile, JSON.stringify({
     enabled: true,
@@ -289,8 +293,20 @@ test("规则文件超过 100 行时返回警告", async () => {
 test("生成实际文件 diff 并解析结构化审查结果", () => {
   const diff = buildFileEditReviewDiff("src/app.ts", "const lang = 'en';\n", "const lang = 'zh';\n");
   assert.match(diff, /--- a\/src\/app\.ts/);
+  assert.match(diff, /@@ -1,1 \+1,1 @@/);
   assert.match(diff, /-const lang = 'en';/);
   assert.match(diff, /\+const lang = 'zh';/);
+  const newFileDiff = buildFileEditReviewDiff("src/new.ts", undefined, "first\nsecond\n");
+  assert.match(newFileDiff, /@@ -0,0 \+1,2 @@/);
+  assert.match(newFileDiff, /\+second$/);
+
+  const beforeLines = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`);
+  const afterLines = [...beforeLines];
+  afterLines[1] = "changed 2";
+  afterLines[17] = "changed 18";
+  const multiHunkDiff = buildFileEditReviewDiff("src/multi.ts", beforeLines.join("\n"), afterLines.join("\n"));
+  assert.equal(multiHunkDiff.match(/^@@/gm)?.length, 2);
+  assert.doesNotMatch(multiHunkDiff, /^[+-]line 10$/m);
 
   const parsed = parseReviewResponse(JSON.stringify({
     passed: false,
@@ -300,6 +316,37 @@ test("生成实际文件 diff 并解析结构化审查结果", () => {
   assert.equal(parsed.passed, false);
   assert.equal(parsed.findings[0]?.line, 3);
   assert.equal(parsed.findings[0]?.ruleGroup, "coding-taste");
+});
+
+test("修改后文件上下文携带真实行号，并围绕大文件变更位置有界截取", () => {
+  const full = buildCurrentFileContext("first\nsecond\n", "first\nchanged\n", 50000);
+  assert.deepEqual(full, { content: "1 | first\n2 | changed", truncated: false });
+
+  const beforeLines = Array.from({ length: 300 }, (_, index) => `line ${index + 1}`);
+  const afterLines = [...beforeLines];
+  afterLines[249] = "changed line";
+  const bounded = buildCurrentFileContext(`${beforeLines.join("\n")}\n`, `${afterLines.join("\n")}\n`, 1000);
+  assert.equal(bounded?.truncated, true);
+  assert.match(bounded?.content ?? "", /250 \| changed line/);
+  assert.ok((bounded?.content.length ?? 0) <= 1000);
+
+  const tiny = buildCurrentFileContext("before\n", `${"x".repeat(100)}\n`, 10);
+  assert.equal(tiny?.truncated, true);
+  assert.ok((tiny?.content.length ?? 0) <= 10);
+});
+
+test("review prompt 同时包含 diff 和带截断标记的修改后文件", () => {
+  const rules = [{ reviewer: { name: "file", model: "p/m", rulesFile: "rules.md" }, absolutePath: "rules.md", content: "只审查修改代码", lineCount: 1 }];
+  const prompt = buildMergedReviewPrompt({
+    toolName: "write",
+    filePath: "src/app.ts",
+    diff: "+const value = 2;",
+    currentFileContext: { content: "8 | const value = 2;", truncated: true },
+    rules,
+  });
+  assert.match(prompt, /<current-file truncated="true">/);
+  assert.match(prompt, /8 \| const value = 2;/);
+  assert.match(prompt, /只报告 diff 中新增或修改代码的问题/);
 });
 
 test("审查结果状态优先级为 rejected、failed、passed", () => {
@@ -999,6 +1046,8 @@ test("edit/write after 使用实际快照 diff，并在无变化时跳过模型"
     assert.equal(changed.details.fileEditReview.status, "passed");
     assert.match(prompts[0], /-const value = 1;/);
     assert.match(prompts[0], /\+const value = 2;/);
+    assert.match(prompts[0], /<current-file truncated=\\"false\\">/);
+    assert.match(prompts[0], /1 \| const value = 2;/);
 
     await handlers.get("tool_call")?.({ toolName: "write", toolCallId: "write-same", input: { path: "example.ts", content: "const value = 2;\n" } }, context);
     const unchanged = await handlers.get("tool_result")?.({ toolName: "write", toolCallId: "write-same", input: { path: "example.ts", content: "const value = 2;\n" }, content: [{ type: "text", text: "unchanged" }], details: {}, isError: false }, context) as { details: { fileEditReview: { status: string } } };

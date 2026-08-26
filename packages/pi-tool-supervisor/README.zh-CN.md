@@ -11,6 +11,7 @@
 - 每个 reviewer 可选择 `tools` 与 `trigger`；省略时保持旧默认：`edit`/`write` + `after`，`"*"` 匹配全部内建和自定义工具。
 - before reviewer 审查执行前输入，明确拒绝会通过 Pi 原生机制阻断调用；审查失败仍 fail-open 且可见。
 - 在 `edit` / `write` 前捕获文件状态，在工具返回后读取实际文件状态。
+- 将带真实行号的修改后文件与 diff 一起发送；超过 `maxFileContextChars` 时，截取首次和末次变更附近并明确标记截断。
 - 构建 diff，并只选择规则文件匹配当前变更文件的 reviewer。
 - 支持多个 reviewer 并行执行，每个 reviewer 可以使用自己的模型和一个或多个规则文件。
 - 读取规则文件可选的 front matter：`enabled`、`filePatterns`、`complexity` 和 `consumers`。
@@ -55,6 +56,7 @@ pi install npm:pi-tool-supervisor
   "enabled": true,
   "timeoutSeconds": 10,
   "maxOutputChars": 10000,
+  "maxFileContextChars": 50000,
   "maxRuleLines": 100,
   "reviewers": [
     {
@@ -77,6 +79,7 @@ pi install npm:pi-tool-supervisor
 | `enabled` | 启用或关闭审查层。 |
 | `timeoutSeconds` | 每个 reviewer 模型调用的最长等待时间。 |
 | `maxOutputChars` | 工具结果最大返回长度，超出后写入临时文件。 |
+| `maxFileContextChars` | 发送给 reviewer 的修改后文件上下文上限，默认 50,000 字符；超大文件仅发送首次和末次变更附近的有界片段并明确标记。 |
 | `maxRuleLines` | 单条审查规则允许读取的最大行数。 |
 | `reviewers` | reviewer 名称、模型、规则文件、`tools` 与 `trigger`；省略生命周期字段时保持旧的 `edit`/`write` + `after` 行为。 |
 

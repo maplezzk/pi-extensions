@@ -23,6 +23,10 @@
     "zh-CN": "passed 为 false 时，findings 必须给出 Agent 可以直接修正的具体问题；没有问题时 passed 为 true。",
     "en-US": "When passed is false, findings must contain concrete issues the Agent can fix directly; use passed true when there are no issues."
   },
+  "currentFileGuidance": {
+    "zh-CN": "current-file 是修改后的实际文件内容，行首数字是实际行号。它只用于理解 diff 上下文；仍然只报告 diff 中新增或修改代码的问题。",
+    "en-US": "current-file is the actual post-edit file and each line starts with its real line number. Use it only to understand diff context; report issues only in added or modified diff code."
+  },
   "tool": {
     "zh-CN": "工具：{value}",
     "en-US": "Tool: {value}"

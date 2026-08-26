@@ -7,7 +7,7 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 
 ## 诊断
 
-定位实际 Pi agent 目录下的 `extensions/pi-tool-supervisor/config.json`；仅当新路径不存在时读取旧 `extensions/pi-file-edit-review/config.json`。确认顶层 `enabled`、`timeoutSeconds`、`maxOutputChars`、`maxRuleLines`、`reviewers`。
+定位实际 Pi agent 目录下的 `extensions/pi-tool-supervisor/config.json`；仅当新路径不存在时读取旧 `extensions/pi-file-edit-review/config.json`。确认顶层 `enabled`、`timeoutSeconds`、`maxOutputChars`、`maxFileContextChars`、`maxRuleLines`、`reviewers`。
 
 每个 reviewer 必须有 `provider/model` 和唯一的 `rulesFile|rulesFiles`，并检查：
 
@@ -24,7 +24,7 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 
 - `before` 审查工具输入；明确拒绝会阻断原生工具，失败或跳过则 fail-open 但保持可见；
 - `after` 审查工具结果；拒绝只诊断、不回滚，原工具失败时跳过 after；
-- `edit/write` 使用真实文件前后快照和 diff；其他工具使用有界序列化的 input/result；
+- `edit/write` 使用真实文件前后快照、带真实行号的 diff 和修改后文件上下文；超出 `maxFileContextChars` 时只保留首次与末次变更附近的有界片段并明确标记；其他工具使用有界序列化的 input/result；
 - 带 `filePatterns` 的规则只用于文件审查，通用工具规则不要设置 `filePatterns`；
 - `complexity: context` 或 `consumers` 不含 `editor-review` 的规则不会被本地审查消费。
 
