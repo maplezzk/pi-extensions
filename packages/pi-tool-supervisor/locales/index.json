@@ -123,9 +123,17 @@
     "zh-CN": "审查超时时间（秒）",
     "en-US": "Review timeout (seconds)"
   },
+  "fileContextInput": {
+    "zh-CN": "修改后文件上下文最大字符数",
+    "en-US": "Maximum post-edit file context characters"
+  },
   "rulesInput": {
     "zh-CN": "规则文件最大行数",
     "en-US": "Maximum rule file lines"
+  },
+  "fileContextConfig": {
+    "zh-CN": "修改后文件上下文上限：{value} 字符",
+    "en-US": "Post-edit file context limit: {value} chars"
   },
   "rulesConfig": {
     "zh-CN": "规则最大行数：{value}",

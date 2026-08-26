@@ -1,6 +1,7 @@
 {
   "enabled": true,
   "timeoutSeconds": 10,
+  "maxFileContextChars": 50000,
   "maxRuleLines": 100,
   "reviewers": [
     {

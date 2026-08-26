@@ -2,10 +2,15 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { createTwoFilesPatch } from "diff";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/review-utils.json", import.meta.url)));
 
 const DEFAULT_TIMEOUT_SECONDS = 10;
+const DEFAULT_MAX_FILE_CONTEXT_CHARS = 50_000;
+const DIFF_CONTEXT_LINES = 3;
+const FILE_CONTEXT_RADIUS_STEPS = [100, 50, 20, 10, 3, 0] as const;
+const OMITTED_RANGE_START_OFFSET = 2;
 const DEFAULT_MAX_RULE_LINES = 100;
 const CONFIG_DIRECTORY = "pi-tool-supervisor";
 const LEGACY_CONFIG_DIRECTORY = "pi-file-edit-review";
@@ -55,6 +60,7 @@ export interface FileEditReviewConfig {
   enabled: boolean;
   reviewers: FileEditReviewReviewerConfig[];
   timeoutSeconds: number;
+  maxFileContextChars: number;
   maxRuleLines: number;
 }
 
@@ -70,6 +76,11 @@ export interface FileEditReviewRule {
   content: string;
   lineCount: number;
   warning?: string;
+}
+
+export interface CurrentFileContext {
+  content: string;
+  truncated: boolean;
 }
 
 export interface FileEditReviewFinding {
@@ -204,6 +215,7 @@ export function loadFileEditReviewConfig(
     enabled: false,
     reviewers: [],
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+    maxFileContextChars: DEFAULT_MAX_FILE_CONTEXT_CHARS,
     maxRuleLines: DEFAULT_MAX_RULE_LINES,
   };
   if (!existsSync(resolvedConfigFile)) {
@@ -255,6 +267,7 @@ export function loadFileEditReviewConfig(
           ? Math.max(1, Math.ceil(source.timeoutMs / 1000))
           : DEFAULT_TIMEOUT_SECONDS,
       ),
+      maxFileContextChars: positiveInteger(source.maxFileContextChars, DEFAULT_MAX_FILE_CONTEXT_CHARS),
       maxRuleLines: positiveInteger(source.maxRuleLines, DEFAULT_MAX_RULE_LINES),
     },
     configPath: resolvedConfigFile,
@@ -444,33 +457,7 @@ export function loadReviewRules(
   return { rules, errors };
 }
 
-function lineDiff(before: string, after: string): string {
-  const beforeLines = before.split(/\r?\n/);
-  const afterLines = after.split(/\r?\n/);
-  const prefix = beforeLines.length > 0 && beforeLines[beforeLines.length - 1] === "" ? beforeLines.slice(0, -1) : beforeLines;
-  const suffix = afterLines.length > 0 && afterLines[afterLines.length - 1] === "" ? afterLines.slice(0, -1) : afterLines;
-  const commonStart = prefix.findIndex((line, index) => line !== suffix[index]);
-  const start = commonStart === -1 ? Math.min(prefix.length, suffix.length) : commonStart;
-  let commonEnd = 0;
-  while (
-    commonEnd < prefix.length - start &&
-    commonEnd < suffix.length - start &&
-    prefix[prefix.length - 1 - commonEnd] === suffix[suffix.length - 1 - commonEnd]
-  ) {
-    commonEnd += 1;
-  }
-  const contextBefore = prefix.slice(Math.max(0, start - 3), start);
-  const removed = prefix.slice(start, prefix.length - commonEnd);
-  const added = suffix.slice(start, suffix.length - commonEnd);
-  const contextAfter = prefix.slice(prefix.length - commonEnd, prefix.length - commonEnd + 3);
-  return [
-    ...contextBefore.map((line) => ` ${line}`),
-    ...removed.map((line) => `-${line}`),
-    ...added.map((line) => `+${line}`),
-    ...contextAfter.map((line) => ` ${line}`),
-  ].join("\n");
-}
-
+/** Builds the actual before/after file diff used by file reviewers. */
 export function buildFileEditReviewDiff(
   filePath: string,
   before: string | undefined,
@@ -479,12 +466,81 @@ export function buildFileEditReviewDiff(
 ): string {
   if (before !== undefined && after !== undefined && before === after) return "";
   if (before !== undefined && after !== undefined) {
-    return [`--- a/${filePath}`, `+++ b/${filePath}`, "@@", lineDiff(before, after)].join("\n");
+    return createTwoFilesPatch(
+      `a/${filePath}`,
+      `b/${filePath}`,
+      before,
+      after,
+      undefined,
+      undefined,
+      { context: DIFF_CONTEXT_LINES },
+    ).trimEnd();
   }
   if (after !== undefined) {
-    return [`--- /dev/null`, `+++ b/${filePath}`, "@@", after.split(/\r?\n/).map((line) => `+${line}`).join("\n")].join("\n");
+    const lines = after.split(/\r?\n/);
+    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    return [`--- /dev/null`, `+++ b/${filePath}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((line) => `+${line}`)].join("\n");
   }
   return fallbackDiff;
+}
+
+/** Builds a numbered post-edit file view, bounded around the first and last changed lines for oversized files. */
+export function buildCurrentFileContext(
+  before: string | undefined,
+  after: string | undefined,
+  maxChars: number,
+): CurrentFileContext | undefined {
+  if (after === undefined) return undefined;
+  const afterLines = after.split(/\r?\n/);
+  if (afterLines.length > 0 && afterLines[afterLines.length - 1] === "") afterLines.pop();
+  const numberedLines = afterLines.map((line, index) => `${index + 1} | ${line}`);
+  const fullContent = numberedLines.join("\n");
+  if (fullContent.length <= maxChars) return { content: fullContent, truncated: false };
+
+  const beforeLines = before?.split(/\r?\n/) ?? [];
+  if (beforeLines.length > 0 && beforeLines[beforeLines.length - 1] === "") beforeLines.pop();
+  const commonStart = beforeLines.findIndex((line, index) => line !== afterLines[index]);
+  const start = commonStart === -1 ? Math.min(beforeLines.length, afterLines.length) : commonStart;
+  let commonEnd = 0;
+  while (
+    commonEnd < beforeLines.length - start &&
+    commonEnd < afterLines.length - start &&
+    beforeLines[beforeLines.length - 1 - commonEnd] === afterLines[afterLines.length - 1 - commonEnd]
+  ) {
+    commonEnd += 1;
+  }
+  const changedEnd = Math.max(start + 1, afterLines.length - commonEnd);
+  const lastLineIndex = Math.max(0, afterLines.length - 1);
+  const firstAnchor = Math.min(start, lastLineIndex);
+  const lastAnchor = Math.min(Math.max(start, changedEnd - 1), lastLineIndex);
+  const anchors = [firstAnchor, lastAnchor];
+  let excerptContent = "";
+  for (const radius of FILE_CONTEXT_RADIUS_STEPS) {
+    const selected = new Set<number>();
+    for (const anchor of anchors) {
+      const from = Math.max(0, anchor - radius);
+      const to = Math.min(afterLines.length, anchor + radius + 1);
+      for (let index = from; index < to; index += 1) selected.add(index);
+    }
+    const selectedLines = [...selected].sort((left, right) => left - right);
+    const excerpt: string[] = [];
+    let previous = -1;
+    for (const index of selectedLines) {
+      if (previous >= 0 && index > previous + 1) {
+        excerpt.push(`... lines ${previous + OMITTED_RANGE_START_OFFSET}-${index} omitted ...`);
+      }
+      excerpt.push(numberedLines[index]);
+      previous = index;
+    }
+    excerptContent = excerpt.join("\n");
+    if (excerptContent.length <= maxChars) return { content: excerptContent, truncated: true };
+  }
+  const truncationMarker = "\n... file context truncated ...";
+  if (maxChars <= truncationMarker.length) {
+    return { content: truncationMarker.slice(0, maxChars), truncated: true };
+  }
+  const boundedContent = `${excerptContent.slice(0, maxChars - truncationMarker.length)}${truncationMarker}`;
+  return { content: boundedContent, truncated: true };
 }
 
 export function buildEditFallbackDiff(params: Record<string, unknown>): string {
@@ -503,6 +559,7 @@ export function buildMergedReviewPrompt(options: {
   toolName: string;
   filePath?: string;
   diff: string;
+  currentFileContext?: CurrentFileContext;
   rules: FileEditReviewRule[];
   trigger?: ReviewTrigger;
 }): string;
@@ -510,10 +567,11 @@ export function buildMergedReviewPrompt(options: {
   toolName: string;
   filePath?: string;
   diff: string;
+  currentFileContext?: CurrentFileContext;
   rules: FileEditReviewRule[];
   trigger?: ReviewTrigger;
 }): string {
-  const { toolName, filePath, diff, rules, trigger = DEFAULT_REVIEW_TRIGGER } = options;
+  const { toolName, filePath, diff, currentFileContext, rules, trigger = DEFAULT_REVIEW_TRIGGER } = options;
   const ruleBlocks = rules.flatMap((rule) => [
     `<rules name="${rule.reviewer.name}">`,
     rule.content,
@@ -537,6 +595,13 @@ export function buildMergedReviewPrompt(options: {
     "<diff>",
     diff,
     "</diff>",
+    ...(currentFileContext ? [
+      "",
+      i18n.t("currentFileGuidance"),
+      `<current-file truncated="${String(currentFileContext.truncated)}">`,
+      currentFileContext.content,
+      "</current-file>",
+    ] : []),
   ].join("\n");
 }
 

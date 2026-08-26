@@ -11,6 +11,7 @@ An edit tool can complete successfully while the resulting file still violates l
 - Each reviewer selects `tools` and a `trigger`: omitted fields default to `edit`/`write` and `after`; `"*"` matches every built-in or custom tool.
 - Before reviewers inspect the proposed input and an explicit rejection blocks the native Pi tool call; reviewer failures remain fail-open and visible.
 - Captures the file state before `edit` / `write` and the actual file state after the tool result.
+- Sends the real-line-numbered post-edit file with the diff; files above `maxFileContextChars` use bounded excerpts around the first and last changed lines.
 - Supports multiple reviewers running in parallel, each with its own model and one or more rule files.
 - Reads optional front matter from rule files for `enabled`, `filePatterns`, `complexity`, and `consumers`.
 - Returns `passed`, `rejected`, `failed`, or `skipped` status with summaries, findings, rule groups, and durations.
@@ -54,6 +55,7 @@ Start from [`config.example.json`](./config.example.json):
 {
   "enabled": true,
   "timeoutSeconds": 10,
+  "maxFileContextChars": 50000,
   "maxRuleLines": 100,
   "reviewers": [
     {
@@ -75,6 +77,7 @@ Each reviewer must have a `provider/model` reference and either `rulesFile` or `
 | --- | --- |
 | `enabled` | Enables or disables the review layer. |
 | `timeoutSeconds` | Maximum time allowed for each reviewer model call. |
+| `maxFileContextChars` | Maximum post-edit file context sent to reviewers. The default is 50,000 characters; oversized files use bounded, explicitly marked excerpts around changed lines. |
 | `maxRuleLines` | Maximum rule-file size accepted for a single review rule. |
 | `reviewers` | Reviewer name, model, rule files, `tools`, and `trigger`. Missing lifecycle fields keep the legacy `edit`/`write` + `after` behavior. |
 

@@ -27,6 +27,7 @@ import {
   registerSupervisorToolDisplayMiddleware,
 } from "./tool-display-bridge.ts";
 import {
+  buildCurrentFileContext,
   buildEditFallbackDiff,
   buildFileEditReviewDiff,
   buildMergedReviewPrompt,
@@ -40,6 +41,7 @@ import {
   reviewerMatchesTool,
   reviewerTrigger,
   safeSerialize,
+  type CurrentFileContext,
   type FileEditReviewAudit,
   type FileEditReviewConfig,
   type FileEditReviewReviewerConfig,
@@ -61,6 +63,11 @@ const WRITE_TOOL = "write";
 const ALL_TOOLS = "*";
 const DEFAULT_REVIEW_TOOLS = [EDIT_TOOL, WRITE_TOOL];
 const REVIEW_TRIGGERS = [BEFORE_TRIGGER, AFTER_TRIGGER];
+const CONFIG_ENABLED_CHOICE_INDEX = 0;
+const CONFIG_TIMEOUT_CHOICE_INDEX = 1;
+const CONFIG_FILE_CONTEXT_CHOICE_INDEX = 2;
+const CONFIG_RULES_CHOICE_INDEX = 3;
+const CONFIG_REVIEWER_CHOICE_OFFSET = 4;
 type ToolResult = {
   content: Array<{ type?: string; text?: string }>;
   details?: Record<string, unknown>;
@@ -193,9 +200,10 @@ async function reviewWithModel(options: {
   toolName: string;
   filePath?: string;
   diff: string;
+  currentFileContext?: CurrentFileContext;
   trigger?: ReviewTrigger;
 }): Promise<FileEditReviewResult> {
-  const { context, config, reviewer, rules, toolName, filePath, diff, trigger = AFTER_TRIGGER } = options;
+  const { context, config, reviewer, rules, toolName, filePath, diff, currentFileContext, trigger = AFTER_TRIGGER } = options;
   const startedAt = performance.now();
   const base = {
     name: reviewer.name,
@@ -237,7 +245,7 @@ async function reviewWithModel(options: {
       {
         messages: [{
           role: "user",
-          content: [{ type: "text", text: buildMergedReviewPrompt({ toolName, filePath, diff, rules, trigger }) }],
+          content: [{ type: "text", text: buildMergedReviewPrompt({ toolName, filePath, diff, currentFileContext, rules, trigger }) }],
           timestamp: Date.now(),
         }],
       },
@@ -382,6 +390,7 @@ async function reviewToolResult(options: {
     };
   }
 
+  const currentFileContext = buildCurrentFileContext(snapshot.before, snapshot.after, config.maxFileContextChars);
   const reviewerGroups = selectedReviewers
     .map((reviewer) => {
       const loaded = loadReviewRules(reviewer, context.ctx.cwd, config.maxRuleLines);
@@ -418,7 +427,16 @@ async function reviewToolResult(options: {
   ];
   const reviewResults = await Promise.all([
     ...applicableGroups.map((group) =>
-      reviewWithModel({ context, config, reviewer: group.reviewer, rules: group.rules, toolName, filePath: snapshot.filePath, diff }),
+      reviewWithModel({
+        context,
+        config,
+        reviewer: group.reviewer,
+        rules: group.rules,
+        toolName,
+        filePath: snapshot.filePath,
+        diff,
+        currentFileContext,
+      }),
     ),
     ...applicableErrors.map((error) => Promise.resolve(error)),
   ]);
@@ -729,6 +747,7 @@ async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: strin
     const choices = [
       i18n.t("enabledConfig", { value: config.enabled ? i18n.t("enabled") : i18n.t("disabled") }),
       i18n.t("timeoutConfig", { value: config.timeoutSeconds }),
+      i18n.t("fileContextConfig", { value: config.maxFileContextChars }),
       i18n.t("rulesConfig", { value: config.maxRuleLines }),
       ...reviewerChoices,
       i18n.t("addReviewer"),
@@ -736,22 +755,28 @@ async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: strin
     const choice = await ctx.ui.select(i18n.t("configTitle"), choices);
     if (choice === undefined) return;
 
-    if (choice === choices[0]) {
+    if (choice === choices[CONFIG_ENABLED_CHOICE_INDEX]) {
       config.enabled = !config.enabled;
       await saveFileEditReviewConfig(ctx, config, configPath);
-    } else if (choice === choices[1]) {
+    } else if (choice === choices[CONFIG_TIMEOUT_CHOICE_INDEX]) {
       const value = await inputPositiveInteger(ctx, i18n.t("timeoutInput"), config.timeoutSeconds);
       if (value !== undefined) {
         config.timeoutSeconds = value;
         await saveFileEditReviewConfig(ctx, config, configPath);
       }
-    } else if (choice === choices[2]) {
+    } else if (choice === choices[CONFIG_FILE_CONTEXT_CHOICE_INDEX]) {
+      const value = await inputPositiveInteger(ctx, i18n.t("fileContextInput"), config.maxFileContextChars);
+      if (value !== undefined) {
+        config.maxFileContextChars = value;
+        await saveFileEditReviewConfig(ctx, config, configPath);
+      }
+    } else if (choice === choices[CONFIG_RULES_CHOICE_INDEX]) {
       const value = await inputPositiveInteger(ctx, i18n.t("rulesInput"), config.maxRuleLines);
       if (value !== undefined) {
         config.maxRuleLines = value;
         await saveFileEditReviewConfig(ctx, config, configPath);
       }
-    } else if (choice === choices[3 + config.reviewers.length]) {
+    } else if (choice === choices[CONFIG_REVIEWER_CHOICE_OFFSET + config.reviewers.length]) {
       const added = await addReviewer(ctx, config.reviewers);
       if (added) await saveFileEditReviewConfig(ctx, config, configPath);
     } else if (choice.startsWith("● ") || choice.startsWith("○ ")) {
