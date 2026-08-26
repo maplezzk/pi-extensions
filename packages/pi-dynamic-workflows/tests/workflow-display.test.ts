@@ -35,14 +35,14 @@ function agent(overrides: Partial<WorkflowAgentSnapshot> = {}): WorkflowAgentSna
   };
 }
 
-test("createWorkflowSnapshot does not pre-render declared phases", () => {
+test("createWorkflowSnapshot keeps declared phases out of runtime progress", () => {
   const value = createWorkflowSnapshot({
     name: "demo_workflow",
     description: "A useful workflow",
     phases: [{ title: "Scan" }, { title: "Review" }],
   });
 
-  assert.deepEqual(value.phases, ["Scan", "Review"]);
+  assert.deepEqual(value.phases, []);
 });
 
 test("renderWorkflowLines hides empty phase rows", () => {
@@ -89,6 +89,40 @@ test("renderWorkflowLines renders runtime-created phases from the phase list", (
   );
 
   assert.ok(lines.some((line) => line.includes("Inspect API 1/1")));
+});
+
+test("renderWorkflowWidgetLines shows only expanded runtime phases, not the declared outline", () => {
+  const value = createWorkflowSnapshot({
+    name: "code_review",
+    description: "Review and fix findings",
+    phases: [
+      { title: "Review" },
+      { title: "Aggregate findings" },
+      { title: "Fix when profile allows" },
+      { title: "Optional re-review" },
+    ],
+  });
+  const lines = renderWorkflowWidgetLines(
+    recomputeWorkflowSnapshot({
+      ...value,
+      phases: ["Review 1", "Aggregate findings 1", "Fix 1: 代码规范"],
+      currentPhase: "Fix 1: 代码规范",
+      agents: [
+        agent({ id: 1, label: "review:1:standards", phase: "Review 1", status: "done" }),
+        agent({ id: 2, label: "fix:1:standards", phase: "Fix 1: 代码规范", status: "running" }),
+      ],
+    }),
+    100,
+  );
+  const text = lines.join("\n").replace(/\u001b\[[0-9;]*m/g, "");
+
+  assert.match(text, /Review 1/);
+  assert.match(text, /Aggregate findings 1/);
+  assert.match(text, /Fix 1: 代码规范/);
+  assert.equal(text.match(/\bReview\b/g)?.length, 1);
+  assert.equal(text.match(/Aggregate findings/g)?.length, 1);
+  assert.doesNotMatch(text, /Fix when profile allows/);
+  assert.doesNotMatch(text, /Optional re-review/);
 });
 
 test("renderWorkflowText respects log limits", () => {

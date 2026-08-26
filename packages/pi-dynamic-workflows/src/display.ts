@@ -54,7 +54,8 @@ export function createWorkflowSnapshot(meta: WorkflowMeta): WorkflowSnapshot {
   return {
     name: meta.name,
     description: meta.description,
-    phases: meta.phases.map((p) => p.title),
+    // meta.phases documents the static outline; only runtime-recorded phases belong in live progress.
+    phases: [],
     logs: [],
     agents: [],
     agentCount: 0,
