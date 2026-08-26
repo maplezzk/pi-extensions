@@ -17,7 +17,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { performance } from "node:perf_hooks";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   appendSupervisorFallbackAudit,
@@ -54,6 +53,7 @@ const AFTER_TRIGGER: ReviewTrigger = "after";
 const BEFORE_TRIGGER: ReviewTrigger = "before";
 const MILLISECONDS_PER_SECOND = 1000;
 const REVIEW_MAX_TOKENS = 1200;
+const MAX_REVIEW_PAYLOAD_CHARS = 10_000;
 const REJECTED_STATUS = "rejected" as const;
 const SKIPPED_STATUS = "skipped" as const;
 const EDIT_TOOL = "edit";
@@ -106,50 +106,6 @@ function getRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-/** Joins text content for bounded result forwarding. */
-function getTextContent(result: ToolResult): string {
-  return result.content
-    .filter((content) => content.type === "text" && typeof content.text === "string")
-    .map((content) => content.text ?? "")
-    .join("\n");
-}
-
-/** Preserves oversized output in a temp file or visibly truncates it on write failure. */
-async function limitReturnedToolResult(result: ToolResult, maxChars: number): Promise<ToolResult> {
-  const text = getTextContent(result);
-  if (text.length <= maxChars) return result;
-
-  const directory = join(tmpdir(), "pi-tool-supervisor");
-  const filePath = join(directory, `tool-output-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
-  try {
-    await mkdir(directory, { recursive: true });
-    await writeFile(filePath, text, "utf8");
-    const pointer = i18n.t("oversizedOutputPointer", { maxChars, filePath });
-    return {
-      ...result,
-      content: [{ type: "text", text: pointer.slice(0, maxChars) }],
-      details: {
-        ...(result.details ?? {}),
-        outputTruncated: true,
-        outputLimitChars: maxChars,
-        fullOutputPath: filePath,
-      },
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[pi-tool-supervisor] ${i18n.t("tempFileWriteFailed", { message })}`);
-    return {
-      ...result,
-      content: [{ type: "text", text: text.slice(0, maxChars) }],
-      details: {
-        ...(result.details ?? {}),
-        outputTruncated: true,
-        outputLimitChars: maxChars,
-        outputFileError: message,
-      },
-    };
-  }
-}
 
 /** Detects tool execution failure without inspecting arbitrary detail fields. */
 function isFailedToolResult(result: ToolResult): boolean {
@@ -506,7 +462,7 @@ async function runBeforeReview(options: {
   const selectedFilePath = isFileTool ? getPath(context.params) : undefined;
   const serializedPayload = selectedFilePath
     ? { text: buildFileEditReviewDiff(selectedFilePath, undefined, typeof context.params.content === "string" ? context.params.content : undefined, fallbackDiff) }
-    : safeSerialize(context.params, loaded.config.maxOutputChars);
+    : safeSerialize(context.params, MAX_REVIEW_PAYLOAD_CHARS);
   const warnings = [...loaded.warnings];
   for (const reviewer of reviewers) {
     const loadedRules = loadReviewRules(reviewer, context.ctx.cwd, loaded.config.maxRuleLines);
@@ -580,7 +536,10 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
     ? reviewers.map((reviewer) => ({ name: reviewer.name, model: reviewer.model, status: SKIPPED_STATUS, durationMs: 0, error: i18n.t("failedAfterReview") }))
     : [];
   if (!isFailedToolResult(result)) {
-    const serializedPayload = safeSerialize({ input: pending.params, result: { content: result.content, details: result.details, isError: result.isError } }, pending.loaded.config.maxOutputChars);
+    const serializedPayload = safeSerialize(
+      { input: pending.params, result: { content: result.content, details: result.details, isError: result.isError } },
+      MAX_REVIEW_PAYLOAD_CHARS,
+    );
     for (const reviewer of reviewers) {
       const loadedRules = loadReviewRules(reviewer, context.ctx.cwd, pending.loaded.config.maxRuleLines);
       const rules = loadedRules.rules.filter((rule) => rule.reviewer.enabled !== false && reviewerIsEditorLocal(rule.reviewer) && (rule.reviewer.filePatterns ?? []).length === 0);
@@ -610,14 +569,11 @@ async function processFileReviewResult(
   result: ToolResult,
 ): Promise<ToolResult> {
   const { loaded } = pending;
-  /** Bounds the returned tool text without changing the original error flag. */
-  const finish = (candidate: ToolResult) =>
-    limitReturnedToolResult(candidate, loaded.config.maxOutputChars);
   if (pending.beforeAudit && pending.beforeAudit.status === REJECTED_STATUS) {
-    return finish({ ...result, details: { ...(result.details ?? {}), fileEditReview: pending.beforeAudit } });
+    return { ...result, details: { ...(result.details ?? {}), fileEditReview: pending.beforeAudit } };
   }
-  if (!pending.snapshot) return finish(await processGenericReviewResult(context, pending, result));
-  return finish(await reviewToolResult({
+  if (!pending.snapshot) return processGenericReviewResult(context, pending, result);
+  return reviewToolResult({
     context,
     toolName: pending.toolName as typeof EDIT_TOOL | typeof WRITE_TOOL,
     config: loaded.config,
@@ -628,7 +584,7 @@ async function processFileReviewResult(
     result,
     afterReviewers: pending.afterReviewers,
     beforeAudit: pending.beforeAudit,
-  }));
+  });
 }
 
 async function inputPositiveInteger(
@@ -773,7 +729,6 @@ async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: strin
     const choices = [
       i18n.t("enabledConfig", { value: config.enabled ? i18n.t("enabled") : i18n.t("disabled") }),
       i18n.t("timeoutConfig", { value: config.timeoutSeconds }),
-      i18n.t("outputConfig", { value: config.maxOutputChars }),
       i18n.t("rulesConfig", { value: config.maxRuleLines }),
       ...reviewerChoices,
       i18n.t("addReviewer"),
@@ -791,18 +746,12 @@ async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: strin
         await saveFileEditReviewConfig(ctx, config, configPath);
       }
     } else if (choice === choices[2]) {
-      const value = await inputPositiveInteger(ctx, i18n.t("outputInput"), config.maxOutputChars);
-      if (value !== undefined) {
-        config.maxOutputChars = value;
-        await saveFileEditReviewConfig(ctx, config, configPath);
-      }
-    } else if (choice === choices[3]) {
       const value = await inputPositiveInteger(ctx, i18n.t("rulesInput"), config.maxRuleLines);
       if (value !== undefined) {
         config.maxRuleLines = value;
         await saveFileEditReviewConfig(ctx, config, configPath);
       }
-    } else if (choice === choices[4 + config.reviewers.length]) {
+    } else if (choice === choices[3 + config.reviewers.length]) {
       const added = await addReviewer(ctx, config.reviewers);
       if (added) await saveFileEditReviewConfig(ctx, config, configPath);
     } else if (choice.startsWith("● ") || choice.startsWith("○ ")) {
