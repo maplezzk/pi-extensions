@@ -11,13 +11,14 @@
  * 折叠不是覆盖当前历史，而是复用 Pi 的 SessionManager.branch：
  * - 原始后缀保留为旧 branch；
  * - 当前 leaf 回到折叠起点，保持 user turn 索引稳定；
- * - summary custom message 成为新的 active branch；
+ * - summary custom message 成为新的 active branch，并在下一轮模型上下文中呈现为原生 compaction summary；
  * - /tree 可以回到原始后缀。
  */
 
 import {
   sessionEntryToContextMessages,
   type ExtensionAPI,
+  type SessionEntry,
   type ExtensionCommandContext,
   type ExtensionContext,
   type SessionManager,
@@ -594,6 +595,33 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     restoreToolsAfterForce();
   });
 
+  /**
+   * Keep the persisted/UI custom message, but present it to the LLM as a native
+   * compaction summary so the next agent understands its handoff semantics.
+   */
+  function toSessionContextMessages(entry: SessionEntry) {
+    if (entry.type !== "custom_message" || entry.customType !== SESSION_SQUASH_TYPE) {
+      return sessionEntryToContextMessages(entry);
+    }
+
+    const summary = typeof entry.content === "string"
+      ? entry.content
+      : entry.content
+        .map((block) => block.type === "text" ? block.text : "")
+        .join("\n");
+    const details = entry.details;
+    const tokensBefore = details && typeof details === "object" && !Array.isArray(details)
+      && "tokensBefore" in details && typeof details.tokensBefore === "number"
+      ? details.tokensBefore
+      : 0;
+    return [{
+      role: "compactionSummary" as const,
+      summary,
+      tokensBefore,
+      timestamp: new Date(entry.timestamp).getTime(),
+    }];
+  }
+
   // branch() 发生在 agent_settled 事件中，Pi 的 AgentSession 内存消息仍可能
   // 保留旧分支。下一次 provider 请求前，以当前 active branch 重建 context，
   // 确保模型和 /tree 看到同一条新分支。
@@ -604,7 +632,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     return {
       messages: ctx.sessionManager
         .buildContextEntries()
-        .flatMap(sessionEntryToContextMessages),
+        .flatMap(toSessionContextMessages),
     };
   });
 

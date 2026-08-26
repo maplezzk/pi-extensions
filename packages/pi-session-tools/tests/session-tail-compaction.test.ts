@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, type ExtensionAPI, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
   SESSION_SQUASH_FORCE_TYPE,
   SESSION_SQUASH_HINT_TYPE,
@@ -357,4 +357,54 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   );
   assert.equal(allSquashMessages.length, 2);
   assert.deepEqual(allSquashMessages[1]?.options, { triggerTurn: true });
+});
+
+test("session-squash 快照以 compaction summary 语义注入上下文", async () => {
+  type ContextHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const moduleUrl = new URL("../src/session-tail-compaction.ts", import.meta.url);
+  moduleUrl.searchParams.set("handoff-context-test", "enabled");
+  const { default: sessionTailCompaction } = await import(moduleUrl.href);
+  const handlers = new Map<string, ContextHandler>();
+  const snapshot = "[Task state snapshot]\n## Current State\n继续执行 Resume";
+  const squashEntry: SessionEntry = {
+    type: "custom_message",
+    id: "squash-1",
+    parentId: "user-1",
+    timestamp: "2026-01-01T00:00:01.000Z",
+    customType: SESSION_SQUASH_TYPE,
+    content: snapshot,
+    display: true,
+    details: {
+      startEntryId: "user-1",
+      sourceLeafId: "leaf-1",
+      fromUserInputIndex: 0,
+      summary: snapshot,
+      tokensBefore: 1234,
+    },
+  };
+  const pi = {
+    registerTool: () => undefined,
+    registerCommand: () => undefined,
+    on: (eventName: string, handler: ContextHandler) => handlers.set(eventName, handler),
+  } as unknown as ExtensionAPI;
+  sessionTailCompaction(pi);
+
+  const result = await handlers.get("context")?.({}, {
+    sessionManager: {
+      getBranch: () => [squashEntry],
+      buildContextEntries: () => [squashEntry],
+    },
+  }) as { messages: Array<{ role?: string; summary?: string; tokensBefore?: number }> };
+  assert.equal(result.messages.length, 1);
+  assert.equal(result.messages[0]?.role, "compactionSummary");
+  assert.equal(result.messages[0]?.summary, snapshot);
+  assert.equal(result.messages[0]?.tokensBefore, 1234);
+
+  const llmMessages = convertToLlm(result.messages as Parameters<typeof convertToLlm>[0]);
+  const llmContent = llmMessages[0]?.content;
+  const llmText = typeof llmContent === "string"
+    ? llmContent
+    : llmContent?.filter((block) => block.type === "text").map((block) => block.text).join("\n") ?? "";
+  assert.match(llmText, /^The conversation history before this point was compacted into the following summary:/);
+  assert.match(llmText, /## Current State/);
 });
