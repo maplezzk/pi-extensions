@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.7.0...pi-distill-v1.7.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* propagate interrupts to extension model calls ([41147db](https://github.com/maplezzk/pi-extensions/commit/41147db155b6d52c261dea1bc70190983272f803))
+* propagate interrupts to extension model calls ([5c2f040](https://github.com/maplezzk/pi-extensions/commit/5c2f040a38bb644a0153d5b3e0d24d7307e40936))
+
 ## [1.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.6.0...pi-distill-v1.7.0) (2026-08-20)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.5.0...pi-tool-supervisor-v0.5.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* propagate interrupts to extension model calls ([41147db](https://github.com/maplezzk/pi-extensions/commit/41147db155b6d52c261dea1bc70190983272f803))
+* propagate interrupts to extension model calls ([5c2f040](https://github.com/maplezzk/pi-extensions/commit/5c2f040a38bb644a0153d5b3e0d24d7307e40936))
+* remove supervisor output truncation ([8942759](https://github.com/maplezzk/pi-extensions/commit/8942759e0f14b392a84d77019f47aca0ac101a91))
+* remove supervisor output truncation ([425b417](https://github.com/maplezzk/pi-extensions/commit/425b417f5c852d74a72980e1e47dcdd6f545a7af))
+* **tool-supervisor:** include numbered file context ([d15629d](https://github.com/maplezzk/pi-extensions/commit/d15629db2bd07f0c7174bc401cc8566f81bb457b))
+* **tool-supervisor:** include numbered file context ([f0e3cb1](https://github.com/maplezzk/pi-extensions/commit/f0e3cb187bebbddf8aeee493288fc82c976dd0f1))
+
 ## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.4.0...pi-tool-supervisor-v0.5.0) (2026-08-20)
 
 

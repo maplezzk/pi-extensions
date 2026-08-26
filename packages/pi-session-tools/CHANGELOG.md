@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.1...pi-session-tools-v0.5.2) (2026-08-26)
+
+
+### Bug Fixes
+
+* **session-tools:** require explicit squash continuation ([f753405](https://github.com/maplezzk/pi-extensions/commit/f7534050a57831413efc3b8a79238498ae5d6f34))
+* **session-tools:** require explicit squash continuation ([43ad7ed](https://github.com/maplezzk/pi-extensions/commit/43ad7edc3a190e2598013215da7ad760d76cf503))
+
 ## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.0...pi-session-tools-v0.5.1) (2026-08-24)
 
 
