@@ -185,6 +185,13 @@ async function captureAfter(
   return result;
 }
 
+/** Adds one visible parent-cancellation warning without duplicating merged audit warnings. */
+function withReviewAbortedWarning(warnings: string[], signal?: AbortSignal): string[] {
+  if (!signal?.aborted) return warnings;
+  const warning = i18n.t("reviewAborted");
+  return warnings.includes(warning) ? warnings : [...warnings, warning];
+}
+
 /** Produces visible diagnostics for rejected and failed reviewers. */
 function createReviewDiagnostic(
   audit: FileEditReviewAudit,
@@ -239,13 +246,14 @@ async function reviewWithModel(options: {
     model: reviewer.model,
     rulesFiles: rules.map((rule) => rule.reviewer.rulesFile).filter((file): file is string => Boolean(file)),
   };
-  if (context.signal?.aborted) {
-    return {
-      ...base,
-      status: "skipped",
-      durationMs: Math.round(performance.now() - startedAt),
-    };
-  }
+  /** Reports parent cancellation as a skipped review rather than a provider failure. */
+  const createAbortedResult = (): FileEditReviewResult => ({
+    ...base,
+    status: SKIPPED_STATUS,
+    durationMs: Math.round(performance.now() - startedAt),
+    error: i18n.t("reviewAborted"),
+  });
+  if (context.signal?.aborted) return createAbortedResult();
   const separator = reviewer.model.indexOf("/");
   const modelProvider = reviewer.model.slice(0, separator);
   const modelId = reviewer.model.slice(separator + 1);
@@ -267,13 +275,7 @@ async function reviewWithModel(options: {
   try {
     const auth = await context.ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (auth.ok === false) throw new Error(`审查模型鉴权失败：${auth.error}`);
-    if (context.signal?.aborted) {
-      return {
-        ...base,
-        status: "skipped",
-        durationMs: Math.round(performance.now() - startedAt),
-      };
-    }
+    if (context.signal?.aborted) return createAbortedResult();
     const response = await complete(
       model,
       {
@@ -291,6 +293,7 @@ async function reviewWithModel(options: {
         signal: controller.signal,
       },
     );
+    if (context.signal?.aborted) return createAbortedResult();
     if (response.stopReason === "error" || response.stopReason === "aborted") {
       throw new Error(response.errorMessage ?? `审查模型结束原因：${response.stopReason}`);
     }
@@ -307,6 +310,7 @@ async function reviewWithModel(options: {
       durationMs: Math.round(performance.now() - startedAt),
     };
   } catch (error) {
+    if (context.signal?.aborted) return createAbortedResult();
     return {
       ...base,
       status: "failed",
@@ -363,7 +367,10 @@ async function reviewToolResult(options: {
       status: reviewers.length > 0 ? getOverallReviewStatus(reviewers) : SKIPPED_STATUS,
       reviewers,
       durationMs: Math.round(performance.now() - startedAt),
-      warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("reviewAborted")],
+      warnings: withReviewAbortedWarning(
+        [...configWarnings, ...(beforeAudit?.warnings ?? [])],
+        context.signal,
+      ),
     };
     return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit } };
   }
@@ -459,13 +466,14 @@ async function reviewToolResult(options: {
     ),
     ...applicableErrors.map((error) => Promise.resolve(error)),
   ]);
+  const auditWarnings = withReviewAbortedWarning(warnings, context.signal);
   const audit: FileEditReviewAudit = {
     ...auditBase,
     status: getOverallReviewStatus(reviewResults),
     trigger: AFTER_TRIGGER,
     reviewers: [...beforeReviewers, ...reviewResults],
     durationMs: Math.round(performance.now() - startedAt),
-    warnings,
+    warnings: auditWarnings,
   };
   const diagnostic = createReviewDiagnostic(audit, configPath);
   if (diagnostic) {
@@ -524,7 +532,7 @@ async function runBeforeReview(options: {
       results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: i18n.t("noApplicableRules") });
     }
   }
-  return { status: getOverallReviewStatus(results), filePath, toolName: context.toolName, trigger: BEFORE_TRIGGER, reviewers: results, durationMs: Math.round(performance.now() - startedAt), warnings };
+  return { status: getOverallReviewStatus(results), filePath, toolName: context.toolName, trigger: BEFORE_TRIGGER, reviewers: results, durationMs: Math.round(performance.now() - startedAt), warnings: withReviewAbortedWarning(warnings, context.signal) };
 }
 
 /** Prepares snapshots, before audits, and after reviewer state for one tool call. */
@@ -586,7 +594,11 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
   }
   const reviewersWithBefore = [...(pending.beforeAudit?.reviewers ?? []), ...results];
   const afterDurationMs = Math.round(performance.now() - startedAt);
-  const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings: [...pending.loaded.warnings, ...(pending.beforeAudit?.warnings ?? [])] };
+  const warnings = withReviewAbortedWarning(
+    [...pending.loaded.warnings, ...(pending.beforeAudit?.warnings ?? [])],
+    context.signal,
+  );
+  const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings };
   const diagnostic = createReviewDiagnostic({ ...audit, filePath: context.toolName }, pending.loaded.configPath);
   return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit }, content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content };
 }

@@ -152,8 +152,8 @@
     "en-US": "Failed to write oversized tool result to temp file, truncated: {message}"
   },
   "reviewAborted": {
-    "zh-CN": "上级请求已终止，未发起审查模型请求。",
-    "en-US": "The parent request was aborted; no review-model request was started."
+    "zh-CN": "上级请求已终止，审查模型请求已取消或未发起。",
+    "en-US": "The parent request was aborted; review-model requests were cancelled or not started."
   },
   "oversizedOutputPointer": {
     "zh-CN": "工具结果超过 {maxChars} 个字符，已写入临时文件：{filePath}",

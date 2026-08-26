@@ -113,6 +113,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 3. `tool_result` 事件拿到真实输出后再做判断，不依赖 Agent 对输出长度的预测。
 4. 每次工具调用都必须包含非空的 `outputRequest`；严格的 `RAW` 表示明确要求原文；其他非空 prompt 才允许进入提炼流程。
 5. OpenAI-compatible Completions 提炼请求会通过 `response_format: { "type": "json_object" }` 启用原生 JSON 模式；OpenAI Responses-compatible 请求使用等价的 `text.format`。单次提炼超时后按照 `timeoutRetryCount` 重试，其他模型调用异常按照 `errorRetryCount` 重试（两者默认都重试 1 次）；如果模型已经返回文本，但只是 JSON 语法或响应结构校验失败，扩展会把坏响应和校验错误交给一次 JSON-only 修复 prompt，不会再次发送工具输出，也不会重新总结；修复失败、没有可用模型或结果收益过低时，扩展保留原始事实，并通过 details 和审计卡片暴露状态；模型用 Markdown 的 JSON 代码围栏（如 `````json … `````）包裹响应时也会兼容解析。
+6. 用户打断上级 Agent 请求时，所有尚未完成的提炼请求会立即取消，并且不会为这次中断继续重试；原始工具结果仍按 fail-open 路径保留。
 
 ## 输出处理契约
 

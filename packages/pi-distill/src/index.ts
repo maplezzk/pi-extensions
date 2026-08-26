@@ -1628,6 +1628,7 @@ export default function piDistillExtension(pi: ExtensionAPI) {
         toolCallId: event.toolCallId,
         params: { ...event.input, outputRequest },
         originalUserPrompt: pending?.originalUserPrompt ?? originalUserPrompt,
+        signal: ctx.signal,
         ctx,
       },
       {
