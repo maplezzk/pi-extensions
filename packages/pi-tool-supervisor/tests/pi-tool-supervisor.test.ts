@@ -554,9 +554,127 @@ filePatterns:
     assert.equal(authCalls, 0);
     assert.equal(result.details.fileEditReview.status, "skipped");
     assert.deepEqual(result.details.fileEditReview.reviewers, []);
-    assert.match(result.details.fileEditReview.warnings.join(" "), /未发起审查模型请求/);
+    assert.match(result.details.fileEditReview.warnings.join(" "), /取消|未发起/);
   } finally {
     await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("用户中断会一起终止所有尚未完成的审查请求", async () => {
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  type ExtensionTestHandler = (...args: unknown[]) => unknown;
+  type ExtensionToolResult = {
+    details: {
+      fileEditReview: {
+        status: string;
+        reviewers: Array<{ status: string; error?: string }>;
+        warnings: string[];
+      };
+    };
+  };
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-inflight-abort-"));
+  const projectDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-inflight-abort-project-"));
+  const faux = registerFauxProvider({
+    provider: "supervisor-abort",
+    models: [{ id: "model" }],
+  });
+  const handlers = new Map<string, ExtensionTestHandler>();
+  const providerSignals: AbortSignal[] = [];
+  const releaseResponses: Array<() => void> = [];
+  let markStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+
+  try {
+    const firstRule = join(projectDir, "first-rules.md");
+    const secondRule = join(projectDir, "second-rules.md");
+    const ruleContents = `---
+filePatterns:
+  - "**/*.java"
+---
+
+# Java
+
+1. 只审查修改内容。
+`;
+    await writeFile(firstRule, ruleContents);
+    await writeFile(secondRule, ruleContents);
+    await mkdir(join(agentDir, "extensions", "pi-tool-supervisor"), { recursive: true });
+    await writeFile(join(agentDir, "extensions", "pi-tool-supervisor", "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [
+        { name: "first", model: "supervisor-abort/model", rulesFile: firstRule },
+        { name: "second", model: "supervisor-abort/model", rulesFile: secondRule },
+      ],
+    }));
+    faux.setResponses(Array.from({ length: 2 }, () => (_context, options) => new Promise((resolve) => {
+      const providerSignal = options?.signal;
+      if (providerSignal) providerSignals.push(providerSignal);
+      /** Settles one faux review response when its request finishes or is cancelled. */
+      const finish = () => resolve(providerSignal?.aborted
+        ? fauxAssistantMessage("", { stopReason: "aborted", errorMessage: "fake review aborted" })
+        : fauxAssistantMessage(JSON.stringify({ passed: true, summary: "ok", findings: [] })));
+      releaseResponses.push(finish);
+      providerSignal?.addEventListener("abort", finish, { once: true });
+      if (releaseResponses.length === 2) markStarted?.();
+    })));
+
+    const pi = {
+      getAllTools: () => ["edit", "write"].map((name) => ({ name, sourceInfo: { source: "test" } })),
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: ExtensionTestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+
+    const controller = new AbortController();
+    const context = {
+      cwd: projectDir,
+      signal: controller.signal,
+      modelRegistry: {
+        find: () => faux.getModel(),
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
+      },
+    };
+    const input = { path: "src/Example.java", content: "class Example {}\n" };
+    await handlers.get("tool_call")?.({
+      type: "tool_call",
+      toolName: "write",
+      toolCallId: "write-inflight-abort-1",
+      input,
+    }, context);
+    const resultPromise = handlers.get("tool_result")?.({
+      type: "tool_result",
+      toolName: "write",
+      toolCallId: "write-inflight-abort-1",
+      input,
+      content: [{ type: "text", text: "Wrote file" }],
+      details: {},
+      isError: false,
+    }, context);
+
+    await started;
+    controller.abort();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const allProviderRequestsAborted = providerSignals.length === 2
+      && providerSignals.every((signal) => signal.aborted);
+    for (const release of releaseResponses) release();
+    const result = await resultPromise as ExtensionToolResult;
+
+    assert.equal(allProviderRequestsAborted, true);
+    assert.equal(result.details.fileEditReview.status, "skipped");
+    assert.equal(result.details.fileEditReview.reviewers.length, 2);
+    assert.ok(result.details.fileEditReview.reviewers.every((reviewer) => reviewer.status === "skipped"));
+    assert.ok(result.details.fileEditReview.reviewers.every((reviewer) => /终止|取消/.test(reviewer.error ?? "")));
+    assert.match(result.details.fileEditReview.warnings.join(" "), /终止|取消/);
+  } finally {
+    for (const release of releaseResponses) release();
+    await handlers.get("session_shutdown")?.();
+    faux.unregister();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   }

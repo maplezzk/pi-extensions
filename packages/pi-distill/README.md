@@ -111,6 +111,7 @@ Agent consumes a result suited to the current decision, with auditable diagnosti
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
 4. Every tool call must include a non-empty `outputRequest`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
 5. OpenAI-compatible completion requests enable native JSON mode with `response_format: { "type": "json_object" }`; OpenAI Responses-compatible requests use the equivalent `text.format`. A timed-out attempt is retried according to `timeoutRetryCount`, while other provider failures use `errorRetryCount` (both default to one retry). If a non-empty model response is only invalid JSON or violates the response schema, pi-distill makes one JSON-only repair call with the malformed response and validation error; it does not resend the tool output or run summarization again. If repair fails, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card. JSON responses wrapped in Markdown fences such as `````json … ````` are also accepted.
+6. Interrupting the parent Agent request aborts any in-flight distillation request immediately and disables retries for that interrupted result; the original tool output remains available through the normal fail-open path.
 
 ## Output contract
 

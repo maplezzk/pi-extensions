@@ -16,6 +16,7 @@ import {
   registerDistillToolDisplayMiddleware,
 } from "../src/tool-display-bridge.ts";
 import { Text } from "@earendil-works/pi-tui";
+import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import {
   extendDistillToolParameters,
   formatCompactCount,
@@ -1347,6 +1348,106 @@ test("pi-distill 通过通用 tool-display result middleware 渲染且不重复�
     dispose();
     delete (globalThis as any)[apiKey];
   }
+});
+
+test("用户中断会终止 Pi 事件中尚未完成的提炼请求", async () => {
+  await withFakeSummaryConfig(async () => {
+    const { default: piDistillExtension } = await import("../src/index.ts");
+    type ExtensionTestHandler = (...args: unknown[]) => unknown;
+    type ExtensionToolResult = {
+      content: Array<{ text?: string }>;
+      details: Record<string, unknown>;
+    };
+    const faux = registerFauxProvider({
+      provider: "fake",
+      models: [{ id: "model" }],
+    });
+    const handlers = new Map<string, ExtensionTestHandler>();
+    let providerSignal: AbortSignal | undefined;
+    let releaseResponse: (() => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const summaryResponse = fauxAssistantMessage(JSON.stringify({
+      decision: {
+        mode: "SUMMARY",
+        reasonCode: "SELECTED_INFORMATION",
+        reason: "Selected requested information.",
+      },
+      summary: "should not be returned",
+    }));
+    faux.setResponses([(_context, options) => new Promise((resolve) => {
+      providerSignal = options?.signal;
+      /** Settles the faux response when the provider request finishes or is cancelled. */
+      const finish = () => resolve(providerSignal?.aborted
+        ? fauxAssistantMessage("", { stopReason: "aborted", errorMessage: "fake provider aborted" })
+        : summaryResponse);
+      releaseResponse = finish;
+      providerSignal?.addEventListener("abort", finish, { once: true });
+      markStarted?.();
+    })]);
+
+    const pi = {
+      getAllTools: () => [{
+        name: "read",
+        description: "read tool",
+        parameters: { type: "object", properties: {} },
+        sourceInfo: { source: "pi-distill-abort-test" },
+      }],
+      registerTool: () => undefined,
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: ExtensionTestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piDistillExtension>[0];
+    const controller = new AbortController();
+    const context = {
+      cwd: process.cwd(),
+      signal: controller.signal,
+      ui: { notify: () => undefined },
+      model: faux.getModel(),
+      modelRegistry: {
+        find: () => faux.getModel(),
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
+      },
+    };
+
+    try {
+      piDistillExtension(pi);
+      const input: Record<string, unknown> = { path: "large.txt", outputRequest: "提取错误" };
+      await handlers.get("tool_call")?.({
+        type: "tool_call",
+        toolName: "read",
+        toolCallId: "read-abort-1",
+        input,
+      }, context);
+      const resultPromise = handlers.get("tool_result")?.({
+        type: "tool_result",
+        toolName: "read",
+        toolCallId: "read-abort-1",
+        input,
+        content: [{ type: "text", text: "ERROR still running" }],
+        details: {},
+        isError: false,
+      }, context);
+
+      await started;
+      controller.abort();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const providerWasAborted = providerSignal?.aborted === true;
+      releaseResponse?.();
+      const result = await resultPromise as ExtensionToolResult;
+
+      assert.equal(providerWasAborted, true);
+      assert.equal(faux.state.callCount, 1);
+      assert.equal(result.content[0]?.text, "ERROR still running");
+      assert.equal(result.details.outputSummaryStatus, "summary-failed");
+      assert.match(String(result.details.outputSummaryError), /Summarization aborted/);
+    } finally {
+      releaseResponse?.();
+      await handlers.get("session_shutdown")?.();
+      faux.unregister();
+    }
+  }, 10000, { timeoutRetryCount: 1, errorRetryCount: 1 });
 });
 
 test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 outputRequest", async () => {

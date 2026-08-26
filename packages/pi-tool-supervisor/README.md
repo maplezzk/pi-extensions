@@ -99,7 +99,7 @@ consumers:
 
 - A before reviewer rejection blocks the native tool call and emits a standalone audit with the complete reason; before failures/skips are fail-open but remain visible on the next tool result.
 - An after rejection is diagnostic only and never rolls back a completed tool call; a failed tool skips after review and preserves the original error.
-- If the parent agent request is already aborted, the review is skipped before any reviewer model request is started.
+- If the parent Agent request is interrupted, every in-flight reviewer model request is cancelled together; reviewers not yet started are skipped, and parent cancellation is reported as skipped rather than as a provider failure.
 - A failed tool call or an unchanged file is skipped.
 - The extension does not roll back edits, block the operating system, or replace Pi's permission and sandbox controls.
 
