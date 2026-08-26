@@ -7,7 +7,6 @@ import { createTwoFilesPatch } from "diff";
 const i18n = createTranslator(loadCatalog(new URL("../locales/review-utils.json", import.meta.url)));
 
 const DEFAULT_TIMEOUT_SECONDS = 10;
-const DEFAULT_MAX_CHARS = 10_000;
 const DEFAULT_MAX_FILE_CONTEXT_CHARS = 50_000;
 const DIFF_CONTEXT_LINES = 3;
 const FILE_CONTEXT_RADIUS_STEPS = [100, 50, 20, 10, 3, 0] as const;
@@ -61,7 +60,6 @@ export interface FileEditReviewConfig {
   enabled: boolean;
   reviewers: FileEditReviewReviewerConfig[];
   timeoutSeconds: number;
-  maxOutputChars: number;
   maxFileContextChars: number;
   maxRuleLines: number;
 }
@@ -217,7 +215,6 @@ export function loadFileEditReviewConfig(
     enabled: false,
     reviewers: [],
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
-    maxOutputChars: DEFAULT_MAX_CHARS,
     maxFileContextChars: DEFAULT_MAX_FILE_CONTEXT_CHARS,
     maxRuleLines: DEFAULT_MAX_RULE_LINES,
   };
@@ -269,10 +266,6 @@ export function loadFileEditReviewConfig(
         typeof source.timeoutMs === "number"
           ? Math.max(1, Math.ceil(source.timeoutMs / 1000))
           : DEFAULT_TIMEOUT_SECONDS,
-      ),
-      maxOutputChars: positiveInteger(
-        source.maxOutputChars ?? source.maxChars,
-        DEFAULT_MAX_CHARS,
       ),
       maxFileContextChars: positiveInteger(source.maxFileContextChars, DEFAULT_MAX_FILE_CONTEXT_CHARS),
       maxRuleLines: positiveInteger(source.maxRuleLines, DEFAULT_MAX_RULE_LINES),
