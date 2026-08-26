@@ -6,7 +6,6 @@ import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 const i18n = createTranslator(loadCatalog(new URL("../locales/review-utils.json", import.meta.url)));
 
 const DEFAULT_TIMEOUT_SECONDS = 10;
-const DEFAULT_MAX_CHARS = 10_000;
 const DEFAULT_MAX_RULE_LINES = 100;
 const CONFIG_DIRECTORY = "pi-tool-supervisor";
 const LEGACY_CONFIG_DIRECTORY = "pi-file-edit-review";
@@ -56,7 +55,6 @@ export interface FileEditReviewConfig {
   enabled: boolean;
   reviewers: FileEditReviewReviewerConfig[];
   timeoutSeconds: number;
-  maxOutputChars: number;
   maxRuleLines: number;
 }
 
@@ -206,7 +204,6 @@ export function loadFileEditReviewConfig(
     enabled: false,
     reviewers: [],
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
-    maxOutputChars: DEFAULT_MAX_CHARS,
     maxRuleLines: DEFAULT_MAX_RULE_LINES,
   };
   if (!existsSync(resolvedConfigFile)) {
@@ -257,10 +254,6 @@ export function loadFileEditReviewConfig(
         typeof source.timeoutMs === "number"
           ? Math.max(1, Math.ceil(source.timeoutMs / 1000))
           : DEFAULT_TIMEOUT_SECONDS,
-      ),
-      maxOutputChars: positiveInteger(
-        source.maxOutputChars ?? source.maxChars,
-        DEFAULT_MAX_CHARS,
       ),
       maxRuleLines: positiveInteger(source.maxRuleLines, DEFAULT_MAX_RULE_LINES),
     },

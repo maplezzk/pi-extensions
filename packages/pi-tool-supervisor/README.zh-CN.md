@@ -15,6 +15,7 @@
 - 支持多个 reviewer 并行执行，每个 reviewer 可以使用自己的模型和一个或多个规则文件。
 - 读取规则文件可选的 front matter：`enabled`、`filePatterns`、`complexity` 和 `consumers`。
 - 返回 `passed`、`rejected`、`failed` 或 `skipped` 状态，以及结论、发现、规则组和耗时。
+- 原样透传工具结果，不截断，也不把工具输出写入临时文件；输出控制由 Pi 或其他扩展负责。
 - 每次工具调用都重新读取配置，因此配置修改会在下一次匹配操作立即生效。
 - 当前 Pi 展示中间件可用时显示审计卡片，否则使用 fallback renderer。展示协议由公共运行库 `pi-extensions-tool-display` 提供。
 
@@ -54,7 +55,6 @@ pi install npm:pi-tool-supervisor
 {
   "enabled": true,
   "timeoutSeconds": 10,
-  "maxOutputChars": 10000,
   "maxRuleLines": 100,
   "reviewers": [
     {
@@ -76,7 +76,6 @@ pi install npm:pi-tool-supervisor
 | --- | --- |
 | `enabled` | 启用或关闭审查层。 |
 | `timeoutSeconds` | 每个 reviewer 模型调用的最长等待时间。 |
-| `maxOutputChars` | 工具结果最大返回长度，超出后写入临时文件。 |
 | `maxRuleLines` | 单条审查规则允许读取的最大行数。 |
 | `reviewers` | reviewer 名称、模型、规则文件、`tools` 与 `trigger`；省略生命周期字段时保持旧的 `edit`/`write` + `after` 行为。 |
 

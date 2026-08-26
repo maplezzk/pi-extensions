@@ -14,6 +14,7 @@ An edit tool can complete successfully while the resulting file still violates l
 - Supports multiple reviewers running in parallel, each with its own model and one or more rule files.
 - Reads optional front matter from rule files for `enabled`, `filePatterns`, `complexity`, and `consumers`.
 - Returns `passed`, `rejected`, `failed`, or `skipped` status with summaries, findings, rule groups, and durations.
+- Passes native tool results through unchanged; it does not truncate or write tool output to temporary files. Output control belongs to Pi or other extensions.
 - Re-reads the configuration for every tool call, so configuration changes apply to the next matching operation.
 - Shows an audit card through Pi's display middleware or a fallback renderer. The shared display protocol is provided by `pi-extensions-tool-display`.
 
@@ -53,7 +54,6 @@ Start from [`config.example.json`](./config.example.json):
 {
   "enabled": true,
   "timeoutSeconds": 10,
-  "maxOutputChars": 10000,
   "maxRuleLines": 100,
   "reviewers": [
     {
@@ -75,7 +75,6 @@ Each reviewer must have a `provider/model` reference and either `rulesFile` or `
 | --- | --- |
 | `enabled` | Enables or disables the review layer. |
 | `timeoutSeconds` | Maximum time allowed for each reviewer model call. |
-| `maxOutputChars` | Maximum size of the returned tool result; larger output is written to a temporary file. |
 | `maxRuleLines` | Maximum rule-file size accepted for a single review rule. |
 | `reviewers` | Reviewer name, model, rule files, `tools`, and `trigger`. Missing lifecycle fields keep the legacy `edit`/`write` + `after` behavior. |
 

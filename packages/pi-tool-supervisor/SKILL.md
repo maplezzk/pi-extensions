@@ -1,13 +1,13 @@
 ---
 name: configure-pi-tool-supervisor
-description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查、reviewer、规则文件和输出限制。Use when configuring tool lifecycle reviews."
+description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查、reviewer 和规则文件。Use when configuring tool lifecycle reviews."
 ---
 
 # 配置 pi-tool-supervisor
 
 ## 诊断
 
-定位实际 Pi agent 目录下的 `extensions/pi-tool-supervisor/config.json`；仅当新路径不存在时读取旧 `extensions/pi-file-edit-review/config.json`。确认顶层 `enabled`、`timeoutSeconds`、`maxOutputChars`、`maxRuleLines`、`reviewers`。
+定位实际 Pi agent 目录下的 `extensions/pi-tool-supervisor/config.json`；仅当新路径不存在时读取旧 `extensions/pi-file-edit-review/config.json`。确认顶层 `enabled`、`timeoutSeconds`、`maxRuleLines`、`reviewers`。
 
 每个 reviewer 必须有 `provider/model` 和唯一的 `rulesFile|rulesFiles`，并检查：
 

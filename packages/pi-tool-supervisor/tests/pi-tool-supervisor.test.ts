@@ -44,32 +44,29 @@ test("只加载有效的侧边审查配置，并提供默认参数", async () =>
   const loaded = loadFileEditReviewConfig(configFile);
   assert.equal(loaded.config.enabled, true);
   assert.equal(loaded.config.timeoutSeconds, 10);
-  assert.equal(loaded.config.maxOutputChars, 10000);
   assert.equal(loaded.config.maxRuleLines, 100);
   assert.deepEqual(loaded.config.reviewers[0]?.name, "language");
   assert.deepEqual(loaded.warnings, []);
 });
 
-test("兼容旧 timeoutMs，并支持秒和返回字符上限配置", async () => {
+test("兼容旧 timeoutMs 和当前 timeoutSeconds 配置", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-timeout-"));
   const configFile = join(directory, "config.json");
   await writeFile(configFile, JSON.stringify({
     enabled: true,
-    timeoutSeconds: 7,
-    maxChars: 3210,
+    timeoutMs: 6500,
     reviewers: [{ model: "provider/model", rulesFile: "rules.md" }],
   }));
   const loaded = loadFileEditReviewConfig(configFile);
   assert.equal(loaded.config.timeoutSeconds, 7);
-  assert.equal(loaded.config.maxOutputChars, 3210);
 
   await writeFile(configFile, JSON.stringify({
     enabled: true,
-    timeoutMs: 2500,
+    timeoutSeconds: 7,
     reviewers: [{ model: "provider/model", rulesFile: "rules.md" }],
   }));
-  const legacyLoaded = loadFileEditReviewConfig(configFile);
-  assert.equal(legacyLoaded.config.timeoutSeconds, 3);
+  const currentLoaded = loadFileEditReviewConfig(configFile);
+  assert.equal(currentLoaded.config.timeoutSeconds, 7);
 });
 
 test("reviewer lifecycle 配置保留旧默认并校验通配工具与非法字段", async () => {
@@ -1070,6 +1067,49 @@ test("custom exact 和 wildcard after 成功审查 input/result，并保留工�
     assert.deepEqual(failed.details.fileEditReview.reviewers.map((reviewer) => reviewer.status), ["skipped", "skipped"]);
   } finally {
     faux.unregister();
+    await handlers.get("session_shutdown")?.();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("未匹配 reviewer 的工具结果保持完整透传", async () => {
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-output-pass-through-"));
+  const handlers = new Map<string, TestHandler>();
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "edit-only", model: "provider/model", rulesFile: "rules.md", tools: ["edit"], trigger: "after" }],
+    }));
+
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+    const context = { cwd: agentDir };
+    const text = "x".repeat(20_000);
+    await handlers.get("tool_call")?.({ toolName: "read", toolCallId: "read-large", input: { path: "large.txt" } }, context);
+    const result = await handlers.get("tool_result")?.({
+      toolName: "read",
+      toolCallId: "read-large",
+      input: { path: "large.txt" },
+      content: [{ type: "text", text }],
+      details: { source: "read" },
+      isError: false,
+    }, context) as { content: Array<{ text?: string }>; details?: Record<string, unknown> };
+    assert.equal(result.content[0]?.text, text);
+    assert.deepEqual(result.details, { source: "read" });
+  } finally {
     await handlers.get("session_shutdown")?.();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
