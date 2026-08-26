@@ -117,7 +117,11 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   );
   const squashTool = tools.find((tool) => tool.name === "session_squash");
   assert.ok(squashTool);
-  assert.deepEqual(squashTool.parameters.required, ["from", "summary"]);
+  assert.deepEqual(squashTool.parameters.required, [
+    "from",
+    "summary",
+    "continuation",
+  ]);
   assert.ok(squashTool.parameters.properties?.continuation);
   assert.ok(
     squashTool.promptGuidelines?.some((guideline) =>
@@ -337,6 +341,7 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
     {
       from: 0,
       summary: "## Current State\n继续实现",
+      continuation: "auto",
     },
     undefined,
     undefined,

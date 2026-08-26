@@ -74,12 +74,12 @@ const TailCompactionParams = Type.Object({
     minLength: 1,
     description: i18n.t("squashSummaryDescription"),
   }),
-  continuation: Type.Optional(Type.Union([
+  continuation: Type.Union([
     Type.Literal(CONTINUATION_AUTO),
     Type.Literal(CONTINUATION_NEXT_USER),
   ], {
     description: i18n.t("squashContinuationDescription"),
-  })),
+  }),
 });
 
 /** contextWindow 缺失时的回退值（与 Pi 内置摘要逻辑一致）。 */
@@ -389,6 +389,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     description: i18n.t("logDescription"),
     promptSnippet: i18n.t("logSnippet"),
     parameters: Type.Object({}),
+    /** 返回当前 active branch 上可作为压缩起点的 user turn。 */
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch();
       const inputs = listSquashCandidates(
@@ -459,7 +460,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         startEntryId: validation.input.entryId,
         fromUserInputIndex: params.from,
         summary,
-        continuation: params.continuation ?? CONTINUATION_AUTO,
+        continuation: params.continuation,
       };
 
       return {

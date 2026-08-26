@@ -16,8 +16,8 @@
     "en-US": "Task-state snapshot after squashing. Focus on work completed, final outcomes, and verification, then state the exact stopping point, remaining work, and next action. Do not record the squash process."
   },
   "squashContinuationDescription": {
-    "zh-CN": "压缩后的接续模式。仍有可立即执行的 Resume 时使用 auto；当前任务已完成且必须等待用户新输入时使用 next-user，只保存快照而不触发模型回合。旧版调用省略此字段时兼容为 auto。",
-    "en-US": "Continuation mode after squashing. Use auto when Resume has immediately actionable work; use next-user when work is complete and must await new user input, saving the snapshot without triggering a model turn. Legacy calls that omit this field fall back to auto."
+    "zh-CN": "压缩后的接续模式，必须显式选择。仍有可立即执行的 Resume 时使用 auto；当前任务已完成且必须等待用户新输入时使用 next-user，只保存快照而不触发模型回合。",
+    "en-US": "Required continuation mode after squashing. Use auto when Resume has immediately actionable work; use next-user when work is complete and must await new user input, saving the snapshot without triggering a model turn."
   },
   "validateInputNotFound": {
     "zh-CN": "找不到 user message 索引 {from}。",

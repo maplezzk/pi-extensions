@@ -21,7 +21,7 @@ pi install npm:pi-session-tools
 
 调用 `session_squash` 前先调用 `session_log`，用已完成回合的编号作为 `from`，并把完整任务状态快照传给 `session_squash`。选中的 user turn 会作为新分支锚点保留，以维持后续 user turn 索引稳定；任务状态快照作为被压缩后缀的权威状态。该锚点会继续出现在后续 `session_log` 中，可重复选择，从而让新快照吸收“上次快照之后、下一条 user turn 之前”的自动续接内容；也可以从更早索引重新压缩更大范围。
 
-任务或阶段到达安全停点时都可以压缩，例如阶段完成、验证完成、关键决策落定或准备进入下一阶段；无需等整个任务交付。摘要重点说明被压缩范围内做了什么、作用对象、最终结果和验证，并明确当前准确停点、剩余事项、制品状态和下一步。已完成工作不得重复列入剩余事项；必要时使用 `VERIFIED`、`INFERRED`、`UNKNOWN`、`NOT VERIFIED` 或 `BLOCKED`。摘要只保留有效任务状态，不记录上下文阈值、`session_log`、`session_squash` 或会话切换等维护过程。仍有可立即执行的工作时使用 `continuation: "auto"`；当前任务已完成且下一步必须等待用户新输入时使用 `continuation: "next-user"`，只保存快照而不额外触发模型回合。若摘要与 workspace、Git 或测试证据冲突，以实际证据为准并报告冲突。
+任务或阶段到达安全停点时都可以压缩，例如阶段完成、验证完成、关键决策落定或准备进入下一阶段；无需等整个任务交付。摘要重点说明被压缩范围内做了什么、作用对象、最终结果和验证，并明确当前准确停点、剩余事项、制品状态和下一步。已完成工作不得重复列入剩余事项；必要时使用 `VERIFIED`、`INFERRED`、`UNKNOWN`、`NOT VERIFIED` 或 `BLOCKED`。摘要只保留有效任务状态，不记录上下文阈值、`session_log`、`session_squash` 或会话切换等维护过程。每次压缩都必须显式选择接续模式：仍有可立即执行的工作时使用 `continuation: "auto"`；当前任务已完成且下一步必须等待用户新输入时使用 `continuation: "next-user"`，只保存快照而不额外触发模型回合。若摘要与 workspace、Git 或测试证据冲突，以实际证据为准并报告冲突。
 
 ## 上下文阈值提示
 
