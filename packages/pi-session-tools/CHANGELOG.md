@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.3](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.2...pi-session-tools-v0.5.3) (2026-08-27)
+
+
+### Bug Fixes
+
+* make session squash handoffs actionable ([b178f4f](https://github.com/maplezzk/pi-extensions/commit/b178f4f5db928cd60797d7f91fec02d7d9cec0e5))
+* make session squash handoffs actionable ([14362f2](https://github.com/maplezzk/pi-extensions/commit/14362f22064773d2adb897f56360ee71bcc687ca))
+
 ## [0.5.2](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.1...pi-session-tools-v0.5.2) (2026-08-26)
 
 
