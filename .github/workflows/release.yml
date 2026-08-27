@@ -3,6 +3,21 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      package_dir:
+        description: "Package directory to republish"
+        required: true
+        type: string
+      version:
+        description: "Package version to republish"
+        required: true
+        type: string
+      release_ref:
+        description: "Git ref containing the package version"
+        required: true
+        default: main
+        type: string
 
 permissions:
   contents: write
@@ -12,6 +27,7 @@ permissions:
 jobs:
   # release-please manifest 模式：自动管理各包版本号 + changelog + 创建 Release PR
   release-please:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     outputs:
       paths_released: ${{ steps.release.outputs.paths_released }}
@@ -24,7 +40,7 @@ jobs:
   # Release PR 合并后按包发布 npm（OIDC trusted publishing，免 token）
   publish-npm:
     needs: release-please
-    if: ${{ needs.release-please.outputs.paths_released }}
+    if: ${{ github.event_name == 'push' && needs.release-please.outputs.paths_released }}
     runs-on: ubuntu-latest
     strategy:
       # 单个包发布失败（如缺 trusted publisher / 版本冲突）不连累其它包，各自独立发布
@@ -66,6 +82,53 @@ jobs:
       - name: Publish to npm
         if: ${{ contains(needs.release-please.outputs.paths_released, matrix.dir) }}
         working-directory: ${{ matrix.dir }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" =~ -[a-zA-Z] ]]; then
+            echo "Publishing prerelease version $VERSION with tag 'beta'"
+            npm publish --provenance --tag beta
+          else
+            echo "Publishing stable version $VERSION"
+            npm publish --provenance
+          fi
+
+  # 手动恢复已创建 GitHub Release 但 npm 发布失败的单个包。
+  publish-npm-retry:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Update npm for OIDC support
+        run: |
+          corepack enable npm
+          corepack prepare npm@latest --activate
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify package version
+        working-directory: ${{ inputs.package_dir }}
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          ACTUAL_VERSION=$(node -p "require('./package.json').version")
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
+
+      - name: Publish to npm
+        working-directory: ${{ inputs.package_dir }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
           if [[ "$VERSION" =~ -[a-zA-Z] ]]; then
