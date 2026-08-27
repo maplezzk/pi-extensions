@@ -53,6 +53,31 @@ type RegisteredCommand = {
   handler: (args: string, context: unknown) => Promise<void>;
 };
 
+const VALID_HANDOFF_SUMMARY = [
+  "# Handoff: test",
+  "## Timeline of user and agent work",
+  "- User: 提出需要继续核对的任务。",
+  "- Agent: 完成当前阶段的验证。",
+  "## Current focus",
+  "objective：继续核对当前状态；准确停点：等待下一步。",
+  "### Background and problem origin",
+  "此前存在需要纠正的方向。",
+  "## Errors and resolutions",
+  "已记录并停止错误方向。",
+  "## Code and artifact state",
+  "无新的代码改动。",
+  "## Environment and repository state",
+  "工作区状态已核对。",
+  "## Completed work and decisions",
+  "已完成当前阶段。",
+  "## Active issues and next actions",
+  "等待下一步。",
+  "## Important context and boundaries",
+  "不扩大任务范围。",
+  "## Suggested skills",
+  "None observed.",
+].join("\n");
+
 /** 验证强制门禁、稳定的压缩锚点和两种接续模式。 */
 test("强制模式限制工具，并按 continuation 控制压缩后接续", async (t) => {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-session-tools-force-"));
@@ -125,7 +150,7 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   assert.ok(squashTool.parameters.properties?.continuation);
   assert.ok(
     squashTool.promptGuidelines?.some((guideline) =>
-      guideline.includes("Work Completed")
+      guideline.includes("Timeline of user and agent work")
     ),
   );
   assert.ok(
@@ -293,14 +318,29 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   const forceText = (forceMessages[0]?.message as {
     content: Array<{ type: "text"; text: string }>;
   }).content[0]?.text ?? "";
-  assert.match(forceText, /Work Completed/);
+  assert.match(forceText, /Timeline of user and agent work/);
   assert.match(forceText, /Completed.*Remaining.*Resume/s);
+
+  const invalidResult = await squashTool.execute(
+    "invalid-summary",
+    {
+      from: 0,
+      summary: "## Work Completed\n不完整快照",
+      continuation: "next-user",
+    },
+    undefined,
+    undefined,
+    context,
+  );
+  assert.equal(invalidResult.isError, true);
+  assert.match(invalidResult.content[0]?.text ?? "", /快照结构不完整|snapshot is incomplete/);
+  assert.deepEqual(branchTargets, []);
 
   const result = await squashTool.execute(
     "tool-1",
     {
       from: 0,
-      summary: "## Work Completed\n已更新提示文案并通过测试",
+      summary: VALID_HANDOFF_SUMMARY,
       continuation: "next-user",
     },
     undefined,
@@ -325,13 +365,10 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   };
   assert.equal(sent.customType, SESSION_SQUASH_TYPE);
   assert.match(sent.content, /任务状态快照|Task state snapshot/);
-  assert.match(sent.content, /禁止重复|do not repeat/);
+  assert.match(sent.content, /不是新的用户需求|not a new user request/);
   assert.doesNotMatch(sent.content, /session_log|session_squash|上下文阈值/);
-  assert.ok(
-    sent.content.endsWith(
-      "## Work Completed\n已更新提示文案并通过测试\n\n<read-files>\n/tmp/context.ts\n</read-files>",
-    ),
-  );
+  assert.ok(sent.content.endsWith(VALID_HANDOFF_SUMMARY));
+  assert.doesNotMatch(sent.content, /<read-files>/);
   assert.equal(sent.details.summary, sent.content);
   assert.ok(notifications.length >= 5);
 
@@ -340,7 +377,7 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
     "tool-2",
     {
       from: 0,
-      summary: "## Current State\n继续实现",
+      summary: VALID_HANDOFF_SUMMARY,
       continuation: "auto",
     },
     undefined,
