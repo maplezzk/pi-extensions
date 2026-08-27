@@ -17,9 +17,9 @@ pi install npm:pi-session-tools
 - 当 bash 管道中使用 `grep`、`tail` 或 `head` 过滤输出时，将过滤前的完整输出写入系统临时目录下的 `pi-pipe-cache/`，并在结果中给出路径，可以直接对缓存文件重新过滤而不用重跑命令。
 - 提供 `session_log`：按原索引列出 active branch 的用户消息和可选起点。已经作为压缩起点保留的 user anchor 仍可重复选择，从而把上次快照之后新增的自动续接内容折叠进下一份快照；原分支仍可通过 `/tree` 找回。
 - 提供 `session_squash`：接收总结和接续模式，并把从指定消息开始的对话压缩为该总结。原对话不删，可通过 Pi 的 `/tree` 找回。
-- 总结由主 agent 基于完整对话上下文生成，并直接随 `session_squash` 调用提交（不发独立 LLM 请求，也没有 finalize 步骤）；被压缩范围内读/改过的文件清单会自动附上。
+- 总结由主 agent 基于完整对话上下文生成，并直接随 `session_squash` 调用提交（不发独立 LLM 请求，也没有 finalize 步骤）；被压缩范围内修改过的文件会自动附上，读取过的文件不会批量复制到快照。
 
-调用 `session_squash` 前先调用 `session_log`，用已完成回合的编号作为 `from`，并把完整任务状态快照传给 `session_squash`。选中的 user turn 会作为新分支锚点保留，以维持后续 user turn 索引稳定；任务状态快照作为被压缩后缀的权威状态。该锚点会继续出现在后续 `session_log` 中，可重复选择，从而让新快照吸收“上次快照之后、下一条 user turn 之前”的自动续接内容；也可以从更早索引重新压缩更大范围。
+调用 `session_squash` 前先调用 `session_log`，用已完成回合的编号作为 `from`，并把完整任务状态快照传给 `session_squash`。快照首行必须是 `# Handoff: <topic>`，并按固定顺序包含 `Timeline of user and agent work`、`Current focus`（其中包含 `### Background and problem origin`）、`Errors and resolutions`、`Code and artifact state`、`Environment and repository state`、`Completed work and decisions`、`Active issues and next actions`、`Important context and boundaries` 和 `Suggested skills`；时间线逐条区分 `User` 与 `Agent`。如果主 agent 漏写时间线，扩展会从被压缩分支自动补一份紧凑事实时间线；缺少其他必需章节或顺序错误则拒绝压缩，不接受不完整快照。选中的 user turn 会作为新分支锚点保留，以维持后续 user turn 索引稳定；任务状态快照作为被压缩后缀的权威状态，并在下一轮模型上下文中以 Pi 原生 compaction summary 语义呈现，明确告知接手 Agent 从快照继续。该锚点会继续出现在后续 `session_log` 中，可重复选择，从而让新快照吸收“上次快照之后、下一条 user turn 之前”的自动续接内容；也可以从更早索引重新压缩更大范围。
 
 任务或阶段到达安全停点时都可以压缩，例如阶段完成、验证完成、关键决策落定或准备进入下一阶段；无需等整个任务交付。摘要重点说明被压缩范围内做了什么、作用对象、最终结果和验证，并明确当前准确停点、剩余事项、制品状态和下一步。已完成工作不得重复列入剩余事项；必要时使用 `VERIFIED`、`INFERRED`、`UNKNOWN`、`NOT VERIFIED` 或 `BLOCKED`。摘要只保留有效任务状态，不记录上下文阈值、`session_log`、`session_squash` 或会话切换等维护过程。每次压缩都必须显式选择接续模式：仍有可立即执行的工作时使用 `continuation: "auto"`；当前任务已完成且下一步必须等待用户新输入时使用 `continuation: "next-user"`，只保存快照而不额外触发模型回合。若摘要与 workspace、Git 或测试证据冲突，以实际证据为准并报告冲突。
 

@@ -3,8 +3,10 @@ import test from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
   computeFileLists,
+  ensureHandoffTimeline,
   extractFileOps,
   formatContextPercentage,
+  formatConversationTimeline,
   formatFileOperations,
   formatPercentage,
   formatThreshold,
@@ -18,6 +20,7 @@ import {
   SESSION_SQUASH_HINT_TYPE,
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
+  validateHandoffSummary,
   thresholdKey,
   validateTailStart,
 } from "../src/session-tail-compaction-utils.ts";
@@ -419,4 +422,52 @@ test("formatFileOperations 输出与 Pi 一致的 XML 块，空列表返回空�
     formatFileOperations([], ["/a/m1.ts"]),
     "\n\n<modified-files>\n/a/m1.ts\n</modified-files>",
   );
+});
+
+test("handoff 自动保留时间线并校验固定章节", () => {
+  const entries: SessionEntry[] = [
+    message({
+      id: "u1",
+      parentId: null,
+      role: "user",
+      content: "用户纠正了当前方向",
+    }),
+    message({
+      id: "a1",
+      parentId: "u1",
+      role: "assistant",
+      content: "已停止错误调查并核对现有数据",
+    }),
+  ];
+  const timeline = formatConversationTimeline(entries, "[image]");
+  assert.match(timeline, /^## Timeline of user and agent work\n- User: 用户纠正了当前方向\n- Agent: 已停止错误调查并核对现有数据$/);
+
+  const body = [
+    "# Handoff: example",
+    "## Current focus",
+    "目标：继续核对现有数据。",
+    "### Background and problem origin",
+    "此前方向未经确认。",
+    "## Errors and resolutions",
+    "已停止错误方向。",
+    "## Code and artifact state",
+    "无代码改动。",
+    "## Environment and repository state",
+    "工作区状态未知。",
+    "## Completed work and decisions",
+    "已确认查询链路。",
+    "## Active issues and next actions",
+    "等待核对结果。",
+    "## Important context and boundaries",
+    "不调用未授权外部接口。",
+    "## Suggested skills",
+    "None observed.",
+  ].join("\n");
+  const prepared = ensureHandoffTimeline(body, entries, "[image]");
+  assert.match(prepared, /^# Handoff: example\n\n## Timeline of user and agent work/);
+  assert.deepEqual(validateHandoffSummary(prepared), { ok: true });
+
+  const invalid = validateHandoffSummary("## Work Completed\n已完成");
+  assert.equal(invalid.ok, false);
+  if (!invalid.ok) assert.match(invalid.missing.join(", "), /Timeline/);
 });

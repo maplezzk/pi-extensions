@@ -15,6 +15,41 @@ export const SESSION_SQUASH_FORCE_TYPE = "session-squash-force";
 const ASSISTANT_ROLE = "assistant";
 const NORMAL_STOP_REASON = "stop";
 
+/** Handoff 快照必须使用的固定章节顺序。 */
+export const HANDOFF_REQUIRED_HEADINGS = [
+  "## Timeline of user and agent work",
+  "## Current focus",
+  "### Background and problem origin",
+  "## Errors and resolutions",
+  "## Code and artifact state",
+  "## Environment and repository state",
+  "## Completed work and decisions",
+  "## Active issues and next actions",
+  "## Important context and boundaries",
+  "## Suggested skills",
+] as const;
+
+const HANDOFF_TITLE_PATTERN = /^# Handoff:\s+\S/i;
+const HANDOFF_DEFAULT_TITLE = "# Handoff: Session continuation";
+const HANDOFF_TIMELINE_MAX_CHARS = 180;
+const HANDOFF_TIMELINE_MAX_ITEMS = 40;
+const HANDOFF_TIMELINE_HEAD_ITEMS = 8;
+const HANDOFF_VALIDATION_REASON = {
+  missingSections: "missing-sections",
+  outOfOrder: "out-of-order",
+  timelineRoles: "timeline-roles",
+} as const;
+type HandoffSummaryValidationReason =
+  (typeof HANDOFF_VALIDATION_REASON)[keyof typeof HANDOFF_VALIDATION_REASON];
+
+export type HandoffSummaryValidation =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: HandoffSummaryValidationReason;
+      missing: string[];
+    };
+
 /** 判断最近一条 assistant 消息是否由模型主动正常停止。 */
 export function didAgentStopNormally(
   messages: readonly { role?: string; stopReason?: string }[] | undefined,
@@ -241,6 +276,124 @@ function messageContentToText(
     })
     .filter(Boolean)
     .join("\n");
+}
+
+/** 压缩时间线单项文本，避免用户正文或 Agent 回复撑大快照。 */
+function compactTimelineText(text: string): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= HANDOFF_TIMELINE_MAX_CHARS) return compact;
+  return `${compact.slice(0, HANDOFF_TIMELINE_MAX_CHARS - 1)}…`;
+}
+
+/** 从 assistant 消息中提取不含参数的工具名，避免把工具载荷复制进快照。 */
+function assistantToolNames(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
+  return [
+    ...new Set(
+      content
+        .filter((block): block is Record<string, unknown> => Boolean(block) && typeof block === "object")
+        .filter((block) => block.type === "toolCall" && typeof block.name === "string")
+        .map((block) => block.name as string),
+    ),
+  ];
+}
+
+/**
+ * 生成事实性的紧凑时间线；只复制用户消息和 assistant 的文字/工具名，跳过原始工具结果。
+ * 这样即使主 agent 遗漏时间线，用户的后续纠正仍会进入下一份快照。
+ */
+export function formatConversationTimeline(
+  entries: SessionEntry[],
+  imagePlaceholder: string,
+): string {
+  const items: string[] = [];
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    const message = entry.message;
+    if (message.role === "user") {
+      const text = messageContentToText(message.content, imagePlaceholder);
+      if (text.trim()) items.push(`- User: ${compactTimelineText(text)}`);
+      continue;
+    }
+    if (message.role !== "assistant") continue;
+    const text = messageContentToText(message.content, imagePlaceholder);
+    const toolNames = assistantToolNames(message.content);
+    const activity = toolNames.length > 0
+      ? `tools: ${toolNames.join(", ")}`
+      : text.trim()
+        ? compactTimelineText(text)
+        : "";
+    if (activity) items.push(`- Agent: ${activity}`);
+  }
+
+  if (items.length === 0) {
+    return "## Timeline of user and agent work\n- User: No user message was available in the compressed range.\n- Agent: No assistant activity was available in the compressed range.";
+  }
+  if (items.length <= HANDOFF_TIMELINE_MAX_ITEMS) {
+    return `## Timeline of user and agent work\n${items.join("\n")}`;
+  }
+
+  const tailCount = HANDOFF_TIMELINE_MAX_ITEMS - HANDOFF_TIMELINE_HEAD_ITEMS - 1;
+  const omitted = items.length - HANDOFF_TIMELINE_HEAD_ITEMS - tailCount;
+  return [
+    "## Timeline of user and agent work",
+    ...items.slice(0, HANDOFF_TIMELINE_HEAD_ITEMS),
+    `- Agent: ${omitted} earlier timeline entries omitted; verify against the preserved branch if needed.`,
+    ...items.slice(-tailCount),
+  ].join("\n");
+}
+
+/** 如果主 agent 没有写时间线或标题，在快照中补齐紧凑事实时间线和默认标题。 */
+export function ensureHandoffTimeline(
+  summary: string,
+  entries: SessionEntry[],
+  imagePlaceholder: string,
+): string {
+  const trimmed = summary.trim();
+  const titleMatch = trimmed.match(/^(# Handoff:[^\r\n]+)(?:\r?\n+)([\s\S]*)$/i);
+  const title = titleMatch?.[1] ?? HANDOFF_DEFAULT_TITLE;
+  const body = titleMatch?.[2]?.trim() ?? trimmed;
+  const hasTimeline = body
+    .split(/\r?\n/)
+    .some((line) => line.trim().toLowerCase() === HANDOFF_REQUIRED_HEADINGS[0].toLowerCase());
+  if (titleMatch && hasTimeline) return trimmed;
+  const bodyWithTimeline = hasTimeline
+    ? body
+    : `${formatConversationTimeline(entries, imagePlaceholder)}\n\n${body}`;
+  return `${title}\n\n${bodyWithTimeline}`;
+}
+
+/** 校验 handoff 是否保留固定章节顺序和 User/Agent 归属。 */
+export function validateHandoffSummary(summary: string): HandoffSummaryValidation {
+  const lines = summary.split(/\r?\n/).map((line) => line.trim());
+  const missingTitle = lines.length === 0 || !HANDOFF_TITLE_PATTERN.test(lines[0] ?? "")
+    ? ["# Handoff: <topic>"]
+    : [];
+  const positions = HANDOFF_REQUIRED_HEADINGS.map((heading) =>
+    lines.findIndex((line) => line.toLowerCase() === heading.toLowerCase()),
+  );
+  const missing = [
+    ...missingTitle,
+    ...HANDOFF_REQUIRED_HEADINGS
+      .filter((_heading, index) => positions[index] === -1)
+      .map((heading) => heading),
+  ];
+  if (missing.length > 0) {
+    return { ok: false, reason: HANDOFF_VALIDATION_REASON.missingSections, missing };
+  }
+  if (positions.some((position, index) => index > 0 && position <= positions[index - 1])) {
+    return { ok: false, reason: HANDOFF_VALIDATION_REASON.outOfOrder, missing: [] };
+  }
+
+  const timeline = lines.slice(positions[0] + 1, positions[1]).join("\n");
+  const missingRoles = [
+    ...(!/(^|\n)\s*[-*]\s*(?:User|用户)\s*:/i.test(timeline) ? ["User"] : []),
+    ...(!/(^|\n)\s*[-*]\s*(?:Agent|助手)\s*:/i.test(timeline) ? ["Agent"] : []),
+  ];
+  if (missingRoles.length > 0) {
+    return { ok: false, reason: HANDOFF_VALIDATION_REASON.timelineRoles, missing: missingRoles };
+  }
+  return { ok: true };
 }
 
 /**

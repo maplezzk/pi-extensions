@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, type ExtensionAPI, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
   SESSION_SQUASH_FORCE_TYPE,
   SESSION_SQUASH_HINT_TYPE,
@@ -52,6 +52,31 @@ type EventHandler = (
 type RegisteredCommand = {
   handler: (args: string, context: unknown) => Promise<void>;
 };
+
+const VALID_HANDOFF_SUMMARY = [
+  "# Handoff: test",
+  "## Timeline of user and agent work",
+  "- User: 提出需要继续核对的任务。",
+  "- Agent: 完成当前阶段的验证。",
+  "## Current focus",
+  "objective：继续核对当前状态；准确停点：等待下一步。",
+  "### Background and problem origin",
+  "此前存在需要纠正的方向。",
+  "## Errors and resolutions",
+  "已记录并停止错误方向。",
+  "## Code and artifact state",
+  "无新的代码改动。",
+  "## Environment and repository state",
+  "工作区状态已核对。",
+  "## Completed work and decisions",
+  "已完成当前阶段。",
+  "## Active issues and next actions",
+  "等待下一步。",
+  "## Important context and boundaries",
+  "不扩大任务范围。",
+  "## Suggested skills",
+  "None observed.",
+].join("\n");
 
 /** 验证强制门禁、稳定的压缩锚点和两种接续模式。 */
 test("强制模式限制工具，并按 continuation 控制压缩后接续", async (t) => {
@@ -125,7 +150,7 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   assert.ok(squashTool.parameters.properties?.continuation);
   assert.ok(
     squashTool.promptGuidelines?.some((guideline) =>
-      guideline.includes("Work Completed")
+      guideline.includes("Timeline of user and agent work")
     ),
   );
   assert.ok(
@@ -293,14 +318,29 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   const forceText = (forceMessages[0]?.message as {
     content: Array<{ type: "text"; text: string }>;
   }).content[0]?.text ?? "";
-  assert.match(forceText, /Work Completed/);
+  assert.match(forceText, /Timeline of user and agent work/);
   assert.match(forceText, /Completed.*Remaining.*Resume/s);
+
+  const invalidResult = await squashTool.execute(
+    "invalid-summary",
+    {
+      from: 0,
+      summary: "## Work Completed\n不完整快照",
+      continuation: "next-user",
+    },
+    undefined,
+    undefined,
+    context,
+  );
+  assert.equal(invalidResult.isError, true);
+  assert.match(invalidResult.content[0]?.text ?? "", /快照结构不完整|snapshot is incomplete/);
+  assert.deepEqual(branchTargets, []);
 
   const result = await squashTool.execute(
     "tool-1",
     {
       from: 0,
-      summary: "## Work Completed\n已更新提示文案并通过测试",
+      summary: VALID_HANDOFF_SUMMARY,
       continuation: "next-user",
     },
     undefined,
@@ -325,13 +365,10 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   };
   assert.equal(sent.customType, SESSION_SQUASH_TYPE);
   assert.match(sent.content, /任务状态快照|Task state snapshot/);
-  assert.match(sent.content, /禁止重复|do not repeat/);
+  assert.match(sent.content, /不是新的用户需求|not a new user request/);
   assert.doesNotMatch(sent.content, /session_log|session_squash|上下文阈值/);
-  assert.ok(
-    sent.content.endsWith(
-      "## Work Completed\n已更新提示文案并通过测试\n\n<read-files>\n/tmp/context.ts\n</read-files>",
-    ),
-  );
+  assert.ok(sent.content.endsWith(VALID_HANDOFF_SUMMARY));
+  assert.doesNotMatch(sent.content, /<read-files>/);
   assert.equal(sent.details.summary, sent.content);
   assert.ok(notifications.length >= 5);
 
@@ -340,7 +377,7 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
     "tool-2",
     {
       from: 0,
-      summary: "## Current State\n继续实现",
+      summary: VALID_HANDOFF_SUMMARY,
       continuation: "auto",
     },
     undefined,
@@ -357,4 +394,54 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   );
   assert.equal(allSquashMessages.length, 2);
   assert.deepEqual(allSquashMessages[1]?.options, { triggerTurn: true });
+});
+
+test("session-squash 快照以 compaction summary 语义注入上下文", async () => {
+  type ContextHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const moduleUrl = new URL("../src/session-tail-compaction.ts", import.meta.url);
+  moduleUrl.searchParams.set("handoff-context-test", "enabled");
+  const { default: sessionTailCompaction } = await import(moduleUrl.href);
+  const handlers = new Map<string, ContextHandler>();
+  const snapshot = "[Task state snapshot]\n## Current State\n继续执行 Resume";
+  const squashEntry: SessionEntry = {
+    type: "custom_message",
+    id: "squash-1",
+    parentId: "user-1",
+    timestamp: "2026-01-01T00:00:01.000Z",
+    customType: SESSION_SQUASH_TYPE,
+    content: snapshot,
+    display: true,
+    details: {
+      startEntryId: "user-1",
+      sourceLeafId: "leaf-1",
+      fromUserInputIndex: 0,
+      summary: snapshot,
+      tokensBefore: 1234,
+    },
+  };
+  const pi = {
+    registerTool: () => undefined,
+    registerCommand: () => undefined,
+    on: (eventName: string, handler: ContextHandler) => handlers.set(eventName, handler),
+  } as unknown as ExtensionAPI;
+  sessionTailCompaction(pi);
+
+  const result = await handlers.get("context")?.({}, {
+    sessionManager: {
+      getBranch: () => [squashEntry],
+      buildContextEntries: () => [squashEntry],
+    },
+  }) as { messages: Array<{ role?: string; summary?: string; tokensBefore?: number }> };
+  assert.equal(result.messages.length, 1);
+  assert.equal(result.messages[0]?.role, "compactionSummary");
+  assert.equal(result.messages[0]?.summary, snapshot);
+  assert.equal(result.messages[0]?.tokensBefore, 1234);
+
+  const llmMessages = convertToLlm(result.messages as Parameters<typeof convertToLlm>[0]);
+  const llmContent = llmMessages[0]?.content;
+  const llmText = typeof llmContent === "string"
+    ? llmContent
+    : llmContent?.filter((block) => block.type === "text").map((block) => block.text).join("\n") ?? "";
+  assert.match(llmText, /^The conversation history before this point was compacted into the following summary:/);
+  assert.match(llmText, /## Current State/);
 });

@@ -11,13 +11,14 @@
  * 折叠不是覆盖当前历史，而是复用 Pi 的 SessionManager.branch：
  * - 原始后缀保留为旧 branch；
  * - 当前 leaf 回到折叠起点，保持 user turn 索引稳定；
- * - summary custom message 成为新的 active branch；
+ * - summary custom message 成为新的 active branch，并在下一轮模型上下文中呈现为原生 compaction summary；
  * - /tree 可以回到原始后缀。
  */
 
 import {
   sessionEntryToContextMessages,
   type ExtensionAPI,
+  type SessionEntry,
   type ExtensionCommandContext,
   type ExtensionContext,
   type SessionManager,
@@ -29,6 +30,7 @@ import { Type } from "typebox";
 import {
   computeFileLists,
   didAgentStopNormally,
+  ensureHandoffTimeline,
   extractFileOps,
   formatContextPercentage,
   formatFileOperations,
@@ -45,8 +47,10 @@ import {
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
   thresholdKey,
+  validateHandoffSummary,
   validateTailStart,
   type SquashThreshold,
+  type HandoffSummaryValidation,
   type TailCompactionData,
   type TailStartErrorCode,
 } from "./session-tail-compaction-utils.ts";
@@ -64,6 +68,13 @@ const CONTINUATION_NEXT_USER = "next-user";
 type SquashContinuation =
   | typeof CONTINUATION_AUTO
   | typeof CONTINUATION_NEXT_USER;
+
+/** 交接摘要校验使用的 i18n key，集中避免散落业务字符串。 */
+const HANDOFF_I18N_KEYS = {
+  imagePlaceholder: "imagePlaceholder",
+  summaryStructureOrder: "summaryStructureOrder",
+  summaryStructureInvalid: "summaryStructureInvalid",
+} as const;
 
 const TailCompactionParams = Type.Object({
   from: Type.Integer({
@@ -455,11 +466,30 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         return textResult(i18n.t("squashSummaryEmpty"), true);
       }
 
+      const startIndex = branch.findIndex(
+        (entry) => entry.id === validation.input.entryId,
+      );
+      const summaryWithTimeline = ensureHandoffTimeline(
+        summary,
+        startIndex >= 0 ? branch.slice(startIndex) : [],
+        i18n.t(HANDOFF_I18N_KEYS.imagePlaceholder),
+      );
+      const summaryValidation = validateHandoffSummary(summaryWithTimeline);
+      if (summaryValidation.ok === false) {
+        const details = summaryValidation.missing.length > 0
+          ? summaryValidation.missing.join(", ")
+          : i18n.t(HANDOFF_I18N_KEYS.summaryStructureOrder);
+        return textResult(
+          i18n.t(HANDOFF_I18N_KEYS.summaryStructureInvalid, { details }),
+          true,
+        );
+      }
+
       pending = {
         sessionId: ctx.sessionManager.getSessionId(),
         startEntryId: validation.input.entryId,
         fromUserInputIndex: params.from,
-        summary,
+        summary: summaryWithTimeline,
         continuation: params.continuation,
       };
 
@@ -543,11 +573,10 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       throw new Error(i18n.t("noInput"));
     }
     const suffix = branch.slice(startIdx);
-    const { readFiles, modifiedFiles } = computeFileLists(
-      extractFileOps(suffix),
-    );
+    const { modifiedFiles } = computeFileLists(extractFileOps(suffix));
+    // 只附加修改过的文件；读取过的路径由摘要按需选择，避免清单淹没当前状态。
     const taskState =
-      request.summary + formatFileOperations(readFiles, modifiedFiles);
+      request.summary + formatFileOperations([], modifiedFiles);
     const summary = `${i18n.t("continuationInstruction")}\n\n${taskState}`;
     const data: TailCompactionData = {
       startEntryId: request.startEntryId,
@@ -594,6 +623,33 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     restoreToolsAfterForce();
   });
 
+  /**
+   * Keep the persisted/UI custom message, but present it to the LLM as a native
+   * compaction summary so the next agent understands its handoff semantics.
+   */
+  function toSessionContextMessages(entry: SessionEntry) {
+    if (entry.type !== "custom_message" || entry.customType !== SESSION_SQUASH_TYPE) {
+      return sessionEntryToContextMessages(entry);
+    }
+
+    const summary = typeof entry.content === "string"
+      ? entry.content
+      : entry.content
+        .map((block) => block.type === "text" ? block.text : "")
+        .join("\n");
+    const details = entry.details;
+    const tokensBefore = details && typeof details === "object" && !Array.isArray(details)
+      && "tokensBefore" in details && typeof details.tokensBefore === "number"
+      ? details.tokensBefore
+      : 0;
+    return [{
+      role: "compactionSummary" as const,
+      summary,
+      tokensBefore,
+      timestamp: new Date(entry.timestamp).getTime(),
+    }];
+  }
+
   // branch() 发生在 agent_settled 事件中，Pi 的 AgentSession 内存消息仍可能
   // 保留旧分支。下一次 provider 请求前，以当前 active branch 重建 context，
   // 确保模型和 /tree 看到同一条新分支。
@@ -604,7 +660,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     return {
       messages: ctx.sessionManager
         .buildContextEntries()
-        .flatMap(sessionEntryToContextMessages),
+        .flatMap(toSessionContextMessages),
     };
   });
 
