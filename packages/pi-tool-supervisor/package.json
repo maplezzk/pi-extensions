@@ -1,6 +1,6 @@
 {
   "name": "pi-tool-supervisor",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Pi tool supervisor extension with configurable lifecycle review for every tool and interactive configuration",
   "type": "module",
   "main": "./index.ts",
