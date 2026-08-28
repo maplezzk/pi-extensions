@@ -8,8 +8,8 @@
 
 ## 工作方式
 
-- 每个 reviewer 可选择 `tools` 与 `trigger`；省略时保持旧默认：`edit`/`write` + `after`，`"*"` 匹配全部内建和自定义工具。
-- before reviewer 审查执行前输入，明确拒绝会通过 Pi 原生机制阻断调用；审查失败仍 fail-open 且可见。
+- 每个 reviewer 可选择 `tools`、`trigger`，并可选配置本地 `condition` 模块；省略时保持旧默认：`edit`/`write` + `after`，`"*"` 匹配全部内建和自定义工具。
+- before reviewer 审查执行前输入，明确拒绝会通过 Pi 原生机制阻断调用；模型审查失败仍 fail-open 且可见，condition 模块加载或执行失败会阻断 before 调用。
 - 在 `edit` / `write` 前捕获文件状态，在工具返回后读取实际文件状态。
 - 将带真实行号的修改后文件与 diff 一起发送；超过 `maxFileContextChars` 时，截取首次和末次变更附近并明确标记截断。
 - 构建 diff，并只选择规则文件匹配当前变更文件的 reviewer。
@@ -66,13 +66,14 @@ pi install npm:pi-tool-supervisor
         "/absolute/path/to/rules.md"
       ],
       "tools": ["edit", "write"],
-      "trigger": "after"
+      "trigger": "after",
+      "condition": "/absolute/path/to/condition.ts"
     }
   ]
 }
 ```
 
-每个 reviewer 必须提供 `provider/model` 格式的模型，并提供 `rulesFile` 或 `rulesFiles`。相对规则文件路径按当前项目工作目录解析。
+每个 reviewer 必须提供 `provider/model` 格式的模型，并提供 `rulesFile` 或 `rulesFiles`。相对规则文件和 condition 模块路径按当前项目工作目录解析。
 
 | 配置项 | 含义 |
 | --- | --- |
@@ -80,7 +81,8 @@ pi install npm:pi-tool-supervisor
 | `timeoutSeconds` | 每个 reviewer 模型调用的最长等待时间。 |
 | `maxFileContextChars` | 发送给 reviewer 的修改后文件上下文上限，默认 50,000 字符；超大文件仅发送首次和末次变更附近的有界片段并明确标记。 |
 | `maxRuleLines` | 单条审查规则允许读取的最大行数。 |
-| `reviewers` | reviewer 名称、模型、规则文件、`tools` 与 `trigger`；省略生命周期字段时保持旧的 `edit`/`write` + `after` 行为。 |
+| `reviewers` | reviewer 名称、模型、规则文件、`tools`、`trigger` 和可选的 condition 模块；省略生命周期字段时保持旧的 `edit`/`write` + `after` 行为。 |
+| `condition` | 可选的本地 TypeScript/ESM 模块路径。默认导出函数会收到 Pi 原生工具事件、`ExtensionContext` 和 `ToolConditionHelpers`；返回 `false` 时跳过该 reviewer，不调用模型。 |
 
 规则文件可以通过 front matter 限定适用文件或消费者：
 
@@ -98,9 +100,41 @@ consumers:
 
 `filePatterns` 使用简化 glob：`*` 不跨 `/`，`**` 可以跨目录，任意位置的 `**/` 都可匹配零层或多层目录。反斜杠会归一化为 `/`，开头的 `./` 会被忽略。
 
+### Condition 模块
+
+reviewer 可以将 `condition` 设置为本地 TypeScript 或 ESM 模块路径。相对路径按当前项目工作目录解析，`~` 会按 Pi home 目录展开。模块必须默认导出一个同步或异步函数：
+
+```ts
+import type {
+  ExtensionContext,
+  ToolCallEvent,
+} from "@earendil-works/pi-coding-agent";
+import type { ToolConditionHelpers } from "pi-tool-supervisor";
+
+export default function condition(
+  event: ToolCallEvent,
+  ctx: ExtensionContext,
+  helpers: ToolConditionHelpers,
+): boolean {
+  if (event.toolName !== "bash") return false;
+  const command = event.input.command;
+  if (typeof command !== "string") return false;
+
+  // 可以直接使用 Pi 原生 event/context；解析器是可选辅助。
+  const ast = helpers.parseBash(command);
+  return ast.errors?.length === 0 && ast.commands.some((statement) =>
+    statement.command.type === "Command" && statement.command.name?.value === "mvn",
+  );
+}
+```
+
+第一个参数是 `before` reviewer 收到的原始 `tool_call` 事件，或 `after` reviewer 收到的原始 `tool_result` 事件。第二个参数是原生 `ExtensionContext`，condition 模块可以使用其他 Pi 插件能使用的 context 能力。第三个参数提供 `parseBash(source)`。
+
+condition 返回 `false` 时跳过该 reviewer，不读取其规则文件，也不调用模型。模块加载失败、执行失败、返回非 boolean 或超时会生成可见错误；`before` 会将其视为审查门禁失败并阻断工具。需要阻断工具时使用 `trigger: "before"`，`after` 仍然只提供诊断。
+
 ## 审查语义
 
-- before reviewer 明确拒绝会阻断 Pi 原生工具调用，并用完整 reason 展示独立审计；before 失败/跳过会放行，但会在后续 tool result 中可见。
+- before reviewer 明确拒绝会阻断 Pi 原生工具调用，并用完整 reason 展示独立审计；模型失败/跳过会放行但保持可见，condition 模块加载或执行失败会阻断 before 调用。
 - after 拒绝只提供诊断，不回滚已完成的工具调用；工具失败时跳过 after 审查并保留原始错误。
 - 如果用户打断上级 Agent 请求，所有尚未完成的 reviewer 模型请求会一起取消，尚未发起的 reviewer 会跳过；上级中断记为 skipped，而不是模型调用失败。
 - 工具调用失败或文件内容没有变化时跳过审查。

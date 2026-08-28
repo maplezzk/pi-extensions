@@ -11,7 +11,8 @@
         "/absolute/path/to/rules.md"
       ],
       "tools": ["edit", "write"],
-      "trigger": "after"
+      "trigger": "after",
+      "condition": "/absolute/path/to/condition.ts"
     }
   ]
 }

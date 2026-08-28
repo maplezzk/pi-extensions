@@ -17,7 +17,7 @@
     "SKILL.md"
   ],
   "scripts": {
-    "test": "tsx --test tests/pi-tool-supervisor.test.ts",
+    "test": "tsx --test tests/condition-utils.test.ts tests/condition-integration.test.ts tests/pi-tool-supervisor.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
@@ -62,14 +62,15 @@
   "dependencies": {
     "diff": "^8.0.4",
     "pi-extensions-i18n": "^0.4.0",
-    "pi-extensions-tool-display": "^1.1.0"
+    "pi-extensions-tool-display": "^1.1.0",
+    "tsx": "^4.23.1",
+    "unbash": "^4.0.10"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.80.10",
     "@earendil-works/pi-coding-agent": "0.80.10",
     "@earendil-works/pi-tui": "0.80.10",
     "@types/node": "24.12.4",
-    "tsx": "4.23.1",
     "typescript": "5.9.3"
   }
 }

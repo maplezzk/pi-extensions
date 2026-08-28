@@ -78,7 +78,8 @@ test("reviewer lifecycle 配置保留旧默认并校验通配工具与非法字�
   const configFile = join(directory, "config.json");
   await writeFile(configFile, JSON.stringify({ enabled: true, reviewers: [
     { model: "provider/model", rulesFile: "rules.md" },
-    { model: "provider/model", rulesFile: "rules.md", tools: ["*", "bash"], trigger: "before" },
+    { model: "provider/model", rulesFile: "rules.md", tools: ["*", "bash"], trigger: "before", condition: "conditions/bash.ts" },
+
     { model: "provider/model", rulesFile: "rules.md", tools: ["bash"], trigger: "invalid" },
   ] }));
   const loaded = loadFileEditReviewConfig(configFile);
@@ -86,8 +87,22 @@ test("reviewer lifecycle 配置保留旧默认并校验通配工具与非法字�
   assert.equal(loaded.config.reviewers[0]?.trigger, "after");
   assert.deepEqual(loaded.config.reviewers[1]?.tools, ["*"]);
   assert.equal(loaded.config.reviewers[1]?.trigger, "before");
+  assert.equal(loaded.config.reviewers[1]?.condition, "conditions/bash.ts");
   assert.match(loaded.warnings.join(" "), /忽略其他工具名/);
   assert.match(loaded.warnings.join(" "), /trigger 无效/);
+});
+
+test("非法 condition 配置不会被静默当成无条件 reviewer", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-condition-config-"));
+  const configFile = join(directory, "config.json");
+  await writeFile(configFile, JSON.stringify({
+    enabled: true,
+    reviewers: [{ model: "provider/model", rulesFile: "rules.md", condition: 42 }],
+  }));
+
+  const loaded = loadFileEditReviewConfig(configFile);
+  assert.equal(loaded.config.reviewers.length, 0);
+  assert.match(loaded.warnings.join(" "), /condition/);
 });
 
 test("generic 规则只接受无 filePatterns 的规则", async () => {
