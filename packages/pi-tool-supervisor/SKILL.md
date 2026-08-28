@@ -13,16 +13,17 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 
 - `tools`：精确工具名数组，`["*"]` 匹配全部内建和自定义工具；省略时为 `edit/write`；
 - `trigger`：`before|after`，省略时为 `after`；
+- `condition`：可选本地 TypeScript/ESM 模块路径。模块默认导出函数，收到原生 tool event、`ExtensionContext` 和 `ToolConditionHelpers`；返回 `false` 时跳过 reviewer；
 - reviewer `enabled`；
 - 规则 frontmatter 的 `enabled`、`filePatterns`、`complexity`、`consumers`。
 
-相对规则路径从当前项目 cwd 解析。配置在每次工具调用前重读。
+相对规则文件路径和 condition 模块路径从当前项目 cwd 解析。配置在每次工具调用前重读。
 
 ## 修改
 
 优先使用 `/config:tool-supervisor`；`/pi-tool-supervisor` 是兼容别名。只修改目标 reviewer 和规则：
 
-- `before` 审查工具输入；明确拒绝会阻断原生工具，失败或跳过则 fail-open 但保持可见；
+- `before` 审查工具输入；明确拒绝会阻断原生工具，模型失败或跳过则 fail-open 但保持可见，condition 模块加载或执行失败则阻断 before 调用；
 - `after` 审查工具结果；拒绝只诊断、不回滚，原工具失败时跳过 after；
 - `edit/write` 使用真实文件前后快照、带真实行号的 diff 和修改后文件上下文；超出 `maxFileContextChars` 时只保留首次与末次变更附近的有界片段并明确标记；其他工具使用有界序列化的 input/result；
 - 带 `filePatterns` 的规则只用于文件审查，通用工具规则不要设置 `filePatterns`；
@@ -32,4 +33,4 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 
 ## 验证
 
-先回读配置和所有规则，确认模型、路径、生命周期与文件匹配。再按目标触发一个最小工具调用：before 拒绝应阻断；after 拒绝应保留原结果并附诊断；模型失败应可见且 fail-open。未运行真实工具/模型审查时报告 `NOT_RUN`，不能用 JSON 可解析冒充已生效。
+先回读配置和所有规则，确认模型、路径、生命周期、condition 模块与文件匹配。再按目标触发一个最小工具调用：before 拒绝应阻断；after 拒绝应保留原结果并附诊断；condition 返回 false 应跳过模型；模型失败应可见且按 fail-open 处理。未运行真实工具/模型审查时报告 `NOT_RUN`，不能用 JSON 可解析冒充已生效。

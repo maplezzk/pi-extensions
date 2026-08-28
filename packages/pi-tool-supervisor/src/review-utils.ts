@@ -40,6 +40,8 @@ export interface FileEditReviewReviewerConfig {
   tools?: string[];
   /** 省略时兼容旧配置：工具执行完成后审查。 */
   trigger?: ReviewTrigger;
+  /** Optional local module that decides whether this reviewer applies. */
+  condition?: string;
 }
 
 export interface FileEditReviewRuleMetadata {
@@ -183,6 +185,11 @@ function normalizeReviewer(value: unknown, index: number, warnings: string[] = [
   const tools = rawTools.map((tool) => String(tool).trim());
   const normalizedTools = tools.includes(ALL_TOOLS) ? [ALL_TOOLS] : [...new Set(tools)];
   if (tools.includes(ALL_TOOLS) && tools.length > 1) warnings.push(i18n.t("wildcardToolsConfig", { index }));
+  const condition = source.condition === undefined ? undefined : stringValue(source.condition);
+  if (source.condition !== undefined && !condition) {
+    warnings.push(i18n.t("invalidConditionConfig", { index }));
+    return undefined;
+  }
   const trigger = source.trigger === undefined ? "after" : source.trigger;
   if (!REVIEW_TRIGGERS.includes(trigger as ReviewTrigger)) {
     warnings.push(i18n.t("invalidTriggerConfig", { index }));
@@ -196,6 +203,7 @@ function normalizeReviewer(value: unknown, index: number, warnings: string[] = [
     filePatterns,
     tools: normalizedTools,
     trigger: trigger as ReviewTrigger,
+    ...(condition ? { condition } : {}),
   };
 }
 

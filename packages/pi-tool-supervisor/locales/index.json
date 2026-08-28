@@ -75,6 +75,18 @@
     "zh-CN": "触发阶段",
     "en-US": "Trigger"
   },
+  "conditionConfig": {
+    "zh-CN": "条件模块：{value}",
+    "en-US": "Condition module: {value}"
+  },
+  "conditionNone": {
+    "zh-CN": "始终匹配",
+    "en-US": "Always matches"
+  },
+  "conditionInput": {
+    "zh-CN": "条件模块路径（留空禁用）",
+    "en-US": "Condition module path (empty to disable)"
+  },
   "deleteReviewer": {
     "zh-CN": "删除此审查器",
     "en-US": "Delete this reviewer"
@@ -170,5 +182,13 @@
   "beforeReviewRejectedFallback": {
     "zh-CN": "工具 {toolName} 未通过前置审查。",
     "en-US": "Tool {toolName} did not pass the before review."
+  },
+  "conditionNotMatched": {
+    "zh-CN": "条件未匹配，跳过该审查器。",
+    "en-US": "The condition did not match; this reviewer was skipped."
+  },
+  "conditionFailed": {
+    "zh-CN": "条件模块 {path} 执行失败：{message}",
+    "en-US": "Condition module {path} failed: {message}"
   }
 }

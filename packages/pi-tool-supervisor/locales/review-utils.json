@@ -75,6 +75,10 @@
     "zh-CN": "审查配置 reviewers[{index}].trigger 无效，必须是 before 或 after。",
     "en-US": "Review configuration reviewers[{index}].trigger is invalid; it must be before or after."
   },
+  "invalidConditionConfig": {
+    "zh-CN": "审查配置 reviewers[{index}].condition 无效，必须是非空条件模块路径。",
+    "en-US": "Review configuration reviewers[{index}].condition is invalid; it must be a non-empty condition module path."
+  },
   "cannotSerializeToolInput": {
     "zh-CN": "工具输入无法序列化为 JSON。",
     "en-US": "The tool input could not be serialized to JSON."
