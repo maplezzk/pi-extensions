@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.5.1...pi-tool-supervisor-v0.6.0) (2026-08-31)
+
+
+### Features
+
+* **tool-supervisor:** 支持条件模块审查 ([7f5a4d4](https://github.com/maplezzk/pi-extensions/commit/7f5a4d4588854ff5bb9d8e56c45af102b9505998))
+* **tool-supervisor:** 支持条件模块审查 ([074f1dc](https://github.com/maplezzk/pi-extensions/commit/074f1dc1acd88f4727faff53cff2fb49920b2064))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^1.1.0 to ^1.1.1
+
 ## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.5.0...pi-tool-supervisor-v0.5.1) (2026-08-26)
 
 

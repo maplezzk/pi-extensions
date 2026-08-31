@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.1.0...pi-extensions-tool-display-v1.1.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **tool-display:** preserve active tool selection ([47a84b9](https://github.com/maplezzk/pi-extensions/commit/47a84b97cf2f4de244279e4ac71e190aa4de16a3))
+* 保持工具展示覆盖的激活状态 ([c734a7b](https://github.com/maplezzk/pi-extensions/commit/c734a7b7d2db53c1d3001ff6559998d6bff3b448))
+
 ## [1.1.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.0.1...pi-extensions-tool-display-v1.1.0) (2026-08-20)
 
 
