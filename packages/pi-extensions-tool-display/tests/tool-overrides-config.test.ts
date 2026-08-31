@@ -77,6 +77,10 @@ function createExtensionApiStub(allTools: Array<RegisteredToolLike & Record<stri
 		getAllTools(): unknown[] {
 			return withDefaultReadEditOwners(allTools);
 		},
+		// Keep legacy renderer tests focused by exposing every built-in as active.
+		getActiveTools(): string[] {
+			return ["read", "grep", "find", "ls", "bash", "edit", "write"];
+		},
 	} as unknown as ExtensionAPI;
 
 	return { api, registeredTools, runtimeTools: allTools, eventHandlers };

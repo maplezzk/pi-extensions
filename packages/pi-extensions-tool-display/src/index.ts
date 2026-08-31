@@ -13,6 +13,7 @@ import {
   type ToolDisplayCapabilities,
 } from "./capabilities.js";
 import { registerToolDisplayOverrides } from "./tool-overrides.js";
+import { logToolDisplayDebug } from "./debug-logger.js";
 import { disposeAll, resetDisposed } from "./disposable.js";
 import { registerThinkingLabeling } from "./thinking-label.js";
 import registerNativeUserMessageBox from "./user-message-box-native.js";
@@ -23,6 +24,12 @@ import {
 } from "./types.js";
 
 export * from "./result-render-middleware.js";
+
+const TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY = Symbol.for("pi-tool-display.reloadActiveTools.v1");
+const BUILT_IN_TOOL_OVERRIDE_NAME_SET = new Set<string>(BUILT_IN_TOOL_OVERRIDE_NAMES);
+type GlobalWithToolDisplayReloadState = typeof globalThis & {
+  [TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY]?: string[];
+};
 
 function ownershipChanged(
   previous: ToolDisplayConfig,
@@ -65,10 +72,21 @@ export function ensureToolDisplayHost(
   if (initializedHosts.has(pi)) return;
   initializedHosts.add(pi);
 
+  const globalReloadState = globalThis as GlobalWithToolDisplayReloadState;
+  const activeBuiltInToolNamesBeforeReload = globalReloadState[TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY];
+  delete globalReloadState[TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY];
+
   resetDisposed();
 
   pi.on("session_shutdown", (event: { reason: string }) => {
     if (event.reason === "reload") {
+      try {
+        globalReloadState[TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY] = pi
+          .getActiveTools()
+          .filter((toolName) => BUILT_IN_TOOL_OVERRIDE_NAME_SET.has(toolName));
+      } catch (error) {
+        logToolDisplayDebug("Failed to preserve active built-in tools for reload.", error);
+      }
       disposeAll();
       initializedHosts.delete(pi);
     }
@@ -112,7 +130,7 @@ export function ensureToolDisplayHost(
   };
 
   if (initial.config.enabled) {
-    registerToolDisplayOverrides(pi, getEffectiveConfig);
+    registerToolDisplayOverrides(pi, getEffectiveConfig, activeBuiltInToolNamesBeforeReload);
     registerNativeUserMessageBox(pi, getConfig);
     registerThinkingLabeling(pi);
   }

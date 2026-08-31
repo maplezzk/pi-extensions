@@ -14,6 +14,8 @@ It is also a standalone Pi extension. Install or include this package in Pi's pa
 
 This package owns the display protocol and generic component composition only. Each feature extension continues to own its domain-specific audit extraction, copy, status, and layout.
 
+Built-in overrides only replace tools that Pi has already activated; `registerToolOverrides` does not enable inactive built-in tools.
+
 ## Upstream attribution
 
 The display integration is designed to work with the MIT-licensed [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display), the original full-featured Pi tool-display project. We thank MasuRii for that work.

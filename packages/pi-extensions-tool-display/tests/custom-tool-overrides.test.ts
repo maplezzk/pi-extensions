@@ -79,6 +79,10 @@ function createExtensionApiStub(allTools: RuntimeTool[] = []): {
 				}));
 			return [...defaultBuiltIns, ...allTools];
 		},
+		// Keep custom-rendering tests focused by exposing every built-in as active.
+		getActiveTools(): string[] {
+			return ["read", "grep", "find", "ls", "bash", "edit", "write"];
+		},
 	} as unknown as ExtensionAPI;
 
 	return { api, registeredTools, runtimeTools: allTools, eventHandlers };
