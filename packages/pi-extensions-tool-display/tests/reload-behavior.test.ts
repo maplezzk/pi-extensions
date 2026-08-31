@@ -57,6 +57,7 @@ function createApiStub(
     registerCommand: (name: string, cmd: unknown) => void;
     on: (event: string, handler: (...args: unknown[]) => unknown) => void;
     getAllTools: () => unknown[];
+    getActiveTools: () => string[];
     getCommands: () => Array<{ name: string }>;
   }> = {},
 ): {
@@ -84,6 +85,10 @@ function createApiStub(
     },
     getAllTools(): unknown[] {
       return overrides.getAllTools?.() ?? [];
+    },
+    // Keep reload tests focused by exposing every built-in as active.
+    getActiveTools(): string[] {
+      return overrides.getActiveTools?.() ?? ["read", "grep", "find", "ls", "bash", "edit", "write"];
     },
     getCommands(): Array<{ name: string }> {
       return overrides.getCommands?.() ?? [];
@@ -119,6 +124,10 @@ function createExtensionApiStub(allTools: unknown[] = []): {
     },
     getAllTools(): unknown[] {
       return allTools;
+    },
+    // Keep deferred-registration tests focused by exposing every built-in as active.
+    getActiveTools(): string[] {
+      return ["read", "grep", "find", "ls", "bash", "edit", "write"];
     },
   } as unknown as ExtensionAPI;
 

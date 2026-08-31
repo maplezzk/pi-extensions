@@ -1668,9 +1668,20 @@ function tryGetAllTools(pi: ExtensionAPI, debugMessage: string): unknown[] | und
   }
 }
 
+// Return undefined until Pi binds the extension action methods.
+function tryGetActiveToolNames(pi: ExtensionAPI, debugMessage: string): string[] | undefined {
+  try {
+    return pi.getActiveTools();
+  } catch (error) {
+    logToolDisplayDebug(debugMessage, error);
+    return undefined;
+  }
+}
+
 export function registerToolDisplayOverrides(
   pi: ExtensionAPI,
   getConfig: ConfigGetter,
+  activeToolNamesDuringLoad?: readonly string[],
 ): void {
   clearBuiltInToolCache();
   const toolDisplayApi = installToolDisplayApi(getConfig);
@@ -1688,7 +1699,7 @@ export function registerToolDisplayOverrides(
   const registeredBuiltInToolOverrides = new Set<BuiltInToolOverrideName>();
 
   const isExternallyOwnedBuiltInTool = (toolName: BuiltInToolOverrideName): boolean => {
-    const allTools = tryGetAllTools(pi, "Built-in tool override ownership discovery unavailable during extension load; registering renderer for pre-bind history rendering.");
+    const allTools = tryGetAllTools(pi, "Built-in tool override ownership discovery unavailable; skipping conflicting owners.");
     if (!allTools) {
       return false;
     }
@@ -1780,7 +1791,37 @@ export function registerToolDisplayOverrides(
     return { scope: getSearchScope(args), limitSuffix: args.limit !== undefined ? ` (limit ${args.limit})` : "" };
   };
 
-  registerIfOwned("read", () => {
+  const builtInToolRegistrations = new Map<BuiltInToolOverrideName, () => void>();
+
+  // Record each built-in replacement until Pi exposes its active tool selection.
+  const recordBuiltInToolRegistration = (
+    toolName: BuiltInToolOverrideName,
+    register: () => void,
+  ): void => {
+    builtInToolRegistrations.set(toolName, register);
+  };
+
+  // Retry deferred replacements against Pi's current active tool selection.
+  const registerActiveBuiltInToolOverrides = (
+    knownActiveToolNames?: readonly string[],
+  ): void => {
+    const activeToolNames = knownActiveToolNames ?? tryGetActiveToolNames(
+      pi,
+      "Built-in tool activation discovery unavailable; skipping display overrides.",
+    );
+    if (!activeToolNames) {
+      return;
+    }
+
+    const activeTools = new Set(activeToolNames);
+    for (const [toolName, register] of builtInToolRegistrations) {
+      if (activeTools.has(toolName)) {
+        registerIfOwned(toolName, register);
+      }
+    }
+  };
+
+  recordBuiltInToolRegistration("read", () => {
     registerRuntimeTool(pi, {
       name: "read",
       label: "read",
@@ -1795,7 +1836,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("grep", () => {
+  recordBuiltInToolRegistration("grep", () => {
     registerRuntimeTool(pi, {
       name: "grep",
     label: "grep",
@@ -1816,7 +1857,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("find", () => {
+  recordBuiltInToolRegistration("find", () => {
     registerRuntimeTool(pi, {
       name: "find",
     label: "find",
@@ -1834,7 +1875,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("ls", () => {
+  recordBuiltInToolRegistration("ls", () => {
     registerRuntimeTool(pi, {
       name: "ls",
     label: "ls",
@@ -1850,7 +1891,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("edit", () => {
+  recordBuiltInToolRegistration("edit", () => {
     registerRuntimeTool(pi, {
       name: "edit",
     label: "edit",
@@ -1872,7 +1913,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("write", () => {
+  recordBuiltInToolRegistration("write", () => {
     registerRuntimeTool(pi, {
       name: "write",
     label: "write",
@@ -1945,7 +1986,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("bash", () => {
+  recordBuiltInToolRegistration("bash", () => {
     registerRuntimeTool(pi, {
       name: "bash",
     label: "bash",
@@ -2023,6 +2064,8 @@ export function registerToolDisplayOverrides(
     },
     });
   });
+
+  registerActiveBuiltInToolOverrides(activeToolNamesDuringLoad);
 
   const wrappedCustomToolNames = new Set<string>();
   registerCleanup(() => wrappedCustomToolNames.clear());
@@ -2229,11 +2272,13 @@ export function registerToolDisplayOverrides(
 
   pi.on("session_start", async () => {
     clearWriteExecutionMeta(writeExecutionMetaByToolCallId);
+    registerActiveBuiltInToolOverrides();
     registerMcpToolOverrides();
     scheduleMcpToolOverrideDiscovery();
   });
   pi.on("before_agent_start", async () => {
     clearWriteExecutionMeta(writeExecutionMetaByToolCallId);
+    registerActiveBuiltInToolOverrides();
     registerMcpToolOverrides();
     scheduleMcpToolOverrideDiscovery();
   });

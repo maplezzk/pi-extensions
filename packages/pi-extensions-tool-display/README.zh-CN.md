@@ -14,6 +14,8 @@
 
 这个包负责实际工具展示、展示协议和通用组件组合。具体业务的审计数据提取、文案、状态和布局仍由调用方维护，避免把不同扩展耦合在一起。
 
+内建工具覆盖只替换 Pi 当前已经激活的工具；`registerToolOverrides` 不会启用原本未激活的内建工具。
+
 ## 上游引用
 
 本包的展示集成设计用于兼容 MIT 许可的 [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display)，这是 Pi 生态中原始的完整工具展示项目。感谢 MasuRii 的工作。

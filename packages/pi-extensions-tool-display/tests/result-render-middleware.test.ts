@@ -41,6 +41,10 @@ function createApiStub(): { api: ExtensionAPI; tools: RegisteredTool[] } {
         sourceInfo: { source: "builtin", path: `<builtin:${name}>` },
       }));
     },
+    // Keep middleware tests focused by exposing every built-in as active.
+    getActiveTools(): string[] {
+      return ["read", "edit", "grep", "find", "ls", "bash", "write"];
+    },
   } as unknown as ExtensionAPI;
   return { api, tools };
 }
