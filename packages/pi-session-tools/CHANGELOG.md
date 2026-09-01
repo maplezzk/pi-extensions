@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.4](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.3...pi-session-tools-v0.5.4) (2026-09-01)
+
+
+### Bug Fixes
+
+* 放宽会话总结格式限制 ([6385918](https://github.com/maplezzk/pi-extensions/commit/6385918cdcbd643e4711802ef709e772552b4183))
+* 放宽会话总结格式限制 ([489ae8f](https://github.com/maplezzk/pi-extensions/commit/489ae8f699ce5c347796182295fc38cc4cf67134))
+
 ## [0.5.3](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.2...pi-session-tools-v0.5.3) (2026-08-27)
 
 
