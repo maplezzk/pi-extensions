@@ -12,8 +12,8 @@
     "en-US": "Starting user-turn index to squash, from session_log."
   },
   "squashSummaryDescription": {
-    "zh-CN": "压缩后的任务状态快照。首行必须是 # Handoff: <topic>，然后先写 Timeline of user and agent work（每条明确 User/Agent），再按固定章节说明当前目标、停点、错误、制品、剩余事项和 Resume；区分用户要求/纠正与 Agent 行动/推断，不要记录压缩过程。",
-    "en-US": "Task-state snapshot after squashing. Start with # Handoff: <topic>, then Timeline of user and agent work (label every item User or Agent), followed by the fixed sections for the objective, stopping point, errors, artifacts, remaining work, and Resume. Distinguish user requirements/corrections from agent actions/inferences; do not record the squash process."
+    "zh-CN": "压缩后的任务状态快照，支持自由格式。可按需包含标题、时间线、当前目标、停点、错误、制品、剩余事项和 Resume；区分用户要求/纠正与 Agent 行动/推断，不要记录压缩过程。若未提供标题或时间线，扩展会自动补齐。",
+    "en-US": "Task-state snapshot after squashing. The summary accepts any non-empty format. It may include a title, timeline, objective, stopping point, errors, artifacts, remaining work, and Resume; distinguish user requirements/corrections from agent actions/inferences and do not record the squash process. If the title or timeline is omitted, the extension adds them automatically."
   },
   "squashContinuationDescription": {
     "zh-CN": "压缩后的接续模式，必须显式选择。仍有可立即执行的 Resume 时使用 auto；当前任务已完成且必须等待用户新输入时使用 next-user，只保存快照而不触发模型回合。",
@@ -52,12 +52,12 @@
     "en-US": "Before session_squash, call session_log and use the first message of the completed task or phase as from; an in-progress phase must still start from a completed user turn. If automatic continuation added work after the previous snapshot and before the next user turn, reuse the retained user anchor returned by session_log so that newer work is folded too."
   },
   "guidelineSummary": {
-    "zh-CN": "调用 session_squash 时直接把完整任务状态快照放进 summary，首行必须是 # Handoff: <topic>，并按以下顺序使用章节：## Timeline of user and agent work（第一章节，逐条用 User/Agent 区分用户行动、纠正、Agent 行动和结果）；## Current focus（objective、准确停点，并包含 ### Background and problem origin）；## Errors and resolutions；## Code and artifact state；## Environment and repository state；## Completed work and decisions；## Active issues and next actions；## Important context and boundaries；## Suggested skills。只保留当前有效状态；用户纠正优先于 Agent 推断，未证实内容标 INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED；Completed 不得重复到 Remaining 或 Resume；不再有后续 finalize 步骤。",
-    "en-US": "Pass the complete task-state snapshot directly in session_squash.summary. It must start with # Handoff: <topic>, followed in order by: ## Timeline of user and agent work (the first section; label each user action/correction and agent action/result User or Agent); ## Current focus (objective, exact stopping point, and ### Background and problem origin); ## Errors and resolutions; ## Code and artifact state; ## Environment and repository state; ## Completed work and decisions; ## Active issues and next actions; ## Important context and boundaries; ## Suggested skills. Keep only effective current state; user corrections override agent inferences, and unverified content must be marked INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED. Completed work must not reappear under Remaining or Resume. There is no later finalize step."
+    "zh-CN": "调用 session_squash 时直接把完整任务状态快照放进 summary，支持自由格式，不因缺少标题、章节或 User/Agent 时间线而拒绝压缩。若需便于接手，可按建议的 handoff 结构组织；只保留当前有效状态；用户纠正优先于 Agent 推断，未证实内容标 INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED；Completed 不得重复到 Remaining 或 Resume；不再有后续 finalize 步骤。",
+    "en-US": "Pass the complete task-state snapshot directly in session_squash.summary. The summary accepts any non-empty format and is not rejected for missing a title, sections, or User/Agent timeline. For easier handoff, you may organize it with # Handoff: <topic>, Timeline of user and agent work, Current focus (including ### Background and problem origin), Errors and resolutions, Code and artifact state, Environment and repository state, Completed work and decisions, Active issues and next actions, Important context and boundaries, and Suggested skills. Keep only effective current state; user corrections override agent inferences, and unverified content must be marked INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED. Completed work must not reappear under Remaining or Resume. There is no later finalize step."
   },
   "guidelineSummaryIntegrity": {
-    "zh-CN": "session_squash 的摘要是有效状态而非聊天流水账：Timeline 必须保留用户要求和纠正，并明确 User/Agent 归属；Agent 的行动或推断不得写成用户决策。Completed 不得再出现在 Remaining 或 Resume。必要时标记 VERIFIED、INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED。吸收旧摘要中的有效任务事实，但不要写入压缩、上下文阈值、session_log、session_squash 或会话切换等维护过程。",
-    "en-US": "The session_squash summary is effective state, not a chat chronology: the Timeline must preserve user requirements and corrections with explicit User/Agent attribution; agent actions or inferences must not be presented as user decisions. Completed work must not reappear under Remaining or Resume. Use VERIFIED, INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED when needed. Absorb valid task facts from earlier summaries, but omit maintenance mechanics such as squashing, context thresholds, session_log, session_squash, or session switching."
+    "zh-CN": "session_squash 的摘要是有效状态而非聊天流水账：如果包含 Timeline，建议保留用户要求和纠正，并明确 User/Agent 归属；Agent 的行动或推断不得写成用户决策。Completed 不得再出现在 Remaining 或 Resume。必要时标记 VERIFIED、INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED。吸收旧摘要中的有效任务事实，但不要写入压缩、上下文阈值、session_log、session_squash 或会话切换等维护过程。",
+    "en-US": "The session_squash summary is effective state, not a chat chronology: if it includes a Timeline, preserve user requirements and corrections with explicit User/Agent attribution; agent actions or inferences must not be presented as user decisions. Completed work must not reappear under Remaining or Resume. Use VERIFIED, INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED when needed. Absorb valid task facts from earlier summaries, but omit maintenance mechanics such as squashing, context thresholds, session_log, session_squash, or session switching."
   },
   "guidelineLeaf": {
     "zh-CN": "session_squash 的压缩范围是 from 到对话末尾；from 之后聊的内容都会一起压进去。",
@@ -68,8 +68,8 @@
     "en-US": "When calling session_squash, choose continuation from Resume: use auto when work can continue immediately; use next-user when Current State is complete or Resume depends on information the user has not confirmed. Never treat an agent inference as user authorization."
   },
   "continuationInstruction": {
-    "zh-CN": "【任务状态快照】以下是压缩历史后的当前任务状态，不是新的用户需求。先读 Timeline of user and agent work：其中 User 是用户要求/纠正，Agent 是上一阶段行动或判断，不得把 Agent 推断当成用户授权；再读 Current focus 和 Resume，从准确停点继续。若当前没有可执行工作，不得复述已完成工作。若快照与 workspace、Git 或测试证据冲突，以实际证据为准并明确报告。",
-    "en-US": "[Task state snapshot] The content below is the current task state after history compression, not a new user request. First read Timeline of user and agent work: User entries are requirements/corrections, while Agent entries are prior actions or claims and must not be treated as authorization; then read Current focus and Resume and continue from the exact stopping point. If no actionable work remains, do not restate completed work. If the snapshot conflicts with workspace, Git, or test evidence, follow the evidence and report the conflict."
+    "zh-CN": "【任务状态快照】以下是压缩历史后的当前任务状态，不是新的用户需求。若摘要包含 Timeline，其中 User 是用户要求/纠正，Agent 是上一阶段行动或判断，不得把 Agent 推断当成用户授权；再从摘要中的 Current focus、Resume 或等价信息，从准确停点继续。若当前没有可执行工作，不得复述已完成工作。若快照与 workspace、Git 或测试证据冲突，以实际证据为准并明确报告。",
+    "en-US": "[Task state snapshot] The content below is the current task state after history compression, not a new user request. If the summary includes a Timeline, User entries are requirements/corrections, while Agent entries are prior actions or claims and must not be treated as authorization; then continue from the exact stopping point described by Current focus, Resume, or equivalent content. If no actionable work remains, do not restate completed work. If the snapshot conflicts with workspace, Git, or test evidence, follow the evidence and report the conflict."
   },
   "pending": {
     "zh-CN": "已经有一个压缩请求在排队，等这轮说完就执行，别重复调用。",
@@ -80,16 +80,8 @@
     "en-US": "Summary received. Squashing from message {from} when this turn ends; the original conversation is kept."
   },
   "squashSummaryEmpty": {
-    "zh-CN": "摘要不能为空，请生成完整摘要后随 session_squash 一起提交。",
-    "en-US": "The summary cannot be empty; generate it and submit it with session_squash."
-  },
-  "summaryStructureInvalid": {
-    "zh-CN": "任务状态快照结构不完整，未执行压缩：{details}。请按固定顺序补齐全部交接章节；不会自动接受不完整快照。",
-    "en-US": "The task-state snapshot is incomplete; squash was not executed: {details}. Add every required handoff section in the fixed order; incomplete snapshots are not accepted automatically."
-  },
-  "summaryStructureOrder": {
-    "zh-CN": "交接章节顺序错误",
-    "en-US": "handoff sections are out of order"
+    "zh-CN": "摘要不能为空，请提交非空 summary。",
+    "en-US": "The summary cannot be empty; submit a non-empty summary."
   },
   "switched": {
     "zh-CN": "会话换了，排队中的压缩请求已取消。",
@@ -108,8 +100,8 @@
     "en-US": "[image]"
   },
   "contextHint": {
-    "zh-CN": "【上下文提示】当前已用 {tokens} / {contextWindow}（{contextPercentage}，本次提醒阈值 {threshold}）。如果任务或阶段已到安全停点，现在就先 session_log 再 session_squash；即使整个任务尚未结束也可以压缩，不要因此忽略本提示。若正处于不可中断步骤，先到最近安全停点再压缩。summary 首行必须是 # Handoff: <topic>，随后先写 Timeline of user and agent work，明确 User/Agent 归属和用户纠正，再按固定章节说明目标、停点、证据、剩余工作和 Resume；不要记录压缩过程。",
-    "en-US": "[Context notice] Usage is {tokens} / {contextWindow} ({contextPercentage}; this reminder threshold is {threshold}). If the task or phase is at a safe checkpoint, run session_log then session_squash now. The whole task need not be finished, so do not ignore this notice for that reason. If an indivisible step is active, reach the nearest safe checkpoint and then squash. The summary must start with # Handoff: <topic>, followed by Timeline of user and agent work with User/Agent actions and corrections, then the fixed sections for the objective, stopping point, evidence, remaining work, and Resume; omit the squash process."
+    "zh-CN": "【上下文提示】当前已用 {tokens} / {contextWindow}（{contextPercentage}，本次提醒阈值 {threshold}）。如果任务或阶段已到安全停点，现在就先 session_log 再 session_squash；即使整个任务尚未结束也可以压缩，不要因此忽略本提示。若正处于不可中断步骤，先到最近安全停点再压缩。summary 支持自由格式；如需便于接手，可包含标题、Timeline、目标、停点、证据、剩余工作和 Resume；不要记录压缩过程。",
+    "en-US": "[Context notice] Usage is {tokens} / {contextWindow} ({contextPercentage}; this reminder threshold is {threshold}). If the task or phase is at a safe checkpoint, run session_log then session_squash now. The whole task need not be finished, so do not ignore this notice for that reason. If an indivisible step is active, reach the nearest safe checkpoint and then squash. The summary accepts any non-empty format; for easier handoff, it may include a title, Timeline, objective, stopping point, evidence, remaining work, and Resume; omit the squash process."
   },
   "contextHintNotice": {
     "zh-CN": "上下文已用 {tokens} / {contextWindow}（{contextPercentage}，提醒阈值 {threshold}），已提醒主 agent 在最近的任务或阶段安全停点压缩。",
@@ -120,8 +112,8 @@
     "en-US": "Context reached {tokens} (forced threshold {threshold}); the task was interrupted after the current tool batch and forced squash mode is now active."
   },
   "forceTaskPrompt": {
-    "zh-CN": "【强制压缩｜第 {attempt} 次】上下文已达 {tokens}，超过强制阈值 {threshold}。立即停止原任务；在压缩成功前不得继续实现、解释或调用其他工具。\n\n你现在只能：\n1. 调用 session_log，选择一个已完成且足以释放上下文的起点；\n2. 基于当前完整上下文生成任务状态快照；\n3. 调用 session_squash，把 from、完整 summary 和 continuation 一次提交；仍有可立即执行的 Resume 时用 auto，必须等待用户新输入时用 next-user。\n\nsummary 必须使用以下固定顺序：# Handoff: <topic>；## Timeline of user and agent work（第一个章节，每条明确 User/Agent，保留用户要求和纠正）；## Current focus（objective、准确停点、### Background and problem origin）；## Errors and resolutions；## Code and artifact state；## Environment and repository state；## Completed work and decisions；## Active issues and next actions；## Important context and boundaries；## Suggested skills。Agent 的行动或推断不得写成用户决策；未证实内容标记 VERIFIED、INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED。Completed 不得再次放入 Remaining 或 Resume。只记录继续任务所需的有效状态，吸收旧摘要中的任务事实，但不得记录压缩、上下文阈值、session_log、session_squash 或会话切换过程。即使任务尚未完成也必须现在压缩。不要只回复文字，必须完成 session_squash 调用。",
-    "en-US": "[Forced squash | attempt {attempt}] Context reached {tokens}, exceeding the forced threshold {threshold}. Stop the original task immediately. Until squash succeeds, do not continue implementation, explain, or call any other tools.\n\nYou may only:\n1. Call session_log and choose a completed starting point that frees enough context;\n2. Generate a task-state snapshot from the full current context;\n3. Call session_squash once with from, the complete summary, and continuation: use auto for immediately actionable Resume work, or next-user when new user input is required.\n\nUse these sections in order: # Handoff: <topic>; ## Timeline of user and agent work (the first section; label every item User or Agent and preserve user requirements and corrections); ## Current focus (objective, exact stopping point, and ### Background and problem origin); ## Errors and resolutions; ## Code and artifact state; ## Environment and repository state; ## Completed work and decisions; ## Active issues and next actions; ## Important context and boundaries; ## Suggested skills. Agent actions or inferences must not be presented as user decisions; mark unverified content VERIFIED, INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED. Completed work must not reappear under Remaining or Resume. Record only effective state needed to continue, absorbing task facts from earlier summaries while omitting squash, context-threshold, session_log, session_squash, and session-switching mechanics. Squash now even if the task is unfinished. Do not merely reply with text; complete the session_squash call."
+    "zh-CN": "【强制压缩｜第 {attempt} 次】上下文已达 {tokens}，超过强制阈值 {threshold}。立即停止原任务；在压缩成功前不得继续实现、解释或调用其他工具。\n\n你现在只能：\n1. 调用 session_log，选择一个已完成且足以释放上下文的起点；\n2. 基于当前完整上下文生成任务状态快照；\n3. 调用 session_squash，把 from、完整 summary 和 continuation 一次提交；仍有可立即执行的 Resume 时用 auto，必须等待用户新输入时用 next-user。\n\nsummary 支持自由格式，不要求固定标题、章节或时间线；如需便于接手，可按建议的 handoff 结构组织。Agent 的行动或推断不得写成用户决策；未证实内容标记 VERIFIED、INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED。Completed 不得再次放入 Remaining 或 Resume。只记录继续任务所需的有效状态，吸收旧摘要中的任务事实，但不得记录压缩、上下文阈值、session_log、session_squash 或会话切换过程。即使任务尚未完成也必须现在压缩。不要只回复文字，必须完成 session_squash 调用。",
+    "en-US": "[Forced squash | attempt {attempt}] Context reached {tokens}, exceeding the forced threshold {threshold}. Stop the original task immediately. Until squash succeeds, do not continue implementation, explain, or call any other tools.\n\nYou may only:\n1. Call session_log and choose a completed starting point that frees enough context;\n2. Generate a task-state snapshot from the full current context;\n3. Call session_squash once with from, the complete summary, and continuation: use auto for immediately actionable Resume work, or next-user when new user input is required.\n\nThe summary accepts any non-empty format and does not require a fixed title, section order, or timeline. For easier handoff, you may use the suggested handoff structure. Agent actions or inferences must not be presented as user decisions; mark unverified content VERIFIED, INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED. Completed work must not reappear under Remaining or Resume. Record only effective state needed to continue, absorbing task facts from earlier summaries while omitting squash, context-threshold, session_log, session_squash, and session-switching mechanics. Squash now even if the task is unfinished. Do not merely reply with text; complete the session_squash call."
   },
   "forceToolBlocked": {
     "zh-CN": "强制压缩期间禁止调用 {tool}；只能调用 session_log 和 session_squash。",

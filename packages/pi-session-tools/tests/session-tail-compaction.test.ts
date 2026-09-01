@@ -150,7 +150,7 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   assert.ok(squashTool.parameters.properties?.continuation);
   assert.ok(
     squashTool.promptGuidelines?.some((guideline) =>
-      guideline.includes("Timeline of user and agent work")
+      /自由格式|any non-empty format/.test(guideline)
     ),
   );
   assert.ok(
@@ -318,23 +318,24 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   const forceText = (forceMessages[0]?.message as {
     content: Array<{ type: "text"; text: string }>;
   }).content[0]?.text ?? "";
-  assert.match(forceText, /Timeline of user and agent work/);
-  assert.match(forceText, /Completed.*Remaining.*Resume/s);
+  assert.match(forceText, /自由格式|any non-empty format/);
+  assert.doesNotMatch(forceText, /固定顺序|Use these sections in order/);
 
-  const invalidResult = await squashTool.execute(
-    "invalid-summary",
+  const unstructuredResult = await squashTool.execute(
+    "unstructured-summary",
     {
       from: 0,
-      summary: "## Work Completed\n不完整快照",
+      summary: "任意格式的总结",
       continuation: "next-user",
     },
     undefined,
     undefined,
     context,
   );
-  assert.equal(invalidResult.isError, true);
-  assert.match(invalidResult.content[0]?.text ?? "", /快照结构不完整|snapshot is incomplete/);
-  assert.deepEqual(branchTargets, []);
+  assert.equal(unstructuredResult.isError, false);
+  assert.equal(unstructuredResult.terminate, true);
+  await settled({}, context);
+  assert.deepEqual(branchTargets, ["u1"]);
 
   const result = await squashTool.execute(
     "tool-1",
@@ -351,14 +352,15 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   assert.equal(result.terminate, true);
   await settled({}, context);
 
-  assert.deepEqual(branchTargets, ["u1"]);
+  assert.deepEqual(branchTargets, ["u1", "u1"]);
   assert.deepEqual(activeTools, ["read", "bash", "session_log", "session_squash"]);
   const squashMessages = sentMessages.filter(({ message }) =>
     (message as { customType?: string }).customType === SESSION_SQUASH_TYPE
   );
-  assert.equal(squashMessages.length, 1);
+  assert.equal(squashMessages.length, 2);
   assert.deepEqual(squashMessages[0]?.options, { triggerTurn: false });
-  const sent = squashMessages[0]?.message as {
+  assert.deepEqual(squashMessages[1]?.options, { triggerTurn: false });
+  const sent = squashMessages[1]?.message as {
     customType: string;
     content: string;
     details: { summary: string };
@@ -388,12 +390,12 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   assert.equal(normalResult.terminate, true);
   await settled({}, context);
 
-  assert.deepEqual(branchTargets, ["u1", "u1"]);
+  assert.deepEqual(branchTargets, ["u1", "u1", "u1"]);
   const allSquashMessages = sentMessages.filter(({ message }) =>
     (message as { customType?: string }).customType === SESSION_SQUASH_TYPE
   );
-  assert.equal(allSquashMessages.length, 2);
-  assert.deepEqual(allSquashMessages[1]?.options, { triggerTurn: true });
+  assert.equal(allSquashMessages.length, 3);
+  assert.deepEqual(allSquashMessages[2]?.options, { triggerTurn: true });
 });
 
 test("session-squash 快照以 compaction summary 语义注入上下文", async () => {

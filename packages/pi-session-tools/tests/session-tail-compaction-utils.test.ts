@@ -20,7 +20,6 @@ import {
   SESSION_SQUASH_HINT_TYPE,
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
-  validateHandoffSummary,
   thresholdKey,
   validateTailStart,
 } from "../src/session-tail-compaction-utils.ts";
@@ -424,7 +423,7 @@ test("formatFileOperations 输出与 Pi 一致的 XML 块，空列表返回空�
   );
 });
 
-test("handoff 自动保留时间线并校验固定章节", () => {
+test("handoff 自动补充标题和时间线", () => {
   const entries: SessionEntry[] = [
     message({
       id: "u1",
@@ -442,32 +441,7 @@ test("handoff 自动保留时间线并校验固定章节", () => {
   const timeline = formatConversationTimeline(entries, "[image]");
   assert.match(timeline, /^## Timeline of user and agent work\n- User: 用户纠正了当前方向\n- Agent: 已停止错误调查并核对现有数据$/);
 
-  const body = [
-    "# Handoff: example",
-    "## Current focus",
-    "目标：继续核对现有数据。",
-    "### Background and problem origin",
-    "此前方向未经确认。",
-    "## Errors and resolutions",
-    "已停止错误方向。",
-    "## Code and artifact state",
-    "无代码改动。",
-    "## Environment and repository state",
-    "工作区状态未知。",
-    "## Completed work and decisions",
-    "已确认查询链路。",
-    "## Active issues and next actions",
-    "等待核对结果。",
-    "## Important context and boundaries",
-    "不调用未授权外部接口。",
-    "## Suggested skills",
-    "None observed.",
-  ].join("\n");
-  const prepared = ensureHandoffTimeline(body, entries, "[image]");
-  assert.match(prepared, /^# Handoff: example\n\n## Timeline of user and agent work/);
-  assert.deepEqual(validateHandoffSummary(prepared), { ok: true });
-
-  const invalid = validateHandoffSummary("## Work Completed\n已完成");
-  assert.equal(invalid.ok, false);
-  if (!invalid.ok) assert.match(invalid.missing.join(", "), /Timeline/);
+  const prepared = ensureHandoffTimeline("任意格式的总结", entries, "[image]");
+  assert.match(prepared, /^# Handoff: Session continuation\n\n## Timeline of user and agent work\n/);
+  assert.ok(prepared.endsWith("任意格式的总结"));
 });

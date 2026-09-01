@@ -47,10 +47,8 @@ import {
   SESSION_SQUASH_TYPE,
   TAIL_START_ERROR,
   thresholdKey,
-  validateHandoffSummary,
   validateTailStart,
   type SquashThreshold,
-  type HandoffSummaryValidation,
   type TailCompactionData,
   type TailStartErrorCode,
 } from "./session-tail-compaction-utils.ts";
@@ -69,11 +67,9 @@ type SquashContinuation =
   | typeof CONTINUATION_AUTO
   | typeof CONTINUATION_NEXT_USER;
 
-/** 交接摘要校验使用的 i18n key，集中避免散落业务字符串。 */
+/** 交接摘要中使用的 i18n key。 */
 const HANDOFF_I18N_KEYS = {
   imagePlaceholder: "imagePlaceholder",
-  summaryStructureOrder: "summaryStructureOrder",
-  summaryStructureInvalid: "summaryStructureInvalid",
 } as const;
 
 const TailCompactionParams = Type.Object({
@@ -474,16 +470,6 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         startIndex >= 0 ? branch.slice(startIndex) : [],
         i18n.t(HANDOFF_I18N_KEYS.imagePlaceholder),
       );
-      const summaryValidation = validateHandoffSummary(summaryWithTimeline);
-      if (summaryValidation.ok === false) {
-        const details = summaryValidation.missing.length > 0
-          ? summaryValidation.missing.join(", ")
-          : i18n.t(HANDOFF_I18N_KEYS.summaryStructureOrder);
-        return textResult(
-          i18n.t(HANDOFF_I18N_KEYS.summaryStructureInvalid, { details }),
-          true,
-        );
-      }
 
       pending = {
         sessionId: ctx.sessionManager.getSessionId(),

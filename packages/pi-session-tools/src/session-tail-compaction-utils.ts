@@ -15,40 +15,12 @@ export const SESSION_SQUASH_FORCE_TYPE = "session-squash-force";
 const ASSISTANT_ROLE = "assistant";
 const NORMAL_STOP_REASON = "stop";
 
-/** Handoff 快照必须使用的固定章节顺序。 */
-export const HANDOFF_REQUIRED_HEADINGS = [
-  "## Timeline of user and agent work",
-  "## Current focus",
-  "### Background and problem origin",
-  "## Errors and resolutions",
-  "## Code and artifact state",
-  "## Environment and repository state",
-  "## Completed work and decisions",
-  "## Active issues and next actions",
-  "## Important context and boundaries",
-  "## Suggested skills",
-] as const;
-
-const HANDOFF_TITLE_PATTERN = /^# Handoff:\s+\S/i;
+/** Handoff 时间线标题。 */
+const HANDOFF_TIMELINE_HEADING = "## Timeline of user and agent work";
 const HANDOFF_DEFAULT_TITLE = "# Handoff: Session continuation";
 const HANDOFF_TIMELINE_MAX_CHARS = 180;
 const HANDOFF_TIMELINE_MAX_ITEMS = 40;
 const HANDOFF_TIMELINE_HEAD_ITEMS = 8;
-const HANDOFF_VALIDATION_REASON = {
-  missingSections: "missing-sections",
-  outOfOrder: "out-of-order",
-  timelineRoles: "timeline-roles",
-} as const;
-type HandoffSummaryValidationReason =
-  (typeof HANDOFF_VALIDATION_REASON)[keyof typeof HANDOFF_VALIDATION_REASON];
-
-export type HandoffSummaryValidation =
-  | { ok: true }
-  | {
-      ok: false;
-      reason: HandoffSummaryValidationReason;
-      missing: string[];
-    };
 
 /** 判断最近一条 assistant 消息是否由模型主动正常停止。 */
 export function didAgentStopNormally(
@@ -355,7 +327,7 @@ export function ensureHandoffTimeline(
   const body = titleMatch?.[2]?.trim() ?? trimmed;
   const hasTimeline = body
     .split(/\r?\n/)
-    .some((line) => line.trim().toLowerCase() === HANDOFF_REQUIRED_HEADINGS[0].toLowerCase());
+    .some((line) => line.trim().toLowerCase() === HANDOFF_TIMELINE_HEADING.toLowerCase());
   if (titleMatch && hasTimeline) return trimmed;
   const bodyWithTimeline = hasTimeline
     ? body
@@ -363,38 +335,6 @@ export function ensureHandoffTimeline(
   return `${title}\n\n${bodyWithTimeline}`;
 }
 
-/** 校验 handoff 是否保留固定章节顺序和 User/Agent 归属。 */
-export function validateHandoffSummary(summary: string): HandoffSummaryValidation {
-  const lines = summary.split(/\r?\n/).map((line) => line.trim());
-  const missingTitle = lines.length === 0 || !HANDOFF_TITLE_PATTERN.test(lines[0] ?? "")
-    ? ["# Handoff: <topic>"]
-    : [];
-  const positions = HANDOFF_REQUIRED_HEADINGS.map((heading) =>
-    lines.findIndex((line) => line.toLowerCase() === heading.toLowerCase()),
-  );
-  const missing = [
-    ...missingTitle,
-    ...HANDOFF_REQUIRED_HEADINGS
-      .filter((_heading, index) => positions[index] === -1)
-      .map((heading) => heading),
-  ];
-  if (missing.length > 0) {
-    return { ok: false, reason: HANDOFF_VALIDATION_REASON.missingSections, missing };
-  }
-  if (positions.some((position, index) => index > 0 && position <= positions[index - 1])) {
-    return { ok: false, reason: HANDOFF_VALIDATION_REASON.outOfOrder, missing: [] };
-  }
-
-  const timeline = lines.slice(positions[0] + 1, positions[1]).join("\n");
-  const missingRoles = [
-    ...(!/(^|\n)\s*[-*]\s*(?:User|用户)\s*:/i.test(timeline) ? ["User"] : []),
-    ...(!/(^|\n)\s*[-*]\s*(?:Agent|助手)\s*:/i.test(timeline) ? ["Agent"] : []),
-  ];
-  if (missingRoles.length > 0) {
-    return { ok: false, reason: HANDOFF_VALIDATION_REASON.timelineRoles, missing: missingRoles };
-  }
-  return { ok: true };
-}
 
 /**
  * 从原始 active branch 中列出 user message。
