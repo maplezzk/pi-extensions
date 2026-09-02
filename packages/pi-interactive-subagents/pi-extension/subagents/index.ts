@@ -882,19 +882,10 @@ function handleSubagentInterrupt(
   running.statusState = forceStatusAfterInterrupt(running.statusState, now);
   updateWidget();
 
-  // After aborting the current generation, also signal done so the subagent
-  // properly finishes (parent's pollForExit detects the .exit file and
-  // returns the result).
-  if (running.sessionFile) {
-    const exitFile = `${running.sessionFile}.exit`;
-    try {
-      writeFileSync(exitFile, JSON.stringify({ type: "done" }));
-    } catch (writeErr: any) {
-      process.stderr.write(
-        `[interrupt] .exit 写入失败 file=${exitFile} err=${writeErr?.message ?? String(writeErr)}\n`,
-      );
-    }
-  }
+  // Escape only cancels the child's current turn. Do not write the `.exit`
+  // sidecar here: that file is the terminal completion signal consumed by
+  // pollForExit, and writing it would close the pane and remove this running
+  // entry instead of leaving the child alive for another turn.
 
   return {
     content: [{ type: "text" as const, text: `Interrupt requested for subagent "${running.name}".` }],
