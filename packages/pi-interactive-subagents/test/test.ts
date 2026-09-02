@@ -1973,6 +1973,40 @@ describe("subagent interruption", () => {
     }
   });
 
+  it("does not signal session completion when interrupting a turn", () => {
+    type InterruptTestApi = {
+      runningSubagents: Map<string, ReturnType<typeof makeRunning>>;
+      /** Invoke the interrupt path with an injectable Escape sender. */
+      handleSubagentInterrupt(
+        params: { id?: string; name?: string },
+        sendEscapeKey?: (surface: string) => void,
+      ): { details: { status?: string } };
+    };
+    const testApi = (subagentsModule as unknown as { __test__: InterruptTestApi }).__test__;
+    const runningMap = testApi.runningSubagents;
+    runningMap.clear();
+
+    withTempDir((dir) => {
+      const sessionFile = join(dir, "worker.jsonl");
+      writeFileSync(sessionFile, `${JSON.stringify(SESSION_HEADER)}\n`);
+
+      try {
+        runningMap.set("a1", makeRunning({ sessionFile }));
+
+        const result = testApi.handleSubagentInterrupt(
+          { name: "Worker" },
+          () => {},
+        );
+
+        assert.equal(result.details.status, "interrupt_requested");
+        assert.equal(existsSync(`${sessionFile}.exit`), false);
+        assert.equal(runningMap.has("a1"), true);
+      } finally {
+        runningMap.clear();
+      }
+    });
+  });
+
   it("sends Escape again for repeated interrupt requests", () => {
     const testApi = (subagentsModule as any).__test__;
     const runningMap = testApi.runningSubagents as Map<string, any>;
