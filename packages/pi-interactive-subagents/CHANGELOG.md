@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.11.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.11.0...pi-interactive-subagents-v3.11.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* 修复 subagent 中断并移除 claude-code ([50aff58](https://github.com/maplezzk/pi-extensions/commit/50aff587287a3aa9b2efb70bfc32e0dc5730554a))
+* 修复 subagent 中断并移除 claude-code ([47fdd2a](https://github.com/maplezzk/pi-extensions/commit/47fdd2aa3a63f053f895e10246aae82c19cb344a))
+
 ## [3.11.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.10.1...pi-interactive-subagents-v3.11.0) (2026-08-20)
 
 

@@ -9,5 +9,5 @@
   "packages/pi-session-tools": "0.5.4",
   "packages/pi-session-resources": "0.3.0",
   "packages/pi-dynamic-workflows": "1.2.0",
-  "packages/pi-interactive-subagents": "3.11.0"
+  "packages/pi-interactive-subagents": "3.11.1"
 }
