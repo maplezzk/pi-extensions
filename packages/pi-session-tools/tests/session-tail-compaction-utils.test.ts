@@ -294,6 +294,7 @@ test("formatThreshold 序列化 k 与百分比，与 parse 可回环", () => {
 function assistantWithToolCalls(
   id: string,
   calls: Array<{ name: string; path: string }>,
+  text = "done",
 ): SessionEntry {
   return {
     type: "message",
@@ -303,10 +304,7 @@ function assistantWithToolCalls(
     message: {
       role: "assistant",
       content: [
-        {
-          type: "text",
-          text: "done",
-        },
+        ...(text ? [{ type: "text" as const, text }] : []),
         ...calls.map((call) => ({
           type: "toolCall",
           name: call.name,
@@ -335,6 +333,25 @@ function assistantWithToolCalls(
     },
   } as SessionEntry;
 }
+
+test("formatConversationTimeline 忽略工具调用并保留 Agent 文本", () => {
+  const entries: SessionEntry[] = [
+    message({ id: "01", parentId: null, role: "user", content: "排查问题" }),
+    assistantWithToolCalls("02", [{ name: "read", path: "/a/read.ts" }], ""),
+    assistantWithToolCalls(
+      "03",
+      [{ name: "edit", path: "/a/edited.ts" }],
+      "已确认并修复问题",
+    ),
+  ];
+
+  const timeline = formatConversationTimeline(entries, "[image]");
+  assert.equal(
+    timeline,
+    "## Timeline of user and agent work\n- User: 排查问题\n- Agent: 已确认并修复问题",
+  );
+  assert.doesNotMatch(timeline, /tools:|\/a\/read\.ts|\/a\/edited\.ts/);
+});
 
 test("extractFileOps 从 assistant 工具调用提取 read/write/edit 路径", () => {
   const entries: SessionEntry[] = [
