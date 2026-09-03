@@ -18,6 +18,16 @@ test("createWorkflowTool describes phases as required and dynamic", () => {
   );
 });
 
+test("createWorkflowTool has no usage authorization guideline", () => {
+  const tool = createWorkflowTool();
+  const guidelines = tool.promptGuidelines ?? [];
+
+  assert.ok(
+    !guidelines.some((line) => /user explicitly asks|user asks for|user confirmation|explicit Skill requirement|like any other tool/i.test(line)),
+    "promptGuidelines must not gate workflow on user requests or permission",
+  );
+});
+
 test("createWorkflowTool warns against wrong phase shapes (title vs name vs strings)", () => {
   const tool = createWorkflowTool();
   const guidelines = tool.promptGuidelines ?? [];

@@ -92,7 +92,6 @@ export function createWorkflowTool(options: WorkflowToolOptions = {}): ToolDefin
     promptSnippet:
       "Run a deterministic JavaScript workflow. Required script header: export const meta = { name: 'short_snake_case', description: 'non-empty description', phases: [{ title: 'Phase 1' }, ...] }. Every agent() call requires opts.schema (JSON Schema). Use phase(title) at runtime to drive progress.",
     promptGuidelines: [
-      "Use workflow only when the user explicitly asks for a workflow, workflows, fan-out, or multi-agent orchestration.",
       "For workflow, always pass one raw JavaScript string in the required script parameter; do not include Markdown fences or prose around the script.",
       "For workflow, the script's first statement must be `export const meta = { name: 'short_snake_case', description: 'non-empty human description', phases: [{ title: 'Phase A' }, ...] }`. meta.name and meta.description must be non-empty strings; meta.phases must be a non-empty array of `{ title: string }` objects.",
       "For workflow, meta.whenToUse is an optional string that describes when this workflow should be invoked; include it whenever the workflow has a non-obvious trigger condition.",
