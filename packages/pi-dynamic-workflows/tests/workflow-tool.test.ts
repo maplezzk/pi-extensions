@@ -18,6 +18,20 @@ test("createWorkflowTool describes phases as required and dynamic", () => {
   );
 });
 
+test("createWorkflowTool allows active Skills to require workflow without confirmation", () => {
+  const tool = createWorkflowTool();
+  const guidelines = tool.promptGuidelines ?? [];
+
+  assert.ok(
+    guidelines.some((line) => /active Skill explicitly requires using workflow/i.test(line)),
+    "promptGuidelines must allow an active Skill to require workflow",
+  );
+  assert.ok(
+    guidelines.some((line) => /do not ask for an extra confirmation/i.test(line)),
+    "promptGuidelines must not require extra confirmation for Skill-directed workflows",
+  );
+});
+
 test("createWorkflowTool warns against wrong phase shapes (title vs name vs strings)", () => {
   const tool = createWorkflowTool();
   const guidelines = tool.promptGuidelines ?? [];
