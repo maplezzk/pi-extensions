@@ -257,21 +257,8 @@ function compactTimelineText(text: string): string {
   return `${compact.slice(0, HANDOFF_TIMELINE_MAX_CHARS - 1)}…`;
 }
 
-/** 从 assistant 消息中提取不含参数的工具名，避免把工具载荷复制进快照。 */
-function assistantToolNames(content: unknown): string[] {
-  if (!Array.isArray(content)) return [];
-  return [
-    ...new Set(
-      content
-        .filter((block): block is Record<string, unknown> => Boolean(block) && typeof block === "object")
-        .filter((block) => block.type === "toolCall" && typeof block.name === "string")
-        .map((block) => block.name as string),
-    ),
-  ];
-}
-
 /**
- * 生成事实性的紧凑时间线；只复制用户消息和 assistant 的文字/工具名，跳过原始工具结果。
+ * 生成事实性的紧凑时间线；只复制用户和 assistant 的文字，跳过工具调用与工具结果。
  * 这样即使主 agent 遗漏时间线，用户的后续纠正仍会进入下一份快照。
  */
 export function formatConversationTimeline(
@@ -289,13 +276,7 @@ export function formatConversationTimeline(
     }
     if (message.role !== "assistant") continue;
     const text = messageContentToText(message.content, imagePlaceholder);
-    const toolNames = assistantToolNames(message.content);
-    const activity = toolNames.length > 0
-      ? `tools: ${toolNames.join(", ")}`
-      : text.trim()
-        ? compactTimelineText(text)
-        : "";
-    if (activity) items.push(`- Agent: ${activity}`);
+    if (text.trim()) items.push(`- Agent: ${compactTimelineText(text)}`);
   }
 
   if (items.length === 0) {
