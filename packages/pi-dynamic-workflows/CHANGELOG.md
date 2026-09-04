@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.2.0...pi-dynamic-workflows-v1.2.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* 允许 Skill 直接触发 workflow ([71645db](https://github.com/maplezzk/pi-extensions/commit/71645db87537821aa58e861aff2c512d77f19fe7))
+* 允许 Skill 直接触发 workflow ([b18997e](https://github.com/maplezzk/pi-extensions/commit/b18997e1d9baebba7c7cff2ae92f41c40eb34010))
+
 ## [1.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.1.3...pi-dynamic-workflows-v1.2.0) (2026-08-20)
 
 

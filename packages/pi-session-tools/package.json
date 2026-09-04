@@ -1,6 +1,6 @@
 {
   "name": "pi-session-tools",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Pi session tools: bash pipe output cache and session squash extensions",
   "type": "module",
   "main": "./index.ts",
