@@ -1,6 +1,6 @@
 {
   "name": "@maplezzk/pi-dynamic-workflows",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Claude-Code-style dynamic workflow orchestration for Pi. Fork of michaelliv/pi-dynamic-workflows.",
   "type": "module",
   "main": "./index.ts",

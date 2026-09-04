@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.12.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.11.1...pi-interactive-subagents-v3.12.0) (2026-09-04)
+
+
+### Features
+
+* 配置子 agent 扩展并移除 fork 模式 ([9e9f6f0](https://github.com/maplezzk/pi-extensions/commit/9e9f6f02bcb3ebe499cd4639569bae6868472f75))
+* 配置子 agent 扩展并移除 fork 模式 ([7a51434](https://github.com/maplezzk/pi-extensions/commit/7a514341753873056c7507bec8cdeb884889b276))
+
 ## [3.11.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.11.0...pi-interactive-subagents-v3.11.1) (2026-09-02)
 
 

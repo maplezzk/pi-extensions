@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.5](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.4...pi-session-tools-v0.5.5) (2026-09-04)
+
+
+### Bug Fixes
+
+* 精简会话压缩时间线 ([d1fe2c4](https://github.com/maplezzk/pi-extensions/commit/d1fe2c4a494f5db805376f8041fd2b418fea270f))
+* 精简会话压缩时间线 ([d38bd4d](https://github.com/maplezzk/pi-extensions/commit/d38bd4da3192f7fd39333962093dc239d1ccb918))
+
 ## [0.5.4](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.5.3...pi-session-tools-v0.5.4) (2026-09-01)
 
 
