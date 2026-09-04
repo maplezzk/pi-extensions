@@ -39,10 +39,9 @@ zellij --session pi   # 然后运行 pi
 
 ## 主要能力
 
-- **4 个主会话工具 + 3 个命令**：`subagent`、`subagent_interrupt`、`subagents_list`、`subagent_resume`；命令 `/plan`、`/iterate`、`/subagent`
+- **4 个主会话工具 + 2 个命令**：`subagent`、`subagent_interrupt`、`subagents_list`、`subagent_resume`；命令 `/plan`、`/subagent`
 - **内置 agent**：planner、scout、worker、reviewer、visual-tester
 - **`/plan` 工作流**：调研 → 规划 → 确认 → 执行 → 审查 的完整流水线
-- **`/iterate` 工作流**：fork 当前会话到子 agent 做快速修改，不污染主上下文
 - **caller_ping**：子 agent 向父 agent 求助的机制
 - **自定义 agent**：在 `.pi/agents/` 或 `~/.pi/agent/agents/` 放置 `.md` 定义文件
 
@@ -50,22 +49,20 @@ zellij --session pi   # 然后运行 pi
 
 ## 配置
 
-状态显示与持久化 Herdr 模式由扩展目录下的 `config.json` 控制。复制 `config.json.example` 开始：
-
-```bash
-cp config.json.example config.json
-```
+持久化的 Herdr 模式、子 agent 创建策略和子 agent 扩展列表读取自用户扩展配置 `~/.pi/agent/extensions/pi-interactive-subagents/config.json`（遵循 `PI_CODING_AGENT_DIR`）。状态面板的 `status.enabled` 读取已安装包目录的 `config.json`，不存在时回退到 `config.json.example`。`config.json.example` 仅用于说明字段；向用户配置添加 `allowSubagentSpawning` 和 `subagentExtensions` 时不要覆盖已有的 mux 设置：
 
 ```json
 {
   "herdrMode": "split",
+  "allowSubagentSpawning": false,
+  "subagentExtensions": [],
   "status": {
     "enabled": true
   }
 }
 ```
 
-`herdrMode` 支持 `split`（默认，兼容原有 pane 布局）和 `tab`（每个 subagent 独立后台 Tab）。`/config:subagent herdr split|tab` 会更新该字段。
+`herdrMode` 支持 `split`（默认，兼容原有 pane 布局）和 `tab`（每个 subagent 独立后台 Tab）。`allowSubagentSpawning` 是全局开关，控制子 agent 是否可以创建或管理其他 subagent，默认值为 `false`；设置为 `true` 后，子 agent 才会获得这些生命周期工具。`subagentExtensions` 是可选扩展路径列表；子 agent 不再自动发现项目级和全局扩展，只加载列表中的扩展，`subagent-done.ts` 始终加载。路径可以是绝对路径、`~/` 路径，或相对于 `PI_CODING_AGENT_DIR` 的路径。`/config:subagent herdr split|tab` 会更新 Herdr 字段。
 
 ## 致谢
 

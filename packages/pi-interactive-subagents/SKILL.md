@@ -7,7 +7,7 @@ description: "配置与排查 interactive subagents 的终端复用器、Herdr s
 
 ## 诊断
 
-读取实际 Pi agent 目录下的 `extensions/pi-interactive-subagents/config.json`：`mux` 保存后端偏好，`herdrMode` 保存 `split|tab`。状态面板的 `status.enabled` 由安装包根目录的 `config.json` 读取；不存在时读取同目录 `config.json.example`。状态行数当前固定为 4，不是配置项。
+读取实际 Pi agent 目录下的 `extensions/pi-interactive-subagents/config.json`：`mux` 保存后端偏好，`herdrMode` 保存 `split|tab`，`allowSubagentSpawning` 控制子 agent 是否可以创建/管理其他 subagent，`subagentExtensions` 指定子 agent 显式加载的扩展路径列表，默认不自动发现其他扩展。默认 `allowSubagentSpawning` 为 `false`，`subagent-done.ts` 始终加载。状态面板的 `status.enabled` 由安装包根目录的 `config.json` 读取；不存在时读取同目录 `config.json.example`。状态行数当前固定为 4，不是配置项。
 
 环境变量优先级：`PI_TERMINAL_MUX` > `PI_SUBAGENT_MUX` > 持久化 `mux` > `auto`；`PI_SUBAGENT_HERDR_MODE` > 持久化 `herdrMode` > `split`。
 

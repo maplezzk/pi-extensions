@@ -20,10 +20,22 @@ export interface SubagentHerdrModeConfig {
   source: SubagentMuxConfigSource;
 }
 
+export interface SubagentSpawningConfig {
+  allowSubagentSpawning: boolean;
+  source: SubagentMuxConfigSource;
+}
+
+export interface SubagentExtensionsConfig {
+  extensions: string[];
+  source: SubagentMuxConfigSource;
+}
+
 const BACKENDS: readonly MuxBackend[] = ["muxy", "cmux", "tmux", "zellij", "wezterm", "herdr", "otty", "orca"];
 const CONFIG_FILE = "config.json";
 const HERDR_MODE_ENV = "PI_SUBAGENT_HERDR_MODE";
 const DEFAULT_HERDR_MODE: HerdrSurfaceMode = HERDR_SURFACE_MODE_SPLIT;
+const DEFAULT_ALLOW_SUBAGENT_SPAWNING = false;
+const DEFAULT_SUBAGENT_EXTENSIONS: readonly string[] = [];
 
 function isMuxBackend(value: unknown): value is MuxBackend {
   return typeof value === "string" && (BACKENDS as readonly string[]).includes(value);
@@ -109,6 +121,29 @@ export function loadHerdrModeConfig(path = muxConfigPath()): SubagentHerdrModeCo
   if (stored) return { herdrMode: stored, source: "file" };
 
   return { herdrMode: DEFAULT_HERDR_MODE, source: "default" };
+}
+
+/** Read the global child-subagent spawning switch; disabled by default. */
+export function loadSubagentSpawningConfig(path = muxConfigPath()): SubagentSpawningConfig {
+  const stored = readConfigObject(path).allowSubagentSpawning;
+  if (typeof stored === "boolean") {
+    return { allowSubagentSpawning: stored, source: "file" };
+  }
+
+  return { allowSubagentSpawning: DEFAULT_ALLOW_SUBAGENT_SPAWNING, source: "default" };
+}
+
+/** Read the explicit extension list for child sessions; empty by default. */
+export function loadSubagentExtensionsConfig(path = muxConfigPath()): SubagentExtensionsConfig {
+  const stored = readConfigObject(path).subagentExtensions;
+  if (Array.isArray(stored) && stored.every((value) => typeof value === "string" && value.trim())) {
+    return {
+      extensions: stored.map((value) => value.trim()),
+      source: "file",
+    };
+  }
+
+  return { extensions: [...DEFAULT_SUBAGENT_EXTENSIONS], source: "default" };
 }
 
 /** Apply persisted mux and Herdr mode settings when no explicit environment override exists. */
