@@ -57,6 +57,8 @@ import {
   applyPersistedMuxPreference,
   loadHerdrModeConfig,
   loadMuxConfig,
+  loadSubagentExtensionsConfig,
+  loadSubagentSpawningConfig,
   saveHerdrMode,
   saveMuxPreference,
 } from "../pi-extension/subagents/mux-config.ts";
@@ -361,7 +363,6 @@ describe("session.ts", () => {
       const childFile = join(dir, "lineage-child.jsonl");
 
       seedSubagentSessionFile({
-        mode: "lineage-only",
         parentSessionFile: parentFile,
         childSessionFile: childFile,
         childCwd: "/tmp/child-cwd",
@@ -374,30 +375,6 @@ describe("session.ts", () => {
       assert.equal(header.type, "session");
       assert.equal(header.parentSession, parentFile);
       assert.equal(header.cwd, "/tmp/child-cwd");
-    });
-
-    it("creates a forked child session with copied context before the triggering user turn", () => {
-      const parentFile = createSessionFile(dir, [SESSION_HEADER, MODEL_CHANGE, USER_MSG, ASSISTANT_MSG]);
-      const childFile = join(dir, "fork-child.jsonl");
-
-      seedSubagentSessionFile({
-        mode: "fork",
-        parentSessionFile: parentFile,
-        childSessionFile: childFile,
-        childCwd: "/tmp/fork-child-cwd",
-      });
-
-      const entries = readFileSync(childFile, "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line));
-      assert.equal(entries.length, 2);
-      assert.equal(entries[0].type, "session");
-      assert.equal(entries[0].parentSession, parentFile);
-      assert.equal(entries[0].cwd, "/tmp/fork-child-cwd");
-      assert.equal(entries[1].type, "model_change");
-      assert.equal(entries.some((entry) => entry.type === "session" && entry.parentSession !== parentFile), false);
-      assert.equal(entries.some((entry) => entry.type === "message"), false);
     });
   });
 
@@ -836,6 +813,43 @@ describe("subagent mux config", () => {
     });
   });
 
+  it("loads the global subagent spawning switch and disables it by default", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+
+      assert.deepEqual(loadSubagentSpawningConfig(configPath), {
+        allowSubagentSpawning: false,
+        source: "default",
+      });
+
+      writeFileSync(configPath, JSON.stringify({ allowSubagentSpawning: true }));
+      assert.deepEqual(loadSubagentSpawningConfig(configPath), {
+        allowSubagentSpawning: true,
+        source: "file",
+      });
+    });
+  });
+
+  it("loads explicit child extensions and defaults to an empty list", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+
+      assert.deepEqual(loadSubagentExtensionsConfig(configPath), {
+        extensions: [],
+        source: "default",
+      });
+
+      writeFileSync(
+        configPath,
+        JSON.stringify({ subagentExtensions: ["~/extensions/example.ts", "relative.ts"] }),
+      );
+      assert.deepEqual(loadSubagentExtensionsConfig(configPath), {
+        extensions: ["~/extensions/example.ts", "relative.ts"],
+        source: "file",
+      });
+    });
+  });
+
   it("saves a preference and makes it effective immediately", () => {
     withTempDir((dir) => {
       const configPath = join(dir, "config.json");
@@ -1013,7 +1027,7 @@ describe("subagent discovery", () => {
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, {}),
       true,
     );
-    // Bare spawn with no agent defs (e.g. /iterate fork) is interactive by default.
+    // Bare spawns with no agent defs are interactive by default.
     assert.equal(
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, null),
       true,
@@ -1076,7 +1090,7 @@ describe("subagent discovery", () => {
     );
   });
 
-  it("ignores invalid session-mode values", async () => {
+  it("ignores fork as an unsupported session-mode value", async () => {
     await withIsolatedAgentEnv(async ({ projectAgentsDir }) => {
       writeAgentFile(
         projectAgentsDir,
@@ -1084,7 +1098,7 @@ describe("subagent discovery", () => {
         [
           "name: invalid-mode-test-agent",
           "model: anthropic/test-invalid",
-          "session-mode: sideways",
+          "session-mode: fork",
         ].join("\n"),
       );
 
@@ -1094,58 +1108,23 @@ describe("subagent discovery", () => {
     });
   });
 
-  it("resolves session mode with fork override precedence", () => {
-    assert.equal(testApi.resolveEffectiveSessionMode({ name: "A", task: "T" }, null), "standalone");
+  it("resolves session mode from agent configuration", () => {
+    assert.equal(testApi.resolveEffectiveSessionMode(null), "standalone");
     assert.equal(
-      testApi.resolveEffectiveSessionMode({ name: "A", task: "T" }, { sessionMode: "lineage-only" }),
+      testApi.resolveEffectiveSessionMode({ sessionMode: "lineage-only" }),
       "lineage-only",
-    );
-    assert.equal(
-      testApi.resolveEffectiveSessionMode(
-        { name: "A", task: "T", fork: true },
-        { sessionMode: "lineage-only" },
-      ),
-      "fork",
     );
   });
 
-  it("resolves launch behavior for standalone, lineage-only, and fork modes", () => {
-    assert.deepEqual(testApi.resolveLaunchBehavior({ name: "A", task: "T" }, null), {
+  it("resolves launch behavior for standalone and lineage-only modes", () => {
+    assert.deepEqual(testApi.resolveLaunchBehavior(null), {
       sessionMode: "standalone",
       seededSessionMode: null,
-      inheritsConversationContext: false,
-      taskDelivery: "artifact",
     });
-    assert.deepEqual(
-      testApi.resolveLaunchBehavior({ name: "A", task: "T" }, { sessionMode: "lineage-only" }),
-      {
-        sessionMode: "lineage-only",
-        seededSessionMode: "lineage-only",
-        inheritsConversationContext: false,
-        taskDelivery: "artifact",
-      },
-    );
-    assert.deepEqual(
-      testApi.resolveLaunchBehavior({ name: "A", task: "T" }, { sessionMode: "fork" }),
-      {
-        sessionMode: "fork",
-        seededSessionMode: "fork",
-        inheritsConversationContext: true,
-        taskDelivery: "direct",
-      },
-    );
-    assert.deepEqual(
-      testApi.resolveLaunchBehavior(
-        { name: "A", task: "T", fork: true },
-        { sessionMode: "lineage-only" },
-      ),
-      {
-        sessionMode: "fork",
-        seededSessionMode: "fork",
-        inheritsConversationContext: true,
-        taskDelivery: "direct",
-      },
-    );
+    assert.deepEqual(testApi.resolveLaunchBehavior({ sessionMode: "lineage-only" }), {
+      sessionMode: "lineage-only",
+      seededSessionMode: "lineage-only",
+    });
   });
 
   it("buildSubagentToolAllowlist preserves requested tools and adds child control tools", () => {
@@ -1160,24 +1139,26 @@ describe("subagent discovery", () => {
     assert.equal(testApi.buildSubagentToolAllowlist(""), null);
   });
 
-  it("buildPiPromptArgs inserts separator for artifact-backed launches with skills", () => {
+  it("buildChildExtensionArgs disables discovery and keeps explicit extensions", () => {
+    const args = testApi.buildChildExtensionArgs(["/tmp/custom-extension.ts"]);
+
+    assert.equal(args[0], "--no-extensions");
+    assert.equal(args[1], "--extension");
+    assert.match(args[2], /subagent-done\.ts/);
+    assert.deepEqual(args.slice(3), ["--extension", "'/tmp/custom-extension.ts'"]);
+  });
+
+  it("buildPiPromptArgs inserts separator for launches with skills", () => {
     assert.deepEqual(
-      testApi.buildPiPromptArgs({ effectiveSkills: "review,lint", taskDelivery: "artifact", taskArg: "@artifact.md" }),
+      testApi.buildPiPromptArgs({ effectiveSkills: "review,lint", taskArg: "@artifact.md" }),
       ["", "/skill:review", "/skill:lint", "@artifact.md"],
     );
   });
 
-  it("buildPiPromptArgs omits separator for artifact-backed launches without skills", () => {
+  it("buildPiPromptArgs omits separator for launches without skills", () => {
     assert.deepEqual(
-      testApi.buildPiPromptArgs({ effectiveSkills: undefined, taskDelivery: "artifact", taskArg: "@artifact.md" }),
+      testApi.buildPiPromptArgs({ effectiveSkills: undefined, taskArg: "@artifact.md" }),
       ["@artifact.md"],
-    );
-  });
-
-  it("buildPiPromptArgs omits separator for direct launches with skills", () => {
-    assert.deepEqual(
-      testApi.buildPiPromptArgs({ effectiveSkills: "review", taskDelivery: "direct", taskArg: "do the task" }),
-      ["/skill:review", "do the task"],
     );
   });
 
@@ -1510,13 +1491,11 @@ describe("subagent-done.ts", () => {
   });
 });
 describe("commands", () => {
-  it("/iterate always emits a full-context fork tool call", () => {
-    const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
+  it("registers subagent configuration commands", () => {
+    const { api, registeredCommands } = createMockExtensionApi();
 
     (subagentsModule as any).default(api);
 
-    const iterate = registeredCommands.find((command) => command.name === "iterate");
-    assert.ok(iterate, "expected /iterate to be registered");
     assert.ok(
       registeredCommands.find((command) => command.name === "config:subagent"),
       "expected /config:subagent to be registered",
@@ -1525,16 +1504,28 @@ describe("commands", () => {
       registeredCommands.find((command) => command.name === "subagent-config"),
       "expected /subagent-config to be registered",
     );
-
-    iterate.handler("Fix the bug", {});
-
-    assert.equal(sentUserMessages.length, 1);
-    assert.match(sentUserMessages[0], /fork: true/);
-    assert.match(sentUserMessages[0], /name: "Iterate"/);
+    assert.equal(
+      registeredCommands.some((command) => command.name === "iterate"),
+      false,
+      "the removed /iterate command should not be registered",
+    );
   });
 });
 
 describe("tool registration", () => {
+  type ToolRegistrationTestApi = {
+    /** Resolve child subagent lifecycle-tool restrictions. */
+    resolveDenyTools(
+      agentDefs: { denyTools?: string; spawning?: boolean } | null,
+      allowSubagentSpawning?: boolean,
+    ): Set<string>;
+  };
+
+  /** Return the narrow test API used by tool-registration assertions. */
+  function getToolRegistrationTestApi(): ToolRegistrationTestApi {
+    return (subagentsModule as unknown as { __test__: ToolRegistrationTestApi }).__test__;
+  }
+
   it("defaults resumed subagents to auto-exit and non-interactive tracking", () => {
     const testApi = (subagentsModule as any).__test__;
 
@@ -1548,13 +1539,51 @@ describe("tool registration", () => {
     });
   });
 
-  it("expands spawning false to deny subagent interruption", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const denied = testApi.resolveDenyTools({ spawning: false });
+  it("uses the global switch to gate all subagent lifecycle tools", () => {
+    const testApi = getToolRegistrationTestApi();
+    const denied = testApi.resolveDenyTools(null, false);
+
+    for (const tool of ["subagent", "subagent_interrupt", "subagents_list", "subagent_resume"]) {
+      assert.equal(denied.has(tool), true, `${tool} should be denied when spawning is disabled`);
+    }
+
+    const allowed = testApi.resolveDenyTools(null, true);
+    for (const tool of ["subagent", "subagent_interrupt", "subagents_list", "subagent_resume"]) {
+      assert.equal(allowed.has(tool), false, `${tool} should be allowed when spawning is enabled`);
+    }
+  });
+
+  it("hides lifecycle tools from a child session when spawning is disabled", () => {
+    const previousDeniedTools = process.env.PI_DENY_TOOLS;
+    process.env.PI_DENY_TOOLS = [
+      "subagent",
+      "subagent_interrupt",
+      "subagents_list",
+      "subagent_resume",
+    ].join(",");
+
+    try {
+      const { api, registeredTools } = createMockExtensionApi();
+      subagentsModule.default(api);
+
+      for (const tool of ["subagent", "subagent_interrupt", "subagents_list", "subagent_resume"]) {
+        assert.equal(
+          registeredTools.some((registered) => registered.name === tool),
+          false,
+          `${tool} should not be registered in a restricted child session`,
+        );
+      }
+    } finally {
+      restoreEnvVar("PI_DENY_TOOLS", previousDeniedTools);
+    }
+  });
+
+  it("keeps explicit deny-tools restrictions when global spawning is enabled", () => {
+    const testApi = getToolRegistrationTestApi();
+    const denied = testApi.resolveDenyTools({ denyTools: "subagent" }, true);
 
     assert.equal(denied.has("subagent"), true);
-    assert.equal(denied.has("subagent_interrupt"), true);
-    assert.equal(denied.has("subagent_resume"), true);
+    assert.equal(denied.has("subagent_resume"), false);
   });
 
   it("renders partial subagent tool-call args without throwing", () => {
