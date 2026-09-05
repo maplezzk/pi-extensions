@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "adapter": {
+    "command": "terminal-notifier",
+    "args": [
+      "-title",
+      "{title}",
+      "-subtitle",
+      "{subtitle}",
+      "-message",
+      "{message}",
+      "-sound",
+      "default",
+      "-timeout",
+      "5"
+    ]
+  },
+  "timeoutMs": 3000
+}
