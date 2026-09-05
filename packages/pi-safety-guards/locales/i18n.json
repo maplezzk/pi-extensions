@@ -1,0 +1,138 @@
+{
+  "rm": {
+    "zh-CN": "rm（删除文件/目录）",
+    "en-US": "rm (delete files/directories)"
+  },
+  "rmdir": {
+    "zh-CN": "rmdir（删除空目录）",
+    "en-US": "rmdir (remove empty directories)"
+  },
+  "chown": {
+    "zh-CN": "chown（修改所有者）",
+    "en-US": "chown (change ownership)"
+  },
+  "mkfs": {
+    "zh-CN": "mkfs（格式化磁盘）",
+    "en-US": "mkfs (format disk)"
+  },
+  "forkBomb": {
+    "zh-CN": "Fork 炸弹",
+    "en-US": "fork bomb"
+  },
+  "sed": {
+    "zh-CN": "sed -i（原地修改文件）",
+    "en-US": "sed -i (edit files in place)"
+  },
+  "home": {
+    "zh-CN": "直接搜索 ~ 目录",
+    "en-US": "direct search of the ~ directory"
+  },
+  "findRoot": {
+    "zh-CN": "find /（全盘搜索）",
+    "en-US": "find / (full-disk search)"
+  },
+  "broadRoot": {
+    "zh-CN": "禁止直接搜索根目录 /，全盘扫描耗时长且范围过大。",
+    "en-US": "Searching the root directory / directly is slow and too broad."
+  },
+  "exampleRoot": {
+    "zh-CN": "例如：find <具体目录> -name \"*.ts\"",
+    "en-US": "For example: find <concrete-directory> -name \"*.ts\""
+  },
+  "detectedDanger": {
+    "zh-CN": "检测到危险命令：{label}",
+    "en-US": "Dangerous command detected: {label}"
+  },
+  "useTrash": {
+    "zh-CN": "请使用 trash 命令替代，文件移入回收站可恢复，更安全。",
+    "en-US": "Use the trash command instead; files can be restored from the trash."
+  },
+  "useEdit": {
+    "zh-CN": "请使用 edit 工具替代，更安全且效果相同。",
+    "en-US": "Use the edit tool instead; it is safer and has the same effect."
+  },
+  "broadHome": {
+    "zh-CN": "直接操作 ~ 目录效率低下且范围过大，请指定具体子目录路径。",
+    "en-US": "Operating on ~ directly is broad and inefficient; specify a concrete subdirectory."
+  },
+  "exampleHome": {
+    "zh-CN": "例如：ls ~/project 、find ~/project -name \"*.ts\"",
+    "en-US": "For example: ls ~/project or find ~/project -name \"*.ts\""
+  },
+  "needConfirm": {
+    "zh-CN": "请与用户确认后再执行。",
+    "en-US": "Confirm with the user before executing it."
+  },
+  "confirmTitle": {
+    "zh-CN": "需要你确认操作",
+    "en-US": "Action confirmation required"
+  },
+  "confirmDanger": {
+    "zh-CN": "⚠️ 危险操作：{label}",
+    "en-US": "⚠️ Dangerous operation: {label}"
+  },
+  "confirmCommand": {
+    "zh-CN": "确认执行此命令？\n\n{command}",
+    "en-US": "Run this command?\n\n{command}"
+  },
+  "rejected": {
+    "zh-CN": "用户拒绝了危险操作：{label}",
+    "en-US": "The user rejected the dangerous operation: {label}"
+  },
+  "inputNeeded": {
+    "zh-CN": "需要你的输入",
+    "en-US": "Input required"
+  },
+  "multipleQuestions": {
+    "zh-CN": "{prefix}{question} …等 {count} 个问题",
+    "en-US": "{prefix}{question} …and {count} more question(s)"
+  },
+  "taskError": {
+    "zh-CN": "⚠️ 执行完成（有错误）",
+    "en-US": "⚠️ Finished with errors"
+  },
+  "taskDone": {
+    "zh-CN": "✅ 执行完成",
+    "en-US": "✅ Finished"
+  },
+  "stepCount": {
+    "zh-CN": "共 {count} 步，耗时 {seconds}s",
+    "en-US": "{count} steps, took {seconds}s"
+  },
+  "elapsed": {
+    "zh-CN": "耗时 {seconds}s",
+    "en-US": "Took {seconds}s"
+  },
+  "mavenBlocked": {
+    "zh-CN": "禁止直接调用 Maven：编译、测试、构建、启动请使用 {skill} skill。",
+    "en-US": "Direct Maven calls are blocked: use the {skill} skill for compilation, tests, builds, and startup."
+  },
+  "shellParseBlocked": {
+    "zh-CN": "无法完整解析 Bash 命令，已为安全起见阻止执行。",
+    "en-US": "The Bash command could not be parsed completely and was blocked for safety."
+  },
+  "bashScopeBlocked": {
+    "zh-CN": "Bash 命令中的本地路径只能指向当前目录、已通过 add_directory 加入的目录、skills 目录、/tmp 或 /var。",
+    "en-US": "Local paths in Bash commands may only point inside the current directory, directories added through add_directory, skills directories, /tmp, or /var."
+  },
+  "commandText": {
+    "zh-CN": "命令：{command}",
+    "en-US": "Command: {command}"
+  },
+  "configObjectRequired": {
+    "zh-CN": "配置必须是 JSON 对象。",
+    "en-US": "Configuration must be a JSON object."
+  },
+  "configBooleanRequired": {
+    "zh-CN": "{key} 必须是布尔值。",
+    "en-US": "{key} must be a boolean."
+  },
+  "configSkillRequired": {
+    "zh-CN": "javaSkill 必须是非空字符串。",
+    "en-US": "javaSkill must be a non-empty string."
+  },
+  "configInvalid": {
+    "zh-CN": "安全守卫配置错误，已阻断 Bash。请修复配置并 /reload：{error}",
+    "en-US": "Invalid safety configuration; Bash is blocked. Fix the configuration and /reload: {error}"
+  }
+}

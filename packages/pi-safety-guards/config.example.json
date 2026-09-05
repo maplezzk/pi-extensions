@@ -1,0 +1,6 @@
+{
+  "dangerCommands": true,
+  "bashDirectoryScope": true,
+  "maven": true,
+  "javaSkill": "java-build"
+}

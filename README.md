@@ -13,6 +13,7 @@ Each package is independently installable and keeps its detailed behavior, confi
 
 | Package | Description | Documentation |
 | --- | --- | --- |
+| [`pi-safety-guards`](./packages/pi-safety-guards) | Configurable deterministic Bash, path and Maven guards. | [English](./packages/pi-safety-guards/README.md) · [中文](./packages/pi-safety-guards/README.zh-CN.md) |
 | [`pi-distill`](./packages/pi-distill) | Compacts verbose output from every active object-schema tool before it consumes the context window. | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | Reviews selected tools before or after execution against matching rules, with diff-aware handling for `edit` and `write`. | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
 | [`pi-metrics`](./packages/pi-metrics) | Shows a live session elapsed timer in the working spinner plus per-turn and total run summaries. | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |
