@@ -1,0 +1,73 @@
+{
+  "name": "pi-safety-guards",
+  "version": "0.1.0",
+  "description": "Deterministic command, Bash path, and Maven safety guards for Pi",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "locales",
+    "config.example.json",
+    "README.md",
+    "README.zh-CN.md",
+    "SKILL.md",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts",
+      "../pi-extensions-i18n/index.ts"
+    ],
+    "skills": [
+      "./SKILL.md"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "maplezzk",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-safety-guards",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-safety-guards"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "coding-agent",
+    "safety",
+    "bash",
+    "maven"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0"
+  },
+  "dependencies": {
+    "pi-extensions-i18n": "^0.4.0",
+    "unbash": "^4.0.10"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@types/node": "24.12.4",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  }
+}
