@@ -58,6 +58,7 @@ jobs:
           - dir: packages/pi-session-resources
           - dir: packages/pi-dynamic-workflows
           - dir: packages/pi-interactive-subagents
+          - dir: packages/pi-nested-skills
     steps:
       - uses: actions/checkout@v4
 
