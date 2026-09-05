@@ -51,6 +51,7 @@ export {
   closeSurface,
   renameSurface,
   renameAgent,
+  getRenameCapability,
   renameCurrentTab,
   renameWorkspace,
   pollForExit,
@@ -62,6 +63,11 @@ export type {
   CreateSurfaceSplitOptions,
   SendLongCommandOptions,
   ReadScreenOptions,
+  RenameOperation,
+  RenameTarget,
+  RenameBackend,
+  RenameCapability,
+  RenameResult,
 } from "./surface.ts";
 
 // ── Cmux 公开解析函数 ──
