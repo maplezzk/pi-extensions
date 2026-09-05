@@ -1,0 +1,310 @@
+{
+  "commands.spec": {
+    "zh-CN": "规格驱动开发工作流（new/use/status/approve/revise/continue/stop）",
+    "en-US": "Spec-driven development workflow (new/use/status/approve/revise/continue/stop)"
+  },
+  "submit.description": {
+    "zh-CN": "提交当前阶段的规格文档供用户审阅。写完当前阶段文档后必须调用；不会自动批准。",
+    "en-US": "Submit the current stage document for user review. Must be called after writing it; never auto-approves."
+  },
+  "submit.snippet": {
+    "zh-CN": "提交当前阶段文档，等待用户批准",
+    "en-US": "Submit current stage document for user approval"
+  },
+  "submit.guidelines": {
+    "zh-CN": "使用 spec_submit 提交当前阶段的规格文档，等待用户明确批准，不得自动进入下一阶段。",
+    "en-US": "Use spec_submit to hand in the current stage document and wait for explicit user approval."
+  },
+  "errors.noSlug": {
+    "zh-CN": "用法：/spec new <slug> [--title \"标题\"]",
+    "en-US": "Usage: /spec new <slug> [--title \"title\"]"
+  },
+  "errors.slugInvalid": {
+    "zh-CN": "slug 只能包含小写字母、数字、连字符（不得以连字符开头或结尾）：{slug}",
+    "en-US": "slug may only contain lowercase letters, digits and hyphens (no leading/trailing hyphen): {slug}"
+  },
+  "errors.specExists": {
+    "zh-CN": "规格已存在：{slug}，未修改任何文件",
+    "en-US": "Spec already exists: {slug}, no files were modified"
+  },
+  "errors.specMissing": {
+    "zh-CN": "规格不存在：{slug}",
+    "en-US": "Spec does not exist: {slug}"
+  },
+  "errors.stateCorrupt": {
+    "zh-CN": "状态文件损坏（{path}）：{reason}；请人工检查，插件不会覆盖它",
+    "en-US": "State file corrupted ({path}): {reason}; manual inspection required, plugin will not overwrite"
+  },
+  "errors.noActiveSpec": {
+    "zh-CN": "当前没有激活的规格，先执行 /spec new 或 /spec use",
+    "en-US": "No active spec; run /spec new or /spec use first"
+  },
+  "errors.nothingToApprove": {
+    "zh-CN": "当前阶段没有待批文档（状态：{status}）",
+    "en-US": "Nothing to approve in the current stage (status: {status})"
+  },
+  "errors.illegalTransition": {
+    "zh-CN": "非法状态转换：{from} → {to}（{reason}）",
+    "en-US": "Illegal transition: {from} → {to} ({reason})"
+  },
+  "errors.reviseInvalidArtifact": {
+    "zh-CN": "只能回退 requirements/design/tasks/verification，不支持：{artifact}",
+    "en-US": "Only requirements/design/tasks/verification can be reopened, not: {artifact}"
+  },
+  "errors.notApprovedForExecute": {
+    "zh-CN": "tasks 尚未获得执行授权（当前：{status}），请先 /spec approve",
+    "en-US": "Tasks are not authorized for execution (current: {status}); run /spec approve first"
+  },
+  "errors.notActiveNow": {
+    "zh-CN": "spec 模式当前未激活",
+    "en-US": "Spec mode is not active"
+  },
+  "errors.hashMismatch": {
+    "zh-CN": "检测到 {artifact} 在批准后被修改，批准已失效，阶段已回退到草稿",
+    "en-US": "{artifact} was modified after approval; approval invalidated and stage reopened"
+  },
+  "guards.bashBlocked": {
+    "zh-CN": "spec 模式计划阶段禁止 bash 命令（阶段：{stage}）；完成当前文档后调用 spec_submit。",
+    "en-US": "bash is blocked in spec planning stages (stage: {stage}); call spec_submit after finishing the document."
+  },
+  "guards.writeDenied": {
+    "zh-CN": "spec 模式当前阶段只允许写入 {allowed}；尝试写入：{path}",
+    "en-US": "This spec stage only allows writing {allowed}; attempted: {path}"
+  },
+  "guards.specDirProtected": {
+    "zh-CN": "禁止通过普通写入工具修改规格目录：{path}（如需变更请使用 /spec revise）",
+    "en-US": "Spec directory is protected from raw writes: {path} (use /spec revise for changes)"
+  },
+  "guards.stateProtected": {
+    "zh-CN": "state.json 由插件管理，禁止直接写入",
+    "en-US": "state.json is managed by the plugin and cannot be written directly"
+  },
+  "status.label": {
+    "zh-CN": "SPEC {spec} · {stage} · {status}",
+    "en-US": "SPEC {spec} · {stage} · {status}"
+  },
+  "status.stageNames.requirements": {
+    "zh-CN": "需求",
+    "en-US": "Requirements"
+  },
+  "status.stageNames.design": {
+    "zh-CN": "设计",
+    "en-US": "Design"
+  },
+  "status.stageNames.tasks": {
+    "zh-CN": "任务",
+    "en-US": "Tasks"
+  },
+  "status.stageNames.implementation": {
+    "zh-CN": "实现",
+    "en-US": "Implementation"
+  },
+  "status.stageNames.verification": {
+    "zh-CN": "验证",
+    "en-US": "Verification"
+  },
+  "status.stageNames.complete": {
+    "zh-CN": "完成",
+    "en-US": "Complete"
+  },
+  "status.statusNames.drafting": {
+    "zh-CN": "起草中",
+    "en-US": "drafting"
+  },
+  "status.statusNames.awaiting_approval": {
+    "zh-CN": "待审批",
+    "en-US": "awaiting approval"
+  },
+  "status.statusNames.in_progress": {
+    "zh-CN": "执行中",
+    "en-US": "in progress"
+  },
+  "status.statusNames.done": {
+    "zh-CN": "已完成",
+    "en-US": "done"
+  },
+  "status.widgetSteps.requirements": {
+    "zh-CN": "需求",
+    "en-US": "Requirements"
+  },
+  "status.widgetSteps.design": {
+    "zh-CN": "设计",
+    "en-US": "Design"
+  },
+  "status.widgetSteps.tasks": {
+    "zh-CN": "任务",
+    "en-US": "Tasks"
+  },
+  "status.widgetSteps.implementation": {
+    "zh-CN": "实现",
+    "en-US": "Implementation"
+  },
+  "status.widgetSteps.verification": {
+    "zh-CN": "验证",
+    "en-US": "Verification"
+  },
+  "approve.confirmTitle": {
+    "zh-CN": "批准 {stage}？",
+    "en-US": "Approve {stage}?"
+  },
+  "approve.confirmBody": {
+    "zh-CN": "批准将绑定当前文档版本的哈希，并进入下一阶段。文件：{path}",
+    "en-US": "Approval binds to the current document hash and advances to the next stage. File: {path}"
+  },
+  "approve.approved": {
+    "zh-CN": "已批准 {stage}，进入 {next}",
+    "en-US": "{stage} approved, now in {next}"
+  },
+  "approve.revised": {
+    "zh-CN": "{artifact} 已回退到起草状态，下游批准已清除",
+    "en-US": "{artifact} reopened; downstream approvals cleared"
+  },
+  "approve.headlessHint": {
+    "zh-CN": "文档已登记待批。请切换到交互模式执行 /spec approve 完成批准。",
+    "en-US": "Document registered for review. Switch to interactive mode and run /spec approve to confirm."
+  },
+  "context.planStage": {
+    "zh-CN": "[SPEC MODE - {stage}]\n当前阶段：{stage}（{status}）。\n正在编写的文档：{path}\n完成后必须调用 spec_submit 提交，等待用户批准。\n禁止运行 bash 命令；禁止修改代码；本阶段只能编辑上述这一份文档。",
+    "en-US": "[SPEC MODE - {stage}]\nCurrent stage: {stage} ({status}).\nDocument being written: {path}\nCall spec_submit when done and wait for user approval.\nDo NOT run bash commands; do NOT modify code; only edit that single document in this stage."
+  },
+  "context.execute": {
+    "zh-CN": "[SPEC MODE - IMPLEMENTATION]\n执行已批准的 tasks.md。\n剩余任务：\n{remaining}\n每完成一个任务，在回复中包含标记：[DONE:TASK-id]。\n全部完成后任务状态由插件自动更新，无需手动修改 tasks.md。",
+    "en-US": "[SPEC MODE - IMPLEMENTATION]\nExecute approved tasks.md.\nRemaining tasks:\n{remaining}\nAfter completing each task, include a marker: [DONE:TASK-id].\nThe plugin updates task state automatically; do not edit tasks.md manually."
+  },
+  "context.verify": {
+    "zh-CN": "[SPEC MODE - VERIFICATION]\n所有任务已完成。请按照 tasks.md 中的 Verification 执行验证，并把结果写入 verification.md 后调用 spec_submit。",
+    "en-US": "[SPEC MODE - VERIFICATION]\nAll tasks are done. Run verifications from tasks.md, write results into verification.md, then call spec_submit."
+  },
+  "ui.taskProgress": {
+    "zh-CN": "任务进度：{done}/{total}",
+    "en-US": "Tasks: {done}/{total}"
+  },
+  "ui.allTasksDone": {
+    "zh-CN": "全部任务完成（{total}），进入验证阶段",
+    "en-US": "All {total} tasks completed; entering verification"
+  },
+  "ui.stopped": {
+    "zh-CN": "已退出 spec 模式并恢复原工具集",
+    "en-US": "Exited spec mode and restored the previous tool set"
+  },
+  "ui.profileTitle": {
+    "zh-CN": "Spec 模式",
+    "en-US": "Spec mode"
+  },
+  "ui.profileStrict": {
+    "zh-CN": "strict：每阶段审批（需求/设计/任务逐阶段人工批准）",
+    "en-US": "strict: approve requirements, design, and tasks separately"
+  },
+  "ui.profileQuick": {
+    "zh-CN": "quick：最终统一审批（需求设计自动推进，任务后一次授权）",
+    "en-US": "quick: auto-advance requirements/design, approve once before coding"
+  },
+  "ui.created": {
+    "zh-CN": "已创建并激活规格 {slug}（{profile}）",
+    "en-US": "Created and activated spec {slug} ({profile})"
+  },
+  "ui.activated": {
+    "zh-CN": "已激活规格 {slug}",
+    "en-US": "Activated spec {slug}"
+  },
+  "ui.statusSpec": {
+    "zh-CN": "规格：{slug}",
+    "en-US": "Spec: {slug}"
+  },
+  "ui.statusProfile": {
+    "zh-CN": "模式：{profile}",
+    "en-US": "Profile: {profile}"
+  },
+  "ui.statusStage": {
+    "zh-CN": "阶段：{stage} · {status}",
+    "en-US": "Stage: {stage} · {status}"
+  },
+  "ui.statusMachine": {
+    "zh-CN": "机器状态：{status}",
+    "en-US": "Machine state: {status}"
+  },
+  "ui.artifactApproved": {
+    "zh-CN": "已批准",
+    "en-US": "approved"
+  },
+  "ui.artifactPending": {
+    "zh-CN": "待批",
+    "en-US": "pending"
+  },
+  "ui.artifactProfileAccepted": {
+    "zh-CN": "quick 已接受",
+    "en-US": "accepted by quick profile"
+  },
+  "ui.phaseDone": {
+    "zh-CN": "已完成",
+    "en-US": "done"
+  },
+  "ui.nextTask": {
+    "zh-CN": "下一任务：{task}",
+    "en-US": "Next task: {task}"
+  },
+  "ui.diskRevisionChanged": {
+    "zh-CN": "磁盘状态已变化（revision {from} → {to}），以磁盘为准",
+    "en-US": "Disk state changed (revision {from} → {to}); using disk state"
+  },
+  "ui.continueExecution": {
+    "zh-CN": "继续执行已批准的规格任务。",
+    "en-US": "Continue executing the approved spec tasks."
+  },
+  "errors.transitionRejected": {
+    "zh-CN": "状态机拒绝了操作 {action}（当前：{status}）",
+    "en-US": "State machine rejected {action} (current: {status})"
+  },
+  "errors.submitNoActive": {
+    "zh-CN": "当前没有激活的规格。请让用户执行 /spec new 或 /spec use。",
+    "en-US": "No active spec. Ask the user to run /spec new or /spec use."
+  },
+  "errors.submitNotDrafting": {
+    "zh-CN": "当前状态 {status} 不能提交；只有 drafting 状态可提交。",
+    "en-US": "State {status} cannot be submitted; only drafting may submit."
+  },
+  "errors.artifactMissing": {
+    "zh-CN": "文档不存在：{path}，请先创建该文档。",
+    "en-US": "Artifact not found: {path}; create it first."
+  },
+  "errors.validationRejected": {
+    "zh-CN": "提交被拒绝，存在以下硬错误：\n{errors}\n请修复后重新调用 spec_submit。",
+    "en-US": "Submission rejected due to hard errors:\n{errors}\nFix them and call spec_submit again."
+  },
+  "errors.submitTransition": {
+    "zh-CN": "状态机拒绝提交（当前：{status}）：{reason}",
+    "en-US": "State machine rejected submission (current: {status}): {reason}"
+  },
+  "submit.warningHeader": {
+    "zh-CN": "提示（不阻止）",
+    "en-US": "Warnings (non-blocking)"
+  },
+  "submit.awaiting": {
+    "zh-CN": "文档已登记待批，请等待用户执行 /spec approve。",
+    "en-US": "Artifact is awaiting approval; wait for the user to run /spec approve."
+  },
+  "submit.advanced": {
+    "zh-CN": "已按 quick 模式推进到 {stage}，请继续起草该阶段文档。",
+    "en-US": "Quick mode advanced to {stage}; continue drafting that artifact."
+  },
+  "submit.success": {
+    "zh-CN": "提交成功：{artifact}.md（状态：{status}）{warnings}\n{next}",
+    "en-US": "Submitted {artifact}.md (state: {status}){warnings}\n{next}"
+  },
+  "template.requirements": {
+    "zh-CN": "# Requirements: {title}\n\n### REQ-001 · 需求标题\n\n**User Story:** 作为 [角色]，我想 [能力]，以便 [价值]。\n\n**Acceptance Criteria:**\n1. WHEN [事件] THEN 系统 SHALL [响应]\n\n## Out of Scope\n\n## Glossary\n",
+    "en-US": "# Requirements: {title}\n\n### REQ-001 · Requirement title\n\n**User Story:** As a [role], I want [capability], so that [value].\n\n**Acceptance Criteria:**\n1. WHEN [event] THEN the system SHALL [response]\n\n## Out of Scope\n\n## Glossary\n"
+  },
+  "template.design": {
+    "zh-CN": "# Design: {title}\n\n## Architecture\n\n## Testing Strategy\n",
+    "en-US": "# Design: {title}\n\n## Architecture\n\n## Testing Strategy\n"
+  },
+  "template.tasks": {
+    "zh-CN": "# Tasks: {title}\n\n### TASK-<capability> · 任务标题\n- Depends on: none\n- Requirements: REQ-001\n- Acceptance:\n- Verification:\n",
+    "en-US": "# Tasks: {title}\n\n### TASK-<capability> · Task title\n- Depends on: none\n- Requirements: REQ-001\n- Acceptance:\n- Verification:\n"
+  },
+  "template.verification": {
+    "zh-CN": "# Verification: {title}\n\n结论：\n命令：\n",
+    "en-US": "# Verification: {title}\n\nVerdict:\nCommand:\n"
+  }
+}

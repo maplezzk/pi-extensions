@@ -1,0 +1,79 @@
+{
+  "name": "pi-spec-mode",
+  "version": "0.1.0",
+  "description": "Pi 终端内规格驱动开发工作流：requirements→design→tasks 持久产物、逐阶段批准、写入守卫",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "locales",
+    "skills",
+    "test",
+    "config.example.json",
+    "README.md",
+    "README.zh-CN.md",
+    "SKILL.md",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts",
+      "../pi-extensions-i18n/index.ts"
+    ],
+    "skills": [
+      "./SKILL.md",
+      "./skills"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "maplezzk",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-spec-mode",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-spec-mode"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "coding-agent",
+    "spec",
+    "sdd",
+    "workflow"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0",
+    "typebox": "*"
+  },
+  "dependencies": {
+    "pi-extensions-i18n": "^0.4.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@earendil-works/pi-tui": "0.80.10",
+    "@types/node": "24.12.4",
+    "tsx": "4.23.1",
+    "typebox": "latest",
+    "typescript": "5.9.3"
+  }
+}
