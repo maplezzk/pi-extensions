@@ -50,5 +50,9 @@
   "error.invalidHerdrMode": {
     "zh-CN": "不支持的 Herdr surface 模式：{value}。可选值：split、tab。",
     "en-US": "Unsupported Herdr surface mode: {value}. Choose split or tab."
+  },
+  "error.renameIncomplete": {
+    "zh-CN": "{backend} 未完成终端改名。",
+    "en-US": "{backend} did not complete terminal renaming."
   }
 }

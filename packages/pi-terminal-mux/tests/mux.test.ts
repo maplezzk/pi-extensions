@@ -19,6 +19,9 @@ import {
   selectZellijPlacement,
   selectZellijStackPlacement,
   getAgentPaneId,
+  getRenameCapability,
+  renameCurrentTab,
+  renameWorkspace,
   type ZellijPaneSnapshot,
 } from "../src/index.ts";
 
@@ -37,6 +40,9 @@ const MUX_ENV_KEYS = [
   "TERM_PROGRAM",
   "PI_TERMINAL_MUX",
   "PI_SUBAGENT_MUX",
+  "PI_SUBAGENT_RENAME_TMUX_WINDOW",
+  "PI_SUBAGENT_RENAME_TMUX_SESSION",
+  "PI_SUBAGENT_RENAME_HERDR_WORKSPACE",
   "PI_EXTENSIONS_LOCALE",
 ];
 
@@ -96,6 +102,19 @@ describe("headless surface", () => {
     assert.equal(getMuxBackend(), null);
     assert.equal(isHeadlessMode(), true);
   });
+
+  test("重命名明确报告 headless 不支持", () => {
+    assert.deepEqual(renameCurrentTab("demo"), {
+      status: "unsupported",
+      backend: "headless",
+      operation: "tab",
+    });
+    assert.deepEqual(renameWorkspace("demo"), {
+      status: "unsupported",
+      backend: "headless",
+      operation: "workspace",
+    });
+  });
 });
 
 describe("后端偏好", () => {
@@ -126,6 +145,70 @@ describe("muxSetupHint i18n", () => {
   test("无偏好时返回通用提示", () => {
     process.env.PI_EXTENSIONS_LOCALE = "en-US";
     assert.match(muxSetupHint(), /WezTerm/);
+  });
+});
+
+describe("重命名能力", () => {
+  test("tab 重命名报告各后端实际目标", () => {
+    assert.deepEqual(getRenameCapability("tab", "cmux", {}), {
+      status: "supported",
+      backend: "cmux",
+      operation: "tab",
+      target: "tab",
+    });
+    assert.deepEqual(getRenameCapability("tab", "muxy", {}), {
+      status: "supported",
+      backend: "muxy",
+      operation: "tab",
+      target: "pane",
+    });
+    assert.deepEqual(getRenameCapability("tab", "orca", {}), {
+      status: "supported",
+      backend: "orca",
+      operation: "tab",
+      target: "terminal",
+    });
+  });
+
+  test("tmux 重命名必须显式启用", () => {
+    assert.deepEqual(getRenameCapability("tab", "tmux", {}), {
+      status: "disabled",
+      backend: "tmux",
+      operation: "tab",
+      setting: "PI_SUBAGENT_RENAME_TMUX_WINDOW",
+    });
+    assert.deepEqual(
+      getRenameCapability("workspace", "tmux", { PI_SUBAGENT_RENAME_TMUX_SESSION: "1" }),
+      { status: "supported", backend: "tmux", operation: "workspace", target: "session" },
+    );
+  });
+
+  test("workspace 重命名明确报告降级和不支持", () => {
+    assert.deepEqual(getRenameCapability("workspace", "wezterm", {}), {
+      status: "supported",
+      backend: "wezterm",
+      operation: "workspace",
+      target: "window",
+    });
+    assert.deepEqual(getRenameCapability("workspace", "orca", {}), {
+      status: "unsupported",
+      backend: "orca",
+      operation: "workspace",
+    });
+    assert.deepEqual(getRenameCapability("workspace", null, {}), {
+      status: "unsupported",
+      backend: "headless",
+      operation: "workspace",
+    });
+  });
+
+  test("herdr workspace 重命名必须显式启用", () => {
+    assert.deepEqual(getRenameCapability("workspace", "herdr", {}), {
+      status: "disabled",
+      backend: "herdr",
+      operation: "workspace",
+      setting: "PI_SUBAGENT_RENAME_HERDR_WORKSPACE",
+    });
   });
 });
 

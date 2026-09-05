@@ -20,6 +20,10 @@ import { createBackendLogger, withFileLock, BfsSplitStateManager, hasCommand } f
 // ── 日志（统一格式，写入 /tmp/pi-mux-herdr.log） ──
 const herdrLog = createBackendLogger("herdr", "/tmp/pi-mux-herdr.log");
 const HERDR_TAB_CLOSE_COMMAND = ["tab", "close"] as const;
+const HERDR_TAB_LIST_COMMAND = ["tab", "list"] as const;
+const HERDR_TAB_RENAME_COMMAND = ["tab", "rename"] as const;
+const HERDR_WORKSPACE_RENAME_COMMAND = ["workspace", "rename"] as const;
+const HERDR_WORKSPACE_FLAG = "--workspace";
 const HERDR_PANE_SPLIT_COMMAND = ["pane", "split"] as const;
 const HERDR_PANE_CLOSE_COMMAND = ["pane", "close"] as const;
 const HERDR_SPLIT_DIRECTION_FLAG = "--direction";
@@ -358,24 +362,28 @@ function herdrSurfaceLabel(name: string): string {
  * 用 herdr CLI 重命名 pane 对应的 tab。
  * tab label 格式: workspace_label[name]
  */
-export function renameHerdrTab(paneId: string, name: string): void {
+export function renameHerdrTab(paneId: string, name: string): boolean {
   const ws = parseWorkspaceIdFromPaneId(paneId);
-  if (!ws) return;
+  if (!ws) return false;
   try {
     const tabLabel = herdrSurfaceLabel(name);
-    const tabsJson = herdrExec(["tab", "list", "--workspace", ws]);
+    if (paneId === AGENT_HERDR_PANE_ID && AGENT_HERDR_TAB_ID) {
+      herdrExecSilent([...HERDR_TAB_RENAME_COMMAND, AGENT_HERDR_TAB_ID, tabLabel]);
+      return true;
+    }
+
+    const tabsJson = herdrExec([...HERDR_TAB_LIST_COMMAND, HERDR_WORKSPACE_FLAG, ws]);
     const parsed = parseHerdrJson(tabsJson);
-    if (!parsed || typeof parsed !== "object") return;
+    if (!parsed || typeof parsed !== "object") return false;
     const result = (parsed as Record<string, unknown>).result as Record<string, unknown> | undefined;
     const tabs = (result?.tabs as Array<Record<string, unknown>>) ?? [];
-    if (tabs.length > 0) {
-      const firstTab = tabs[0];
-      if (firstTab && typeof firstTab.tab_id === "string") {
-        herdrExecSilent(["tab", "rename", firstTab.tab_id, tabLabel]);
-      }
-    }
+    const firstTab = tabs[0];
+    if (!firstTab || typeof firstTab.tab_id !== "string") return false;
+    herdrExecSilent([...HERDR_TAB_RENAME_COMMAND, firstTab.tab_id, tabLabel]);
+    return true;
   } catch (e) {
     herdrLog(`[rename tab] pane=${paneId} name=${JSON.stringify(name)} failed: ${(e as Error).message}`);
+    return false;
   }
 }
 
@@ -383,13 +391,15 @@ export function renameHerdrTab(paneId: string, name: string): void {
  * 重命名 workspace。herdr 中 workspace rename 命令是 `herdr workspace rename <id> <label>`。
  * 仅当环境变量 PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1 时启用（保守策略，避免影响用户命名）。
  */
-export function renameHerdrWorkspace(title: string): void {
-  if (process.env.PI_SUBAGENT_RENAME_HERDR_WORKSPACE !== "1") return;
-  if (!AGENT_HERDR_WORKSPACE_ID) return;
+export function renameHerdrWorkspace(title: string): boolean {
+  if (process.env.PI_SUBAGENT_RENAME_HERDR_WORKSPACE !== "1") return false;
+  if (!AGENT_HERDR_WORKSPACE_ID) return false;
   try {
-    herdrExecSilent(["workspace", "rename", AGENT_HERDR_WORKSPACE_ID, title]);
+    herdrExecSilent([...HERDR_WORKSPACE_RENAME_COMMAND, AGENT_HERDR_WORKSPACE_ID, title]);
+    return true;
   } catch (e) {
     herdrLog(`[rename workspace] title=${JSON.stringify(title)} failed: ${(e as Error).message}`);
+    return false;
   }
 }
 

@@ -194,7 +194,7 @@ function ottyExec(args: string[]): string {
  * 调用 `otty` 命令，丢弃 stdout。用于 sendCommand / sendKeys / closePane 这类
  * 无输出的命令。
  */
-function ottyExecSilent(args: string[]): void {
+function ottyExecSilent(args: string[]): boolean {
   const cmdline = `otty ${args
     .map((a) => (a.includes(" ") || a.includes('"') ? JSON.stringify(a) : a))
     .join(" ")}`;
@@ -209,7 +209,9 @@ function ottyExecSilent(args: string[]): void {
         (result.stderr ?? "").trim().slice(0, 200),
       )}`,
     );
+    return false;
   }
+  return true;
 }
 
 // ── Pane 数据结构 ──
@@ -565,16 +567,21 @@ export function closeOttySurface(paneId: string): void {
  * 重命名 pane 对应的 tab。
  * Otty 没有"pane -> tab id"的直接命令，所以用 `panes --json` 反查 tab_id。
  */
-export function renameOttyTab(paneId: string, name: string): void {
+export function renameOttyTab(paneId: string, name: string): boolean {
   const tabId = getTabIdForPane(paneId);
   if (!tabId) {
     ottyLog(`[rename] pane=${paneId} no tab id found`);
-    return;
+    return false;
   }
   try {
-    ottyExecSilent(["tab", "rename", "--tab", tabId, name]);
+    if (!ottyExecSilent(["tab", "rename", "--tab", tabId, name])) {
+      ottyLog(`[rename] pane=${paneId} tab=${tabId} name=${JSON.stringify(name)} failed`);
+      return false;
+    }
+    return true;
   } catch (e) {
     ottyLog(`[rename] pane=${paneId} tab=${tabId} name=${JSON.stringify(name)} failed: ${(e as Error).message}`);
+    return false;
   }
 }
 

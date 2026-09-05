@@ -87,9 +87,13 @@ export PI_SUBAGENT_HERDR_MODE=tab
 | `sendEscape(surface)` | 发送一次 ESC |
 | `readScreen(surface, lines?, options?)` / `readScreenAsync` | 读取屏幕尾部 N 行；`options.source`（仅 herdr）透传 herdr 读屏来源（如 `"recent_unwrapped"`），其他后端忽略 |
 | `closeSurface(surface)` | 关闭 surface |
-| `renameSurface(surface, name)` / `renameCurrentTab(title)` / `renameAgent(surface, name)` / `renameWorkspace(title)` | 命名（按后端能力降级或跳过） |
+| `renameSurface(surface, name)` / `renameAgent(surface, name)` | 重命名已知 surface 或 agent 标签 |
+| `getRenameCapability(operation, backend?, env?)` | 不执行命令，返回实际重命名目标，或明确的 `unsupported` / `disabled` 能力结果 |
+| `renameCurrentTab(title)` / `renameWorkspace(title)` | 执行重命名并返回可判别的 `renamed` / `unsupported` / `disabled` / `failed` 结果 |
 | `pollForExit(surface, signal, opts)` | 等待 surface 内进程退出：优先 `.exit` sidecar 文件，其次屏幕 sentinel（`__SUBAGENT_DONE_<code>__`），headless 走子进程 exit |
 | `getLastSplitSource()` / `clearLastSplitSource()` | 最近一次分屏的来源 pane（用于 UI 展示） |
+
+各后端的实际目标不同：muxy/zellij 的 tab 重命名作用于 pane；tmux 在开启对应变量后作用于 window/session；WezTerm 的 workspace 重命名作用于 window；cmux 和 Herdr 提供原生 workspace 重命名；Otty、Orca 没有 workspace 重命名。Headless 会明确返回 `unsupported`，不再静默成功。
 
 ### 探测与工具
 

@@ -88,9 +88,13 @@ export PI_SUBAGENT_HERDR_MODE=tab
 | `sendEscape(surface)` | Send one ESC keypress |
 | `readScreen(surface, lines?, options?)` / `readScreenAsync` | Read the last N screen lines. `options.source` (herdr-only) forwards a herdr read source such as `"recent_unwrapped"`; other backends ignore it |
 | `closeSurface(surface)` | Close the surface |
-| `renameSurface(surface, name)` / `renameCurrentTab(title)` / `renameAgent(surface, name)` / `renameWorkspace(title)` | Naming, degrading per backend capability |
+| `renameSurface(surface, name)` / `renameAgent(surface, name)` | Rename a known surface or agent label |
+| `getRenameCapability(operation, backend?, env?)` | Report the actual rename target or an explicit `unsupported` / `disabled` capability without executing a command |
+| `renameCurrentTab(title)` / `renameWorkspace(title)` | Rename and return a discriminated `renamed` / `unsupported` / `disabled` / `failed` result |
 | `pollForExit(surface, signal, opts)` | Wait for the process in a surface to exit: `.exit` sidecar file first, then a screen sentinel (`__SUBAGENT_DONE_<code>__`); headless uses child process exit |
 | `getLastSplitSource()` / `clearLastSplitSource()` | Source pane of the most recent split (for UI display) |
+
+Rename targets differ by backend: muxy/zellij tab rename targets a pane; tmux targets a window/session when its opt-in variables are enabled; WezTerm workspace rename targets the window; cmux and Herdr provide native workspace rename; Otty and Orca have no workspace rename. Headless reports `unsupported` instead of silently succeeding.
 
 ### Detection and utilities
 

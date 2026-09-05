@@ -10,7 +10,7 @@
  *   - sendCommand / sendLongCommand / sendEscape
  *   - readScreen / readScreenAsync
  *   - closeSurface
- *   - renameCurrentTab / renameAgent / renameWorkspace
+ *   - renameCurrentTab / renameAgent / renameWorkspace / getRenameCapability
  *   - pollForExit                      等待 surface 内进程退出（.exit sidecar / sentinel）
  *
  * 后端探测：
