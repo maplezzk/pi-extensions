@@ -17,16 +17,16 @@ test("按 ID 覆盖动作、文案和匹配器，或禁用预设规则", () => {
   const config = parseConfig({
     presets: ["destructive-operations", "workspace-boundary"],
     rules: [
-      { id: "filesystem.delete", action: "warn", message: "Use your preferred deletion tool." },
+      { id: "filesystem.delete", action: "warn", message: "Custom deletion rule matched." },
       { id: "filesystem.format", enabled: false },
       { id: "paths.workspace", match: { outsideRoots: [".", "../shared"] } },
-      { id: "team-build", match: { commands: ["my-build"] }, action: "block" },
+      { id: "custom.command", match: { commands: ["my-build"] }, action: "block" },
     ],
   });
   assert.equal(config.rules.find((rule) => rule.id === "filesystem.delete")?.action, "warn");
   assert.equal(config.rules.some((rule) => rule.id === "filesystem.format"), false);
   assert.deepEqual(config.rules.find((rule) => rule.id === "paths.workspace")?.match, { outsideRoots: [".", "../shared"] });
-  assert.equal(config.rules.find((rule) => rule.id === "team-build")?.action, "block");
+  assert.equal(config.rules.find((rule) => rule.id === "custom.command")?.action, "block");
 });
 
 test("规则解析不能污染下一次加载的内置预设", () => {
@@ -62,8 +62,8 @@ test("缺文件使用默认预设，坏文件和读取错误不静默降级", ()
   assert.throws(() => loadConfig(dir));
 });
 
-test("公开示例可解析，团队偏好不会改变默认预设", () => {
-  for (const file of ["../config.example.json", "../examples/team-policy.json"]) {
+test("公开示例可解析，自定义规则不会改变默认预设", () => {
+  for (const file of ["../config.example.json", "../examples/custom-rules.json"]) {
     assert.ok(parseConfig(JSON.parse(readFileSync(new URL(file, import.meta.url), "utf8"))).rules.length);
   }
   assert.equal(parseConfig({}).rules.length, 4);

@@ -39,7 +39,7 @@ test("block 优先于 confirm 和 warn，与规则出现顺序无关", async () 
 
 test("可以按相同配置格式限制任意构建工具，不只 Maven", async () => {
   for (const command of ["mvn", "npm", "python", "custom-build"]) {
-    const config = { presets: [], rules: [{ id: "team-build", action: "block", match: { commands: [command] } }] };
+    const config = { presets: [], rules: [{ id: "custom.command", action: "block", match: { commands: [command] } }] };
     assert.equal((await evaluate(config, `env X=1 ${command} build`))?.action, "block");
     assert.equal(await evaluate(config, `echo '${command} build'`), undefined);
   }

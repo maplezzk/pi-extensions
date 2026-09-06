@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import extension, { registerSafetyGuards } from "../index.ts";
 import { parseConfig } from "../src/config.ts";
+import { i18n } from "../src/i18n.ts";
 
 type Handler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown;
 
@@ -48,12 +49,12 @@ test("默认危险操作确认，拒绝或无 UI 时阻断，普通构建不询�
   assert.equal(approved.prompts.length, 1);
 });
 
-test("block 不弹确认，原因包含用户规则 ID 和建议", async () => {
+test("block 不弹确认，原因包含用户填写的说明与规则 ID", async () => {
   const fake = host();
-  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "block", message: "Use a recoverable tool configured by your team." }] }));
+  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "block", message: "Custom deletion rule matched." }] }));
   const result = await fake.emit("tool_call", call("rm file")) as { block: boolean; reason: string };
   assert.equal(result.block, true);
-  assert.match(result.reason, /recoverable tool/);
+  assert.match(result.reason, /Custom deletion rule matched/);
   assert.match(result.reason, /filesystem.delete/);
   assert.equal(fake.prompts.length, 0);
 });
@@ -109,4 +110,14 @@ test("损坏配置不默默恢复默认预设，而是通知并阻断 Bash", asy
   assert.equal(fake.notices.length, 1);
   assert.equal((await fake.emit("tool_call", call("npm test")) as { block: boolean }).block, true);
   assert.equal(await fake.emit("tool_call", { toolName: "read", input: {} }), undefined);
+});
+
+test("未填写说明时仅反馈规则 ID 和动作，不附加替代方案", async () => {
+  const fake = host();
+  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "block" }] }));
+  const result = await fake.emit("tool_call", call("rm file"));
+  assert.deepEqual(result, {
+    block: true,
+    reason: i18n.t("blocked", { details: i18n.t("ruleMatched", { id: "filesystem.delete" }) }),
+  });
 });

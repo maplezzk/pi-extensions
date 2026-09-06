@@ -56,14 +56,14 @@ When multiple rules match, `block` wins over `confirm`, then `warn`. All matchin
 {
   "presets": ["destructive-operations"],
   "rules": [
-    { "id": "filesystem.delete", "action": "block", "message": "Use the deletion tool selected by your team." },
+    { "id": "filesystem.delete", "action": "block" },
     { "id": "filesystem.ownership", "enabled": false },
-    { "id": "team-build", "action": "confirm", "match": { "commands": ["custom-build"] } }
+    { "id": "example.command", "action": "confirm", "match": { "commands": ["example-command"] } }
   ]
 }
 ```
 
-`message` accepts either a non-empty local string or an object with both `zh-CN` and `en-US`. See [the team-policy example](./examples/team-policy.json) for an optional build-tool/deletion policy expressed entirely as data, not a default.
+`message` accepts either a non-empty local string or an object with both `zh-CN` and `en-US`. If omitted, feedback contains only the matched rule ID and the action taken; no alternative tool or workflow is invented. The [custom-rule example](./examples/custom-rules.json) demonstrates overrides, disabling and adding a command rule. Replace `example-command` with the command you want to match; it is a placeholder, not a required tool.
 
 ### Matchers
 

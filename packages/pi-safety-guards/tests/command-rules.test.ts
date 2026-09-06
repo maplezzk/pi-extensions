@@ -6,7 +6,7 @@ import { compileRules, evaluateRules } from "../src/engine.ts";
 
 // 技术栈名称仅作为用户规则数据，不进入公共默认规则。
 const rules = compileRules(parseConfig({ presets: [], rules: [{
-  id: "team-build", action: "block",
+  id: "custom.command", action: "block",
   match: { commands: ["mvn", "mvnw", "mvnDebug", "mvnd", "maven"] },
 }] }), tmpdir());
 

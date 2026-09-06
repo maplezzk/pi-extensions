@@ -56,14 +56,14 @@ pi install npm:pi-safety-guards
 {
   "presets": ["destructive-operations"],
   "rules": [
-    { "id": "filesystem.delete", "action": "block", "message": "请使用团队选择的删除工具。" },
+    { "id": "filesystem.delete", "action": "block" },
     { "id": "filesystem.ownership", "enabled": false },
-    { "id": "team-build", "action": "confirm", "match": { "commands": ["custom-build"] } }
+    { "id": "example.command", "action": "confirm", "match": { "commands": ["example-command"] } }
   ]
 }
 ```
 
-`message` 可以是非空本地字符串，也可以是同时含 `zh-CN` 和 `en-US` 的对象。[团队策略示例](./examples/team-policy.json) 展示了如何用配置表达构建工具与删除习惯；它不是默认策略。
+`message` 可以是非空本地字符串，也可以是同时含 `zh-CN` 和 `en-US` 的对象。不填写时只反馈命中的规则 ID 和执行动作，不编造替代工具或流程。[自定义规则示例](./examples/custom-rules.json) 只演示覆盖、禁用和新增命令规则。`example-command` 是占位符，使用时替换为希望匹配的命令，不代表必须使用某个工具。
 
 ### 匹配器
 
