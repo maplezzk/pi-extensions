@@ -505,3 +505,14 @@ The sub-agent status supervision and turn-only interruption features were inspir
 ## License
 
 MIT
+
+
+## Naming composition
+
+Subagents do not depend on `pi-naming`. Terminal creation supplies an initial surface label where supported; this extension does not schedule delayed title overwrites or rename the parent's terminal when `/plan` runs. Agent identity and activity remain visible in the subagent widget.
+
+Each launch (Pi or Claude) and Pi resume writes fresh `PI_TERMINAL_RENAME_CONTEXT` ownership data through `pi-terminal-mux`, replacing inherited values. This allows a cooperating naming extension to update only the child's explicitly owned terminal target, never the shared workspace. Shared or unverified window/tab targets remain unchanged.
+
+To use automatic titles or `/rename` in Pi children, explicitly add the installed `pi-naming` entrypoint to `subagentExtensions`. Merely installing both packages in the parent does not enable extensions in isolated child sessions. Naming uses the same terminal-mux protocol and does not import this package.
+
+Publication requires a terminal-mux dependency version providing the ownership API.

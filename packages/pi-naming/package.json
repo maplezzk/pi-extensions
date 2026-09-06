@@ -1,0 +1,75 @@
+{
+  "name": "pi-naming",
+  "version": "0.1.0",
+  "description": "Configurable Pi session naming and manual terminal workspace/tab renaming",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "locales",
+    "README.md",
+    "README.zh-CN.md",
+    "SKILL.md",
+    "config.example.json",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts",
+      "../pi-extensions-i18n/index.ts"
+    ],
+    "skills": [
+      "./SKILL.md"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "maplezzk",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-naming",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-naming"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "terminal",
+    "rename",
+    "workspace"
+  ],
+  "dependencies": {
+    "pi-extensions-i18n": "^0.4.0",
+    "pi-terminal-mux": "^0.4.1"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-ai": ">=0.80.0 <0.81.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@types/node": "24.12.4",
+    "pi-terminal-mux": "^0.4.1",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3",
+    "@earendil-works/pi-ai": "0.80.10"
+  }
+}
