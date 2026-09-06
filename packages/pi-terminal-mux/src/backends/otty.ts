@@ -370,7 +370,7 @@ export function createOttySurface(name: string): string {
         return "";
       }
       state.add(newId);
-      renameOttyTab(newId, name);
+      // 新 pane 不代表独占 tab，保留创建时的 pane 标题。
       ottyLog(`[create] mode=first dir=right from=${agentId} new=${newId} name=${JSON.stringify(name)}`);
       return newId;
     }
@@ -438,7 +438,7 @@ export function createOttySurface(name: string): string {
     // split 源是 agent pane（不在状态机里），只需 add。
     if (!recovered) state.advance();
     state.add(newId);
-    renameOttyTab(newId, name);
+    // 新 pane 不代表独占 tab，保留创建时的 pane 标题。
     ottyLog(`[create] mode=next dir=${direction} from=${target} new=${newId} name=${JSON.stringify(name)}`);
     return newId;
   });
