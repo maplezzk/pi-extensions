@@ -1,0 +1,18 @@
+{
+  "presets": ["destructive-operations"],
+  "rules": [
+    {
+      "id": "filesystem.delete",
+      "action": "warn"
+    },
+    {
+      "id": "filesystem.ownership",
+      "enabled": false
+    },
+    {
+      "id": "example.command",
+      "action": "block",
+      "match": { "commands": ["example-command"] }
+    }
+  ]
+}
