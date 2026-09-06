@@ -88,9 +88,13 @@ export PI_SUBAGENT_HERDR_MODE=tab
 | `sendEscape(surface)` | Send one ESC keypress |
 | `readScreen(surface, lines?, options?)` / `readScreenAsync` | Read the last N screen lines. `options.source` (herdr-only) forwards a herdr read source such as `"recent_unwrapped"`; other backends ignore it |
 | `closeSurface(surface)` | Close the surface |
-| `renameSurface(surface, name)` / `renameCurrentTab(title)` / `renameAgent(surface, name)` / `renameWorkspace(title)` | Naming, degrading per backend capability |
+| `renameSurface(surface, name)` / `renameAgent(surface, name)` | Rename a known surface or agent label |
+| `getRenameCapability(operation, backend?, env?)` | Report the actual rename target or an explicit `unsupported` / `disabled` capability without executing a command |
+| `renameCurrentTab(title)` / `renameWorkspace(title)` | Rename and return a discriminated `renamed` / `unsupported` / `disabled` / `failed` result |
 | `pollForExit(surface, signal, opts)` | Wait for the process in a surface to exit: `.exit` sidecar file first, then a screen sentinel (`__SUBAGENT_DONE_<code>__`); headless uses child process exit |
 | `getLastSplitSource()` / `clearLastSplitSource()` | Source pane of the most recent split (for UI display) |
+
+Rename targets differ by backend: muxy/zellij tab rename targets a pane; tmux targets a window/session when its opt-in variables are enabled; WezTerm workspace rename targets the window; cmux and Herdr provide native workspace rename; Otty and Orca have no workspace rename. Headless reports `unsupported` instead of silently succeeding.
 
 ### Detection and utilities
 
@@ -134,3 +138,14 @@ These are opt-in capabilities — existing Bash callers and `pi-interactive-suba
 ## License
 
 MIT
+
+
+## Scoped naming
+
+`createSurfaceRenameContext(surface)` describes the terminal target a launcher can grant to a child. Pass its JSON value in `PI_TERMINAL_RENAME_CONTEXT`, replacing any inherited value on **every launch and resume**. This protocol is owned by terminal-mux, not by a naming or subagent extension.
+
+`resolveTerminalRenameTargets({ tab, workspace })` returns explicit target IDs and `surface`/`shared` scope, or individual skipped/failed results. `renameTerminalTarget(reference, title)` executes against that captured identity. Callers decide when to rename and which targets to request; the library does not generate titles or change Pi sessions.
+
+A restricted child never renames a workspace. cmux surfaces, muxy/zellij panes, and Herdr panes or explicitly created Herdr tabs can be granted. tmux/WezTerm/Otty/Orca split surfaces do not prove exclusive ownership of their window/tab: naming is skipped rather than expanded to the shared parent. Ordinary sessions require their own target IDs; missing IDs never fall back to focus or the first tab. Existing backend rename opt-ins still apply to ordinary sessions.
+
+Invalid JSON or an unknown protocol version is an error, not unrestricted access. Legacy child identity variables without this protocol restrict terminal naming until the launcher supplies ownership. This is a cooperation contract for trusted local processes, not a security sandbox. WezTerm/Otty split creation does not rename a shared tab.

@@ -72,3 +72,14 @@ zellij --session pi   # 然后运行 pi
 ## 许可证
 
 MIT
+
+
+## 与命名插件组合
+
+子代理插件不依赖 `pi-naming`。终端创建时在支持的范围内设置初始 surface 名称；不安排延迟覆盖标题，也不因 `/plan` 修改父终端名称。子代理身份与活动状态仍在 widget 中显示。
+
+每次启动（Pi 或 Claude）以及 Pi 恢复时，通过 `pi-terminal-mux` 写入新的 `PI_TERMINAL_RENAME_CONTEXT` 归属信息，覆盖继承值。配合命名插件时，只允许更新子代理明确拥有的终端目标，不修改共享 workspace。共享或无法确认独占的 window/tab 保持不变。
+
+如需在 Pi 子代理中使用自动标题或 `/rename`，将已安装的 `pi-naming` 入口显式加入 `subagentExtensions`。仅在父会话安装两个包不会开启隔离子会话的扩展。naming 通过相同的 mux 协议协作，不导入本包。
+
+发布时 terminal-mux 依赖版本必须包含归属 API。

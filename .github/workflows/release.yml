@@ -61,6 +61,7 @@ jobs:
           - dir: packages/pi-safety-guards
           - dir: packages/pi-nested-skills
           - dir: packages/pi-notifications
+          - dir: packages/pi-naming
     steps:
       - uses: actions/checkout@v4
 
