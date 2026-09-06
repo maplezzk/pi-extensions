@@ -11,9 +11,19 @@ Session metrics for the [Pi coding agent](https://github.com/earendil-works/pi):
 - When the agent fully settles (`agent_settled` — including auto-retries, compaction continuations, or Esc interruption), a final line shows the **total elapsed time from message send to stop** (`⏱ Total elapsed 18.9s`).
 - After each LLM turn, a notification reports TPS, TTFT, token counts, generation time, stalls, and blended cost when available.
 - Telemetry is persisted as `tps` custom session entries and restored after session resume or `/tree` navigation.
-- Metrics are exposed through session entries and notifications; this package does not register export slash commands.
+- Metrics are exposed through session entries and notifications. Use `/config:metrics enable|disable` to persist whether the metrics handlers are active, or pass the complete JSON configuration; `/config:metrics` without arguments opens an editor.
 
-## Migration from pi-tps
+## Configuration
+
+The configuration file is `<pi-agent-dir>/extensions/pi-metrics/config.json`:
+
+```json
+{
+  "enabled": true
+}
+```
+
+Use `/config:metrics enable` or `/config:metrics disable` to update it, and run `/reload` after manually editing the file. See [`config.example.json`](./config.example.json).
 
 The TPS implementation is maintained in this package. Remove the standalone `npm:@monotykamary/pi-tps` entry from Pi settings before enabling this package, otherwise both extensions will record duplicate `tps` entries and notifications.
 

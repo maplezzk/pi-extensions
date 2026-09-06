@@ -57,6 +57,8 @@ test("formats input and completion notifications through the lifecycle handlers"
       on(event: string, handler: RegisteredHandler["handler"]) {
         handlers.push({ event, handler });
       },
+      // 配置命令仅需在真实宿主中注册，生命周期测试使用空实现。
+      registerCommand() {},
     } as unknown as ExtensionAPI;
     piNotifications(pi);
 

@@ -58,5 +58,25 @@
   "moduleTimeout": {
     "zh-CN": "规则模块加载或匹配超时。",
     "en-US": "Rule module loading or matching timed out."
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置安全规则（参数为 JSON，省略参数时进入编辑）",
+    "en-US": "Configure safety rules (pass JSON, or omit it to edit interactively)"
+  },
+  "configCommandInput": {
+    "zh-CN": "输入完整的安全规则配置 JSON（输入 reset 恢复默认预设）",
+    "en-US": "Enter the complete safety configuration JSON (or reset to default presets)"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "无交互界面时请直接传入配置 JSON。",
+    "en-US": "Pass configuration JSON directly when no interactive UI is available."
+  },
+  "configCommandSaved": {
+    "zh-CN": "安全规则配置已保存：{path}。请执行 /reload 使配置生效。",
+    "en-US": "Safety configuration saved to {path}. Run /reload to apply it."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "安全规则配置无效：{error}",
+    "en-US": "Invalid safety configuration: {error}"
   }
 }

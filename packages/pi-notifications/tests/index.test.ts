@@ -14,6 +14,8 @@ test("registers lifecycle handlers and the public default export", () => {
     on(event: string, handler: (...args: any[]) => unknown) {
       handlers.push({ event, handler });
     },
+    // 配置命令仅需在真实宿主中注册，生命周期测试使用空实现。
+    registerCommand() {},
   } as unknown as ExtensionAPI;
 
   piNotifications(pi);

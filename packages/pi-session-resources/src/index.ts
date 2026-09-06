@@ -7,6 +7,7 @@ import {
 import { collectSessionResources, collectToolResources, ResourceIndex } from "./collector.ts";
 import { i18n } from "./i18n.ts";
 import { SessionResourceEditor } from "./picker.ts";
+import { configPath, loadConfig, saveConfig } from "./config.ts";
 
 const COMMAND_NAMES = ["config:session-resources", "session-resources"] as const;
 const COMMAND_ACTION = {
@@ -22,6 +23,12 @@ type CommandAction = (typeof COMMAND_ACTION)[keyof typeof COMMAND_ACTION];
 export default function sessionResourcesExtension(pi: ExtensionAPI): void {
   const resources = new ResourceIndex();
   let pickerEnabled = true;
+  let configError: unknown;
+  try {
+    pickerEnabled = loadConfig().enabled;
+  } catch (error) {
+    configError = error;
+  }
 
   /** Wraps the current editor so the resource picker renders directly above it. */
   function bindResourceEditor(ctx: ExtensionContext): void {
@@ -46,6 +53,12 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
   }
 
   pi.on("session_start", (_event, ctx) => {
+    if (configError !== undefined) {
+      ctx.ui.notify(i18n.t("configLoadFailed", {
+        path: configPath(),
+        error: configError instanceof Error ? configError.message : String(configError),
+      }), "warning");
+    }
     rebuildFromSession(ctx);
     bindResourceEditor(ctx);
   });
@@ -91,13 +104,23 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      pickerEnabled = action === COMMAND_ACTION.enable || action === COMMAND_ACTION.show;
-      ctx.ui.notify(i18n.t(pickerEnabled ? "enabled" : "disabled"), "info");
+      const enabled = action === COMMAND_ACTION.enable || action === COMMAND_ACTION.show;
+      try {
+        saveConfig({ enabled });
+        pickerEnabled = enabled;
+        ctx.ui.notify(i18n.t(pickerEnabled ? "enabled" : "disabled"), "info");
+      } catch (error) {
+        ctx.ui.notify(i18n.t("configSaveFailed", {
+          path: configPath(),
+          error: error instanceof Error ? error.message : String(error),
+        }), "error");
+      }
     },
   };
   for (const name of COMMAND_NAMES) pi.registerCommand(name, command);
 }
 
+export { configPath, loadConfig, parseConfig, saveConfig } from "./config.ts";
 export * from "./autocomplete.ts";
 export * from "./collector.ts";
 export * from "./picker.ts";

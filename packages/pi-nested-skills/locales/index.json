@@ -26,5 +26,25 @@
   "scanWarning": {
     "zh-CN": "扫描技能目录失败：{path}（{reason}）",
     "en-US": "Failed to scan skill path: {path} ({reason})"
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置嵌套技能根目录（参数为 JSON，省略参数时进入编辑）",
+    "en-US": "Configure nested skill roots (pass JSON, or omit it to edit interactively)"
+  },
+  "configCommandInput": {
+    "zh-CN": "输入技能根目录配置 JSON（输入 reset 恢复为 skills）",
+    "en-US": "Enter skill root configuration JSON (or reset to use skills)"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "无交互界面时请直接传入配置 JSON。",
+    "en-US": "Pass configuration JSON directly when no interactive UI is available."
+  },
+  "configCommandSaved": {
+    "zh-CN": "嵌套技能配置已保存：{path}。请执行 /reload 使配置生效。",
+    "en-US": "Nested skill configuration saved to {path}. Run /reload to apply it."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "嵌套技能配置无效：{error}",
+    "en-US": "Invalid nested skill configuration: {error}"
   }
 }

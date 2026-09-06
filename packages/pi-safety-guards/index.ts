@@ -1,6 +1,9 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 import { dirname } from "node:path";
-import { configPath, loadConfig } from "./src/config.ts";
+import { configPath, loadConfig, parseConfig, saveConfig } from "./src/config.ts";
 import { compileRules, evaluateRules, type ModuleLoader } from "./src/engine.ts";
 import { i18n } from "./src/i18n.ts";
 import type { SafetyConfig, SafetyRule } from "./src/types.ts";
@@ -8,9 +11,52 @@ import type { SafetyConfig, SafetyRule } from "./src/types.ts";
 const BASH_TOOL = "bash";
 const ERROR_LEVEL = "error";
 const INFO_LEVEL = "info";
+const WARN_LEVEL = "warning";
 const BLOCK_ACTION = "block";
 const CONFIRM_ACTION = "confirm";
 const WARN_ACTION = "warn";
+const CONFIG_COMMAND_ALIASES = ["config:safety-guards", "safety-guards-config", "pi-safety-guards-config"] as const;
+const CONFIG_RESET_COMMAND = "reset";
+
+/** 注册配置命令，允许通过 JSON 参数或交互式输入持久化安全规则。 */
+function registerConfigCommand(pi: ExtensionAPI): void {
+  const command = {
+    description: i18n.t("configCommandDescription"),
+    getArgumentCompletions: () => null,
+    handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+      let value = args.trim();
+      if (!value) {
+        if (!ctx.hasUI) {
+          ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), WARN_LEVEL);
+          return;
+        }
+        let current: SafetyConfig;
+        try {
+          current = loadConfig();
+        } catch (error) {
+          ctx.ui.notify(i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }), ERROR_LEVEL);
+          return;
+        }
+        const input = await ctx.ui.input(i18n.t("configCommandInput"), JSON.stringify(current));
+        if (input === undefined) return;
+        value = input.trim();
+      }
+
+      try {
+        const config = value === CONFIG_RESET_COMMAND ? parseConfig({}) : parseConfig(JSON.parse(value));
+        const path = saveConfig(config);
+        ctx.ui.notify(i18n.t("configCommandSaved", { path }), INFO_LEVEL);
+      } catch (error) {
+        ctx.ui.notify(i18n.t("configCommandInvalid", {
+          error: error instanceof Error ? error.message : String(error),
+        }), ERROR_LEVEL);
+      }
+    },
+  };
+  for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
+}
 
 /** 将规则 ID 和用户选择的说明一起展示，不自动执行替代命令。 */
 function describeRule(rule: SafetyRule): string {
@@ -64,6 +110,7 @@ export async function registerSafetyGuards(
 
 /** 配置或启用规则加载失败时阻断 Bash，避免把失败当作关闭保护。 */
 export default async function piSafetyGuards(pi: ExtensionAPI): Promise<void> {
+  registerConfigCommand(pi);
   try {
     await registerSafetyGuards(pi, loadConfig());
   } catch (error) {
@@ -75,5 +122,6 @@ export default async function piSafetyGuards(pi: ExtensionAPI): Promise<void> {
   }
 }
 
+export { configPath, loadConfig, parseConfig, saveConfig } from "./src/config.ts";
 export type { RuleContext, RuleMatcher } from "./src/types.ts";
 export { findOutOfScopeBashPaths } from "./src/bash-directory-scope-utils.ts";

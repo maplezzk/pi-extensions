@@ -7,6 +7,14 @@
     "zh-CN": "用法：/config:session-resources [enable|disable]",
     "en-US": "Usage: /config:session-resources [enable|disable]"
   },
+  "configLoadFailed": {
+    "zh-CN": "会话资源配置读取失败：{path}（{error}）。当前使用启用状态。",
+    "en-US": "Failed to read session resource configuration: {path} ({error}). The picker remains enabled."
+  },
+  "configSaveFailed": {
+    "zh-CN": "会话资源配置保存失败：{path}（{error}）。",
+    "en-US": "Failed to save session resource configuration: {path} ({error})."
+  },
   "referenceHint": {
     "zh-CN": "在输入框键入 # 并继续输入即可筛选会话资源；←/→ 或 Tab/Shift+Tab 切换类型，↑/↓ 选择，Enter 插入引用",
     "en-US": "Type # in the editor and continue typing to filter session resources; Left/Right or Tab/Shift+Tab switch types, Up/Down selects, and Enter inserts the reference"

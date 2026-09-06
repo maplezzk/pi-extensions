@@ -1,5 +1,6 @@
 import type {
   ExtensionAPI,
+  ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { basename } from "node:path";
@@ -9,7 +10,7 @@ import {
   type NotificationFailure,
   type NotificationPayload,
 } from "./adapter.ts";
-import { loadConfigWithDiagnostics, type NotificationConfig } from "./config.ts";
+import { loadConfigWithDiagnostics, parseConfig, saveConfig, type NotificationConfig } from "./config.ts";
 import { i18n } from "./i18n.ts";
 
 export type { NotificationConfig } from "./config.ts";
@@ -29,7 +30,7 @@ export {
   renderNotificationArgs,
   runArgvCommand,
 } from "./adapter.ts";
-export { configPath, loadConfig, loadConfigWithDiagnostics } from "./config.ts";
+export { configPath, loadConfig, loadConfigWithDiagnostics, parseConfig, saveConfig } from "./config.ts";
 
 interface Notice {
   level: "warning";
@@ -43,9 +44,47 @@ interface NotificationRuntime {
   context?: ExtensionContext;
 }
 
+const CONFIG_COMMAND_ALIASES = ["config:notifications", "notifications-config", "pi-notifications-config"] as const;
+const CONFIG_RESET_COMMAND = "reset";
+const NOTICE_WARNING = "warning" as const;
+const NOTICE_INFO = "info" as const;
+const NOTICE_ERROR = "error" as const;
+
 const pendingNotices: Notice[] = [];
 let activeRuntime: NotificationRuntime | undefined;
 let noticeKeys = new Set<string>();
+
+/** 注册配置命令，允许通过 JSON 参数或交互式输入持久化通知配置。 */
+function registerConfigCommand(pi: ExtensionAPI): void {
+  const command = {
+    description: i18n.t("configCommandDescription"),
+    getArgumentCompletions: () => null,
+    handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+      let value = args.trim();
+      if (!value) {
+        if (!ctx.hasUI) {
+          ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+          return;
+        }
+        const current = loadConfigWithDiagnostics().config;
+        const input = await ctx.ui.input(i18n.t("configCommandInput"), JSON.stringify(current));
+        if (input === undefined) return;
+        value = input.trim();
+      }
+
+      try {
+        const config = value === CONFIG_RESET_COMMAND ? parseConfig({}) : parseConfig(JSON.parse(value));
+        const path = saveConfig(config);
+        ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+      } catch (error) {
+        ctx.ui.notify(i18n.t("configCommandInvalid", {
+          error: error instanceof Error ? error.message : String(error),
+        }), NOTICE_ERROR);
+      }
+    },
+  };
+  for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
+}
 
 /** 导出给其他扩展使用；通知发送在后台执行，不阻塞当前 Pi 事件。 */
 export function notify(title: string, subtitle: string, message: string): void {
@@ -55,6 +94,7 @@ export function notify(title: string, subtitle: string, message: string): void {
 }
 
 export default function piNotifications(pi: ExtensionAPI): void {
+  registerConfigCommand(pi);
   const runtime = createRuntime();
   let turnCount = 0;
   let taskStartTime = 0;

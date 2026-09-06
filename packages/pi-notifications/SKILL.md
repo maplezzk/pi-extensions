@@ -18,6 +18,10 @@ description: 配置与排查 pi-notifications 的外部通知命令、argv 参�
 
 修改配置后执行 `/reload`。配置文件损坏会明确提示，并使用默认配置继续启动。
 
+使用 `/config:notifications` 修改完整通知配置；可以直接传入 JSON，省略参数时进入交互编辑，输入 `reset` 恢复默认值。保存后执行 `/reload`。
+
+Use `/config:notifications` to edit the complete notification configuration; pass JSON directly or omit the argument for interactive editing, and use `reset` for defaults. Run `/reload` after saving.
+
 ## 运行行为
 
 - `ask_user_question` 和 `ask_user` 在真正等待输入前发送通知。
