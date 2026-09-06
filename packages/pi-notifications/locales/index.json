@@ -42,5 +42,25 @@
   "configInvalid": {
     "zh-CN": "通知配置读取失败：{path}（{reason}）。已使用默认配置。",
     "en-US": "Failed to read notification config: {path} ({reason}). Default configuration is being used."
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置系统通知（参数为 JSON，省略参数时进入编辑）",
+    "en-US": "Configure system notifications (pass JSON, or omit it to edit interactively)"
+  },
+  "configCommandInput": {
+    "zh-CN": "输入完整的通知配置 JSON（输入 reset 恢复默认值）",
+    "en-US": "Enter the complete notification configuration JSON (or reset for defaults)"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "无交互界面时请直接传入配置 JSON。",
+    "en-US": "Pass configuration JSON directly when no interactive UI is available."
+  },
+  "configCommandSaved": {
+    "zh-CN": "通知配置已保存：{path}。请执行 /reload 使配置生效。",
+    "en-US": "Notification configuration saved to {path}. Run /reload to apply it."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "通知配置无效：{error}",
+    "en-US": "Invalid notification configuration: {error}"
   }
 }

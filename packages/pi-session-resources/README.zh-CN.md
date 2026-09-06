@@ -49,7 +49,15 @@
 /config:session-resources disable     禁用 # 资源选择器
 ```
 
-`show`/`hide` 分别兼容 `enable`/`disable`，`/session-resources` 继续作为命令别名保留。
+`show`/`hide` 分别兼容 `enable`/`disable`，`/session-resources` 继续作为命令别名保留。配置保存在 `<Pi agent 目录>/extensions/pi-session-resources/config.json`，可参考 [`config.example.json`](./config.example.json)：
+
+```json
+{
+  "enabled": true
+}
+```
+
+使用 `/config:session-resources enable|disable` 会写入配置文件；手动修改文件后执行 `/reload`。
 
 ## 安装
 

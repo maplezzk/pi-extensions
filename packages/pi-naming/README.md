@@ -14,6 +14,7 @@ Available through npm after publication. Run `/reload` after installation or con
 
 - **Automatic naming**: the first real user input in a new, unnamed session generates a title in the background and applies it to the allowed session, workspace and tab targets.
 - **`/rename [name]`**: supply an explicit name, or omit it to generate one from user messages on the current branch. Uses the same targets and execution path as automatic naming.
+- **`/config:naming`**: edit the complete JSON configuration interactively, or pass JSON directly; use `reset` to restore defaults.
 - Manual generation considers all user input on the current branch and names the main task. Explicit later corrections or goal changes take precedence; procedural follow-ups such as “continue”, “verify”, or “commit” should not overshadow the topic. Other branches, assistant replies and tool output are excluded. Automatic naming still attempts only once on the first input, not after every turn.
 - Automatic results do not overwrite an existing name. Manual commands supersede pending requests; session switches and reloads discard old results and errors.
 - Each target is independent. Unsupported, disabled, unidentified or failed terminal targets are reported without preventing session naming or other target updates. Non-UI modes receive Pi messages instead of silent failures.
@@ -63,7 +64,7 @@ For longer English titles use `maxLength: 60`, `preferredLength: 40`, `language:
 - tmux/WezTerm/Otty/Orca splits do not prove exclusive window/tab ownership. Unverified targets are skipped with an explanation rather than expanding the operation's scope.
 - With `pi-interactive-subagents`, explicitly include this package's entrypoint in `subagentExtensions`. Installing it in the parent does not bypass child extension isolation.
 
-Ordinary sessions still respect mux backend opt-ins: `PI_SUBAGENT_RENAME_TMUX_WINDOW=1`, `PI_SUBAGENT_RENAME_TMUX_SESSION=1`, `PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1`. Missing target IDs never fall back to current focus or the first tab. Actual targets can be panes, tabs, windows, workspaces or sessions and are reported in results.
+Ordinary sessions use the configured terminal-mux defaults. The following terminal-mux variables remain only as compatibility inputs for older launchers: `PI_SUBAGENT_RENAME_TMUX_WINDOW=1`, `PI_SUBAGENT_RENAME_TMUX_SESSION=1`, `PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1`. Missing target IDs never fall back to current focus or the first tab. Actual targets can be panes, tabs, windows, workspaces or sessions and are reported in results.
 
 Before publication, align the terminal-mux dependency minimum with a published version providing the target ownership API.
 

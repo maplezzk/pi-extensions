@@ -49,7 +49,15 @@ Candidate labels are OSC 8 hyperlinks. Pi fullscreen mode can open them with a c
 /config:session-resources disable     Disable the # resource picker
 ```
 
-`show`/`hide` remain compatibility aliases for `enable`/`disable`, and `/session-resources` remains available as a command alias.
+`show`/`hide` remain compatibility aliases for `enable`/`disable`, and `/session-resources` remains available as a command alias. The setting is stored in `<pi-agent-dir>/extensions/pi-session-resources/config.json`; use [`config.example.json`](./config.example.json) as a starting point:
+
+```json
+{
+  "enabled": true
+}
+```
+
+Use `/config:session-resources enable` or `/config:session-resources disable` to change and persist it. Run `/reload` after changing the file manually.
 
 ## Install
 

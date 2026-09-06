@@ -50,6 +50,8 @@ Replace `example-command` with the command to match. See also [config.example.js
 - `message`: optional non-empty text or an object containing `zh-CN` and `en-US`. If omitted, feedback shows the rule ID and action.
 - Empty presets and rules disable checking and report that no protection is active.
 
+Use `/config:safety-guards` to edit the complete JSON configuration (or pass JSON directly), and run `/reload` after saving.
+
 ### Actions
 
 | Action | Behavior |

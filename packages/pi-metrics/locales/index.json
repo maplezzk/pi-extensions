@@ -38,5 +38,29 @@
   "tpsRate": {
     "zh-CN": "${value}/M",
     "en-US": "${value}/M"
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置指标显示（enable、disable 或 JSON）",
+    "en-US": "Configure metrics display (enable, disable, or JSON)"
+  },
+  "configCommandInput": {
+    "zh-CN": "输入 pi-metrics 配置 JSON（输入 reset 恢复默认值）",
+    "en-US": "Enter pi-metrics configuration JSON (or reset for defaults)"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "无交互界面时请直接传入 enable、disable 或配置 JSON。",
+    "en-US": "Pass enable, disable, or configuration JSON when no interactive UI is available."
+  },
+  "configCommandSaved": {
+    "zh-CN": "指标配置已保存：{path}。请执行 /reload 使配置生效。",
+    "en-US": "Metrics configuration saved to {path}. Run /reload to apply it."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "指标配置无效：{error}",
+    "en-US": "Invalid metrics configuration: {error}"
+  },
+  "configLoadFailed": {
+    "zh-CN": "指标配置读取失败：{path}（{error}）。当前继续启用指标。",
+    "en-US": "Failed to read metrics configuration: {path} ({error}). Metrics remain enabled."
   }
 }

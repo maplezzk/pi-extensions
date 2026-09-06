@@ -15,7 +15,11 @@ function host(hasUI = true, accepted = true) {
   const handlers = new Map<string, Handler>();
   const prompts: string[] = [];
   const notices: string[] = [];
-  const pi = { on: (name: string, handler: Handler) => handlers.set(name, handler) } as unknown as ExtensionAPI;
+  const pi = {
+    on: (name: string, handler: Handler) => handlers.set(name, handler),
+    // 配置命令仅需在真实宿主中注册，安全规则测试使用空实现。
+    registerCommand: () => undefined,
+  } as unknown as ExtensionAPI;
   const ctx = {
     cwd: tmpdir(), hasUI,
     ui: {

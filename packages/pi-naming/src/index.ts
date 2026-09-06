@@ -1,10 +1,12 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TerminalRenameOutcome, TerminalRenameTarget, ResolveRenameOptions } from "pi-terminal-mux";
-import { loadConfig, type NamingConfig } from "./config.ts";
+import { configPath, loadConfig, parseConfig, saveConfig, type NamingConfig } from "./config.ts";
 import { i18n } from "./i18n.ts";
 import { getCurrentSessionUserMessages, requestSessionNameWithTimeout, type SessionNameRequester } from "./session-name.ts";
 
 const RENAME_COMMAND = "rename";
+const CONFIG_COMMAND_ALIASES = ["config:naming", "naming-config", "pi-naming-config"] as const;
+const CONFIG_RESET_COMMAND = "reset";
 const MESSAGE_TYPE = "pi-naming";
 
 export interface TerminalNamingAdapter {
@@ -28,6 +30,54 @@ function report(pi: ExtensionAPI, ctx: ExtensionContext, notice: { message: stri
   const { message, level } = notice;
   if (ctx.hasUI) ctx.ui.notify(message, level);
   else pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true }, { triggerTurn: false });
+}
+
+/** 注册配置命令，允许通过 JSON 参数或交互式输入持久化命名配置。 */
+function registerNamingConfigCommand(pi: ExtensionAPI): void {
+  const command = {
+    description: i18n.t("configCommandDescription"),
+    getArgumentCompletions: () => null,
+    handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+      let value = args.trim();
+      if (!value) {
+        if (!ctx.hasUI) {
+          report(pi, ctx, { message: i18n.t("configCommandInteractiveOnly"), level: "warning" });
+          return;
+        }
+        let current: NamingConfig;
+        try {
+          current = loadConfig();
+        } catch (error) {
+          report(pi, ctx, {
+            message: i18n.t("configCommandInvalid", { error: errorMessage(error) }),
+            level: "error",
+          });
+          return;
+        }
+        const input = await ctx.ui.input(
+          i18n.t("configCommandInput"),
+          JSON.stringify(current),
+        );
+        if (input === undefined) return;
+        value = input.trim();
+      }
+
+      try {
+        const config = value === CONFIG_RESET_COMMAND ? parseConfig({}) : parseConfig(JSON.parse(value));
+        saveConfig(config);
+        report(pi, ctx, {
+          message: i18n.t("configCommandSaved", { path: configPath() }),
+          level: "info",
+        });
+      } catch (error) {
+        report(pi, ctx, {
+          message: i18n.t("configCommandInvalid", { error: errorMessage(error) }),
+          level: "error",
+        });
+      }
+    },
+  };
+  for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
 }
 
 /** 按配置组合统一的自动/手动入口，可注入模型和终端替身做组合测试。 */
@@ -139,6 +189,7 @@ export async function registerNaming(
 
 /** 配置错误在 session_start 报告，不注册不完整的命名功能。 */
 export default async function namingExtension(pi: ExtensionAPI): Promise<void> {
+  registerNamingConfigCommand(pi);
   let config: NamingConfig;
   try { config = loadConfig(); }
   catch (error) {

@@ -14,6 +14,7 @@ pi install npm:pi-naming
 
 - **首条消息自动命名**：新建且未命名的 session 收到首条真实用户输入后，后台生成标题，同步允许修改的 session、workspace 和 tab。
 - **`/rename [名称]`**：显式指定名称，或省略名称、根据当前分支用户消息生成标题。与自动命名使用相同的目标配置和执行逻辑。
+- **`/config:naming`**：交互编辑完整 JSON 配置，也可以直接传入 JSON；输入 `reset` 恢复默认值。
 - 手动生成时综合当前分支的全部用户输入，围绕主要任务命名；后续明确纠正或目标变更优先，“继续”“验证一下”“提交”等流程性跟进不应盖过主题。不会读取其他分支、assistant 回复或工具输出。自动命名仍仅在首条输入时尝试一次，不随每轮对话更新。
 - 不覆盖已有名称的自动命名结果。手动命令优先于尚未完成的旧请求；会话切换或 reload 后丢弃旧结果和错误。
 - 各目标独立执行。终端不支持、被禁用、缺少归属信息或改名失败均明确报告，不阻止 session 和其他可用目标改名。无交互 UI 时通过 Pi 消息报告。
@@ -63,7 +64,7 @@ pi install npm:pi-naming
 - tmux/WezTerm/Otty/Orca 分屏不代表独占 window/tab，归属无法确认时跳过并说明原因，不扩大操作范围。
 - 使用 `pi-interactive-subagents` 时，需在它的 `subagentExtensions` 中显式加载本包入口；仅在主会话安装本包不会绕过子代理的扩展隔离设置。
 
-普通会话仍遵守 mux 后端的显式开关：`PI_SUBAGENT_RENAME_TMUX_WINDOW=1`、`PI_SUBAGENT_RENAME_TMUX_SESSION=1`、`PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1`。终端目标缺少 ID 时不会使用当前焦点或第一个 tab 代替。实际目标可能是 pane、tab、window、workspace 或 session，结果中会说明。
+普通会话使用配置文件中的 mux 默认值。以下终端变量仅作为旧版启动器的兼容输入保留：`PI_SUBAGENT_RENAME_TMUX_WINDOW=1`、`PI_SUBAGENT_RENAME_TMUX_SESSION=1`、`PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1`。终端目标缺少 ID 时不会使用当前焦点或第一个 tab 代替。实际目标可能是 pane、tab、window、workspace 或 session，结果中会说明。
 
 发布前，terminal-mux 依赖下限必须对齐实际提供目标归属 API 的已发布版本。
 
