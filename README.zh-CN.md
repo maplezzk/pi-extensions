@@ -13,6 +13,7 @@
 
 | 包 | 说明 | 文档 |
 | --- | --- | --- |
+| [`pi-naming`](./packages/pi-naming) | 可独立启用的会话自动命名和 workspace/tab 手动改名。 | [English](./packages/pi-naming/README.md) · [中文](./packages/pi-naming/README.zh-CN.md) |
 | [`pi-distill`](./packages/pi-distill) | 在所有已启用 object-schema 工具的超长输出占满上下文前进行提炼。 | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配规则在工具执行前后进行审查，并对 `edit`、`write` 使用真实 diff。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
 | [`pi-metrics`](./packages/pi-metrics) | 在 working spinner 实时显示会话全程耗时，并给出每轮耗时与总耗时小结。 | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |
