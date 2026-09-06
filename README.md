@@ -13,6 +13,7 @@ Each package is independently installable and keeps its detailed behavior, confi
 
 | Package | Description | Documentation |
 | --- | --- | --- |
+| [`pi-safety-guards`](./packages/pi-safety-guards) | Configurable Bash safety presets, rule actions and custom matchers. | [English](./packages/pi-safety-guards/README.md) · [中文](./packages/pi-safety-guards/README.zh-CN.md) |
 | [`pi-nested-skills`](./packages/pi-nested-skills) | Nested skill discovery, aliases and completion from configured roots. | [English](./packages/pi-nested-skills/README.md) · [中文](./packages/pi-nested-skills/README.zh-CN.md) |
 | [`pi-distill`](./packages/pi-distill) | Compacts verbose output from every active object-schema tool before it consumes the context window. | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | Reviews selected tools before or after execution against matching rules, with diff-aware handling for `edit` and `write`. | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |

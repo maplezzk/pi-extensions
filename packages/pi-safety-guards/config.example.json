@@ -1,0 +1,6 @@
+{
+  "presets": [
+    "destructive-operations"
+  ],
+  "rules": []
+}

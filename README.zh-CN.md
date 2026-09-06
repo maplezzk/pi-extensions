@@ -13,6 +13,7 @@
 
 | 包 | 说明 | 文档 |
 | --- | --- | --- |
+| [`pi-safety-guards`](./packages/pi-safety-guards) | 可选择的 Bash 安全预设、规则动作与自定义匹配器。 | [English](./packages/pi-safety-guards/README.md) · [中文](./packages/pi-safety-guards/README.zh-CN.md) |
 | [`pi-nested-skills`](./packages/pi-nested-skills) | 从配置目录发现嵌套技能，提供别名调用和补全。 | [English](./packages/pi-nested-skills/README.md) · [中文](./packages/pi-nested-skills/README.zh-CN.md) |
 | [`pi-distill`](./packages/pi-distill) | 在所有已启用 object-schema 工具的超长输出占满上下文前进行提炼。 | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配规则在工具执行前后进行审查，并对 `edit`、`write` 使用真实 diff。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
