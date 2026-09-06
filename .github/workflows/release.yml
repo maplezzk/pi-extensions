@@ -60,6 +60,7 @@ jobs:
           - dir: packages/pi-interactive-subagents
           - dir: packages/pi-safety-guards
           - dir: packages/pi-nested-skills
+          - dir: packages/pi-notifications
     steps:
       - uses: actions/checkout@v4
 
