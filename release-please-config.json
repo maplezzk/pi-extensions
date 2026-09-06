@@ -17,6 +17,7 @@
     "packages/pi-session-resources": {},
     "packages/pi-dynamic-workflows": {},
     "packages/pi-interactive-subagents": {},
-    "packages/pi-safety-guards": {}
+    "packages/pi-safety-guards": {},
+    "packages/pi-nested-skills": {}
   }
 }
