@@ -82,15 +82,21 @@ test("formats input and completion notifications through the lifecycle handlers"
       messages: [{ role: "tool", isError: true }],
     }, context);
 
-    for (let attempt = 0; attempt < 20 && !existsSync(outputPath); attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    // 两个通知进程独立完成，文件出现不代表两条记录都已写入。
+    const notificationWaitTimeoutMs = 5_000;
+    const notificationPollIntervalMs = 10;
+    const expectedNotificationCount = 2;
+    let lines: string[] = [];
+    const deadline = Date.now() + notificationWaitTimeoutMs;
+    while (Date.now() < deadline) {
+      if (existsSync(outputPath)) {
+        lines = readFileSync(outputPath, "utf8").split("\n").slice(0, -1);
+        if (lines.length >= expectedNotificationCount) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, notificationPollIntervalMs));
     }
-    const records = readFileSync(outputPath, "utf8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as Record<string, string>);
-
-    assert.equal(records.length, 2);
+    assert.equal(lines.length, expectedNotificationCount, "Timed out waiting for both notification records");
+    const records = lines.map((line) => JSON.parse(line) as Record<string, string>);
     const inputRecord = records.find((record) => record.title?.endsWith("💬"));
     const completionRecord = records.find((record) => !record.title?.endsWith("💬"));
     assert.ok(inputRecord);

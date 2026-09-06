@@ -28,6 +28,8 @@ Each package owns its entrypoint, tests, configuration example, localization res
 
 ## Package boundaries
 
+- `pi-safety-guards` is independently installable; see `packages/pi-safety-guards/README.md` for its configuration, behavior, and tests.
+- `pi-nested-skills` is independently installable; see `packages/pi-nested-skills/README.md` for its configuration, behavior, and tests.
 - `pi-notifications` is independently installable; see `packages/pi-notifications/README.md` for its configuration, behavior, and tests.
 
 - `pi-distill` discovers active tools with object parameter schemas and observes their results through Pi's native `tool_call` and `tool_result` events. It does not register duplicate tools.

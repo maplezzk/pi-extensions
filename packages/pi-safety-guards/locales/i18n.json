@@ -1,0 +1,62 @@
+{
+  "configInvalidField": {
+    "zh-CN": "安全规则配置字段无效：{field}",
+    "en-US": "Invalid safety rule configuration field: {field}"
+  },
+  "configLoadFailed": {
+    "zh-CN": "安全规则加载失败，Bash 已阻断。请修复配置并 /reload：{error}",
+    "en-US": "Safety rules failed to load; Bash is blocked. Fix the configuration and /reload: {error}"
+  },
+  "noRules": {
+    "zh-CN": "尚未启用任何安全规则，本插件不会阻断操作。",
+    "en-US": "No safety rules are enabled; this extension will not block operations."
+  },
+  "ruleMatched": {
+    "zh-CN": "命中规则 [{id}]",
+    "en-US": "Matched rule [{id}]"
+  },
+  "blocked": {
+    "zh-CN": "安全规则已阻断操作：\n{details}",
+    "en-US": "Safety rules blocked the operation:\n{details}"
+  },
+  "confirmTitle": {
+    "zh-CN": "确认执行命中的危险操作？",
+    "en-US": "Confirm the matched dangerous operation?"
+  },
+  "confirmBody": {
+    "zh-CN": "{details}\n\n命令：\n{command}",
+    "en-US": "{details}\n\nCommand:\n{command}"
+  },
+  "confirmationUnavailable": {
+    "zh-CN": "此操作需要用户确认，但当前模式无法交互，已阻断：\n{details}",
+    "en-US": "User confirmation is required but this mode cannot prompt; operation blocked:\n{details}"
+  },
+  "confirmationRejected": {
+    "zh-CN": "用户未确认，操作已阻断：\n{details}",
+    "en-US": "The user did not confirm; operation blocked:\n{details}"
+  },
+  "warning": {
+    "zh-CN": "安全规则提醒（本规则不阻断操作）：\n{details}",
+    "en-US": "Safety rule warning (operation was not blocked by this rule):\n{details}"
+  },
+  "shellParseBlocked": {
+    "zh-CN": "无法完整解析 Bash 命令，已阻止执行。",
+    "en-US": "The Bash command could not be parsed completely and was blocked."
+  },
+  "ruleFailed": {
+    "zh-CN": "安全规则 [{id}] 执行失败，已阻止操作：{error}",
+    "en-US": "Safety rule [{id}] failed; operation blocked: {error}"
+  },
+  "moduleMustExportMatcher": {
+    "zh-CN": "规则模块必须默认导出匹配函数。",
+    "en-US": "A rule module must default-export a matcher function."
+  },
+  "matcherMustReturnBoolean": {
+    "zh-CN": "规则匹配函数必须返回布尔值。",
+    "en-US": "A rule matcher must return a boolean."
+  },
+  "moduleTimeout": {
+    "zh-CN": "规则模块加载或匹配超时。",
+    "en-US": "Rule module loading or matching timed out."
+  }
+}
