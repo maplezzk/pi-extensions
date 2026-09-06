@@ -1,23 +1,31 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findDangerRule } from "../src/danger-utils.ts";
+import { tmpdir } from "node:os";
+import { parseConfig } from "../src/config.ts";
+import { compileRules, evaluateRules } from "../src/engine.ts";
 
-/** 返回命令首个匹配的危险规则标签，无匹配时返回 undefined。 */
-function matchedLabel(command: string): string | undefined {
-  return findDangerRule(command)?.label;
+const configured = compileRules(parseConfig({ rules: [
+  { id: "shell.in-place", action: "block", match: { detector: "in-place-edit" } },
+  { id: "paths.home", action: "block", match: { detector: "home-root" } },
+  { id: "paths.root-search", action: "block", match: { detector: "root-search" } },
+] }), tmpdir());
+
+/** 从显式选择的规则中读取首个命中 ID。 */
+async function matchedLabel(command: string): Promise<string | undefined> {
+  return (await evaluateRules(await configured, command, tmpdir()))?.matches[0]?.id;
 }
 
-/** 断言命令匹配指定危险规则。 */
-function assertMatches(command: string, expectedLabel: string): void {
-  assert.equal(matchedLabel(command), expectedLabel, command);
+/** 断言既有 AST 检测范围未因策略分离而丢失。 */
+async function assertMatches(command: string, expectedLabel: string): Promise<void> {
+  assert.equal(await matchedLabel(command), expectedLabel, command);
 }
 
-/** 断言命令未匹配任何危险规则。 */
-function assertAllowed(command: string): void {
-  assert.equal(matchedLabel(command), undefined, command);
+/** 普通文本和查询不能被当成真实执行。 */
+async function assertAllowed(command: string): Promise<void> {
+  assert.equal(await matchedLabel(command), undefined, command);
 }
 
-test("按真实命令节点识别 rm/rmdir，放行普通参数和子命令", () => {
+test("按真实命令节点识别 rm/rmdir，放行普通参数和子命令", async () => {
   for (const command of [
     "rm -rf /tmp/example",
     "sudo -u root rm -rf /tmp/example",
@@ -29,9 +37,9 @@ test("按真实命令节点识别 rm/rmdir，放行普通参数和子命令", ()
     "env -S 'rm /tmp/example'",
     "command -- rm /tmp/example",
   ]) {
-    assertMatches(command, "rm（删除文件/目录）");
+    await assertMatches(command, "filesystem.delete");
   }
-  assertMatches("rmdir /tmp/empty", "rmdir（删除空目录）");
+  await assertMatches("rmdir /tmp/empty", "filesystem.delete");
 
   for (const command of [
     "git rm tracked.txt",
@@ -47,23 +55,23 @@ test("按真实命令节点识别 rm/rmdir，放行普通参数和子命令", ()
     "command --help rm",
     "bash cleanup.sh -c 'rm /tmp/example'",
   ]) {
-    assertAllowed(command);
+    await assertAllowed(command);
   }
 });
 
-test("识别 chown、mkfs 和 fork bomb，保留 chmod/dd 放行策略", () => {
-  assertMatches("chown root:root file", "chown（修改所有者）");
-  assertMatches("env OWNER=root chown root file", "chown（修改所有者）");
-  assertMatches("mkfs.ext4 /dev/sdb1", "mkfs（格式化磁盘）");
-  assertMatches("/sbin/mkfs.xfs /dev/sdb1", "mkfs（格式化磁盘）");
-  assertMatches(":(){ :|:& };:", "Fork 炸弹");
+test("识别 chown、mkfs 和 fork bomb，不宣称覆盖 chmod/dd", async () => {
+  await assertMatches("chown root:root file", "filesystem.ownership");
+  await assertMatches("env OWNER=root chown root file", "filesystem.ownership");
+  await assertMatches("mkfs.ext4 /dev/sdb1", "filesystem.format");
+  await assertMatches("/sbin/mkfs.xfs /dev/sdb1", "filesystem.format");
+  await assertMatches(":(){ :|:& };:", "shell.fork-bomb");
 
-  assertAllowed("echo ':(){ :|:& };:'");
-  assertAllowed("chmod 755 script.sh");
-  assertAllowed("dd if=/dev/zero of=/tmp/out");
+  await assertAllowed("echo ':(){ :|:& };:'");
+  await assertAllowed("chmod 755 script.sh");
+  await assertAllowed("dd if=/dev/zero of=/tmp/out");
 });
 
-test("仅阻断实际执行的 sed 原地修改", () => {
+test("显式选择的检测器匹配 sed 原地修改", async () => {
   for (const command of [
     "sed -i 's/a/b/' file.txt",
     "sed -i.bak 's/a/b/' file.txt",
@@ -72,7 +80,7 @@ test("仅阻断实际执行的 sed 原地修改", () => {
     "sudo sed --in-place=.bak 's/a/b/' file.txt",
     "bash -c \"sed -i 's/a/b/' file.txt\"",
   ]) {
-    assertMatches(command, "sed -i（原地修改文件）");
+    await assertMatches(command, "shell.in-place");
   }
 
   for (const command of [
@@ -80,13 +88,13 @@ test("仅阻断实际执行的 sed 原地修改", () => {
     "printf '%s\\n' 'sed -i is an example'",
     "git commit -m 'document sed -i usage'",
   ]) {
-    assertAllowed(command);
+    await assertAllowed(command);
   }
 });
 
-test("区分未引用的 HOME 根目录与引号中的字面量", () => {
+test("区分未引用的 HOME 根目录与引号中的字面量", async () => {
   for (const command of ["ls ~", "find ~ -name '*.ts'", "cd ~", "tree ~"]) {
-    assertMatches(command, "直接搜索 ~ 目录");
+    await assertMatches(command, "paths.home");
   }
 
   for (const command of [
@@ -95,18 +103,18 @@ test("区分未引用的 HOME 根目录与引号中的字面量", () => {
     "echo '~'",
     "echo \"~\"",
   ]) {
-    assertAllowed(command);
+    await assertAllowed(command);
   }
 });
 
-test("仅在 find 的真实参数为根目录时阻断全盘搜索", () => {
+test("显式选择的检测器只匹配 find 的根目录参数", async () => {
   for (const command of [
     "find /",
     "sudo find / -maxdepth 1",
     "bash -c \"find / -name '*.ts'\"",
     "find '/' -type f",
   ]) {
-    assertMatches(command, "find /（全盘搜索）");
+    await assertMatches(command, "paths.root-search");
   }
 
   for (const command of [
@@ -115,6 +123,6 @@ test("仅在 find 的真实参数为根目录时阻断全盘搜索", () => {
     "grep 'find /' README.md",
     "printf '%s\\n' 'find / is too broad'",
   ]) {
-    assertAllowed(command);
+    await assertAllowed(command);
   }
 });

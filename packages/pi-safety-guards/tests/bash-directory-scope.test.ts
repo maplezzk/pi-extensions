@@ -1,19 +1,11 @@
 import assert from "node:assert/strict";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import bashDirectoryScope from "../src/bash-directory-scope.ts";
 import {
-  addedDirectoryPathsFromBranch,
   findOutOfScopeBashPaths,
 } from "../src/bash-directory-scope-utils.ts";
-import {
-  i18n,
-  SHELL_PARSE_BLOCKED_MESSAGE_KEY,
-} from "../src/i18n.ts";
-
 const fixtureRoot = mkdtempSync(join(homedir(), ".pi-bash-scope-"));
 const currentDir = join(fixtureRoot, "current");
 const addedDir = join(fixtureRoot, "added");
@@ -36,7 +28,7 @@ function shellQuote(value: string): string {
 
 /** 返回命令中的范围外路径，简化测试断言。 */
 function violations(command: string, externalDirectories: readonly string[] = []) {
-  return findOutOfScopeBashPaths(command, currentDir, externalDirectories);
+  return findOutOfScopeBashPaths(command, currentDir, [currentDir, ...externalDirectories]);
 }
 
 test("允许当前目录内的相对路径和绝对路径", () => {
@@ -45,17 +37,16 @@ test("允许当前目录内的相对路径和绝对路径", () => {
   assert.deepEqual(violations(`cat ${shellQuote(join(currentDir, "inside.txt"))}`), []);
 });
 
-test("允许 add_directory 状态中的目录及其后代", () => {
+test("允许明确提供的额外目录及其后代", () => {
   assert.deepEqual(violations(`git -C ${shellQuote(addedDir)} status`, [addedDir]), []);
   assert.deepEqual(violations(`cat ${shellQuote(join(addedDir, "added.txt"))}`, [addedDir]), []);
 });
 
-test("允许 /tmp、/var 及其后代，但不放行同前缀目录", () => {
-  assert.deepEqual(violations("ls /tmp"), []);
-  assert.deepEqual(violations("cat /tmp/pi-bash-scope/input.txt"), []);
-  assert.deepEqual(violations("echo ok > /var/tmp/pi-bash-scope/output.txt"), []);
-  assert.equal(violations("cat /tmp-other/secret.txt").length, 1);
-  assert.equal(violations("cat /variable/secret.txt").length, 1);
+test("不默认信任 /tmp、/var，只有显式 roots 才放行", () => {
+  assert.equal(violations("ls /tmp").length, 1);
+  assert.equal(violations("cat /var/tmp/input.txt").length, 1);
+  assert.deepEqual(violations("cat /tmp/input.txt", ["/tmp"]), []);
+  assert.equal(violations("cat /tmp-other/secret.txt", ["/tmp"]).length, 1);
 });
 
 test("阻断范围外绝对路径、父目录越界和重定向", () => {
@@ -93,11 +84,11 @@ test("搜索和文本命令只检查真实文件参数", () => {
   assert.equal(violations(`jq --slurpfile data ${outsideFile} . ${shellQuote(join(currentDir, "inside.txt"))}`).length, 1);
 });
 
-test("允许远程 URL 和 shell 设备路径", () => {
+test("远程 URL 不视为本地路径，设备路径也须显式允许", () => {
   assert.deepEqual(violations("curl https://example.com/api"), []);
-  assert.deepEqual(violations("echo ok > /dev/null"), []);
-  assert.deepEqual(violations("echo ok > /dev/stdout"), []);
-  assert.deepEqual(violations("echo ok > /dev/fd/1"), []);
+  assert.deepEqual(violations("echo ok > /dev/null", ["/dev/null"]), []);
+  assert.deepEqual(violations("echo ok > /dev/stdout", ["/dev/stdout"]), []);
+  assert.deepEqual(violations("echo ok > /dev/fd/1", ["/dev/fd"]), []);
 });
 
 test("阻断内联目录选项和家目录路径", () => {
@@ -106,62 +97,20 @@ test("阻断内联目录选项和家目录路径", () => {
   assert.equal(violations("ls ~/Downloads").length, 1);
 });
 
-test("允许 skills 目录路径，并放行单独执行 skill 脚本的项目参数", () => {
+test("不隐式信任 skills，也不豁免脚本参数", () => {
   const skillRoot = join(homedir(), ".agents", "skills");
-  const skillScript = join(skillRoot, "development", "idea", "scripts", "verify-project-path.sh");
-  const projectPath = join(outsideDir, "project");
-
-  assert.deepEqual(violations(`cat ${shellQuote(join(skillRoot, "README.md"))}`), []);
-  assert.deepEqual(violations(`${shellQuote(skillScript)} -p ${shellQuote(projectPath)} --fix`), []);
-  assert.ok(violations(`${shellQuote(skillScript)} -p ${shellQuote(projectPath)} --fix && cat ${shellQuote(join(outsideDir, "secret.txt"))}`).length > 0);
+  const script = join(skillRoot, "example", "verify.sh");
+  assert.equal(violations(`cat ${shellQuote(join(skillRoot, "SKILL.md"))}`).length, 1);
+  assert.deepEqual(violations(`cat ${shellQuote(join(skillRoot, "SKILL.md"))}`, [skillRoot]), []);
+  assert.equal(violations(`${shellQuote(script)} ${shellQuote(outsideDir)}`, [skillRoot]).length, 1);
 });
 
-test("目录越界和解析失败只返回简短说明", () => {
-  type ToolCallHandler = (
-    event: { toolName: string; input: Record<string, unknown> },
-    ctx: { cwd: string; sessionManager: { getBranch(): unknown[] } },
-  ) => unknown;
-  let handler: ToolCallHandler | undefined;
-  const fakePi = {
-    /** 捕获扩展注册的 tool_call 回调，供测试直接调用。 */
-    on(eventName: string, callback: unknown) {
-      if (eventName === "tool_call") handler = callback as ToolCallHandler;
-    },
-  } as unknown as ExtensionAPI;
-  bashDirectoryScope(fakePi);
-  assert.ok(handler);
-
-  const result = handler(
-    { toolName: "bash", input: { command: `cat ${shellQuote(join(outsideDir, "secret.txt"))}` } },
-    { cwd: currentDir, sessionManager: { getBranch: () => [] } },
-  );
-  assert.deepEqual(result, { block: true, reason: i18n.t("bashScopeBlocked") });
-  assert.equal(JSON.stringify(result).includes(outsideDir), false);
-
-  const parseErrorResult = handler(
-    { toolName: "bash", input: { command: "echo \"unterminated" } },
-    { cwd: currentDir, sessionManager: { getBranch: () => [] } },
-  );
-  assert.deepEqual(parseErrorResult, {
-    block: true,
-    reason: i18n.t(SHELL_PARSE_BLOCKED_MESSAGE_KEY),
-  });
+test("允许根可以是相对 cwd 的路径，不隐式加入 cwd", () => {
+  assert.deepEqual(findOutOfScopeBashPaths("cat ../added/added.txt", currentDir, ["../added"]), []);
+  assert.equal(findOutOfScopeBashPaths("cat inside.txt", currentDir, ["../added"]).length, 1);
 });
 
-test("从活动分支最后一条 add-dir:state 读取目录", () => {
-  const entries = [
-    {
-      type: "custom",
-      customType: "add-dir:state",
-      data: { dirs: [{ absolutePath: outsideDir }] },
-    },
-    { type: "message", message: {} },
-    {
-      type: "custom",
-      customType: "add-dir:state",
-      data: { dirs: [{ absolutePath: addedDir }, { absolutePath: "relative-dir" }] },
-    },
-  ];
-
-  assert.deepEqual(addedDirectoryPathsFromBranch(entries), [addedDir]);
+test("失效符号链接不能被静默当成允许范围内的普通路径", () => {
+  symlinkSync(join(outsideDir, "missing-target"), join(currentDir, "dangling-link"));
+  assert.throws(() => violations("cat dangling-link"));
 });

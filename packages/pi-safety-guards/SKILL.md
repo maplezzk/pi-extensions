@@ -1,52 +1,47 @@
 ---
 name: configure-pi-safety-guards
-description: Configure and verify pi-safety-guards dangerous-command, Bash path-scope, and Maven guards.
+description: "配置安全规则、可选预设、规则动作和本地匹配模块。Use when configuring safety presets, rule overrides or custom matchers."
 ---
 
-# 配置 pi-safety-guards
+# 配置安全规则 / Configure safety rules
 
-## 诊断
+本包不是维护者的技术栈规则集合。先理解用户希望保护什么，再选择预设和动作；不要默认禁止某个构建工具、要求某个 IDE 或替代删除程序。
 
-确认 `pi-safety-guards` 已安装且根扩展入口已启用。三组守卫分别监听 Pi 的 `tool_call` 事件：
+This package is not the maintainer's technology policy. Ask what the user wants to protect, then select presets and actions. Do not assume a particular build tool, IDE or replacement deletion utility.
 
-- 危险命令：阻断 `rm`、`rmdir`、`sed -i`、直接搜索 `~`、`find /`；`chown`、`mkfs` 和 fork bomb 在 TUI 中先确认；
-- Bash 路径范围：允许当前目录、`add_directory` 目录、skills 目录、`/tmp` 和 `/var`，同时检查嵌套 shell、wrapper、重定向及符号链接；
-- Maven：默认阻断实际 Maven 调用，包括 wrapper 和字面量嵌套 shell。
+## 默认 / Defaults
 
-两个已删除的 Java optional 守卫不属于本包，不要恢复或寻找它们的配置。
+无配置时启用 `destructive-operations`，对 rm/rmdir、mkfs/mkfs.*、chown 和支持的 fork bomb 形式要求确认。目录限制需显式选择 `workspace-boundary`。默认不限制 Maven、sed 或目录，也不隐式信任 skills、/tmp、/var。
 
-## Maven 提示配置
+Without configuration, `destructive-operations` asks for confirmation for the supported deletion, formatting, ownership and fork-bomb operations. Directory restrictions require opting into `workspace-boundary`. Build tools and directory roots are not constrained by default.
 
-Maven 拦截提示的 skill 名读取自：
+## 配置 / Configuration
 
-```text
-<pi-agent-dir>/extensions/pi-safety-guards/config.json
-```
+读取 `<pi-agent-dir>/extensions/pi-safety-guards/config.json`，遵守 `PI_CODING_AGENT_DIR`。修改后 `/reload`。
 
-字段包括 `dangerCommands`、`bashDirectoryScope`、`maven`（默认均为 `true`），以及 `javaSkill`。优先级为：配置文件 > `PI_JAVA_SKILL` > 默认 `java-build`。仅配置文件缺失时采用默认值。损坏配置会报错并阻断 Bash；修复配置后 `/reload`，不得静默跳过安全检查。
+- `presets`：选择预设，缺省采用默认预设；显式 `[]` 不选择预设。
+- `rules`：按稳定 ID 覆盖或添加；已有规则可 `enabled: false`。
+- `action`：warn / confirm / block，多条命中时 block > confirm > warn。
+- `match`：commands / detector / outsideRoots / module，四选一。
+- `message`：本地字符串或中英文对象，只有提示作用，不执行替代命令。
 
-可参考 [`config.example.json`](./config.example.json)。`PI_CODING_AGENT_DIR` 按 Pi 标准约定决定 `<pi-agent-dir>`。
+Read the config under the Pi agent directory and reload after changes. Rules override presets by ID or add new matchers. Actions are warn, confirm and block, in increasing priority. Suggestions are text, not executable commands.
 
-## 修改与开关
+未知字段、损坏配置和启用规则的异常必须报告并阻断受影响操作，不通过禁用保护隐藏错误。旧实验配置中的 maven/javaSkill 开关需转换为规则，不要恢复技术专属字段。
 
-使用 Pi 的 package/resource 配置启用或禁用整个包。包内三个布尔开关可分别关闭守卫；关闭后不注册该功能的 hook，修改后需 `/reload`。
+Report invalid configuration and enabled-rule errors; do not silently disable protection. Convert experimental technology-specific switches into explicit rules.
 
-通知不属于本包。需要通知时单独安装 `pi-notifications`，不要把通知入口加回本包。
+## 扩展 / Extensions
 
-## 验证
+只有在内置命令/路径/检测器不够时才使用显式指定的可信本地 ES 模块。模块默认导出函数，接收不可变的命令摘要，返回布尔值。加载和异步匹配 5 秒超时；同进程代码并非沙箱，不能中止同步死循环。
 
-先执行包级检查：
+Use a trusted local ES module only when built-in matchers are insufficient. Default-export a boolean matcher over the frozen command summary. Loading and asynchronous matching have a five-second deadline; same-process modules are not sandboxed.
 
-```bash
-npm run check
-```
+## 验证 / Verification
 
-重点确认：
+- 用不同命令规则证明不绑定技术栈；同一检测器分别配置 warn/confirm/block。
+- 无 UI 时 confirm 必须阻断，warn 必须在对应工具结果中可见。
+- 目录策略只使用明确 roots，不依赖其他扩展的私有状态。
+- 运行包级和仓库检查。未实际运行真实 Pi 确认时标 `NOT_RUN`。
 
-- `rm -rf`、`sed -i` 和 Maven 调用被阻断；`git rm`、普通文本中的 `rm`、`command -v mvn` 不被误判；
-- `/tmp`、`/var` 及其后代路径允许，`/tmp-other` 和 `/variable` 不允许；
-- 配置文件中的 `javaSkill` 覆盖环境变量，环境变量在无配置文件时覆盖默认值；
-- 非 TUI 模式不会为需要确认的危险命令放行；
-- 包中不存在 `optional/enforce-java-rules.ts` 或 `optional/force-mvn-verify.ts`。
-
-未执行真实 TUI 确认或 Maven 项目构建时，报告 `NOT_RUN`；不要把静态单元测试描述成真实工具执行。
+Verify technology-neutral rules, action overrides, no-UI behavior and explicit directory roots. Run package and repository checks. Report real Pi confirmation as `NOT_RUN` unless actually exercised.

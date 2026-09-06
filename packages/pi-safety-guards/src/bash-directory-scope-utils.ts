@@ -1,6 +1,6 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   analyzeShellCommand,
   isShellAssignment,
@@ -10,12 +10,6 @@ import {
   type ShellWrapperInvocation,
 } from "./shell-command-utils";
 
-/** pi-add-dir 通过该 custom entry 持久化当前活动分支的目录白名单。 */
-const ADD_DIRECTORY_STATE_TYPE = "add-dir:state";
-const AGENTS_DIRECTORY_NAME = ".agents";
-const PI_DIRECTORY_NAME = ".pi";
-const PI_AGENT_DIRECTORY_NAME = "agent";
-const SKILLS_DIRECTORY_NAME = "skills";
 const SINGLE_OPTION_VALUE_COUNT = 1;
 const NAME_AND_VALUE_OPTION_COUNT = 2;
 const CHANGE_DIRECTORY_COMMAND_NAME = "cd";
@@ -29,14 +23,6 @@ const FILE_TEST_OPERATORS = new Set([
   "-p", "-r", "-s", "-S", "-t", "-u", "-w", "-x",
 ]);
 const FILE_COMPARISON_OPERATORS = new Set(["-ef", "-nt", "-ot"]);
-const SHELL_DEVICE_PATHS = new Set([
-  "/dev/null",
-  "/dev/stdin",
-  "/dev/stdout",
-  "/dev/stderr",
-]);
-const SHELL_DEVICE_ROOTS = ["/dev/fd"];
-const UNRESTRICTED_DIRECTORY_ROOTS = ["/tmp", "/var"];
 const INLINE_PATH_OPTIONS = new Set([
   "--cache-dir",
   "--chdir",
@@ -57,10 +43,6 @@ const INLINE_PATH_OPTIONS = new Set([
   "--tmpdir",
   "--work-tree",
 ]);
-
-interface AddedDirectoryState {
-  dirs?: Array<{ absolutePath?: unknown }>;
-}
 
 interface PatternPathOptions {
   args: readonly Word[];
@@ -142,47 +124,23 @@ const JQ_VALUE_OPTION_WIDTHS: Readonly<Record<string, number>> = {
   "--argjson": NAME_AND_VALUE_OPTION_COUNT,
 };
 
-/** 从活动分支最后一条 pi-add-dir 状态中读取已加入目录。 */
-export function addedDirectoryPathsFromBranch(entries: readonly unknown[]): string[] {
-  let paths: string[] = [];
-
-  for (const entry of entries) {
-    if (!isRecord(entry) || entry.type !== "custom" || entry.customType !== ADD_DIRECTORY_STATE_TYPE) {
-      continue;
-    }
-
-    const data = isRecord(entry.data) ? entry.data as AddedDirectoryState : undefined;
-    const dirs = Array.isArray(data?.dirs) ? data.dirs : [];
-    paths = dirs
-      .map((dir) => isRecord(dir) ? dir.absolutePath : undefined)
-      .filter((value): value is string => typeof value === "string" && isAbsolute(value));
-  }
-
-  return [...new Set(paths)];
-}
-
 /** 找出 Bash 命令中显式引用、但不在允许目录内的本地路径。 */
 export function findOutOfScopeBashPaths(
   command: string,
   cwd: string,
-  addedDirectories: readonly string[],
+  roots: readonly string[],
 ): BashPathViolation[] {
-  const allowedRoots = canonicalRoots([
-    cwd,
-    ...addedDirectories,
-    ...skillDirectoryRoots(),
-    ...UNRESTRICTED_DIRECTORY_ROOTS,
-  ]);
-  const analysis = analyzeShellCommand(command);
-  if (isDirectSkillInvocation(analysis.commands, cwd)) return [];
-  const referencedPaths = collectReferencedPaths(command, cwd);
+  const allowedRoots = canonicalRoots(roots.map((root) => {
+    const expanded = expandKnownPathPrefix(root, cwd);
+    return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
+  }));
+  const referencedPaths = collectReferencedPaths(command);
   const violations: BashPathViolation[] = [];
   const seen = new Set<string>();
 
   for (const inputPath of referencedPaths) {
-    if (isShellDevicePath(inputPath)) continue;
     const resolvedPath = resolveReferencedPath(inputPath, cwd);
-    if (!resolvedPath || isShellDevicePath(resolvedPath)) continue;
+    if (!resolvedPath) continue;
     if (allowedRoots.some((root) => isWithinRoot(resolvedPath, root))) continue;
 
     const key = `${inputPath}\0${resolvedPath}`;
@@ -194,44 +152,12 @@ export function findOutOfScopeBashPaths(
   return violations;
 }
 
-/** 返回 Pi 和全局 Agent skill 目录，避免把可复用技能脚本绑定到某台机器。 */
-function skillDirectoryRoots(): string[] {
-  const configuredAgentDirectory = process.env.PI_CODING_AGENT_DIR;
-  const piAgentDirectory = configuredAgentDirectory
-    ? expandHomeDirectory(configuredAgentDirectory)
-    : join(homedir(), PI_DIRECTORY_NAME, PI_AGENT_DIRECTORY_NAME);
-  return [
-    join(homedir(), AGENTS_DIRECTORY_NAME, SKILLS_DIRECTORY_NAME),
-    join(piAgentDirectory, SKILLS_DIRECTORY_NAME),
-  ];
-}
-
-/** Expands the supported home-directory forms used by Pi configuration paths. */
-function expandHomeDirectory(path: string): string {
-  if (path === "~") return homedir();
-  if (path.startsWith("~/") || path.startsWith("~\\")) return join(homedir(), path.slice(2));
-  return path;
-}
-
-/** 单独执行受信任 skill 脚本时放行其参数路径，允许 skill 操作显式传入的项目目录。 */
-function isDirectSkillInvocation(
-  commands: readonly ShellCommandInvocation[],
-  cwd: string,
-): boolean {
-  if (commands.length !== 1) return false;
-  const executable = commands[0]?.executable.value;
-  if (!executable || (!executable.includes("/") && !executable.includes("\\"))) return false;
-  const resolvedExecutable = resolveReferencedPath(executable, cwd);
-  if (!resolvedExecutable) return false;
-  return canonicalRoots(skillDirectoryRoots()).some((root) => isWithinRoot(resolvedExecutable, root));
-}
-
 /** 从共享 Shell 分析结果收集命令参数、wrapper、重定向和文件测试中的路径。 */
-function collectReferencedPaths(command: string, cwd: string): string[] {
+function collectReferencedPaths(command: string): string[] {
   const analysis = analyzeShellCommand(command);
   const references = [
-    ...analysis.wrappers.flatMap((wrapper) => wrapperPaths(wrapper, cwd)),
-    ...analysis.commands.flatMap((invocation) => commandPaths(invocation, cwd)),
+    ...analysis.wrappers.flatMap((wrapper) => wrapperPaths(wrapper)),
+    ...analysis.commands.flatMap((invocation) => commandPaths(invocation)),
   ];
 
   for (const node of analysis.nodes) {
@@ -251,8 +177,8 @@ function collectReferencedPaths(command: string, cwd: string): string[] {
 }
 
 /** 按实际命令语义提取可执行文件和参数中的路径。 */
-function commandPaths(invocation: ShellCommandInvocation, cwd: string): string[] {
-  const paths = executablePathCandidates(invocation.executable.value, cwd);
+function commandPaths(invocation: ShellCommandInvocation): string[] {
+  const paths = executablePathCandidates(invocation.executable.value);
   if (invocation.nestedSource !== undefined) return paths;
   if (invocation.name === CHANGE_DIRECTORY_COMMAND_NAME) return [...paths, ...cdPaths(invocation.args)];
   if (DATA_ONLY_COMMANDS.has(invocation.name)) return paths;
@@ -289,8 +215,8 @@ function commandPaths(invocation: ShellCommandInvocation, cwd: string): string[]
 }
 
 /** wrapper 的目录型选项和路径形式可执行文件同样受目录范围约束。 */
-function wrapperPaths(wrapper: ShellWrapperInvocation, cwd: string): string[] {
-  const paths = executablePathCandidates(wrapper.executable.value, cwd);
+function wrapperPaths(wrapper: ShellWrapperInvocation): string[] {
+  const paths = executablePathCandidates(wrapper.executable.value);
   const pathOptions = WRAPPER_PATH_OPTIONS[wrapper.name];
   if (!pathOptions) return paths;
 
@@ -302,20 +228,9 @@ function wrapperPaths(wrapper: ShellWrapperInvocation, cwd: string): string[] {
   return paths;
 }
 
-/** 对路径形式的可执行文件做范围检查，但放行 PATH 中显式信任的系统命令目录。 */
-function executablePathCandidates(value: string, cwd: string): string[] {
-  if (!value.includes("/") && !value.includes("\\")) return [];
-
-  const resolvedExecutable = resolveReferencedPath(value, cwd);
-  if (!resolvedExecutable) return [];
-
-  const executableRoots = canonicalRoots(
-    (process.env.PATH ?? "")
-      .split(delimiter)
-      .filter(Boolean)
-      .map((path) => isAbsolute(path) ? path : resolve(cwd, path)),
-  );
-  return executableRoots.some((root) => isWithinRoot(resolvedExecutable, root)) ? [] : [value];
+/** 路径形式的可执行文件也接受同一目录策略，不隐式信任 PATH 或 skills。 */
+function executablePathCandidates(value: string): string[] {
+  return value.includes("/") || value.includes("\\") ? [value] : [];
 }
 
 /** 解析 cd 的默认 HOME、cd - 和普通目录参数。 */
@@ -460,11 +375,7 @@ function wordValueCandidates(value: unknown, force = false): string[] {
 function resolveReferencedPath(input: string, cwd: string): string | null {
   let value = input;
   if (value.startsWith("file://")) {
-    try {
-      value = decodeURIComponent(new URL(value).pathname);
-    } catch {
-      return null;
-    }
+    value = decodeURIComponent(new URL(value).pathname);
   }
 
   value = expandKnownPathPrefix(value, cwd);
@@ -494,24 +405,14 @@ function canonicalizePotentialPath(input: string): string {
     current = parent;
   }
 
-  try {
-    const realBase = realpathSync(current);
-    return missingSegments.length > 0 ? join(realBase, ...missingSegments) : realBase;
-  } catch {
-    return resolve(input);
-  }
+  const realBase = realpathSync(current);
+  return missingSegments.length > 0 ? join(realBase, ...missingSegments) : realBase;
 }
 
 /** 判断候选路径是否等于允许根目录或位于其后代中。 */
 function isWithinRoot(candidate: string, root: string): boolean {
   const rel = relative(root, candidate);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
-}
-
-/** 放行 shell 正常重定向所需的 /dev/null 与文件描述符设备。 */
-function isShellDevicePath(candidate: string): boolean {
-  if (SHELL_DEVICE_PATHS.has(candidate)) return true;
-  return SHELL_DEVICE_ROOTS.some((root) => isWithinRoot(candidate, root));
 }
 
 /** 将 --option=value 拆为选项名和值。 */
@@ -554,8 +455,9 @@ function lstatExists(path: string): boolean {
   try {
     lstatSync(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
   }
 }
 

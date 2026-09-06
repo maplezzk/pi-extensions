@@ -1,49 +1,79 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import bashDirectoryScope from "./src/bash-directory-scope.ts";
-import dangerCommands from "./src/danger-commands.ts";
-import mavenEnforceFlags from "./src/mvn-enforce-flags.ts";
-import { loadConfig, type SafetyConfig } from "./src/config.ts";
+import { dirname } from "node:path";
+import { configPath, loadConfig } from "./src/config.ts";
+import { compileRules, evaluateRules, type ModuleLoader } from "./src/engine.ts";
 import { i18n } from "./src/i18n.ts";
+import type { SafetyConfig, SafetyRule } from "./src/types.ts";
 
-const CONFIG_ERROR_LEVEL = "error";
 const BASH_TOOL = "bash";
+const ERROR_LEVEL = "error";
+const INFO_LEVEL = "info";
+const BLOCK_ACTION = "block";
+const CONFIRM_ACTION = "confirm";
+const WARN_ACTION = "warn";
 
-/**
- * 注册危险命令、Bash 目录范围和默认 Maven 三组独立安全守卫。
- *
- * 通知适配器不属于本包；需要通知时请单独安装 pi-notifications。
- */
-export default function piSafetyGuards(pi: ExtensionAPI): void {
+/** 将规则 ID 和用户选择的说明一起展示，不自动执行替代命令。 */
+function describeRule(rule: SafetyRule): string {
+  const message = typeof rule.message === "string" ? rule.message : rule.message?.[i18n.locale()];
+  return message ? `[${rule.id}] ${message}` : i18n.t("ruleMatched", { id: rule.id });
+}
+
+/** 先加载规则再注册统一执行入口，禁用规则不会执行模块。 */
+export async function registerSafetyGuards(
+  pi: ExtensionAPI,
+  config: SafetyConfig,
+  options: { configDirectory?: string; loader?: ModuleLoader } = {},
+): Promise<void> {
+  const rules = await compileRules(config, options.configDirectory ?? dirname(configPath()), options.loader);
+  if (rules.length === 0) {
+    pi.on("session_start", (_event, ctx) => ctx.ui.notify(i18n.t("noRules"), INFO_LEVEL));
+    return;
+  }
+  const warnings = new Map<string, string>();
+  pi.on("session_shutdown", () => warnings.clear());
+  pi.on("turn_end", () => warnings.clear());
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName !== BASH_TOOL) return;
+    const command = String(event.input.command ?? "");
+    try {
+      const decision = await evaluateRules(rules, command, ctx.cwd);
+      if (!decision) return;
+      const details = decision.matches.map(describeRule).join("\n");
+      if (decision.action === BLOCK_ACTION) return { block: true, reason: i18n.t("blocked", { details }) };
+      if (decision.action === CONFIRM_ACTION) {
+        if (!ctx.hasUI) return { block: true, reason: i18n.t("confirmationUnavailable", { details }) };
+        const accepted = await ctx.ui.confirm(i18n.t("confirmTitle"), i18n.t("confirmBody", { details, command }));
+        if (!accepted) return { block: true, reason: i18n.t("confirmationRejected", { details }) };
+      }
+      const warned = decision.matches.filter((rule) => rule.action === WARN_ACTION);
+      if (warned.length) {
+        warnings.set(event.toolCallId, i18n.t("warning", { details: warned.map(describeRule).join("\n") }));
+      }
+    } catch (error) {
+      return { block: true, reason: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  // warn 必须对没有 UI 的调用者同样可见，且只附加到对应工具结果。
+  pi.on("tool_result", (event) => {
+    const warning = warnings.get(event.toolCallId);
+    warnings.delete(event.toolCallId);
+    if (!warning) return;
+    return { content: [...event.content, { type: "text", text: warning }] };
+  });
+}
+
+/** 配置或启用规则加载失败时阻断 Bash，避免把失败当作关闭保护。 */
+export default async function piSafetyGuards(pi: ExtensionAPI): Promise<void> {
   try {
-    registerSafetyGuards(pi, loadConfig());
+    await registerSafetyGuards(pi, loadConfig());
   } catch (error) {
-    const reason = i18n.t("configInvalid", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    pi.on("session_start", (_event, ctx) => ctx.ui.notify(reason, CONFIG_ERROR_LEVEL));
-    // 配置损坏时不能放行 Bash；修复配置并 reload 后恢复正常守卫。
+    const reason = i18n.t("configLoadFailed", { error: error instanceof Error ? error.message : String(error) });
+    pi.on("session_start", (_event, ctx) => ctx.ui.notify(reason, ERROR_LEVEL));
     pi.on("tool_call", (event) => {
       if (event.toolName === BASH_TOOL) return { block: true, reason };
     });
   }
 }
 
-/** 仅为启用的安全功能注册 hook，便于独立组合和测试。 */
-export function registerSafetyGuards(pi: ExtensionAPI, config: SafetyConfig): void {
-  if (config.dangerCommands) dangerCommands(pi);
-  if (config.maven) mavenEnforceFlags(pi, config.javaSkill);
-  if (config.bashDirectoryScope) bashDirectoryScope(pi);
-}
-
-export { default as bashDirectoryScope } from "./src/bash-directory-scope.ts";
-export { default as dangerCommands } from "./src/danger-commands.ts";
-export { default as mavenEnforceFlags } from "./src/mvn-enforce-flags.ts";
-export {
-  DANGER_RULES,
-  findDangerRule,
-} from "./src/danger-utils.ts";
-export {
-  addedDirectoryPathsFromBranch,
-  findOutOfScopeBashPaths,
-} from "./src/bash-directory-scope-utils.ts";
-export { containsMavenCommand } from "./src/mvn-enforce-flags-utils.ts";
+export type { RuleContext, RuleMatcher } from "./src/types.ts";
+export { findOutOfScopeBashPaths } from "./src/bash-directory-scope-utils.ts";

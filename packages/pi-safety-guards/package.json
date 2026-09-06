@@ -1,7 +1,7 @@
 {
   "name": "pi-safety-guards",
   "version": "0.1.0",
-  "description": "Deterministic command, Bash path, and Maven safety guards for Pi",
+  "description": "Configurable Bash safety rules with selectable presets and custom matchers for Pi",
   "type": "module",
   "main": "./index.ts",
   "exports": {
@@ -15,7 +15,8 @@
     "README.md",
     "README.zh-CN.md",
     "SKILL.md",
-    "tsconfig.json"
+    "tsconfig.json",
+    "examples"
   ],
   "scripts": {
     "test": "tsx --test tests/*.test.ts",
@@ -55,7 +56,8 @@
     "coding-agent",
     "safety",
     "bash",
-    "maven"
+    "presets",
+    "rules"
   ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0"
