@@ -897,10 +897,25 @@ function handleSubagentInterrupt(
   running.statusState = forceStatusAfterInterrupt(running.statusState, now);
   updateWidget();
 
-  // Escape only cancels the child's current turn. Do not write the `.exit`
-  // sidecar here: that file is the terminal completion signal consumed by
-  // pollForExit, and writing it would close the pane and remove this running
-  // entry instead of leaving the child alive for another turn.
+  // Interrupting from the parent is terminal: Escape stops the child's active
+  // turn, while the `.exit` sidecar tells the watcher to close the surface and
+  // remove the child from the running set. Without the sidecar, the child Pi
+  // returns to its prompt and the watcher waits forever.
+  if (running.sessionFile) {
+    const exitFile = `${running.sessionFile}.exit`;
+    try {
+      writeFileSync(exitFile, JSON.stringify({ type: "done" }));
+    } catch (writeErr: unknown) {
+      const errorMessage = writeErr instanceof Error ? writeErr.message : String(writeErr);
+      const error =
+        `Failed to signal subagent "${running.name}" termination via ${exitFile}: ` +
+        errorMessage;
+      return {
+        content: [{ type: "text" as const, text: error }],
+        details: { error, id: running.id, name: running.name },
+      };
+    }
+  }
 
   return {
     content: [{ type: "text" as const, text: `Interrupt requested for subagent "${running.name}".` }],
@@ -1849,13 +1864,11 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       name: "subagent_interrupt",
       label: "Interrupt Subagent",
       description:
-        "Send Escape to the active turn of a currently running Pi-backed subagent. " +
-        "The child pane, session, watcher, and running entry remain alive; this returns only a local acknowledgement " +
-        "and does not emit a subagent_result solely because of this request.",
+        "Send Escape to stop the active turn of a currently running Pi-backed subagent, then terminate the child Pi process. " +
+        "The parent watcher consumes the completion signal, closes the child pane, and removes the subagent from the running set.",
       promptSnippet:
-        "Send Escape to the active turn of a currently running Pi-backed subagent. " +
-        "The child pane, session, watcher, and running entry remain alive; this returns only a local acknowledgement " +
-        "and does not emit a subagent_result solely because of this request.",
+        "Send Escape to stop the active turn of a currently running Pi-backed subagent, then terminate the child Pi process. " +
+        "The parent watcher consumes the completion signal, closes the child pane, and removes the subagent from the running set.",
       parameters: Type.Object({
         id: Type.Optional(Type.String({ description: "Exact running subagent id" })),
         name: Type.Optional(Type.String({ description: "Exact running subagent display name" })),

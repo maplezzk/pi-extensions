@@ -2002,7 +2002,7 @@ describe("subagent interruption", () => {
     }
   });
 
-  it("does not signal session completion when interrupting a turn", () => {
+  it("signals session completion when interrupting a turn", () => {
     type InterruptTestApi = {
       runningSubagents: Map<string, ReturnType<typeof makeRunning>>;
       /** Invoke the interrupt path with an injectable Escape sender. */
@@ -2028,7 +2028,7 @@ describe("subagent interruption", () => {
         );
 
         assert.equal(result.details.status, "interrupt_requested");
-        assert.equal(existsSync(`${sessionFile}.exit`), false);
+        assert.deepEqual(JSON.parse(readFileSync(`${sessionFile}.exit`, "utf8")), { type: "done" });
         assert.equal(runningMap.has("a1"), true);
       } finally {
         runningMap.clear();
