@@ -824,7 +824,14 @@ test("自定义工具支持精确名和通配符 after 审查并展示审计", a
       on: (event: string, handler: TestHandler) => handlers.set(event, handler),
     } as unknown as Parameters<typeof piSupervisorExtension>[0];
     piSupervisorExtension(pi);
-    const context = { cwd: agentDir, modelRegistry: { find: () => undefined } };
+    const notifications: Array<{ message: string; type?: string }> = [];
+    /** Records UI notifications so this review path can assert error routing. */
+    const recordNotification = (message: string, type?: string) => notifications.push({ message, type });
+    const context = {
+      cwd: agentDir,
+      modelRegistry: { find: () => undefined },
+      ui: { notify: recordNotification },
+    };
     const input = { path: "not-a-file-review-path", value: 1 };
     await handlers.get("tool_call")?.({ toolName: "custom-tool", toolCallId: "custom-1", input }, context);
     const result = await handlers.get("tool_result")?.({
@@ -839,6 +846,9 @@ test("自定义工具支持精确名和通配符 after 审查并展示审计", a
     assert.deepEqual(result.details.fileEditReview.reviewers.map((reviewer) => reviewer.name), ["exact", "wildcard"]);
     assert.equal(result.details.fileEditReview.status, "failed");
     assert.equal(result.details.source, "custom");
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0]?.type, "error");
+    assert.match(notifications[0]?.message ?? "", /审查未完成/);
   } finally {
     await handlers.get("session_shutdown")?.();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -929,8 +939,12 @@ test("generic before rejected 阻断时诊断使用工具名并追加独立审�
       on: (event: string, handler: TestHandler) => handlers.set(event, handler),
     } as unknown as Parameters<typeof piSupervisorExtension>[0];
     piSupervisorExtension(pi);
+    const notifications: Array<{ message: string; type?: string }> = [];
+    /** Records UI notifications so the blocked review path can assert error routing. */
+    const recordNotification = (message: string, type?: string) => notifications.push({ message, type });
     const context = {
       cwd: agentDir,
+      ui: { notify: recordNotification },
       modelRegistry: {
         find: () => faux.getModel(),
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
@@ -944,6 +958,9 @@ test("generic before rejected 阻断时诊断使用工具名并追加独立审�
     assert.equal(entries.length, 1);
     assert.equal(entries[0]?.data.toolName, "custom-tool");
     assert.equal(entries[0]?.data.audit.toolName, "custom-tool");
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0]?.type, "error");
+    assert.match(notifications[0]?.message ?? "", /审查未通过/);
     assert.equal(await handlers.get("tool_result")?.({ toolCallId: "blocked-1" }, context), undefined);
   } finally {
     faux.unregister();
