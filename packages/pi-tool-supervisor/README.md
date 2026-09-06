@@ -135,6 +135,7 @@ A condition returning `false` skips the reviewer without loading its rules or ca
 
 - A before reviewer rejection blocks the native tool call and emits a standalone audit with the complete reason; model failures/skips remain fail-open and visible on the next tool result. Condition module load or execution failures are treated as a failed gate and block the before call.
 - An after rejection is diagnostic only and never rolls back a completed tool call; a failed tool skips after review and preserves the original error.
+- Review rejections, reviewer failures, and configuration warnings use Pi's `ctx.ui.notify`; the extension does not call `console.warn` or `console.error` directly.
 - If the parent Agent request is interrupted, every in-flight reviewer model request is cancelled together; reviewers not yet started are skipped, and parent cancellation is reported as skipped rather than as a provider failure.
 - A failed tool call or an unchanged file is skipped.
 - The extension does not roll back edits, block the operating system, or replace Pi's permission and sandbox controls.
