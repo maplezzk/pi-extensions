@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type {
-  ExtensionAPI,
-  ExtensionContext,
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -11,21 +9,12 @@ import {
   normalizeSessionName,
   requestSessionName,
   requestSessionNameWithTimeout,
-  registerAutomaticSessionNaming,
   type SessionNameCompletion,
   type SessionNameRequest,
   type SessionNameRequester,
 } from "../src/session-name.ts";
 
 import { parseConfig } from "../src/config.ts";
-
-type InputEvent = {
-  type?: string;
-  text?: string;
-  source?: string;
-};
-
-type RegisteredHandler = (event: InputEvent, ctx: ExtensionContext) => unknown;
 
 /** 构造最小化的用户消息 session 条目，供提取逻辑测试使用。 */
 function userEntry(id: string, content: unknown): SessionEntry {
@@ -221,137 +210,6 @@ test("requestSessionNameWithTimeout 超时后中止请求", async () => {
     /timed out|超时/,
   );
   assert.equal(signal?.aborted, true);
-});
-
-test("registerAutomaticSessionNaming 只在新 session 首条真实输入后命名一次", async () => {
-  let sessionName: string | undefined;
-  const notices: string[] = [];
-  const handlers = new Map<string, RegisteredHandler>();
-  const sessionManager = {
-    getBranch: () => [],
-    getSessionName: () => sessionName,
-  };
-  const ctx = {
-    hasUI: true,
-    ui: { notify: (message: string) => notices.push(message) },
-    sessionManager,
-  } as unknown as ExtensionContext;
-  const pi = {
-    on: (event: string, handler: RegisteredHandler) => handlers.set(event, handler),
-    getSessionName: () => sessionName,
-    setSessionName: (name: string) => {
-      sessionName = name;
-    },
-  } as unknown as ExtensionAPI;
-  const requestedMessages: string[][] = [];
-
-  const title = parseConfig({ title: { language: "English", maxLength: 60, preferredLength: 40 } }).title;
-  registerAutomaticSessionNaming(pi, async ({ userMessages, title: receivedTitle }) => {
-    assert.deepEqual(receivedTitle, title);
-    requestedMessages.push([...userMessages]);
-    return "自动生成的标题";
-  }, true, title);
-
-  handlers.get("session_start")?.({ type: "session_start" }, ctx);
-  handlers.get("input")?.({
-    type: "input",
-    text: "实现首条消息自动命名",
-    source: "interactive",
-  }, ctx);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  handlers.get("input")?.({
-    type: "input",
-    text: "第二条消息不应再次命名",
-    source: "interactive",
-  }, ctx);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-
-  assert.deepEqual(requestedMessages, [["实现首条消息自动命名"]]);
-  assert.equal(sessionName, "自动生成的标题");
-  assert.equal(notices.length, 1);
-});
-
-test("已有手动名称、空输入和 extension 输入不会触发自动命名", async () => {
-  let sessionName: string | undefined = "手动名称";
-  let requestCount = 0;
-  const handlers = new Map<string, RegisteredHandler>();
-  const sessionManager = {
-    getBranch: () => [],
-    getSessionName: () => sessionName,
-  };
-  const ctx = { hasUI: false, ui: { notify: () => undefined }, sessionManager } as unknown as ExtensionContext;
-  const pi = {
-    on: (event: string, handler: RegisteredHandler) => handlers.set(event, handler),
-    getSessionName: () => sessionName,
-    setSessionName: (name: string) => {
-      sessionName = name;
-    },
-  } as unknown as ExtensionAPI;
-
-  registerAutomaticSessionNaming(pi, async () => {
-    requestCount += 1;
-    return "不应出现";
-  });
-  handlers.get("session_start")?.({}, ctx);
-  handlers.get("input")?.({ text: "手动名称不能覆盖", source: "interactive" }, ctx);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(requestCount, 0);
-
-  sessionName = undefined;
-  handlers.get("session_start")?.({}, ctx);
-  handlers.get("input")?.({ text: "   ", source: "interactive" }, ctx);
-  handlers.get("input")?.({ text: "扩展消息", source: "extension" }, ctx);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(requestCount, 0);
-});
-
-test("session 切换后丢弃过期命名结果", async () => {
-  let sessionName: string | undefined;
-  let resolveName: (name: string) => void = () => undefined;
-  const pendingName = new Promise<string>((resolve) => {
-    resolveName = resolve;
-  });
-  const handlers = new Map<string, RegisteredHandler>();
-  const sessionManager = { getBranch: () => [], getSessionName: () => sessionName };
-  const ctx = { hasUI: false, ui: { notify: () => undefined }, sessionManager } as unknown as ExtensionContext;
-  const pi = {
-    on: (event: string, handler: RegisteredHandler) => handlers.set(event, handler),
-    getSessionName: () => sessionName,
-    setSessionName: (name: string) => {
-      sessionName = name;
-    },
-  } as unknown as ExtensionAPI;
-
-  registerAutomaticSessionNaming(pi, async () => pendingName);
-  handlers.get("session_start")?.({}, ctx);
-  handlers.get("input")?.({ text: "旧 session 的首条消息", source: "interactive" }, ctx);
-  handlers.get("session_start")?.({}, ctx);
-  resolveName("旧 session 标题");
-  await new Promise<void>((resolve) => setImmediate(resolve));
-
-  assert.equal(sessionName, undefined);
-});
-
-test("旧实例 shutdown 后即使没有再次收到 start 也不得写入标题", async () => {
-  const handlers = new Map<string, RegisteredHandler>();
-  let finish!: (value: string) => void;
-  const pending = new Promise<string>((resolve) => { finish = resolve; });
-  const pi = {
-    on: (name: string, handler: RegisteredHandler) => handlers.set(name, handler),
-    getSessionName: () => undefined,
-    setSessionName: () => assert.fail("旧实例不能写入 session"),
-  } as unknown as ExtensionAPI;
-  const ctx = {
-    hasUI: true,
-    ui: { notify: () => assert.fail("旧实例不能发送通知") },
-    sessionManager: { getBranch: () => [], getSessionName: () => undefined },
-  } as unknown as ExtensionContext;
-  registerAutomaticSessionNaming(pi, async () => pending);
-  handlers.get("session_start")!({}, ctx);
-  handlers.get("input")!({ text: "任务", source: "interactive" }, ctx);
-  handlers.get("session_shutdown")!({}, ctx);
-  finish("过期标题");
-  await new Promise<void>((resolve) => setImmediate(resolve));
 });
 
 test("标题按 Unicode 字符截断，不切断代理对", () => {

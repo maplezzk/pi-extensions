@@ -8,7 +8,8 @@ const PACKAGE_NAME = "pi-naming";
 const CONFIG_FILENAME = "config.json";
 const FILE_NOT_FOUND_CODE = "ENOENT";
 const MAX_TIMER_MS = 2_147_483_647;
-const NAMING_SWITCHES = ["automaticNaming", "workspaceRename", "tabRename", "syncSessionName"] as const;
+const NAMING_SWITCHES = ["automaticNaming", "manualNaming"] as const;
+const TARGET_KEYS = ["session", "workspace", "tab"] as const;
 
 export interface TitleConfig {
   maxLength: number;
@@ -28,9 +29,8 @@ export const DEFAULT_TITLE_CONFIG: Readonly<TitleConfig> = Object.freeze({
 
 export interface NamingConfig {
   automaticNaming: boolean;
-  workspaceRename: boolean;
-  tabRename: boolean;
-  syncSessionName: boolean;
+  manualNaming: boolean;
+  targets: { session: boolean; workspace: boolean; tab: boolean };
   title: TitleConfig;
 }
 
@@ -54,10 +54,14 @@ function positiveInteger(value: unknown, field: string): number {
 /** 校验配置字段与取值，为省略的字段补齐默认值。 */
 export function parseConfig(value: unknown): NamingConfig {
   const raw = object(value, "config");
-  const allowed = new Set<string>([...NAMING_SWITCHES, "title"]);
+  const allowed = new Set<string>([...NAMING_SWITCHES, "targets", "title"]);
   for (const key of Object.keys(raw)) if (!allowed.has(key)) invalid(key);
   for (const key of NAMING_SWITCHES) {
     if (raw[key] !== undefined && typeof raw[key] !== "boolean") invalid(key);
+  }
+  const targetRaw = raw.targets === undefined ? {} : object(raw.targets, "targets");
+  for (const key of Object.keys(targetRaw)) {
+    if (!TARGET_KEYS.some((target) => target === key) || typeof targetRaw[key] !== "boolean") invalid(`targets.${key}`);
   }
   const titleRaw = raw.title === undefined ? {} : object(raw.title, "title");
   for (const key of Object.keys(titleRaw)) {
@@ -77,9 +81,12 @@ export function parseConfig(value: unknown): NamingConfig {
   if (!title.language) invalid("title.language");
   return {
     automaticNaming: (raw.automaticNaming as boolean | undefined) ?? true,
-    workspaceRename: (raw.workspaceRename as boolean | undefined) ?? true,
-    tabRename: (raw.tabRename as boolean | undefined) ?? true,
-    syncSessionName: (raw.syncSessionName as boolean | undefined) ?? true,
+    manualNaming: (raw.manualNaming as boolean | undefined) ?? true,
+    targets: {
+      session: (targetRaw.session as boolean | undefined) ?? true,
+      workspace: (targetRaw.workspace as boolean | undefined) ?? true,
+      tab: (targetRaw.tab as boolean | undefined) ?? true,
+    },
     title,
   };
 }

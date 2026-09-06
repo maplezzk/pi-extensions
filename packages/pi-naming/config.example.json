@@ -1,8 +1,11 @@
 {
   "automaticNaming": true,
-  "workspaceRename": true,
-  "tabRename": true,
-  "syncSessionName": true,
+  "manualNaming": true,
+  "targets": {
+    "session": true,
+    "workspace": true,
+    "tab": true
+  },
   "title": {
     "maxLength": 15,
     "preferredLength": 10,
