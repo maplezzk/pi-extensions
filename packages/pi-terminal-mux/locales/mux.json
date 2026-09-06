@@ -50,5 +50,17 @@
   "error.invalidHerdrMode": {
     "zh-CN": "不支持的 Herdr surface 模式：{value}。可选值：split、tab。",
     "en-US": "Unsupported Herdr surface mode: {value}. Choose split or tab."
+  },
+  "error.renameIncomplete": {
+    "zh-CN": "{backend} 未完成终端改名。",
+    "en-US": "{backend} did not complete terminal renaming."
+  },
+  "rename.invalidContext": {
+    "zh-CN": "终端改名归属信息无效；未修改终端名称。",
+    "en-US": "Invalid terminal rename ownership context; terminal names were not changed."
+  },
+  "rename.missingId": {
+    "zh-CN": "无法确定终端改名目标 ID。",
+    "en-US": "Cannot determine the terminal rename target ID."
   }
 }

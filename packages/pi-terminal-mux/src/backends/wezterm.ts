@@ -68,13 +68,7 @@ export const ops: BackendOps = {
       throw new Error(`Unexpected wezterm split-pane output: ${rawId || "(empty)"}`);
     }
     const paneId = rawId;
-    try {
-      execFileSync("wezterm", ["cli", "set-tab-title", "--pane-id", paneId, name], {
-        encoding: "utf8",
-      });
-    } catch {
-      // Optional — tab title is cosmetic.
-    }
+    // 分屏与父 pane 共享 tab，不能用子任务名称覆盖共享标题。
     if (options?.activate) {
       execFileSync("wezterm", weztermActivateArgs(paneId), { encoding: "utf8" });
     }
