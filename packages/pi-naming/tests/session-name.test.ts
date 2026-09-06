@@ -17,6 +17,8 @@ import {
   type SessionNameRequester,
 } from "../src/session-name.ts";
 
+import { parseConfig } from "../src/config.ts";
+
 type InputEvent = {
   type?: string;
   text?: string;
@@ -82,8 +84,12 @@ test("normalizeSessionName 收敛模型的标题格式并限制长度", () => {
 test("requestSessionName 使用当前模型和鉴权信息单独请求标题", async () => {
   let receivedPrompt = "";
   let receivedApiKey = "";
+  let receivedSystem = "";
+  let receivedMaxTokens: number | undefined;
   /** 返回固定标题并记录请求参数的 completion 测试替身。 */
   const completion: SessionNameCompletion = async (_model, context, options) => {
+    receivedMaxTokens = options?.maxTokens;
+    receivedSystem = context.systemPrompt ?? "";
     receivedPrompt = context.messages[0]?.content instanceof Array
       ? context.messages[0].content
         .filter((part): part is { type: "text"; text: string } => part.type === "text")
@@ -110,7 +116,7 @@ test("requestSessionName 使用当前模型和鉴权信息单独请求标题", a
     };
   };
   const ctx = {
-    model: { provider: "test-provider", id: "title-model" },
+    model: { provider: "test-provider", id: "title-model", maxTokens: 4096 },
     modelRegistry: {
       getApiKeyAndHeaders: async () => ({
         ok: true as const,
@@ -130,6 +136,21 @@ test("requestSessionName 使用当前模型和鉴权信息单独请求标题", a
   assert.equal(name, "修复登录超时");
   assert.match(receivedPrompt, /修复登录超时/);
   assert.equal(receivedApiKey, "test-key");
+  assert.equal(receivedMaxTokens, 64);
+  assert.match(receivedSystem, /15/);
+  const title = parseConfig({ title: { maxLength: 4, preferredLength: 3, language: "Japanese", instructions: "Keep API names" } }).title;
+  const custom = await requestSessionName({ userMessages: ["任务"], ctx, completion, title });
+  assert.equal(custom, "修复登录");
+  assert.match(receivedSystem, /Japanese/);
+  assert.match(receivedSystem, /Keep API names/);
+  assert.match(receivedSystem, /4/);
+  assert.match(receivedSystem, /3/);
+  await requestSessionName({ userMessages: ["任务"], ctx, completion,
+    title: parseConfig({ title: { maxLength: 60 } }).title });
+  assert.equal(receivedMaxTokens, 240);
+  await requestSessionName({ userMessages: ["任务"], ctx, completion,
+    title: parseConfig({ title: { maxLength: 2000 } }).title });
+  assert.equal(receivedMaxTokens, 4096);
 });
 
 test("requestSessionName 显式报告鉴权、模型和空标题错误", async () => {
@@ -143,7 +164,7 @@ test("requestSessionName 显式报告鉴权、模型和空标题错误", async (
   );
 
   const authContext = {
-    model: { provider: "test-provider", id: "title-model" },
+    model: { provider: "test-provider", id: "title-model", maxTokens: 4096 },
     modelRegistry: {
       getApiKeyAndHeaders: async () => ({ ok: false as const, error: "missing auth" }),
     },
@@ -171,7 +192,7 @@ test("requestSessionName 显式报告鉴权、模型和空标题错误", async (
     timestamp: 0,
   });
   const validContext = {
-    model: { provider: "test-provider", id: "title-model" },
+    model: { provider: "test-provider", id: "title-model", maxTokens: 4096 },
     modelRegistry: {
       getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "key" }),
     },
@@ -195,7 +216,7 @@ test("requestSessionNameWithTimeout 超时后中止请求", async () => {
       userMessages: ["超时任务"],
       ctx,
       requestName,
-      timeoutMs: 5,
+      title: parseConfig({ title: { timeoutMs: 5 } }).title,
     }),
     /timed out|超时/,
   );
@@ -224,10 +245,12 @@ test("registerAutomaticSessionNaming 只在新 session 首条真实输入后命�
   } as unknown as ExtensionAPI;
   const requestedMessages: string[][] = [];
 
-  registerAutomaticSessionNaming(pi, async ({ userMessages }) => {
+  const title = parseConfig({ title: { language: "English", maxLength: 60, preferredLength: 40 } }).title;
+  registerAutomaticSessionNaming(pi, async ({ userMessages, title: receivedTitle }) => {
+    assert.deepEqual(receivedTitle, title);
     requestedMessages.push([...userMessages]);
     return "自动生成的标题";
-  });
+  }, true, title);
 
   handlers.get("session_start")?.({ type: "session_start" }, ctx);
   handlers.get("input")?.({
@@ -333,4 +356,11 @@ test("旧实例 shutdown 后即使没有再次收到 start 也不得写入标题
 
 test("标题按 Unicode 字符截断，不切断代理对", () => {
   assert.equal(normalizeSessionName("😀".repeat(16)), "😀".repeat(15));
+});
+
+
+test("自定义标题长度支持较长英文标题与 Unicode", () => {
+  const name = "Investigate session naming configuration";
+  assert.equal(normalizeSessionName(name, 60), name);
+  assert.equal(normalizeSessionName("😀".repeat(8), 4), "😀".repeat(4));
 });

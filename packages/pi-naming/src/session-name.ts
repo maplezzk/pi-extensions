@@ -5,6 +5,10 @@ import type {
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import { i18n } from "./i18n.ts";
+import { DEFAULT_TITLE_CONFIG, type TitleConfig } from "./config.ts";
+
+const MIN_TITLE_OUTPUT_TOKENS = 64;
+const TOKENS_PER_TITLE_CODE_POINT = 4;
 
 /** 生成标题所需的最小 session 上下文；终端消费者可复用该契约。 */
 export type SessionNameContext = Pick<ExtensionContext, "model" | "modelRegistry">;
@@ -20,19 +24,11 @@ export type SessionNameRequest = {
   ctx: SessionNameContext;
   signal?: AbortSignal;
   completion?: SessionNameCompletion;
+  title?: Readonly<TitleConfig>;
 };
 
-/** 标题生成器契约，供其他扩展调用，不绑定终端复用器。 */
+/** 包内标题生成器契约，不绑定终端复用器。 */
 export type SessionNameRequester = (request: SessionNameRequest) => Promise<string>;
-
-/** Session 名称允许的最大字符数。 */
-export const MAX_SESSION_NAME_LENGTH = 15;
-
-/** 提示词要求模型优先控制在的字符数。 */
-export const PREFERRED_SESSION_NAME_LENGTH = 10;
-
-/** 后台自动命名请求的最长等待时间。 */
-export const SESSION_NAME_TIMEOUT_MS = 10_000;
 
 /** 从字符串或内容块中提取文本；未知内容类型按空文本处理。 */
 function getTextContent(content: unknown): string {
@@ -113,7 +109,7 @@ function removeWrappingQuotes(value: string): string {
 }
 
 /** 把模型的自由文本响应收敛成可作为 session 名称的单行文本。 */
-export function normalizeSessionName(raw: string): string {
+export function normalizeSessionName(raw: string, maxLength = DEFAULT_TITLE_CONFIG.maxLength): string {
   let name = raw.trim()
     .replace(/^```(?:text|markdown)?\s*/i, "")
     .replace(/\s*```$/i, "")
@@ -124,7 +120,7 @@ export function normalizeSessionName(raw: string): string {
     .trim();
 
   name = removeWrappingQuotes(name).replace(/\s+/g, " ").trim();
-  return Array.from(name).slice(0, MAX_SESSION_NAME_LENGTH).join("").trim();
+  return Array.from(name).slice(0, maxLength).join("").trim();
 }
 
 /** 调用当前 session 模型生成名称，并把鉴权、空响应和模型错误显式抛出。 */
@@ -133,6 +129,7 @@ export async function requestSessionName({
   ctx,
   signal,
   completion = complete,
+  title = DEFAULT_TITLE_CONFIG,
 }: SessionNameRequest): Promise<string> {
   if (userMessages.length === 0) {
     throw new Error(i18n.t("sessionNameNoMessages"));
@@ -151,7 +148,13 @@ export async function requestSessionName({
   const response = await completion(
     model,
     {
-      systemPrompt: i18n.t("sessionNameSystem"),
+      systemPrompt: [
+        i18n.t("sessionNameSystem", { maxLength: title.maxLength, preferredLength: title.preferredLength }),
+        title.language === "auto"
+          ? i18n.t("sessionNameLanguageAuto")
+          : i18n.t("sessionNameLanguage", { language: title.language }),
+        title.instructions,
+      ].filter(Boolean).join("\n"),
       messages: [
         {
           role: "user",
@@ -164,7 +167,11 @@ export async function requestSessionName({
       apiKey: auth.apiKey,
       headers: auth.headers,
       env: auth.env,
-      maxTokens: 64,
+      // 较长标题需要更多输出预算，但不能超过模型的输出上限。
+      maxTokens: Math.min(
+        model.maxTokens,
+        Math.max(MIN_TITLE_OUTPUT_TOKENS, title.maxLength * TOKENS_PER_TITLE_CODE_POINT),
+      ),
       signal,
     },
   );
@@ -184,7 +191,7 @@ export async function requestSessionName({
     )
     .map((content) => content.text)
     .join("\n");
-  const name = normalizeSessionName(rawName);
+  const name = normalizeSessionName(rawName, title.maxLength);
   if (!name) {
     throw new Error(i18n.t("sessionNameEmpty"));
   }
@@ -197,6 +204,7 @@ export type SessionNameWithTimeoutRequest = {
   ctx: SessionNameContext;
   requestName?: SessionNameRequester;
   timeoutMs?: number;
+  title?: Readonly<TitleConfig>;
 };
 
 /**
@@ -207,7 +215,8 @@ export async function requestSessionNameWithTimeout({
   userMessages,
   ctx,
   requestName = requestSessionName,
-  timeoutMs = SESSION_NAME_TIMEOUT_MS,
+  title = DEFAULT_TITLE_CONFIG,
+  timeoutMs = title.timeoutMs,
 }: SessionNameWithTimeoutRequest): Promise<string> {
   const controller = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -220,7 +229,7 @@ export async function requestSessionNameWithTimeout({
 
   try {
     return await Promise.race([
-      requestName({ userMessages, ctx, signal: controller.signal }),
+      requestName({ userMessages, ctx, signal: controller.signal, title }),
       timeout,
     ]);
   } finally {
@@ -246,6 +255,7 @@ type AutomaticNameRequest = {
   generation: number;
   userMessages: readonly string[];
   requestName: SessionNameRequester;
+  title: Readonly<TitleConfig>;
 };
 
 /** 完成首条用户输入触发的后台命名，并在 session 切换时丢弃过期结果。 */
@@ -256,11 +266,13 @@ async function applyAutomaticName({
   generation,
   userMessages,
   requestName,
+  title,
 }: AutomaticNameRequest): Promise<void> {
   const label = await requestSessionNameWithTimeout({
     userMessages,
     ctx,
     requestName,
+    title,
   });
 
   if (state.generation !== generation || pi.getSessionName()) return;
@@ -276,6 +288,7 @@ export function registerAutomaticSessionNaming(
   pi: ExtensionAPI,
   requestName: SessionNameRequester = requestSessionName,
   enabled = true,
+  title: Readonly<TitleConfig> = DEFAULT_TITLE_CONFIG,
 ): void {
   if (!enabled) return;
   const state: AutomaticNameState = {
@@ -319,6 +332,7 @@ export function registerAutomaticSessionNaming(
       generation,
       userMessages: [text],
       requestName,
+      title,
     }).catch((error: unknown) => {
       if (state.generation !== generation) return;
       if (ctx.hasUI) {

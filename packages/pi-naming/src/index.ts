@@ -15,7 +15,7 @@ export async function registerNaming(
     const { registerTerminalRename } = await import("./terminal-rename.ts");
     registerTerminalRename(pi, requestName, undefined, config);
   }
-  registerAutomaticSessionNaming(pi, requestName, config.automaticNaming);
+  registerAutomaticSessionNaming(pi, requestName, config.automaticNaming, config.title);
 }
 
 /** 将配置读取结果与后续通知、注册动作分离。 */

@@ -1,28 +1,24 @@
 ---
 name: configure-pi-naming
-description: "配置与排查会话自动命名、手动 workspace/tab 改名及终端能力。Use when configuring automatic session titles or manual terminal naming."
+description: 配置与排查 Pi 自动会话命名、终端 workspace/tab 改名和标题偏好。Use when configuring pi-naming.
 ---
 
 # 配置 pi-naming / Configure pi-naming
 
-读取 Pi agent 目录下的 `extensions/pi-naming/config.json`，遵守 `PI_CODING_AGENT_DIR`。三个布尔开关默认开启，修改后 `/reload`：
+读取 `<pi-agent-dir>/extensions/pi-naming/config.json`，遵守 `PI_CODING_AGENT_DIR`。修改后 `/reload`。完整字段与默认值见 [README](./README.md)、[中文说明](./README.zh-CN.md) 和 [配置示例](./config.example.json)。
 
-- `automaticNaming`：新 session 首条真实输入后生成短标题，只改 Pi session。
-- `workspaceRename`：注册 `/rename:workspace [名称]`；无参数时生成标题，终端改名成功后才同步 Pi session。
-- `tabRename`：注册 `/rename:tab <名称>`，只改终端。
+Read `<pi-agent-dir>/extensions/pi-naming/config.json`, respecting `PI_CODING_AGENT_DIR`. Run `/reload` after changes. See the linked README and example for all fields and defaults.
 
-Read `extensions/pi-naming/config.json` under the Pi agent directory. All three boolean switches default to true; reload after changes. Automatic naming changes only the Pi session. Workspace naming synchronizes the session only after a successful manual terminal rename. Tab naming changes only the terminal.
+- `automaticNaming`、`workspaceRename`、`tabRename` 独立开关，默认开启。Independent feature switches, enabled by default.
+- `syncSessionName` 控制 workspace 成功改名后是否同步 session，默认开启。Controls session synchronization after a successful workspace rename; enabled by default.
+- `title` 配置最大/偏好长度、语言、补充提示和超时；只影响生成名称，不修改显式名称。Configures generated title length, language, additional instructions and timeout; explicit names are unaffected.
+- 模型和鉴权复用 Pi 当前选择。Uses Pi's current model and authentication.
+- 自动 session 命名无需终端后端。Automatic session naming does not require a terminal backend.
+- 配置错误必须报告；不要替用户忽略未知字段或更换模型。Report invalid configuration; do not silently ignore unknown fields or substitute models.
+- unsupported/disabled/failed 不得当作成功，不同步 session。Never treat unsupported, disabled or failed terminal operations as success or sync the session.
 
-## 边界 / Boundaries
+## 验证 / Validation
 
-标题优先 10 字符、最多 15 个 Unicode 码点；请求 10 秒超时。自动命名不覆盖手动名称，不依赖终端后端。关闭两个终端开关时不加载终端模块。标题生成是包内实现，不从 session-tools 导入。
+运行 `npm run check -w pi-naming`。真实 Pi、终端及模型未验证时明确标记 `NOT_RUN`；单元测试不替代真实运行。
 
-Titles prefer 10 characters and are capped at 15 Unicode code points. Requests time out after 10 seconds. Automatic naming preserves manual names and works without a terminal backend. Disabling both terminal switches avoids loading the terminal module. Title generation is internal, not imported from session-tools.
-
-## 排查 / Troubleshooting
-
-- 配置损坏会报告并跳过所有命名注册；修复并 reload。Invalid configuration is reported and skips all naming registration; fix it and reload.
-- 终端的 unsupported/disabled/failed 不是成功，不应同步 session。Terminal unsupported/disabled/failed results must not synchronize the session.
-- tmux window/session 和 Herdr workspace 开关沿用 terminal-mux。Backend opt-ins remain owned by terminal-mux.
-- 模型请求失败需报告原错误，不改模型或读取凭据绕过。Report model failures; do not switch models or extract credentials to bypass them.
-- 使用包级 `npm run check`；未实际验证 Pi/终端/模型时标记 `NOT_RUN`。Run package checks; mark real Pi, terminal and model smoke tests `NOT_RUN` unless performed.
+Run `npm run check -w pi-naming`. Mark real Pi, terminal and model verification as `NOT_RUN` when unavailable; unit tests are not a substitute.

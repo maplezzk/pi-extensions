@@ -1,55 +1,72 @@
 # pi-naming
 
-Configurable Pi session naming and manual terminal naming in one package.
+Independently configurable Pi session naming and manual terminal naming.
 
-[中文文档](./README.zh-CN.md)
+[中文](./README.zh-CN.md)
 
-## Install
+## Installation
 
 ```bash
 pi install npm:pi-naming
 ```
 
-Run `/reload` after installation or configuration changes. This package must be published before npm installation is available.
+The package must be published before npm installation is available. Run `/reload` after installation or configuration changes.
 
 ## Features
 
-- **Automatic session naming:** the first real input in a new unnamed session triggers one background request to the current model. Titles prefer 10 characters and are capped at 15 Unicode code points. Only the Pi session name changes; workspace and tab names never change automatically. Existing manual names are preserved.
-- **`/rename:workspace [name]`:** manually rename the terminal workspace. Without a name, generate a title from the current session's user messages, then rename the workspace. Synchronize the Pi session name only after terminal renaming succeeds.
-- **`/rename:tab <name>`:** manually rename the terminal tab without changing the Pi session name or requesting a title.
+- **Automatic session naming**: the first real user input in a new, unnamed session triggers a background title request. It does not overwrite an existing name or rename the terminal.
+- **`/rename:workspace [name]`**: use the explicit name, or generate one from user messages on the current session branch. Sync the Pi session only after a successful terminal rename and only when `syncSessionName` is enabled.
+- **`/rename:tab <name>`**: rename only the terminal tab, without calling a model or changing the Pi session.
 
-Title requests time out after 10 seconds. Results from a replaced or reloaded session are discarded; later manual rename commands supersede pending earlier commands. Model, authentication and terminal failures are reported rather than treated as success.
+Session switches and reloads invalidate old results. Later manual rename commands supersede pending commands. Unsupported, disabled and failed terminal operations are reported rather than treated as success.
 
 ## Configuration
 
-Use `<pi-agent-dir>/extensions/pi-naming/config.json` (`PI_CODING_AGENT_DIR` is respected):
+File: `<pi-agent-dir>/extensions/pi-naming/config.json`; respects `PI_CODING_AGENT_DIR`.
 
 ```json
 {
   "automaticNaming": true,
   "workspaceRename": true,
-  "tabRename": true
+  "tabRename": true,
+  "syncSessionName": true,
+  "title": {
+    "maxLength": 15,
+    "preferredLength": 10,
+    "language": "auto",
+    "instructions": "",
+    "timeoutMs": 10000
+  }
 }
 ```
 
-Each switch is independent and defaults to `true`. Disabled features do not register their commands/hooks. Set both terminal switches to `false` to use session naming alone; the terminal module is not loaded. A missing file uses defaults; an invalid file is reported and no naming features are registered. Fix it and `/reload`.
+The three feature switches are independent and default to enabled. Turning off both terminal features avoids loading the terminal module. Missing configuration uses defaults; invalid configuration reports an error and registers no naming features until corrected and reloaded.
 
-This package does not read configuration from the previous experimental `pi-session-tools` or `pi-terminal-rename` implementation. No installed configuration is migrated automatically.
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `syncSessionName` | `true` | Sync the Pi session after a successful workspace rename; disable to rename only the terminal |
+| `title.maxLength` | `15` | Maximum generated title length in Unicode code points; longer output is truncated |
+| `title.preferredLength` | `10` | Preferred length requested from the model; must not exceed the maximum |
+| `title.language` | `"auto"` | Use the dominant message language, or specify a language such as `English` or `日本語` |
+| `title.instructions` | `""` | Additional style instructions appended to the naming system prompt; not a template or executable code |
+| `title.timeoutMs` | `10000` | Title request timeout in milliseconds |
 
-## Dependencies and boundaries
+Lengths and timeout must be positive safe integers; timeout must not exceed `2147483647` milliseconds. Unknown fields, empty language and invalid values are rejected. Additional instructions do not bypass single-line normalization or the length limit.
 
-- Title generation is internal to this package and uses `pi-ai` with the current Pi model and authentication.
-- Terminal operations use `pi-terminal-mux`. Unsupported, disabled and failed operations never report success. Automatic naming works without a terminal backend.
-- No dependency on `pi-session-tools`: conversation squash and output caching remain there.
+For longer English titles, set `title.maxLength` to `60`, `title.preferredLength` to `40`, and `title.language` to `"English"`. These settings apply to automatic session titles and generated workspace names, not explicitly supplied names. Generation uses Pi's current model and authentication; there is no separate model configuration.
 
-Backend opt-ins remain owned by terminal-mux:
+## Terminal support
 
-- `PI_SUBAGENT_RENAME_TMUX_WINDOW=1` for tmux window naming.
-- `PI_SUBAGENT_RENAME_TMUX_SESSION=1` for tmux session naming.
-- `PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1` for Herdr workspace naming.
+Terminal operations use `pi-terminal-mux`; automatic session naming works without a terminal backend. The title generator is internal to this package; it does not depend on `pi-session-tools`.
 
-The actual terminal target varies by backend (pane, window, tab, workspace, session or terminal). Before publishing this package, its terminal-mux dependency must require a released version containing the rename-result API.
+Backend opt-ins are managed by terminal-mux:
+
+- tmux window: `PI_SUBAGENT_RENAME_TMUX_WINDOW=1`
+- tmux session: `PI_SUBAGENT_RENAME_TMUX_SESSION=1`
+- Herdr workspace: `PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1`
+
+Actual targets vary by backend: pane, window, tab, workspace, session or terminal. Before publication, the terminal-mux dependency minimum must match a published version providing the rename-result API.
 
 ## Localization
 
-Runtime messages and prompts are available in Chinese and English through `pi-extensions-i18n`.
+Runtime messages and built-in prompts use `pi-extensions-i18n` with English and Chinese catalogs. The title language setting is independent of the UI language.

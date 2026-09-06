@@ -1,5 +1,13 @@
 {
   "automaticNaming": true,
   "workspaceRename": true,
-  "tabRename": true
+  "tabRename": true,
+  "syncSessionName": true,
+  "title": {
+    "maxLength": 15,
+    "preferredLength": 10,
+    "language": "auto",
+    "instructions": "",
+    "timeoutMs": 10000
+  }
 }

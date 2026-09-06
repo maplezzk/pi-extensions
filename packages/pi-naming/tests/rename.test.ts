@@ -14,6 +14,8 @@ import type {
   RenameResult,
 } from "pi-terminal-mux";
 
+import { parseConfig } from "../src/config.ts";
+
 /** 构造测试用的最小 Extension API，保留命令处理器供测试调用。 */
 function createPiMock() {
   const commands = new Map<string, { handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }>();
@@ -179,3 +181,31 @@ test("后续手动改名优先，旧模型结果不能覆盖", async () => {
   assert.deepEqual(labels, ["手动标题"]);
   assert.equal(mock.getSessionName(), "手动标题");
 });
+
+
+for (const explicit of [true, false]) {
+  test(`关闭同步时 workspace ${explicit ? "显式" : "生成"}名称不改变已有 session 名称`, async () => {
+    const mock = createPiMock();
+    mock.pi.setSessionName("Original session");
+    const { context, notifications } = createContext(["Task"]);
+    const config = parseConfig({ syncSessionName: false, title: { language: "English" } });
+    let renamed = "";
+    const deps = dependencies(
+      { status: "supported", backend: "cmux", operation: "workspace", target: "workspace" },
+      { status: "renamed", backend: "cmux", operation: "workspace", target: "workspace" },
+    );
+    deps.renameWorkspace = (label) => {
+      renamed = label;
+      return { status: "renamed", backend: "cmux", operation: "workspace", target: "workspace" };
+    };
+    registerTerminalRename(mock.pi, async ({ title }) => {
+      assert.equal(explicit, false);
+      assert.deepEqual(title, config.title);
+      return "Generated name";
+    }, deps, config);
+    await mock.commands.get("rename:workspace")!.handler(explicit ? "Explicit name" : "", context);
+    assert.equal(renamed, explicit ? "Explicit name" : "Generated name");
+    assert.equal(mock.getSessionName(), "Original session");
+    assert.match(notifications[0]!, /未修改|not changed/);
+  });
+}

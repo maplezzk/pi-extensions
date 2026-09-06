@@ -21,7 +21,7 @@ import {
   type SessionNameRequester,
 } from "./session-name.ts";
 import { i18n } from "./i18n.ts";
-import type { NamingConfig } from "./config.ts";
+import { parseConfig, type NamingConfig, type TitleConfig } from "./config.ts";
 
 const WORKSPACE_OPERATION: RenameOperation = "workspace";
 const TAB_OPERATION: RenameOperation = "tab";
@@ -94,12 +94,13 @@ function notifyRenameResult(
   ctx: ExtensionCommandContext,
   result: RenameResult,
   label: string,
+  syncSessionName: boolean,
 ): boolean {
   if (result.status === "renamed") {
     ctx.ui.notify(
       i18n.t(
         result.operation === WORKSPACE_OPERATION
-          ? "workspaceRenameDone"
+          ? (syncSessionName ? "workspaceRenameDone" : "workspaceRenameOnlyDone")
           : "tabRenameDone",
         {
           label,
@@ -133,6 +134,7 @@ async function resolveWorkspaceLabel(
   args: string,
   ctx: ExtensionCommandContext,
   requestName: SessionNameRequester,
+  title: TitleConfig,
 ): Promise<string | undefined> {
   const explicitLabel = args.trim();
   if (explicitLabel) return explicitLabel;
@@ -147,6 +149,7 @@ async function resolveWorkspaceLabel(
     userMessages,
     ctx: ctx as Pick<ExtensionContext, "model" | "modelRegistry">,
     requestName,
+    title,
   });
 }
 
@@ -174,6 +177,7 @@ function registerRenameCommand(
   requestName: SessionNameRequester,
   dependencies: RenameDependencies,
   state: { generation: number; request: number },
+  config: NamingConfig,
 ): void {
   pi.registerCommand(commandName, {
     description: i18n.t(
@@ -195,7 +199,7 @@ function registerRenameCommand(
       }
       if (operation === WORKSPACE_OPERATION && !label) {
         try {
-          label = (await resolveWorkspaceLabel(args, ctx, requestName)) ?? "";
+          label = (await resolveWorkspaceLabel(args, ctx, requestName, config.title)) ?? "";
         } catch (error) {
           if (isCurrent()) ctx.ui.notify(i18n.t("renameFailed", { error: errorMessage(error) }), "error");
           return;
@@ -214,7 +218,8 @@ function registerRenameCommand(
         ? dependencies.renameWorkspace(label)
         : dependencies.renameCurrentTab(label);
       if (
-        notifyRenameResult(ctx, result, label) &&
+        notifyRenameResult(ctx, result, label, config.syncSessionName) &&
+        config.syncSessionName &&
         operation === WORKSPACE_OPERATION &&
         result.status === "renamed"
       ) {
@@ -230,7 +235,7 @@ export function registerTerminalRename(
   pi: ExtensionAPI,
   requestName: SessionNameRequester = requestSessionName,
   dependencies: RenameDependencies = DEFAULT_DEPENDENCIES,
-  enabled: Pick<NamingConfig, "workspaceRename" | "tabRename"> = { workspaceRename: true, tabRename: true },
+  enabled: NamingConfig = parseConfig({}),
 ): void {
   if (!enabled.workspaceRename && !enabled.tabRename) return;
   const state = { generation: 0, request: 0 };
@@ -243,6 +248,7 @@ export function registerTerminalRename(
     requestName,
     dependencies,
     state,
+    enabled,
   );
   if (enabled.tabRename) registerRenameCommand(
     pi,
@@ -251,6 +257,7 @@ export function registerTerminalRename(
     requestName,
     dependencies,
     state,
+    enabled,
   );
 }
 
