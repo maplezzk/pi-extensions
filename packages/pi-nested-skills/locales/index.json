@@ -1,0 +1,30 @@
+{
+  "commandDescription": {
+    "zh-CN": "列出所有可用的嵌套技能及其命令",
+    "en-US": "List all available nested skills and their commands"
+  },
+  "title": {
+    "zh-CN": "## 可用嵌套技能命令\n",
+    "en-US": "## Available nested skill commands\n"
+  },
+  "footer": {
+    "zh-CN": "在聊天中输入上述命令即可手动调用对应技能。",
+    "en-US": "Enter one of the commands above in chat to invoke the corresponding skill."
+  },
+  "noSkills": {
+    "zh-CN": "技能根目录中没有发现可用技能：{roots}",
+    "en-US": "No usable skills were found in the configured roots: {roots}"
+  },
+  "noRoots": {
+    "zh-CN": "未配置根目录",
+    "en-US": "no configured roots"
+  },
+  "configWarning": {
+    "zh-CN": "嵌套技能配置警告：{reason}",
+    "en-US": "Nested skills configuration warning: {reason}"
+  },
+  "scanWarning": {
+    "zh-CN": "扫描技能目录失败：{path}（{reason}）",
+    "en-US": "Failed to scan skill path: {path} ({reason})"
+  }
+}

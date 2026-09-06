@@ -1,0 +1,46 @@
+{
+  "inputTitle": {
+    "zh-CN": "Pi · {project} 💬",
+    "en-US": "Pi · {project} 💬"
+  },
+  "inputNeeded": {
+    "zh-CN": "需要你的输入",
+    "en-US": "Input required"
+  },
+  "multipleQuestions": {
+    "zh-CN": "{prefix}{question} …等 {count} 个问题",
+    "en-US": "{prefix}{question} …and {count} more question(s)"
+  },
+  "taskTitle": {
+    "zh-CN": "Pi · {project}",
+    "en-US": "Pi · {project}"
+  },
+  "taskError": {
+    "zh-CN": "⚠️ 执行完成（有错误）",
+    "en-US": "⚠️ Finished with errors"
+  },
+  "taskDone": {
+    "zh-CN": "✅ 执行完成",
+    "en-US": "✅ Finished"
+  },
+  "stepCount": {
+    "zh-CN": "共 {count} 步，耗时 {seconds}s",
+    "en-US": "{count} steps, took {seconds}s"
+  },
+  "elapsed": {
+    "zh-CN": "耗时 {seconds}s",
+    "en-US": "Took {seconds}s"
+  },
+  "adapterMissing": {
+    "zh-CN": "通知 adapter 命令不可用：{command}。本次会话已停用系统通知。",
+    "en-US": "Notification adapter command is unavailable: {command}. System notifications are disabled for this session."
+  },
+  "sendFailed": {
+    "zh-CN": "通知 adapter 执行失败：{command}（{reason}）。本次会话已停用系统通知。",
+    "en-US": "Notification adapter failed: {command} ({reason}). System notifications are disabled for this session."
+  },
+  "configInvalid": {
+    "zh-CN": "通知配置读取失败：{path}（{reason}）。已使用默认配置。",
+    "en-US": "Failed to read notification config: {path} ({reason}). Default configuration is being used."
+  }
+}
