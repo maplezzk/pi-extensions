@@ -1,6 +1,6 @@
 # pi-safety-guards
 
-Configurable Bash safety rules for Pi: select presets, override individual rules, or add your own matchers. No build system, IDE, deletion utility or private workspace is required.
+Bash safety rules for Pi, with selectable presets, per-rule actions and custom matchers.
 
 [中文文档](./README.zh-CN.md)
 
@@ -10,13 +10,13 @@ Configurable Bash safety rules for Pi: select presets, override individual rules
 pi install npm:pi-safety-guards
 ```
 
-This package must be published before npm installation is available. Reload Pi after installation or configuration changes.
+Run `/reload` after installation or configuration changes.
 
-## Default behavior
+## Presets
 
-Without configuration, only the `destructive-operations` preset is active. It asks for confirmation before the supported destructive commands; it does **not** require trash, forbid Maven, force an IDE, restrict directories, or trust a skills directory.
+By default, `destructive-operations` asks for confirmation before these operations:
 
-| Preset | Rule ID | Match | Default action |
+| Preset | Rule ID | Match | Action |
 | --- | --- | --- | --- |
 | `destructive-operations` | `filesystem.delete` | Executed `rm` or `rmdir` | confirm |
 | `destructive-operations` | `filesystem.format` | Executed `mkfs` or `mkfs.*` | confirm |
@@ -24,33 +24,11 @@ Without configuration, only the `destructive-operations` preset is active. It as
 | `destructive-operations` | `shell.fork-bomb` | Supported colon-function fork-bomb syntax | confirm |
 | `workspace-boundary` (opt-in) | `paths.workspace` | Explicit Bash paths outside `.` | block |
 
-The command parser accounts for supported wrappers, literal nested shells, substitutions and redirects. Text such as `echo 'rm file'` or a subcommand such as `git rm` does not count as executing `rm`.
+Matching uses parsed commands, including supported wrappers, literal nested shells, substitutions and redirects. `echo 'rm file'` and `git rm` do not count as executing `rm`.
 
 ## Configuration
 
-File: `<pi-agent-dir>/extensions/pi-safety-guards/config.json`. `PI_CODING_AGENT_DIR` is respected. Configuration is loaded once per extension load; use `/reload` after changes.
-
-```json
-{
-  "presets": ["destructive-operations"],
-  "rules": []
-}
-```
-
-- Omitted `presets` selects the default preset. An explicit empty list selects none.
-- `rules` overrides selected preset rules by stable `id` or adds new rules. Duplicate IDs in this list are rejected.
-- An existing rule can override `action`, `match`, `message`, or set `enabled: false`.
-- New enabled rules require `id`, `action` and `match`.
-- Unknown fields, unknown presets and malformed rules are errors, not silently ignored.
-- Empty presets and rules disable checking and report that no protection is active.
-
-### Actions
-
-- `warn`: allow the operation and append a rule warning to its tool result, including in modes without a UI.
-- `confirm`: ask once for the matching rules. If prompting is unavailable or the user does not confirm, block.
-- `block`: reject the operation without prompting.
-
-When multiple rules match, `block` wins over `confirm`, then `warn`. All matching IDs are reported. There is no order-dependent allow rule that bypasses later checks. Suggestions are plain text; the extension never executes a replacement command.
+File: `<pi-agent-dir>/extensions/pi-safety-guards/config.json`. The agent directory respects `PI_CODING_AGENT_DIR`.
 
 ```json
 {
@@ -63,32 +41,49 @@ When multiple rules match, `block` wins over `confirm`, then `warn`. All matchin
 }
 ```
 
-`message` accepts either a non-empty local string or an object with both `zh-CN` and `en-US`. If omitted, feedback contains only the matched rule ID and the action taken; no alternative tool or workflow is invented. The [custom-rule example](./examples/custom-rules.json) demonstrates overrides, disabling and adding a command rule. Replace `example-command` with the command you want to match; it is a placeholder, not a required tool.
+Replace `example-command` with the command to match. See also [config.example.json](./config.example.json) and [custom-rules.json](./examples/custom-rules.json).
+
+- `presets`: omitted selects the default preset; `[]` selects none.
+- `rules`: override selected preset rules by `id` or add new ones. IDs must be unique within this list.
+- Existing rules can override `action`, `match` and `message`, or use `enabled: false`.
+- New enabled rules require `id`, `action` and `match`.
+- `message`: optional non-empty text or an object containing `zh-CN` and `en-US`. If omitted, feedback shows the rule ID and action.
+- Empty presets and rules disable checking and report that no protection is active.
+
+### Actions
+
+| Action | Behavior |
+| --- | --- |
+| `warn` | Allow and append a warning to the corresponding tool result, including without a UI. |
+| `confirm` | Ask once for the matching rules. Block if prompting is unavailable or the user does not confirm. |
+| `block` | Reject without prompting. |
+
+When multiple rules match, priority is `block > confirm > warn`. Feedback includes all matching IDs.
 
 ### Matchers
 
-Exactly one matcher is allowed per rule:
+Use exactly one matcher per rule:
 
 | `match` | Meaning |
 | --- | --- |
-| `{ "commands": ["tool", "wrapper"] }` | Exact executed command basenames, not substring matching of raw text |
-| `{ "detector": "disk-format" }` | Existing format-command detector |
-| `{ "detector": "fork-bomb" }` | Existing colon-function detector |
-| `{ "detector": "in-place-edit" }` | `sed` in-place flags; opt-in, not forbidden by default |
-| `{ "detector": "home-root" }` | An unquoted standalone `~` argument; opt-in |
-| `{ "detector": "root-search" }` | A `find` argument equal to `/`; opt-in |
+| `{ "commands": ["example-command"] }` | Exact executed command basenames |
+| `{ "detector": "disk-format" }` | `mkfs` or `mkfs.*` |
+| `{ "detector": "fork-bomb" }` | Supported colon-function fork-bomb syntax |
+| `{ "detector": "in-place-edit" }` | `sed` in-place flags |
+| `{ "detector": "home-root" }` | An unquoted standalone `~` argument |
+| `{ "detector": "root-search" }` | A `find` argument equal to `/` |
 | `{ "outsideRoots": [".", "../shared"] }` | Explicit paths outside the configured roots |
 | `{ "module": "./rules/deploy.mjs" }` | A trusted local matcher module |
 
-### Directory policies
+### Directory rules
 
-The directory preset is opt-in. Relative roots resolve against the current Pi working directory; absolute paths and `~/` are supported. Only supplied roots are trusted: `cwd`, `/tmp`, `/var`, skills directories, PATH executables and shell device paths are not silently added. In the preset, `.` explicitly allows `cwd`. Add necessary roots or device paths such as `/dev/null` yourself.
+Relative roots resolve against Pi's current working directory; absolute paths and `~/` are supported. Only listed roots are allowed. The preset uses `.` for the working directory. Add extra directories and device paths such as `/dev/null` when needed.
 
-No other extension's private session entries are read. Integrations can supply their own roots through a custom matcher using the exported `findOutOfScopeBashPaths(command, cwd, roots)` helper.
+Custom matchers can use the exported `findOutOfScopeBashPaths(command, cwd, roots)` helper to supply their own roots.
 
-### Local rule modules
+### Custom modules
 
-Paths resolve against the directory containing `config.json`, never against model input. Use a local JavaScript ES module with a default matcher:
+Module paths resolve against the directory containing `config.json`. A JavaScript ES module must default-export a matcher:
 
 ```js
 export default ({ commands }) => commands.some(
@@ -96,20 +91,22 @@ export default ({ commands }) => commands.some(
 );
 ```
 
-The matcher receives a frozen `{ command, cwd, commands: [{ name, args }] }` summary and returns a boolean or `Promise<boolean>`. It does not receive Pi's execution API. Import `RuleContext` / `RuleMatcher` types from `pi-safety-guards` when authoring typed integrations.
+The matcher receives a frozen `{ command, cwd, commands: [{ name, args }] }` summary and returns a boolean or `Promise<boolean>`. `RuleContext` and `RuleMatcher` types are exported by the package.
 
-Only explicitly configured enabled modules are loaded. Loading errors, thrown matcher errors, non-boolean results and asynchronous work exceeding five seconds block the operation with the rule ID. Reload reads updated module files. Modules run with full process permissions: the timeout cannot interrupt a synchronous infinite loop or roll back side effects. Only load trusted code; this is not a sandbox.
+Only enabled modules are loaded. Loading failures, matcher errors, non-boolean results and asynchronous work exceeding five seconds block the operation. Use `/reload` after editing a module.
+
+Modules run with full process permissions. The timeout cannot interrupt synchronous loops or roll back side effects; load only trusted code.
 
 ## Limits and errors
 
-This package observes Pi's `bash` tool, not every shell, custom tool, direct user shell or program-internal file operation. It does not implement PowerShell, simulate every working-directory change, or resolve arbitrary variable-generated paths. Path checks cover statically identifiable references and known symlinks; they are not OS-level access control. The default preset does not claim to detect every dangerous command, including all `dd`/`chmod` forms.
+The extension checks Pi's `bash` tool, not direct user shell commands, other tools or program-internal operations. It does not cover every dangerous command, simulate every working-directory change or resolve arbitrary variable-generated paths. Path checks handle statically identifiable references and symlinks, not OS-level access control.
 
-With rules enabled, malformed Bash or rule failures block rather than silently pass. A missing config file uses the default preset; a damaged config blocks Bash until fixed and reloaded. The former experimental `maven`, `javaSkill`, `dangerCommands` and `bashDirectoryScope` switches are not accepted: move that policy into rules explicitly.
+A missing config file uses the default preset. Invalid configuration, malformed Bash and enabled-rule failures block Bash until the relevant error is fixed. Configuration changes require `/reload`.
 
-## Verify
+Runtime messages are available in Chinese and English.
+
+## Development
 
 ```bash
 npm run check
 ```
-
-Tests use parsed command fixtures, fake Pi handlers and temporary matcher modules. Real terminal confirmation and model operation need separate smoke tests. Runtime default messages are available in Chinese and English through `pi-extensions-i18n`.
