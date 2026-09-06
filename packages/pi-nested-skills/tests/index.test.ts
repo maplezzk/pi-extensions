@@ -62,6 +62,8 @@ test("does not guess an ambiguous frontmatter name", () => {
 
 test("registers resources, input transformation, command and completion hooks", async () => {
   const { root } = createIndex();
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-nested-skills-agent-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   try {
     const events = new Map<string, (...args: unknown[]) => unknown>();
     const commands = new Map<string, unknown>();
@@ -77,6 +79,7 @@ test("registers resources, input transformation, command and completion hooks", 
     } as unknown as ExtensionAPI;
 
     process.env.PI_NESTED_SKILLS_ROOTS = root;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
     const context = {
       hasUI: true,
       ui: {
@@ -110,6 +113,9 @@ test("registers resources, input transformation, command and completion hooks", 
     assert.ok(commands.has("skills"));
   } finally {
     delete process.env.PI_NESTED_SKILLS_ROOTS;
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    rmSync(agentDir, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });
