@@ -14,6 +14,7 @@ Available through npm after publication. Run `/reload` after installation or con
 
 - **Automatic naming**: the first real user input in a new, unnamed session generates a title in the background and applies it to the allowed session, workspace and tab targets.
 - **`/rename [name]`**: supply an explicit name, or omit it to generate one from user messages on the current branch. Uses the same targets and execution path as automatic naming.
+- Manual generation considers all user input on the current branch and names the main task. Explicit later corrections or goal changes take precedence; procedural follow-ups such as “continue”, “verify”, or “commit” should not overshadow the topic. Other branches, assistant replies and tool output are excluded. Automatic naming still attempts only once on the first input, not after every turn.
 - Automatic results do not overwrite an existing name. Manual commands supersede pending requests; session switches and reloads discard old results and errors.
 - Each target is independent. Unsupported, disabled, unidentified or failed terminal targets are reported without preventing session naming or other target updates. Non-UI modes receive Pi messages instead of silent failures.
 
