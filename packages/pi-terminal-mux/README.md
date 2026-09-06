@@ -138,3 +138,14 @@ These are opt-in capabilities — existing Bash callers and `pi-interactive-suba
 ## License
 
 MIT
+
+
+## Scoped naming
+
+`createSurfaceRenameContext(surface)` describes the terminal target a launcher can grant to a child. Pass its JSON value in `PI_TERMINAL_RENAME_CONTEXT`, replacing any inherited value on **every launch and resume**. This protocol is owned by terminal-mux, not by a naming or subagent extension.
+
+`resolveTerminalRenameTargets({ tab, workspace })` returns explicit target IDs and `surface`/`shared` scope, or individual skipped/failed results. `renameTerminalTarget(reference, title)` executes against that captured identity. Callers decide when to rename and which targets to request; the library does not generate titles or change Pi sessions.
+
+A restricted child never renames a workspace. cmux surfaces, muxy/zellij panes, and Herdr panes or explicitly created Herdr tabs can be granted. tmux/WezTerm/Otty/Orca split surfaces do not prove exclusive ownership of their window/tab: naming is skipped rather than expanded to the shared parent. Ordinary sessions require their own target IDs; missing IDs never fall back to focus or the first tab. Existing backend rename opt-ins still apply to ordinary sessions.
+
+Invalid JSON or an unknown protocol version is an error, not unrestricted access. Legacy child identity variables without this protocol restrict terminal naming until the launcher supplies ownership. This is a cooperation contract for trusted local processes, not a security sandbox. WezTerm/Otty split creation does not rename a shared tab.

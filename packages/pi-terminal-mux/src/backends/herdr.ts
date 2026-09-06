@@ -159,6 +159,11 @@ function extractCreatedHerdrTab(json: unknown): CreatedHerdrTab | null {
 /** 记录由本进程创建的 tab surface，使 rename / close 操作作用于整个 tab。 */
 const createdHerdrTabIds = new Map<string, string>();
 
+/** 仅返回本进程实际创建的独占 tab，供启动方声明改名归属。 */
+export function getCreatedHerdrTabId(surface: string): string | undefined {
+  return createdHerdrTabIds.get(surface);
+}
+
 // ── 对外 API：createSurface 系列 ──
 
 /** 使用原有 BFS 策略创建 subagent 分屏。 */

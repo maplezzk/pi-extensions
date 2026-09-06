@@ -137,3 +137,14 @@ export PI_SUBAGENT_HERDR_MODE=tab
 ## License
 
 MIT
+
+
+## 按归属改名
+
+`createSurfaceRenameContext(surface)` 描述启动方可授予子进程的终端改名目标。把返回值序列化为 JSON 放入 `PI_TERMINAL_RENAME_CONTEXT`，**每次启动和恢复都替换继承值**。协议属于 terminal-mux，不属于命名或子代理插件。
+
+`resolveTerminalRenameTargets({ tab, workspace })` 返回明确的目标 ID、`surface`/`shared` 范围，或逐目标跳过/失败结果。`renameTerminalTarget(reference, title)` 对捕获的身份执行改名。调用方决定何时改、改哪些目标；库不生成标题，也不修改 Pi session。
+
+受限子进程不能改 workspace。cmux surface、muxy/zellij pane、Herdr pane 或明确新建的 Herdr tab 可以授予。tmux/WezTerm/Otty/Orca 的分屏不能证明独占 window/tab，改名会跳过，不扩大到共享父目标。普通会话必须能确定自身目标 ID；缺失时不退回当前焦点或第一个 tab。普通会话仍遵守各后端原有的改名开关。
+
+协议 JSON 损坏或版本未知会报错，不能退回无限制范围。只有旧子代理身份标志、没有归属协议时，终端改名受限，直到启动方提供归属。此协议用于可信本地进程协作，不是安全沙箱。WezTerm/Otty 创建分屏时不会重命名共享 tab。

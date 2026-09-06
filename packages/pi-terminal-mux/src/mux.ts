@@ -95,3 +95,19 @@ export {
   renameHerdrTab,
   renameHerdrWorkspace,
 } from "./backends/herdr.ts";
+
+// ── 精确目标和跨进程改名归属 ──
+export {
+  TERMINAL_RENAME_CONTEXT_ENV,
+  createSurfaceRenameContext,
+  readSurfaceRenameContext,
+  resolveTerminalRenameTargets,
+  renameTerminalTarget,
+} from "./rename.ts";
+export type {
+  SurfaceRenameContext,
+  TerminalRenameTarget,
+  TerminalRenameOutcome,
+  ResolveRenameOptions,
+  RenameCommandRunner,
+} from "./rename.ts";
