@@ -16,6 +16,9 @@ const RENAME_COMMANDS = {
   muxy: ["rename-pane", "--pane"],
   tmuxTab: ["rename-window", "-t"],
   tmuxWorkspace: ["rename-session", "-t"],
+  tmuxLookup: ["display-message", "-p", "-t"],
+  tmuxWindowId: "#{window_id}",
+  tmuxSessionId: "#{session_id}",
   zellij: ["action", "rename-pane"],
   paneId: "--pane-id",
   weztermTab: ["cli", "set-tab-title", "--pane-id"],
@@ -106,11 +109,17 @@ export interface ResolveRenameOptions {
 }
 
 /** 返回当前进程的明确目标 ID，不以当前焦点或第一个 tab 代替未知身份。 */
-function currentTargetId(backend: MuxBackend, operation: RenameOperation, env: NodeJS.ProcessEnv): string | undefined {
+function currentTargetId(reference: { backend: MuxBackend; operation: RenameOperation; env: NodeJS.ProcessEnv }, query: RenameIdQuery): string | undefined {
+  const { backend, operation, env } = reference;
   const surfaceKeys: Record<MuxBackend, string> = {
     cmux: "CMUX_SURFACE_ID", muxy: "MUXY_PANE_ID", tmux: "TMUX_PANE", zellij: "ZELLIJ_PANE_ID",
     wezterm: "WEZTERM_PANE", herdr: "HERDR_TAB_ID", otty: "OTTY_PANE_ID", orca: "ORCA_TERMINAL_HANDLE",
   };
+  if (backend === "tmux") {
+    const pane = env.TMUX_PANE;
+    return pane ? query("tmux", [...RENAME_COMMANDS.tmuxLookup, pane,
+      operation === "tab" ? RENAME_COMMANDS.tmuxWindowId : RENAME_COMMANDS.tmuxSessionId]).trim() : undefined;
+  }
   if (backend === "otty") {
     const pane = env.OTTY_PANE_ID ?? AGENT_OTTY_PANE_ID;
     return pane ? getTabIdForPane(pane) ?? undefined : undefined;
@@ -120,8 +129,15 @@ function currentTargetId(backend: MuxBackend, operation: RenameOperation, env: N
   return env[surfaceKeys[backend]];
 }
 
+export type RenameIdQuery = (command: string, args: string[]) => string;
+
+/** 查询父 window/session 的明确身份，限制外部命令等待时间。 */
+function queryRenameId(command: string, args: string[]): string {
+  return execFileSync(command, args, { encoding: "utf8", timeout: COMMAND_TIMEOUT_MS });
+}
+
 /** 解析一次批量改名的目标；各目标的失败、关闭或跳过分别保留。 */
-export function resolveTerminalRenameTargets(options: ResolveRenameOptions): TerminalRenameOutcome[] {
+export function resolveTerminalRenameTargets(options: ResolveRenameOptions, query: RenameIdQuery = queryRenameId): TerminalRenameOutcome[] {
   const env = options.env ?? process.env;
   const context = readSurfaceRenameContext(env);
   const backend = options.backend === undefined ? getMuxBackend() : options.backend;
@@ -145,10 +161,10 @@ export function resolveTerminalRenameTargets(options: ResolveRenameOptions): Ter
       continue;
     }
     try {
-      const id = currentTargetId(capability.backend, operation, env);
+      const id = currentTargetId({ backend: capability.backend, operation, env }, query);
       outcomes.push(id?.trim() ? { status: "ready", reference: {
-        backend: capability.backend, operation, target: capability.target, id,
-        scope: operation === "workspace" || ["tmux", "wezterm", "herdr", "otty"].includes(capability.backend) ? "shared" : "surface",
+        backend: capability.backend, operation, target: capability.backend === "orca" ? "tab" : capability.target, id,
+        scope: operation === "workspace" || ["tmux", "wezterm", "herdr", "otty", "orca"].includes(capability.backend) ? "shared" : "surface",
       } } : { status: "skipped", operation, reason: "missing-id" });
     } catch (error) {
       outcomes.push({ status: "failed", operation, error: error instanceof Error ? error.message : String(error) });

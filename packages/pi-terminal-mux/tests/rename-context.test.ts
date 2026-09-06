@@ -96,3 +96,16 @@ test("Orca 失败由注入的后端报告，不触碰本机服务", () => {
   });
   assert.equal(result.status, "failed");
 });
+
+
+test("tmux 在生成标题前解析固定 window/session ID", () => {
+  const queries: string[][] = [];
+  const results = resolveTerminalRenameTargets({ tab: true, workspace: true, backend: "tmux", env: {
+    TMUX_PANE: "%child", PI_SUBAGENT_RENAME_TMUX_WINDOW: "1", PI_SUBAGENT_RENAME_TMUX_SESSION: "1",
+  } }, (_command, args) => {
+    queries.push(args);
+    return args.at(-1) === "#{window_id}" ? "@own" : "$own";
+  });
+  assert.deepEqual(results.map((result) => result.status === "ready" && result.reference.id), ["$own", "@own"]);
+  assert.ok(queries.every((args) => args.includes("%child")));
+});
