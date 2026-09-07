@@ -117,10 +117,17 @@ function matchesBuiltin(
   context: RuleContext,
   analysis: ShellCommandAnalysis,
   commandNames: ReadonlySet<string>,
+  additionalRoots: readonly string[],
 ): boolean {
   if ("commands" in match) return match.commands.some((name) => commandNames.has(name));
   if ("detector" in match) return detect(match.detector, analysis, context.command);
-  if ("outsideRoots" in match) return findOutOfScopeBashPaths(context.command, context.cwd, match.outsideRoots).length > 0;
+  if ("outsideRoots" in match) {
+    return findOutOfScopeBashPaths(
+      context.command,
+      context.cwd,
+      [...match.outsideRoots, ...additionalRoots],
+    ).length > 0;
+  }
   throw new Error(i18n.t("moduleMustExportMatcher"));
 }
 
@@ -137,6 +144,7 @@ export async function evaluateRules(
   rules: readonly CompiledRule[],
   command: string,
   cwd: string,
+  additionalRoots: readonly string[] = [],
 ): Promise<PolicyDecision | undefined> {
   if (rules.length === 0) return undefined;
   const analysis = analyzeShellCommand(command);
@@ -148,7 +156,7 @@ export async function evaluateRules(
     try {
       const matched = matcher
         ? await withDeadline(() => matcher(context))
-        : matchesBuiltin(rule.match, context, analysis, commandNames);
+        : matchesBuiltin(rule.match, context, analysis, commandNames, additionalRoots);
       if (typeof matched !== "boolean") throw new Error(i18n.t("matcherMustReturnBoolean"));
       if (matched) matches.push(rule);
     } catch (error) {

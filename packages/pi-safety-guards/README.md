@@ -79,7 +79,7 @@ Use exactly one matcher per rule:
 
 ### Directory rules
 
-Relative roots resolve against Pi's current working directory; absolute paths and `~/` are supported. Only listed roots are allowed. The preset uses `.` for the working directory. Add extra directories and device paths such as `/dev/null` when needed.
+Relative roots resolve against Pi's current working directory; absolute paths and `~/` are supported. Only listed roots are allowed. The preset uses `.` for the working directory. When `pi-add-dir` is installed, its active directory authorization is also honored; after `session_squash`, the guard restores the authorization from the squashed source branch. Add extra directories and device paths such as `/dev/null` when needed.
 
 Custom matchers can use the exported `findOutOfScopeBashPaths(command, cwd, roots)` helper to supply their own roots.
 
