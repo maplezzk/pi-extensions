@@ -16,6 +16,7 @@ import { registerToolDisplayOverrides } from "./tool-overrides.js";
 import { logToolDisplayDebug } from "./debug-logger.js";
 import { disposeAll, resetDisposed } from "./disposable.js";
 import { registerThinkingLabeling } from "./thinking-label.js";
+import { registerToolDisplayViewportMouse } from "./viewport-mouse.js";
 import registerNativeUserMessageBox from "./user-message-box-native.js";
 import {
   BUILT_IN_TOOL_OVERRIDE_NAMES,
@@ -131,6 +132,7 @@ export function ensureToolDisplayHost(
 
   if (initial.config.enabled) {
     registerToolDisplayOverrides(pi, getEffectiveConfig, activeBuiltInToolNamesBeforeReload);
+    registerToolDisplayViewportMouse();
     registerNativeUserMessageBox(pi, getConfig);
     registerThinkingLabeling(pi);
   }
