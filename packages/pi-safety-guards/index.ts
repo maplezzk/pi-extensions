@@ -6,6 +6,7 @@ import { dirname } from "node:path";
 import { configPath, loadConfig, loadConfigDocument, saveConfigDocument } from "./src/config.ts";
 import { DEFAULT_PRESETS, PRESETS } from "./src/presets.ts";
 import { compileRules, evaluateRules, type ModuleLoader } from "./src/engine.ts";
+import { addedDirectoryPathsFromSession } from "./src/bash-directory-scope-utils.ts";
 import { i18n } from "./src/i18n.ts";
 import type { SafetyConfig, SafetyRule } from "./src/types.ts";
 
@@ -114,7 +115,11 @@ export async function registerSafetyGuards(
     if (event.toolName !== BASH_TOOL) return;
     const command = String(event.input.command ?? "");
     try {
-      const decision = await evaluateRules(rules, command, ctx.cwd);
+      const additionalRoots = addedDirectoryPathsFromSession(
+        ctx.sessionManager.getEntries(),
+        ctx.sessionManager.getBranch(),
+      );
+      const decision = await evaluateRules(rules, command, ctx.cwd, additionalRoots);
       if (!decision) return;
       const details = decision.matches.map(describeRule).join("\n");
       if (decision.action === BLOCK_ACTION) return { block: true, reason: i18n.t("blocked", { details }) };
@@ -156,4 +161,7 @@ export default async function piSafetyGuards(pi: ExtensionAPI): Promise<void> {
 
 export { configPath, loadConfig, parseConfig, saveConfig } from "./src/config.ts";
 export type { RuleContext, RuleMatcher } from "./src/types.ts";
-export { findOutOfScopeBashPaths } from "./src/bash-directory-scope-utils.ts";
+export {
+  addedDirectoryPathsFromSession,
+  findOutOfScopeBashPaths,
+} from "./src/bash-directory-scope-utils.ts";
