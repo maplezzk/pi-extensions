@@ -438,6 +438,30 @@ test("pi-tool-supervisor 通过通用 tool-display result middleware 追加审�
     const output = component.render(120).join("\n");
     assert.match(output, /基础 diff/);
     assert.match(output, /⛨ Supervisor  ✓ 已通过  edit · 1 个审查器 · 1\.4s • Ctrl\+O 展开/);
+
+    const rejectedComponent = registration.middleware({
+      toolName: "edit",
+      result: {
+        content: [{ type: "text", text: "Error: [文件编辑审查未通过]" }],
+        details: {
+          fileEditReview: {
+            status: "rejected",
+            durationMs: 1400,
+            reviewers: [{ name: "coding-taste", status: "rejected", durationMs: 1200 }],
+          },
+        },
+      },
+      options: { expanded: false },
+      theme: {
+        fg: (_color: string, text: string) => text,
+        bold: (text: string) => text,
+      },
+    }, () => {
+      throw new Error("raw tool output should be hidden");
+    });
+    const rejectedOutput = rejectedComponent.render(120).join("\n");
+    assert.match(rejectedOutput, /⛨ Supervisor  ✕ 未通过/);
+    assert.doesNotMatch(rejectedOutput, /Error: \[文件编辑审查未通过\]/);
   } finally {
     dispose();
     delete (globalThis as any)[apiKey];
