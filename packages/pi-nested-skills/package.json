@@ -1,6 +1,6 @@
 {
   "name": "pi-nested-skills",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi extension for recursive nested-skill discovery and aliases",
   "type": "module",
   "main": "./index.ts",

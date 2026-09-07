@@ -1,6 +1,6 @@
 {
   "name": "pi-notifications",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Configurable external notifications for Pi agent lifecycle events",
   "type": "module",
   "main": "./index.ts",

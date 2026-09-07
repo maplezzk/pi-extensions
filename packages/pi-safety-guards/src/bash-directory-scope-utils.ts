@@ -64,6 +64,17 @@ export interface BashPathViolation {
   resolvedPath: string;
 }
 
+/** 返回目录规则实际使用的规范化允许根，供阻断反馈准确说明授权范围。 */
+export function resolveBashDirectoryRoots(
+  cwd: string,
+  roots: readonly string[],
+): string[] {
+  return canonicalRoots(roots.map((root) => {
+    const expanded = expandKnownPathPrefix(root, cwd);
+    return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
+  }));
+}
+
 const EMPTY_OPTIONS = new Set<string>();
 const WRAPPER_PATH_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
   sudo: new Set(["-D", "--chdir", "-R", "--chroot"]),
@@ -156,10 +167,7 @@ export function findOutOfScopeBashPaths(
   cwd: string,
   roots: readonly string[],
 ): BashPathViolation[] {
-  const allowedRoots = canonicalRoots(roots.map((root) => {
-    const expanded = expandKnownPathPrefix(root, cwd);
-    return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
-  }));
+  const allowedRoots = resolveBashDirectoryRoots(cwd, roots);
   const referencedPaths = collectReferencedPaths(command);
   const violations: BashPathViolation[] = [];
   const seen = new Set<string>();
@@ -202,7 +210,6 @@ function replayDirectoryState(
     const sourceState = source === undefined
       ? undefined
       : resolveDirectoryStateAtLeaf(source, byId, memo, resolving);
-    // squash 代表当时的有效状态；源记录缺失或循环时清空授权，不能恢复更早的旧授权。
     state = sourceState?.known ? sourceState : { known: true, paths: [] };
   }
   return state;
