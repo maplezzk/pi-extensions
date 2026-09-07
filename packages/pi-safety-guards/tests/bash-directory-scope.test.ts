@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import {
+  addedDirectoryPathsFromSession,
   findOutOfScopeBashPaths,
 } from "../src/bash-directory-scope-utils.ts";
 const fixtureRoot = mkdtempSync(join(homedir(), ".pi-bash-scope-"));
@@ -95,6 +96,163 @@ test("阻断内联目录选项和家目录路径", () => {
   assert.equal(violations(`git --git-dir=${shellQuote(join(outsideDir, ".git"))} status`).length, 1);
   assert.equal(violations(`env -C${shellQuote(outsideDir)} pwd`).length, 1);
   assert.equal(violations("ls ~/Downloads").length, 1);
+});
+
+test("session_squash 后从原分支恢复 add_directory 白名单", () => {
+  const state = {
+    type: "custom",
+    id: "state-1",
+    parentId: "user-1",
+    customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: addedDir }] },
+  };
+  const sourceLeaf = {
+    type: "message",
+    id: "leaf-1",
+    parentId: "state-1",
+    message: { role: "assistant", content: [] },
+  };
+  const squash = {
+    type: "custom_message",
+    id: "squash-1",
+    parentId: "user-1",
+    customType: "session-squash",
+    content: "handoff",
+    details: { sourceLeafId: "leaf-1" },
+  };
+  const activeBranch = [
+    { type: "session", id: "header" },
+    { type: "message", id: "user-1", parentId: null, message: { role: "user", content: [] } },
+    squash,
+  ];
+
+  assert.deepEqual(
+    addedDirectoryPathsFromSession([state, sourceLeaf, squash], activeBranch),
+    [addedDir],
+  );
+  assert.deepEqual(
+    findOutOfScopeBashPaths(`cat ${shellQuote(join(addedDir, "added.txt"))}`, currentDir,
+      addedDirectoryPathsFromSession([state, sourceLeaf, squash], activeBranch)),
+    [],
+  );
+});
+
+test("squash checkpoint 按时序覆盖 checkpoint 之前的旧状态", () => {
+  const oldState = {
+    type: "custom", id: "state-old", parentId: "user-1", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: outsideDir }] },
+  };
+  const sourceState = {
+    type: "custom", id: "state-source", parentId: "leaf-1", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: addedDir }] },
+  };
+  const sourceLeaf = { type: "message", id: "leaf-1", parentId: "state-old", message: {} };
+  const squash = {
+    type: "custom_message", id: "squash-1", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "state-source" }, content: "handoff",
+  };
+
+  assert.deepEqual(
+    addedDirectoryPathsFromSession([oldState, sourceLeaf, sourceState, squash], [oldState, squash]),
+    [addedDir],
+  );
+});
+
+test("连续 squash 递归解析前一个 squash 的 sourceLeaf", () => {
+  const state = {
+    type: "custom", id: "state-1", parentId: "user-1", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: addedDir }] },
+  };
+  const sourceLeaf1 = { type: "message", id: "leaf-1", parentId: "state-1", message: {} };
+  const squash1 = {
+    type: "custom_message", id: "squash-1", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "leaf-1" }, content: "handoff-1",
+  };
+  const sourceLeaf2 = { type: "message", id: "leaf-2", parentId: "squash-1", message: {} };
+  const squash2 = {
+    type: "custom_message", id: "squash-2", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "leaf-2" }, content: "handoff-2",
+  };
+
+  assert.deepEqual(
+    addedDirectoryPathsFromSession([state, sourceLeaf1, squash1, sourceLeaf2, squash2], [squash2]),
+    [addedDir],
+  );
+});
+
+test("squash source 环路不会递归或复活旧授权", () => {
+  const state = {
+    type: "custom", id: "state-cycle", parentId: "user-1", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: addedDir }] },
+  };
+  const squashA = {
+    type: "custom_message", id: "squash-a", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "leaf-b" }, content: "a",
+  };
+  const leafB = { type: "message", id: "leaf-b", parentId: "squash-a", message: {} };
+  const squashB = {
+    type: "custom_message", id: "squash-b", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "leaf-a" }, content: "b",
+  };
+  const leafA = { type: "message", id: "leaf-a", parentId: "squash-b", message: {} };
+
+  assert.deepEqual(
+    addedDirectoryPathsFromSession([state, squashA, leafB, squashB, leafA], [state, squashA]),
+    [],
+  );
+});
+
+test("显式 cycle 和 squash 后新 add_directory 状态覆盖旧授权", () => {
+  const oldState = {
+    type: "custom", id: "state-old", parentId: "user-1", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: outsideDir }] },
+  };
+  const squash = {
+    type: "custom_message", id: "squash", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "leaf" }, content: "cycle",
+  };
+  const leaf = { type: "message", id: "leaf", parentId: "squash", message: {} };
+  const activeState = {
+    type: "custom", id: "state-new", parentId: "squash", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: addedDir }] },
+  };
+  assert.deepEqual(
+    addedDirectoryPathsFromSession([oldState, squash, leaf, activeState], [oldState, squash, activeState]),
+    [addedDir],
+  );
+  assert.deepEqual(
+    addedDirectoryPathsFromSession([oldState, squash, leaf], [oldState, squash]),
+    [],
+  );
+});
+
+test("空目录状态明确撤销授权，缺失 source 不回退旧授权", () => {
+  const state = {
+    type: "custom", id: "state-1", parentId: "user-1", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: addedDir }] },
+  };
+  const sourceLeaf = { type: "message", id: "leaf-1", parentId: "state-1", message: {} };
+  const clearState = {
+    type: "custom", id: "state-clear", parentId: "leaf-1", customType: "add-dir:state",
+    data: { dirs: [] },
+  };
+  const squashWithClear = {
+    type: "custom_message", id: "squash-clear", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "state-clear" }, content: "clear",
+  };
+  const squashWithMissingSource = {
+    type: "custom_message", id: "squash-missing", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "missing-leaf" }, content: "missing",
+  };
+
+  assert.deepEqual(
+    addedDirectoryPathsFromSession([state, sourceLeaf, clearState, squashWithClear], [squashWithClear]),
+    [],
+  );
+  assert.deepEqual(
+    addedDirectoryPathsFromSession([state, squashWithMissingSource], [state, squashWithMissingSource]),
+    [],
+  );
 });
 
 test("不隐式信任 skills，也不豁免脚本参数", () => {
