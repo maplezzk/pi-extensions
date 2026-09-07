@@ -18,6 +18,13 @@ function getAudit(result: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+const DIAGNOSTIC_AUDIT_STATUSES = new Set(["rejected", "failed"]);
+
+/** Returns whether the audit should replace raw diagnostic tool output in the TUI. */
+function isDiagnosticAudit(audit: Record<string, unknown>): boolean {
+  return typeof audit.status === "string" && DIAGNOSTIC_AUDIT_STATUSES.has(audit.status);
+}
+
 /** Renders supervisor panels for every tool carrying a valid audit. */
 const supervisorMiddleware: ResultMiddleware = (context, next) => {
   const audit = getAudit(context.result);
@@ -30,7 +37,10 @@ const supervisorMiddleware: ResultMiddleware = (context, next) => {
   if (!rendered) return next();
 
   const panel = createSupervisorAuditComponent(rendered, context.theme);
-  return appendResultRenderPanel(next(), panel);
+  // The full diagnostic remains in result.content for the model, while the
+  // TUI shows the audit panel and the notify toast instead of printing it as
+  // ordinary tool output in the editor area.
+  return isDiagnosticAudit(audit) ? panel : appendResultRenderPanel(next(), panel);
 };
 
 export function registerSupervisorToolDisplayMiddleware(): () => void {
