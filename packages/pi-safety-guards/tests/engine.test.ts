@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseConfig } from "../src/config.ts";
@@ -45,12 +45,29 @@ test("可以按相同配置格式限制任意构建工具，不只 Maven", async
   }
 });
 
-test("显式选择目录预设才限制路径，允许范围可覆盖", async () => {
-  const cwd = join(tmpdir(), "policy-cwd");
-  const blocked = await compileRules(parseConfig({ presets: ["workspace-boundary"] }), tmpdir());
-  assert.equal((await evaluateRules(blocked, "cat ../outside/file", cwd))?.action, "block");
-  const overridden = await compileRules(parseConfig({ presets: ["workspace-boundary"], rules: [{ id: "paths.workspace", match: { outsideRoots: [".", "../outside"] } }] }), tmpdir());
-  assert.equal(await evaluateRules(overridden, "cat ../outside/file", cwd), undefined);
+test("显式选择目录预设才限制路径，保留证据并允许正确的额外范围", async () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "policy-cwd-"));
+  const cwd = join(fixtureRoot, "workspace");
+  const external = join(fixtureRoot, "external");
+  const unrelated = join(fixtureRoot, "unrelated");
+  mkdirSync(cwd);
+  mkdirSync(external);
+  mkdirSync(unrelated);
+  writeFileSync(join(external, "one.md"), "one");
+  writeFileSync(join(external, "two.md"), "two");
+  writeFileSync(join(external, "three.md"), "three");
+  const command = `cat ${join(external, "one.md")} ${join(external, "two.md")} ${join(external, "three.md")}`;
+  const rules = await compileRules(parseConfig({ presets: ["workspace-boundary"] }), tmpdir());
+  const blocked = await evaluateRules(rules, command, cwd);
+  assert.equal(blocked?.action, "block");
+  const evidence = blocked?.pathEvidence.get("paths.workspace");
+  assert.equal(evidence?.violations.length, 3);
+  assert.equal(evidence?.cwd, cwd);
+  assert.deepEqual(evidence?.allowedRoots, [realpathSync(cwd)]);
+  assert.deepEqual(evidence?.suggestedDirectories, [realpathSync(external)]);
+  assert.equal((await evaluateRules(rules, command, cwd, [external]))?.action, undefined);
+  assert.equal((await evaluateRules(rules, `cat ${join(unrelated, "secret.md")}`, cwd, [external]))?.action, "block");
+  assert.equal((await evaluateRules(await compileRules(parseConfig({}), tmpdir()), "rm file", cwd))?.action, "confirm");
 });
 
 test("只加载显式启用的本地规则模块，配置目录决定相对路径", async () => {

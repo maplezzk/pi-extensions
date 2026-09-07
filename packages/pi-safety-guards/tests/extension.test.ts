@@ -18,6 +18,7 @@ function host(hasUI = true, accepted = true) {
   const pi = { on: (name: string, handler: Handler) => handlers.set(name, handler) } as unknown as ExtensionAPI;
   const ctx = {
     cwd: tmpdir(), hasUI,
+    sessionManager: { getEntries: () => [], getBranch: () => [] },
     ui: {
       confirm: async (_title: string, text: string) => { prompts.push(text); return accepted; },
       notify: (text: string) => notices.push(text),
@@ -110,6 +111,41 @@ test("损坏配置不默默恢复默认预设，而是通知并阻断 Bash", asy
   assert.equal(fake.notices.length, 1);
   assert.equal((await fake.emit("tool_call", call("npm test")) as { block: boolean }).block, true);
   assert.equal(await fake.emit("tool_call", { toolName: "read", input: {} }), undefined);
+});
+
+test("目录越界反馈真实路径、范围和 add_directory 建议", async () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "safety-evidence-"));
+  const cwd = join(fixtureRoot, "workspace");
+  const external = join(fixtureRoot, "external");
+  mkdirSync(cwd);
+  mkdirSync(external);
+  writeFileSync(join(external, "workflow.md"), "workflow");
+  const fake = host();
+  (fake.ctx as unknown as { cwd: string }).cwd = cwd;
+  await registerSafetyGuards(fake.pi, parseConfig({ presets: ["workspace-boundary"] }));
+  const command = `cat ${join(external, "workflow.md")}`;
+  const result = await fake.emit("tool_call", call(command)) as { block: boolean; reason: string };
+  assert.equal(result.block, true);
+  assert.match(result.reason, /workflow\.md/);
+  assert.match(result.reason, /Current working directory|当前工作目录/);
+  assert.match(result.reason, /Allowed roots|允许范围/);
+  assert.match(result.reason, /add_directory/);
+  assert.match(result.reason, /external/);
+
+  const state = {
+    id: "state-1",
+    type: "custom",
+    customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: external }] },
+  };
+  (fake.ctx as unknown as { sessionManager: unknown }).sessionManager = {
+    getEntries: () => [state],
+    getBranch: () => [state],
+  };
+  assert.equal(await fake.emit("tool_call", call(command)), undefined);
+  const unrelated = join(fixtureRoot, "unrelated");
+  mkdirSync(unrelated);
+  assert.equal((await fake.emit("tool_call", call(`cat ${join(unrelated, "secret.md")}`)) as { block: boolean }).block, true);
 });
 
 test("未填写说明时仅反馈规则 ID 和动作，不附加替代方案", async () => {

@@ -52,9 +52,27 @@ interface PatternPathOptions {
   valueOptionWidths: Readonly<Record<string, number>>;
 }
 
+interface AddedDirectoryState {
+  dirs?: Array<{ absolutePath?: unknown }>;
+}
+
+const ADD_DIRECTORY_STATE_TYPE = "add-dir:state";
+const SESSION_SQUASH_TYPE = "session-squash";
+
 export interface BashPathViolation {
   inputPath: string;
   resolvedPath: string;
+}
+
+/** 返回目录规则实际使用的规范化允许根，供阻断反馈准确说明授权范围。 */
+export function resolveBashDirectoryRoots(
+  cwd: string,
+  roots: readonly string[],
+): string[] {
+  return canonicalRoots(roots.map((root) => {
+    const expanded = expandKnownPathPrefix(root, cwd);
+    return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
+  }));
 }
 
 const EMPTY_OPTIONS = new Set<string>();
@@ -124,16 +142,32 @@ const JQ_VALUE_OPTION_WIDTHS: Readonly<Record<string, number>> = {
   "--argjson": NAME_AND_VALUE_OPTION_COUNT,
 };
 
+/**
+ * 从当前会话恢复 add_directory 白名单。
+ *
+ * session_squash 会把当前分支切到较早的 user entry，再追加新的摘要消息；
+ * 因此压缩前的 add-dir:state 不再位于 active branch，但仍保留在 session entries
+ * 中。沿 summary details.sourceLeafId 回溯，才能得到压缩时实际生效的目录状态。
+ */
+export function addedDirectoryPathsFromSession(
+  entries: readonly unknown[],
+  activeBranch: readonly unknown[],
+): string[] {
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const entry of entries) {
+    if (isRecord(entry) && typeof entry.id === "string") byId.set(entry.id, entry);
+  }
+
+  return replayDirectoryState(activeBranch, byId, new Map(), new Set()).paths;
+}
+
 /** 找出 Bash 命令中显式引用、但不在允许目录内的本地路径。 */
 export function findOutOfScopeBashPaths(
   command: string,
   cwd: string,
   roots: readonly string[],
 ): BashPathViolation[] {
-  const allowedRoots = canonicalRoots(roots.map((root) => {
-    const expanded = expandKnownPathPrefix(root, cwd);
-    return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
-  }));
+  const allowedRoots = resolveBashDirectoryRoots(cwd, roots);
   const referencedPaths = collectReferencedPaths(command);
   const violations: BashPathViolation[] = [];
   const seen = new Set<string>();
@@ -150,6 +184,94 @@ export function findOutOfScopeBashPaths(
   }
 
   return violations;
+}
+
+interface DirectoryState {
+  known: boolean;
+  paths: string[];
+}
+
+/** 按分支时序回放目录状态；squash checkpoint 会覆盖此前状态。 */
+function replayDirectoryState(
+  branch: readonly unknown[],
+  byId: ReadonlyMap<string, Record<string, unknown>>,
+  memo: Map<string, DirectoryState | undefined>,
+  resolving: Set<string>,
+): DirectoryState {
+  let state: DirectoryState = { known: false, paths: [] };
+  for (const entry of branch) {
+    if (isAddDirectoryState(entry)) {
+      state = parseAddedDirectoryState(entry);
+      continue;
+    }
+    if (!isSessionSquashEntry(entry)) continue;
+
+    const source = sourceLeafId(entry);
+    const sourceState = source === undefined
+      ? undefined
+      : resolveDirectoryStateAtLeaf(source, byId, memo, resolving);
+    state = sourceState?.known ? sourceState : { known: true, paths: [] };
+  }
+  return state;
+}
+
+function resolveDirectoryStateAtLeaf(
+  leafId: string,
+  byId: ReadonlyMap<string, Record<string, unknown>>,
+  memo: Map<string, DirectoryState | undefined>,
+  resolving: Set<string>,
+): DirectoryState | undefined {
+  if (memo.has(leafId)) return memo.get(leafId);
+  if (resolving.has(leafId)) return undefined;
+  const branch = ancestorEntries(leafId, byId);
+  if (branch.length === 0) return undefined;
+
+  resolving.add(leafId);
+  const state = replayDirectoryState(branch, byId, memo, resolving);
+  resolving.delete(leafId);
+  memo.set(leafId, state);
+  return state;
+}
+
+function parseAddedDirectoryState(entry: Record<string, unknown>): DirectoryState {
+  const data = isRecord(entry.data) ? entry.data as AddedDirectoryState : undefined;
+  const dirs = Array.isArray(data?.dirs) ? data.dirs : [];
+  return {
+    known: true,
+    paths: [...new Set(dirs
+      .map((dir) => isRecord(dir) ? dir.absolutePath : undefined)
+      .filter((value): value is string => typeof value === "string" && isAbsolute(value)))]
+  };
+}
+
+function isAddDirectoryState(entry: unknown): entry is Record<string, unknown> {
+  return isRecord(entry) && entry.type === "custom" && entry.customType === ADD_DIRECTORY_STATE_TYPE;
+}
+
+function isSessionSquashEntry(entry: unknown): entry is Record<string, unknown> {
+  return isRecord(entry) && entry.type === "custom_message" && entry.customType === SESSION_SQUASH_TYPE;
+}
+
+function sourceLeafId(entry: Record<string, unknown>): string | undefined {
+  const details = isRecord(entry.details) ? entry.details : undefined;
+  return typeof details?.sourceLeafId === "string" ? details.sourceLeafId : undefined;
+}
+
+function ancestorEntries(
+  leafId: string,
+  byId: ReadonlyMap<string, Record<string, unknown>>,
+): Record<string, unknown>[] {
+  const ancestors: Record<string, unknown>[] = [];
+  const visited = new Set<string>();
+  let currentId: string | null = leafId;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const entry = byId.get(currentId);
+    if (!entry) break;
+    ancestors.push(entry);
+    currentId = typeof entry.parentId === "string" ? entry.parentId : null;
+  }
+  return ancestors.reverse();
 }
 
 /** 从共享 Shell 分析结果收集命令参数、wrapper、重定向和文件测试中的路径。 */
