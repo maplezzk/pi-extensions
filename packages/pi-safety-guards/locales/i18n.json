@@ -15,6 +15,18 @@
     "zh-CN": "命中规则 [{id}]",
     "en-US": "Matched rule [{id}]"
   },
+  "pathEvidence": {
+    "zh-CN": "被拦路径：\n{commandPath}\n当前工作目录：{cwd}\n允许范围：{allowedRoots}\n建议：先调用 add_directory 将所需外部目录加入当前会话，再重试；不要扩大安全规则或绕过拦截。\n{suggestion}",
+    "en-US": "Blocked paths:\n{commandPath}\nCurrent working directory: {cwd}\nAllowed roots: {allowedRoots}\nSuggestion: call add_directory to add the required external directory to this session, then retry; do not broaden safety rules or bypass the block.\n{suggestion}"
+  },
+  "pathViolation": {
+    "zh-CN": "  {inputPath} → {resolvedPath}",
+    "en-US": "  {inputPath} → {resolvedPath}"
+  },
+  "addDirectorySuggestion": {
+    "zh-CN": "  可加入：调用 add_directory({arguments})",
+    "en-US": "  Add by calling add_directory({arguments})"
+  },
   "blocked": {
     "zh-CN": "安全规则已阻断操作：\n{details}",
     "en-US": "Safety rules blocked the operation:\n{details}"

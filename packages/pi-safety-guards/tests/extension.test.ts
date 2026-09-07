@@ -151,6 +151,37 @@ test("损坏配置不默默恢复默认预设，而是通知并阻断 Bash", asy
   assert.equal(await fake.emit("tool_call", { toolName: "read", input: {} }), undefined);
 });
 
+test("目录越界反馈真实证据、add_directory 参数和会话授权", async () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "safety-evidence-"));
+  const cwd = join(fixtureRoot, "workspace");
+  const external = join(fixtureRoot, "external");
+  const unrelated = join(fixtureRoot, "unrelated");
+  mkdirSync(cwd);
+  mkdirSync(external);
+  mkdirSync(unrelated);
+  const externalFile = join(external, "workflow.md");
+  writeFileSync(externalFile, "workflow");
+  const fake = host();
+  fake.ctx.cwd = cwd;
+  await registerSafetyGuards(fake.pi, parseConfig({ presets: ["workspace-boundary"] }));
+  const command = `cat ${externalFile}`;
+  const blocked = await fake.emit("tool_call", call(command)) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /workflow\.md/);
+  assert.match(blocked.reason, /Current working directory|当前工作目录/);
+  assert.match(blocked.reason, /Allowed roots|允许范围/);
+  assert.match(blocked.reason, /add_directory/);
+  assert.match(blocked.reason, /\{"path":".*external"\}/);
+
+  const state = {
+    id: "state-1", type: "custom", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: external }] },
+  };
+  fake.ctx.sessionManager = { getEntries: () => [state], getBranch: () => [state] } as never;
+  assert.equal(await fake.emit("tool_call", call(command)), undefined);
+  assert.equal((await fake.emit("tool_call", call(`cat ${join(unrelated, "secret.md")}`)) as { block: boolean }).block, true);
+});
+
 test("未填写说明时仅反馈规则 ID 和动作，不附加替代方案", async () => {
   const fake = host();
   await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "block" }] }));
