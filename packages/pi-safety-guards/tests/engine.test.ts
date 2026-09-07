@@ -8,8 +8,13 @@ import type { RuleContext } from "../src/types.ts";
 import { compileRules, evaluateRules } from "../src/engine.ts";
 
 /** 在无私有文件和终端依赖的上下文中评估配置。 */
-async function evaluate(config: unknown, command: string) {
-  return evaluateRules(await compileRules(parseConfig(config), tmpdir()), command, tmpdir());
+async function evaluate(config: unknown, command: string, additionalRoots: readonly string[] = []) {
+  return evaluateRules(
+    await compileRules(parseConfig(config), tmpdir()),
+    command,
+    tmpdir(),
+    additionalRoots,
+  );
 }
 
 test("默认预设确认危险操作，不限制技术栈、编辑方式和范围", async () => {
@@ -35,6 +40,15 @@ test("block 优先于 confirm 和 warn，与规则出现顺序无关", async () 
     assert.equal(decision?.action, "block");
     assert.equal(decision?.matches.length, 3);
   }
+});
+
+test("目录规则合并 session_squash 恢复的 add_directory 根", async () => {
+  const cwd = join(tmpdir(), "safety-engine-project");
+  const externalRoot = join(tmpdir(), "squashed-add-dir");
+  const command = `cat ${JSON.stringify(join(externalRoot, "file.txt"))}`;
+  const rules = await compileRules(parseConfig({ presets: ["workspace-boundary"] }), cwd);
+  assert.equal((await evaluateRules(rules, command, cwd))?.action, "block");
+  assert.equal(await evaluateRules(rules, command, cwd, [externalRoot]), undefined);
 });
 
 test("可以按相同配置格式限制任意构建工具，不只 Maven", async () => {

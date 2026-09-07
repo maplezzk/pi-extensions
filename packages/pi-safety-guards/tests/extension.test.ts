@@ -11,7 +11,12 @@ import { i18n } from "../src/i18n.ts";
 type Handler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown;
 
 /** 最小事件宿主；不提供 shell 执行接口，防止自动执行替代工具。 */
-function host(hasUI = true, accepted = true) {
+function host(
+  hasUI = true,
+  accepted = true,
+  sessionEntries: readonly unknown[] = [],
+  branch: readonly unknown[] = [],
+) {
   const handlers = new Map<string, Handler>();
   const prompts: string[] = [];
   const notices: string[] = [];
@@ -22,6 +27,8 @@ function host(hasUI = true, accepted = true) {
   } as unknown as ExtensionAPI;
   const ctx = {
     cwd: tmpdir(), hasUI,
+    sessionManager: { getEntries: () => sessionEntries, getBranch: () => branch },
+
     ui: {
       confirm: async (_title: string, text: string) => { prompts.push(text); return accepted; },
       notify: (text: string) => notices.push(text),
@@ -36,6 +43,34 @@ function host(hasUI = true, accepted = true) {
 function call(command: string, id = "call-1") {
   return { toolName: "bash", toolCallId: id, input: { command } };
 }
+
+test("session_squash 后目录授权仍能通过统一 Bash 规则入口", async () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "safety-squash-"));
+  const externalRoot = join(fixtureRoot, "external");
+  const cwd = join(fixtureRoot, "project");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(externalRoot, { recursive: true });
+  const state = {
+    type: "custom", id: "state-1", parentId: "user-1", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: externalRoot }] },
+  };
+  const sourceLeaf = { type: "message", id: "leaf-1", parentId: "state-1", message: {} };
+  const squash = {
+    type: "custom_message", id: "squash-1", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "leaf-1" }, content: "handoff",
+  };
+  const activeBranch = [{ type: "message", id: "user-1", parentId: null, message: {} }, squash];
+  const fake = host(true, true, [state, sourceLeaf, squash], activeBranch);
+  fake.ctx.cwd = cwd;
+  const config = parseConfig({ presets: ["workspace-boundary"] });
+  await registerSafetyGuards(fake.pi, config);
+  const command = `cat ${JSON.stringify(join(externalRoot, "file.txt"))}`;
+  const withoutAuthorization = host();
+  withoutAuthorization.ctx.cwd = cwd;
+  await registerSafetyGuards(withoutAuthorization.pi, config);
+  assert.equal((await withoutAuthorization.emit("tool_call", call(command)) as { block: boolean }).block, true);
+  assert.equal(await fake.emit("tool_call", call(command)), undefined);
+});
 
 test("默认危险操作确认，拒绝或无 UI 时阻断，普通构建不询问", async () => {
   for (const hasUI of [true, false]) {
