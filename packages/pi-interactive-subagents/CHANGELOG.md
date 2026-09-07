@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.13.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.13.0...pi-interactive-subagents-v3.13.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.5.0 to ^0.5.1
+
 ## [3.13.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.12.0...pi-interactive-subagents-v3.13.0) (2026-09-07)
 
 

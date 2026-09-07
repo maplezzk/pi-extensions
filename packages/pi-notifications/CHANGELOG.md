@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-notifications-v0.2.0...pi-notifications-v0.2.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+
 ## [0.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-notifications-v0.1.0...pi-notifications-v0.2.0) (2026-09-07)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "pi-naming",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Configurable Pi session naming and manual terminal workspace/tab renaming",
   "type": "module",
   "main": "./index.ts",
@@ -58,7 +58,7 @@
   ],
   "dependencies": {
     "pi-extensions-i18n": "^0.4.0",
-    "pi-terminal-mux": "^0.5.0"
+    "pi-terminal-mux": "^0.5.1"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
@@ -67,7 +67,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.80.10",
     "@types/node": "24.12.4",
-    "pi-terminal-mux": "^0.5.0",
+    "pi-terminal-mux": "^0.5.1",
     "tsx": "4.23.1",
     "typescript": "5.9.3",
     "@earendil-works/pi-ai": "0.80.10"
