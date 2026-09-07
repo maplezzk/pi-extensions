@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-resources-v0.3.0...pi-session-resources-v0.4.0) (2026-09-07)
+
+
+### Features
+
+* 统一插件配置文件与斜杠命令 ([0a72e38](https://github.com/maplezzk/pi-extensions/commit/0a72e38eca217d044e4a0d36894bba5bc45af256))
+* 统一插件配置文件与斜杠命令 ([5bc2191](https://github.com/maplezzk/pi-extensions/commit/5bc21917f358fc094c832e6f211ec7771349fa8e))
+
 ## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-resources-v0.2.0...pi-session-resources-v0.3.0) (2026-08-20)
 
 
