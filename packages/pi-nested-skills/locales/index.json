@@ -28,16 +28,20 @@
     "en-US": "Failed to scan skill path: {path} ({reason})"
   },
   "configCommandDescription": {
-    "zh-CN": "配置嵌套技能根目录（参数为 JSON，省略参数时进入编辑）",
-    "en-US": "Configure nested skill roots (pass JSON, or omit it to edit interactively)"
+    "zh-CN": "配置嵌套技能根目录",
+    "en-US": "Configure nested skill roots"
   },
   "configCommandInput": {
-    "zh-CN": "输入技能根目录配置 JSON（输入 reset 恢复为 skills）",
-    "en-US": "Enter skill root configuration JSON (or reset to use skills)"
+    "zh-CN": "输入技能根目录（多个目录用逗号分隔）",
+    "en-US": "Enter skill roots (separate multiple roots with commas)"
+  },
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:nested-skills（打开配置输入）或 /config:nested-skills reset（恢复默认值）",
+    "en-US": "Usage: /config:nested-skills (open settings) or /config:nested-skills reset (restore defaults)"
   },
   "configCommandInteractiveOnly": {
-    "zh-CN": "无交互界面时请直接传入配置 JSON。",
-    "en-US": "Pass configuration JSON directly when no interactive UI is available."
+    "zh-CN": "嵌套技能配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Nested skill configuration requires the TUI; run this command in an interactive Pi session."
   },
   "configCommandSaved": {
     "zh-CN": "嵌套技能配置已保存：{path}。请执行 /reload 使配置生效。",

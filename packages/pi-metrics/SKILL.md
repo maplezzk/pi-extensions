@@ -5,7 +5,7 @@ description: "启用与排查 pi-metrics 的耗时、TPS、TTFT、token 和成�
 
 # 配置 pi-metrics
 
-配置文件为 `<Pi agent 目录>/extensions/pi-metrics/config.json`，字段只有 `enabled`，默认是 `true`。可以使用 `/config:metrics enable|disable` 修改并持久化，也可以传入完整 JSON；省略参数时进入交互编辑。手动修改配置文件后执行 `/reload`。
+配置文件为 `<Pi agent 目录>/extensions/pi-metrics/config.json`，字段只有 `enabled`，默认是 `true`。可以使用 `/config:metrics` 打开 TUI 菜单，或使用 `/config:metrics enable|disable` 直接修改并持久化。手动修改配置文件后执行 `/reload`。
 
 ## 诊断与修改
 

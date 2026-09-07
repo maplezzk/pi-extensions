@@ -17,6 +17,8 @@ const COMMAND_ALIASES = [COMMAND_NAME] as const;
 const CONFIG_COMMAND_ALIASES = ["config:nested-skills", "nested-skills-config", "pi-nested-skills-config"] as const;
 const CONFIG_RESET_COMMAND = "reset";
 const DEFAULT_CONFIG_ROOT = "skills";
+const ROOT_INPUT_SEPARATOR = ",";
+const ROOT_DISPLAY_SEPARATOR = ", ";
 const NOTICE_WARNING = "warning" as const;
 const NOTICE_INFO = "info" as const;
 const NOTICE_ERROR = "error" as const;
@@ -200,32 +202,42 @@ function formatSkillsMessage(index: SkillIndex): string {
   return lines.join("\n");
 }
 
-/** 注册配置命令，允许通过 JSON 参数或交互式输入持久化技能根目录。 */
+/** 注册配置命令，通过 TUI 输入逗号分隔的技能根目录。 */
 function registerConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("configCommandDescription"),
-    getArgumentCompletions: () => null,
+    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
-      let value = args.trim();
-      if (!value) {
-        if (!ctx.hasUI) {
-          ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
-          return;
+      const argument = args.trim();
+      if (argument && argument !== CONFIG_RESET_COMMAND) {
+        ctx.ui.notify(i18n.t("configCommandUsage"), NOTICE_WARNING);
+        return;
+      }
+      if (argument === CONFIG_RESET_COMMAND) {
+        try {
+          const path = saveConfig(parseConfig({ skillRoots: [DEFAULT_CONFIG_ROOT] }));
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+        } catch (error) {
+          ctx.ui.notify(i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }), NOTICE_ERROR);
         }
-        const current = loadConfig().config;
-        const input = await ctx.ui.input(
-          i18n.t("configCommandInput"),
-          JSON.stringify(current),
-        );
-        if (input === undefined) return;
-        value = input.trim();
+        return;
+      }
+      if (!ctx.hasUI) {
+        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+        return;
       }
 
+      const current = loadConfig().config;
+      const input = await ctx.ui.input(
+        i18n.t("configCommandInput"),
+        current.skillRoots.join(ROOT_DISPLAY_SEPARATOR),
+      );
+      if (input === undefined) return;
       try {
-        const config = value === CONFIG_RESET_COMMAND
-          ? parseConfig({ skillRoots: [DEFAULT_CONFIG_ROOT] })
-          : parseConfig(JSON.parse(value));
-        const path = saveConfig(config);
+        const roots = input.split(ROOT_INPUT_SEPARATOR).map((root) => root.trim()).filter(Boolean);
+        const path = saveConfig(parseConfig({ skillRoots: roots }));
         ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
       } catch (error) {
         ctx.ui.notify(i18n.t("configCommandInvalid", {

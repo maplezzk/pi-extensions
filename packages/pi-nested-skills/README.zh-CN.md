@@ -11,7 +11,7 @@ Pi 的嵌套技能扩展：递归发现多级 `SKILL.md`，并为嵌套技能提
 - 保留 Pi 原生技能加载器负责 frontmatter 校验和正文展开；不重复实现 `read` 兼容层或技能展开。
 - 将嵌套技能补全合并到 Pi 原生斜杠命令补全中，不影响内置命令。
 - 提供 `/skills` 列出发现到的全部别名。
-- 提供 `/config:nested-skills` 配置技能根目录；可以直接传入 JSON，也可以省略参数进入交互编辑，输入 `reset` 恢复默认的 `skills` 根目录。
+- 提供 `/config:nested-skills` 通过常规 TUI 输入配置技能根目录；输入 `reset` 恢复默认的 `skills` 根目录。
 - 通过 Pi 的 `resources_discover` 事件注册发现到的技能文件。
 - 所有用户可见文案都通过 `pi-extensions-i18n` 提供中英文版本。
 
@@ -44,7 +44,7 @@ pi install npm:pi-nested-skills
 
 相对路径以 Pi agent 目录为基准。根目录的每个直接子目录视为一个技能包，扩展会递归发现其中所有可见目录下的 `SKILL.md`。如果根目录本身包含 `SKILL.md`，也会把它作为一个技能包处理。
 
-使用 `/config:nested-skills` 修改配置。命令参数为完整 JSON；省略参数时打开交互编辑。保存后执行 `/reload`。
+使用 `/config:nested-skills` 在 TUI 输入框中修改配置，多个目录用逗号分隔；输入 `reset` 恢复默认目录。保存后执行 `/reload`。
 
 ## 别名与原生展开
 
