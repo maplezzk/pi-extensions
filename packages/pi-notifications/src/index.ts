@@ -46,6 +46,9 @@ interface NotificationRuntime {
 
 const CONFIG_COMMAND_ALIASES = ["config:notifications", "notifications-config", "pi-notifications-config"] as const;
 const CONFIG_RESET_COMMAND = "reset";
+const CONFIG_OPTION = { enabled: 0, command: 1, args: 2, timeout: 3 } as const;
+const CONFIG_ARG_SEPARATOR = ",";
+const CONFIG_ARG_DISPLAY_SEPARATOR = ", ";
 const NOTICE_WARNING = "warning" as const;
 const NOTICE_INFO = "info" as const;
 const NOTICE_ERROR = "error" as const;
@@ -54,32 +57,106 @@ const pendingNotices: Notice[] = [];
 let activeRuntime: NotificationRuntime | undefined;
 let noticeKeys = new Set<string>();
 
-/** 注册配置命令，允许通过 JSON 参数或交互式输入持久化通知配置。 */
+/** 注册配置命令，通过 TUI 菜单和输入框修改通知配置。 */
 function registerConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("configCommandDescription"),
-    getArgumentCompletions: () => null,
+    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
-      let value = args.trim();
-      if (!value) {
-        if (!ctx.hasUI) {
-          ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
-          return;
+      const argument = args.trim();
+      if (argument && argument !== CONFIG_RESET_COMMAND) {
+        ctx.ui.notify(i18n.t("configCommandUsage"), NOTICE_WARNING);
+        return;
+      }
+      if (argument === CONFIG_RESET_COMMAND) {
+        try {
+          const path = saveConfig(parseConfig({}));
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+        } catch (error) {
+          ctx.ui.notify(i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }), NOTICE_ERROR);
         }
-        const current = loadConfigWithDiagnostics().config;
-        const input = await ctx.ui.input(i18n.t("configCommandInput"), JSON.stringify(current));
-        if (input === undefined) return;
-        value = input.trim();
+        return;
+      }
+      if (!ctx.hasUI) {
+        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+        return;
       }
 
+      let config: NotificationConfig;
       try {
-        const config = value === CONFIG_RESET_COMMAND ? parseConfig({}) : parseConfig(JSON.parse(value));
-        const path = saveConfig(config);
-        ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+        config = loadConfigWithDiagnostics().config;
       } catch (error) {
         ctx.ui.notify(i18n.t("configCommandInvalid", {
           error: error instanceof Error ? error.message : String(error),
         }), NOTICE_ERROR);
+        return;
+      }
+      const save = (next: NotificationConfig): void => {
+        try {
+          const path = saveConfig(next);
+          config = next;
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+        } catch (error) {
+          ctx.ui.notify(i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }), NOTICE_ERROR);
+        }
+      };
+      const status = (enabled: boolean): string => enabled ? i18n.t("configOn") : i18n.t("configOff");
+
+      while (true) {
+        const doneChoice = i18n.t("configDone");
+        const choices = [
+          i18n.t("configEnabled", { value: status(config.enabled) }),
+          i18n.t("configCommand", { value: config.adapter.command }),
+          i18n.t("configArguments", { value: config.adapter.args.join(CONFIG_ARG_DISPLAY_SEPARATOR) }),
+          i18n.t("configTimeout", { value: config.timeoutMs }),
+          doneChoice,
+        ];
+        const selected = await ctx.ui.select(i18n.t("configMenuTitle"), choices);
+        if (selected === undefined || selected === doneChoice) return;
+        const selectedIndex = choices.indexOf(selected);
+        let next: NotificationConfig | undefined;
+        if (selectedIndex === CONFIG_OPTION.enabled) {
+          next = parseConfig({ ...config, enabled: !config.enabled });
+        } else {
+          let title = i18n.t("configTimeoutInput");
+          let current = String(config.timeoutMs);
+          if (selectedIndex === CONFIG_OPTION.command) {
+            title = i18n.t("configCommandInput");
+            current = config.adapter.command;
+          } else if (selectedIndex === CONFIG_OPTION.args) {
+            title = i18n.t("configArgumentsInput");
+            current = config.adapter.args.join(CONFIG_ARG_DISPLAY_SEPARATOR);
+          }
+          const input = await ctx.ui.input(title, current);
+          if (input === undefined) continue;
+          const adapter = { ...config.adapter };
+          if (selectedIndex === CONFIG_OPTION.command) adapter.command = input.trim();
+          else if (selectedIndex === CONFIG_OPTION.args) {
+            adapter.args = input.split(CONFIG_ARG_SEPARATOR).map((arg) => arg.trim()).filter(Boolean);
+          }
+          else {
+            const timeoutMs = Number(input.trim());
+            try { next = parseConfig({ ...config, timeoutMs }); }
+            catch (error) {
+              ctx.ui.notify(i18n.t("configCommandInvalid", {
+                error: error instanceof Error ? error.message : String(error),
+              }), NOTICE_ERROR);
+            }
+          }
+          if (selectedIndex === CONFIG_OPTION.command || selectedIndex === CONFIG_OPTION.args) {
+            try { next = parseConfig({ ...config, adapter }); }
+            catch (error) {
+              ctx.ui.notify(i18n.t("configCommandInvalid", {
+                error: error instanceof Error ? error.message : String(error),
+              }), NOTICE_ERROR);
+            }
+          }
+        }
+        if (next) save(next);
       }
     },
   };

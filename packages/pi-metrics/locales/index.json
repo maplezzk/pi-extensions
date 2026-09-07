@@ -40,16 +40,40 @@
     "en-US": "${value}/M"
   },
   "configCommandDescription": {
-    "zh-CN": "配置指标显示（enable、disable 或 JSON）",
-    "en-US": "Configure metrics display (enable, disable, or JSON)"
+    "zh-CN": "配置指标显示",
+    "en-US": "Configure metrics display"
   },
-  "configCommandInput": {
-    "zh-CN": "输入 pi-metrics 配置 JSON（输入 reset 恢复默认值）",
-    "en-US": "Enter pi-metrics configuration JSON (or reset for defaults)"
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:metrics（打开配置菜单）、enable、disable 或 reset",
+    "en-US": "Usage: /config:metrics (open settings), enable, disable, or reset"
+  },
+  "configMenuTitle": {
+    "zh-CN": "指标配置",
+    "en-US": "Metrics settings"
+  },
+  "configEnabled": {
+    "zh-CN": "启用指标：{value}",
+    "en-US": "Metrics enabled: {value}"
+  },
+  "configDisabled": {
+    "zh-CN": "禁用指标：{value}",
+    "en-US": "Metrics disabled: {value}"
+  },
+  "configOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configDone": {
+    "zh-CN": "完成",
+    "en-US": "Done"
   },
   "configCommandInteractiveOnly": {
-    "zh-CN": "无交互界面时请直接传入 enable、disable 或配置 JSON。",
-    "en-US": "Pass enable, disable, or configuration JSON when no interactive UI is available."
+    "zh-CN": "指标配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Metrics configuration requires the TUI; run this command in an interactive Pi session."
   },
   "configCommandSaved": {
     "zh-CN": "指标配置已保存：{path}。请执行 /reload 使配置生效。",

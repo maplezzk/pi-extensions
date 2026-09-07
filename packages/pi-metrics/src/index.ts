@@ -12,53 +12,63 @@ const messages = loadCatalog(new URL("../locales/index.json", import.meta.url));
 const i18n = createTranslator(messages);
 const CONFIG_COMMAND_ALIASES = ["config:metrics", "metrics-config", "pi-metrics-config"] as const;
 const CONFIG_RESET_COMMAND = "reset";
+const CONFIG_CHOICE = { enabled: 0, disabled: 1 } as const;
 const ENABLE_COMMAND = "enable";
 const DISABLE_COMMAND = "disable";
 const NOTICE_WARNING = "warning" as const;
 const NOTICE_INFO = "info" as const;
 const NOTICE_ERROR = "error" as const;
 
-/** 注册配置命令，允许通过 JSON 参数或交互式输入持久化 metrics 配置。 */
+/** 注册配置命令，通过 TUI 选择是否启用指标。 */
 function registerConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("configCommandDescription"),
-    /** Completes the supported enable, disable and reset actions. */
-    getArgumentCompletions: () => [
-      { value: ENABLE_COMMAND, label: ENABLE_COMMAND },
-      { value: DISABLE_COMMAND, label: DISABLE_COMMAND },
-      { value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND },
-    ],
-    /** Parses and persists a complete JSON configuration or a short action. */
+    /** Completes the supported reset action. */
+    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
+    /** Selects and persists the enabled state. */
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
-      let value = args.trim();
-      if (!value) {
-        if (!ctx.hasUI) {
-          ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
-          return;
-        }
-        let current: MetricsConfig;
+      const value = args.trim();
+      if (value && value !== CONFIG_RESET_COMMAND && value !== ENABLE_COMMAND && value !== DISABLE_COMMAND) {
+        ctx.ui.notify(i18n.t("configCommandUsage"), NOTICE_WARNING);
+        return;
+      }
+      if (value === CONFIG_RESET_COMMAND || value === ENABLE_COMMAND || value === DISABLE_COMMAND) {
         try {
-          current = loadConfig();
+          const config = parseConfig(value === CONFIG_RESET_COMMAND ? {} : { enabled: value === ENABLE_COMMAND });
+          const path = saveConfig(config);
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
         } catch (error) {
           ctx.ui.notify(i18n.t("configCommandInvalid", {
             error: error instanceof Error ? error.message : String(error),
           }), NOTICE_ERROR);
-          return;
         }
-        const input = await ctx.ui.input(i18n.t("configCommandInput"), JSON.stringify(current));
-        if (input === undefined) return;
-        value = input.trim();
+        return;
       }
-
+      if (!ctx.hasUI) {
+        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+        return;
+      }
+      let current: MetricsConfig;
       try {
-        const config = value === ENABLE_COMMAND
-          ? parseConfig({ enabled: true })
-          : value === DISABLE_COMMAND
-            ? parseConfig({ enabled: false })
-            : value === CONFIG_RESET_COMMAND
-              ? parseConfig({})
-              : parseConfig(JSON.parse(value));
-        const path = saveConfig(config);
+        current = loadConfig();
+      } catch (error) {
+        ctx.ui.notify(i18n.t("configCommandInvalid", {
+          error: error instanceof Error ? error.message : String(error),
+        }), NOTICE_ERROR);
+        return;
+      }
+      const enabledChoice = i18n.t("configEnabled", { value: i18n.t(current.enabled ? "configOn" : "configOff") });
+      const disabledChoice = i18n.t("configDisabled", { value: i18n.t(current.enabled ? "configOff" : "configOn") });
+      const doneChoice = i18n.t("configDone");
+      const selected = await ctx.ui.select(i18n.t("configMenuTitle"), [
+        enabledChoice,
+        disabledChoice,
+        doneChoice,
+      ]);
+      if (selected === undefined || selected === doneChoice) return;
+      const choice = selected === enabledChoice ? CONFIG_CHOICE.enabled : CONFIG_CHOICE.disabled;
+      try {
+        const path = saveConfig({ enabled: choice === CONFIG_CHOICE.enabled });
         ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
       } catch (error) {
         ctx.ui.notify(i18n.t("configCommandInvalid", {

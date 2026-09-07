@@ -44,16 +44,60 @@
     "en-US": "Failed to read notification config: {path} ({reason}). Default configuration is being used."
   },
   "configCommandDescription": {
-    "zh-CN": "配置系统通知（参数为 JSON，省略参数时进入编辑）",
-    "en-US": "Configure system notifications (pass JSON, or omit it to edit interactively)"
+    "zh-CN": "配置系统通知",
+    "en-US": "Configure system notifications"
+  },
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:notifications（打开配置菜单）或 /config:notifications reset（恢复默认值）",
+    "en-US": "Usage: /config:notifications (open settings) or /config:notifications reset (restore defaults)"
+  },
+  "configMenuTitle": {
+    "zh-CN": "通知配置",
+    "en-US": "Notification settings"
+  },
+  "configEnabled": {
+    "zh-CN": "启用通知：{value}",
+    "en-US": "Notifications enabled: {value}"
+  },
+  "configCommand": {
+    "zh-CN": "通知命令：{value}",
+    "en-US": "Notification command: {value}"
+  },
+  "configArguments": {
+    "zh-CN": "命令参数：{value}",
+    "en-US": "Command arguments: {value}"
+  },
+  "configTimeout": {
+    "zh-CN": "超时：{value} ms",
+    "en-US": "Timeout: {value} ms"
+  },
+  "configOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configDone": {
+    "zh-CN": "完成",
+    "en-US": "Done"
   },
   "configCommandInput": {
-    "zh-CN": "输入完整的通知配置 JSON（输入 reset 恢复默认值）",
-    "en-US": "Enter the complete notification configuration JSON (or reset for defaults)"
+    "zh-CN": "通知命令路径",
+    "en-US": "Notification command path"
+  },
+  "configArgumentsInput": {
+    "zh-CN": "命令参数（多个参数用逗号分隔）",
+    "en-US": "Command arguments (separate arguments with commas)"
+  },
+  "configTimeoutInput": {
+    "zh-CN": "超时毫秒数（正整数）",
+    "en-US": "Timeout in milliseconds (positive integer)"
   },
   "configCommandInteractiveOnly": {
-    "zh-CN": "无交互界面时请直接传入配置 JSON。",
-    "en-US": "Pass configuration JSON directly when no interactive UI is available."
+    "zh-CN": "通知配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Notification configuration requires the TUI; run this command in an interactive Pi session."
   },
   "configCommandSaved": {
     "zh-CN": "通知配置已保存：{path}。请执行 /reload 使配置生效。",

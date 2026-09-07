@@ -50,7 +50,7 @@ pi install npm:pi-safety-guards
 - `message`：可选的非空文本，或包含 `zh-CN`、`en-US` 的对象。不填写时反馈规则 ID 和动作。
 - 预设和规则都为空时关闭检查，并提示当前没有启用保护。
 
-使用 `/config:safety-guards` 交互编辑完整 JSON 配置，也可以直接传入 JSON；保存后执行 `/reload`。
+使用 `/config:safety-guards` 打开常规 TUI 预设菜单，输入 `reset` 恢复默认预设；保存后执行 `/reload`。
 
 ### 动作
 

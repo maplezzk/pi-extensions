@@ -9,8 +9,8 @@ description: "配置安全预设、规则动作和自定义匹配器。Use when 
 
 `<pi-agent-dir>/extensions/pi-safety-guards/config.json`
 
-遵守 `PI_CODING_AGENT_DIR`，可以使用 `/config:safety-guards` 交互编辑，也可以传入完整 JSON；输入 `reset` 恢复默认预设，保存后执行 `/reload`。
-Respect `PI_CODING_AGENT_DIR`; use `/config:safety-guards` for interactive editing or pass complete JSON, use `reset` for default presets, and reload after saving.
+遵守 `PI_CODING_AGENT_DIR`，可以使用 `/config:safety-guards` 打开 TUI 预设菜单，输入 `reset` 恢复默认预设，保存后执行 `/reload`。
+Respect `PI_CODING_AGENT_DIR`; use `/config:safety-guards` to open the TUI preset menu, use `reset` for the default preset, and reload after saving.
 
 ## 选择规则 / Select rules
 

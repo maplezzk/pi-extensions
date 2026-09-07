@@ -71,7 +71,7 @@ function normalizeRootValues(value: unknown): string[] | undefined {
   return roots;
 }
 
-/** 校验配置命令提交的 JSON，并保留早期配置文件的 skillsDir 兼容字段。 */
+/** 校验 TUI 配置输入，并保留早期配置文件的 skillsDir 兼容字段。 */
 export function parseConfig(value: unknown): NestedSkillsConfig {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("configuration must be an object");

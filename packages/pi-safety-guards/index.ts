@@ -3,7 +3,8 @@ import type {
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { dirname } from "node:path";
-import { configPath, loadConfig, parseConfig, saveConfig } from "./src/config.ts";
+import { configPath, loadConfig, loadConfigDocument, saveConfigDocument } from "./src/config.ts";
+import { DEFAULT_PRESETS, PRESETS } from "./src/presets.ts";
 import { compileRules, evaluateRules, type ModuleLoader } from "./src/engine.ts";
 import { i18n } from "./src/i18n.ts";
 import type { SafetyConfig, SafetyRule } from "./src/types.ts";
@@ -17,41 +18,72 @@ const CONFIRM_ACTION = "confirm";
 const WARN_ACTION = "warn";
 const CONFIG_COMMAND_ALIASES = ["config:safety-guards", "safety-guards-config", "pi-safety-guards-config"] as const;
 const CONFIG_RESET_COMMAND = "reset";
+const CONFIG_PRESET_NAMES = Object.keys(PRESETS);
 
-/** 注册配置命令，允许通过 JSON 参数或交互式输入持久化安全规则。 */
+/** 注册配置命令，通过 TUI 菜单选择安全预设并保留自定义规则。 */
 function registerConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("configCommandDescription"),
-    getArgumentCompletions: () => null,
+    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
+    /** Handles preset selection and persists each change immediately. */
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
-      let value = args.trim();
-      if (!value) {
-        if (!ctx.hasUI) {
-          ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), WARN_LEVEL);
-          return;
-        }
-        let current: SafetyConfig;
+      const argument = args.trim();
+      if (argument && argument !== CONFIG_RESET_COMMAND) {
+        ctx.ui.notify(i18n.t("configCommandUsage"), WARN_LEVEL);
+        return;
+      }
+      if (argument === CONFIG_RESET_COMMAND) {
         try {
-          current = loadConfig();
+          const path = saveConfigDocument({ presets: [...DEFAULT_PRESETS], rules: [] });
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), INFO_LEVEL);
         } catch (error) {
           ctx.ui.notify(i18n.t("configCommandInvalid", {
             error: error instanceof Error ? error.message : String(error),
           }), ERROR_LEVEL);
-          return;
         }
-        const input = await ctx.ui.input(i18n.t("configCommandInput"), JSON.stringify(current));
-        if (input === undefined) return;
-        value = input.trim();
+        return;
+      }
+      if (!ctx.hasUI) {
+        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), WARN_LEVEL);
+        return;
       }
 
+      let document: { presets: string[]; rules: unknown[] };
       try {
-        const config = value === CONFIG_RESET_COMMAND ? parseConfig({}) : parseConfig(JSON.parse(value));
-        const path = saveConfig(config);
-        ctx.ui.notify(i18n.t("configCommandSaved", { path }), INFO_LEVEL);
+        document = loadConfigDocument();
       } catch (error) {
         ctx.ui.notify(i18n.t("configCommandInvalid", {
           error: error instanceof Error ? error.message : String(error),
         }), ERROR_LEVEL);
+        return;
+      }
+      while (true) {
+        const choices = CONFIG_PRESET_NAMES.map((name) => i18n.t("configPreset", {
+          name,
+          value: document.presets.includes(name) ? i18n.t("configOn") : i18n.t("configOff"),
+        }));
+        choices.push(i18n.t("configCustomRules", { count: document.rules.length }), i18n.t("configDone"));
+        const selected = await ctx.ui.select(i18n.t("configMenuTitle"), choices);
+        if (selected === undefined || selected === choices[choices.length - 1]) return;
+        const selectedIndex = choices.indexOf(selected);
+        if (selectedIndex === CONFIG_PRESET_NAMES.length) {
+          ctx.ui.notify(i18n.t("configCustomRulesHint"), INFO_LEVEL);
+          continue;
+        }
+        const preset = CONFIG_PRESET_NAMES[selectedIndex];
+        if (!preset) continue;
+        const presets = document.presets.includes(preset)
+          ? document.presets.filter((name) => name !== preset)
+          : [...document.presets, preset];
+        try {
+          const path = saveConfigDocument({ presets, rules: document.rules });
+          document = { ...document, presets };
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), INFO_LEVEL);
+        } catch (error) {
+          ctx.ui.notify(i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }), ERROR_LEVEL);
+        }
       }
     },
   };
