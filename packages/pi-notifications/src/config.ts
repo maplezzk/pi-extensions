@@ -1,6 +1,6 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { NotificationAdapterConfig } from "./adapter.ts";
 
 export interface NotificationConfig {
@@ -47,6 +47,13 @@ export function configPath(): string {
   return join(getAgentDir(), "extensions", CONFIG_DIRECTORY_NAME, CONFIG_FILE_NAME);
 }
 
+/** 将经过校验的通知配置写入配置文件。 */
+export function saveConfig(config: NotificationConfig, path = configPath()): string {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return path;
+}
+
 /** 读取通知配置；文件缺失时使用默认配置。 */
 export function loadConfig(): NotificationConfig {
   return loadConfigWithDiagnostics().config;
@@ -76,7 +83,8 @@ export function loadConfigWithDiagnostics(): LoadedNotificationConfig {
   }
 }
 
-function parseConfig(value: unknown): NotificationConfig {
+/** 解析并校验通知配置，供文件加载和配置命令共同使用。 */
+export function parseConfig(value: unknown): NotificationConfig {
   if (!isRecord(value)) throw new Error("configuration must be a JSON object");
 
   const enabled = value.enabled === undefined ? true : value.enabled;

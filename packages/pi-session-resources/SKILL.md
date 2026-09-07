@@ -5,14 +5,14 @@ description: "启用、禁用与排查 pi-session-resources 的 # 文件、URL �
 
 # 配置 pi-session-resources
 
-这个扩展没有持久化配置文件。选择器每次扩展加载时默认启用，命令只修改当前运行实例：
+配置文件为 `<Pi agent 目录>/extensions/pi-session-resources/config.json`，默认启用选择器。可以使用 `/config:session-resources enable|disable` 修改并持久化配置：
 
 ```text
 /config:session-resources
 /config:session-resources enable|disable
 ```
 
-`show|hide` 分别兼容 `enable|disable`，`/session-resources` 是命令别名。不要声称 enable/disable 会跨 `/reload` 持久化。
+`show|hide` 分别兼容 `enable|disable`，`/session-resources` 是命令别名。修改配置文件后执行 `/reload`。
 
 ## 排查
 

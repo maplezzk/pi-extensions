@@ -73,6 +73,21 @@ test("首条真实输入和手动生成使用相同目标、标题配置", async
   }
 });
 
+test("手动重新命名传入当前分支全部用户消息，包括纠正与流程性跟进", async () => {
+  const messages = ["修复订单导出", "纠正：是订单筛选，不是导出", "继续", "验证一下", "提交"];
+  const h = harness(messages);
+  const requests: SessionNameRequest[] = [];
+  h.pi.setSessionName("旧标题");
+  await registerNaming(h.pi, parseConfig({}), {
+    loadTerminal: async () => h.terminal,
+    requestName: async (request) => { requests.push(request); return "修复订单筛选"; },
+  });
+  await h.commands.get("rename")!.handler("", h.ctx);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0]?.userMessages, messages);
+  assert.equal(h.name(), "修复订单筛选");
+});
+
 test("session-only 不加载终端；目标开关不阻止其他目标", async () => {
   const h = harness();
   await registerNaming(h.pi, parseConfig({ targets: { workspace: false, tab: false } }), {

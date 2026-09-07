@@ -58,5 +58,53 @@
   "moduleTimeout": {
     "zh-CN": "规则模块加载或匹配超时。",
     "en-US": "Rule module loading or matching timed out."
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置安全规则",
+    "en-US": "Configure safety rules"
+  },
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:safety-guards（打开配置菜单）或 /config:safety-guards reset（恢复默认预设）",
+    "en-US": "Usage: /config:safety-guards (open settings) or /config:safety-guards reset (restore defaults)"
+  },
+  "configMenuTitle": {
+    "zh-CN": "安全规则配置",
+    "en-US": "Safety rule settings"
+  },
+  "configPreset": {
+    "zh-CN": "预设 {name}：{value}",
+    "en-US": "Preset {name}: {value}"
+  },
+  "configCustomRules": {
+    "zh-CN": "自定义规则：{count} 条",
+    "en-US": "Custom rules: {count}"
+  },
+  "configCustomRulesHint": {
+    "zh-CN": "自定义规则仍保留在配置文件中；当前 TUI 可以切换内置预设。",
+    "en-US": "Custom rules remain in the configuration file; the TUI currently manages built-in presets."
+  },
+  "configOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configDone": {
+    "zh-CN": "完成",
+    "en-US": "Done"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "安全规则配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Safety configuration requires the TUI; run this command in an interactive Pi session."
+  },
+  "configCommandSaved": {
+    "zh-CN": "安全规则配置已保存：{path}。请执行 /reload 使配置生效。",
+    "en-US": "Safety configuration saved to {path}. Run /reload to apply it."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "安全规则配置无效：{error}",
+    "en-US": "Invalid safety configuration: {error}"
   }
 }

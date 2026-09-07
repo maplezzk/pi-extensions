@@ -21,13 +21,7 @@ extensions/pi-nested-skills/config.json
 
 优先复制包内 [`config.example.json`](./config.example.json)，再修改 `skillRoots`。路径可以是绝对路径、`~/` 路径，或相对于 Pi agent 目录的路径。
 
-也可以使用环境变量：
-
-```text
-PI_NESTED_SKILLS_ROOTS=~/shared-skills,skills
-```
-
-配置文件优先于环境变量；环境变量优先于默认的 Pi agent `skills` 目录。`PI_NESTED_SKILLS_DIR` 作为旧单目录名称保留兼容读取。
+也可以使用 `/config:nested-skills` 修改配置；命令会在 TUI 输入框中接收逗号分隔的目录，输入 `reset` 恢复默认值。保存后执行 `/reload`。
 
 别名形式为 `/技能包:子目录.子目录`，例如 `/development:code-reviewer` 或 `/design:icons.favicon`。也支持 `/skill:技能包.子目录`；扩展会把它转换为 Pi 原生 `/skill:<name>`，由 Pi 负责技能正文展开。
 

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import type {
   ExtensionAPI,
@@ -7,6 +9,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import sessionResourcesExtension from "../src/index.ts";
+import { loadConfig } from "../src/config.ts";
 
 type EventHandler = (...args: unknown[]) => unknown;
 type SessionResourcesCommand = {
@@ -45,6 +48,10 @@ function createPiMock(): {
 }
 
 test("registers a composable custom editor picker without persistent widgets or shortcuts", async () => {
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-session-resources-agent-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const { pi, events, commands, shortcuts } = createPiMock();
   let editorFactory: EditorFactory | undefined;
@@ -102,10 +109,16 @@ test("registers a composable custom editor picker without persistent widgets or 
   const command = commands.get("config:session-resources") as SessionResourcesCommand;
   await command.handler("disable", context as unknown as ExtensionCommandContext);
   assert.match(notifications.at(-1) ?? "", /disabled/);
+  assert.equal(loadConfig().enabled, false);
   await command.handler("enable", context as unknown as ExtensionCommandContext);
   assert.match(notifications.at(-1) ?? "", /enabled/);
+  assert.equal(loadConfig().enabled, true);
 
   const shutdown = events.get("session_shutdown");
   assert.ok(shutdown);
-  shutdown({}, context);
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    rmSync(agentDir, { recursive: true, force: true });
+  }
 });

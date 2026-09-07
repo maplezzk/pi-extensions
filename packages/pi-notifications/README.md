@@ -55,7 +55,7 @@ For example, a custom adapter can use an executable directly:
 }
 ```
 
-The configuration file is read when the extension loads. Reload Pi after changing it. A missing file uses the default `terminal-notifier` configuration. A malformed file is reported in Pi and uses the default configuration.
+The configuration file is read when the extension loads. Use `/config:notifications` to open the normal TUI settings menu, or use `reset` to restore defaults. Run `/reload` after saving. A missing file uses the default `terminal-notifier` configuration. A malformed file is reported in Pi and uses the default configuration.
 
 ## Default adapter
 

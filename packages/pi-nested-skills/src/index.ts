@@ -6,7 +6,7 @@ import type {
 import { fuzzyFilter } from "@earendil-works/pi-tui";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
-import { loadConfig, type LoadedNestedSkillsConfig } from "./config.ts";
+import { loadConfig, parseConfig, saveConfig, type LoadedNestedSkillsConfig } from "./config.ts";
 import { scanSkillRoots, type NestedSkill, type SkillScanResult } from "./skills.ts";
 
 const messages = loadCatalog(new URL("../locales/index.json", import.meta.url));
@@ -14,6 +14,14 @@ const i18n = createTranslator(messages);
 
 const COMMAND_NAME = "skills";
 const COMMAND_ALIASES = [COMMAND_NAME] as const;
+const CONFIG_COMMAND_ALIASES = ["config:nested-skills", "nested-skills-config", "pi-nested-skills-config"] as const;
+const CONFIG_RESET_COMMAND = "reset";
+const DEFAULT_CONFIG_ROOT = "skills";
+const ROOT_INPUT_SEPARATOR = ",";
+const ROOT_DISPLAY_SEPARATOR = ", ";
+const NOTICE_WARNING = "warning" as const;
+const NOTICE_INFO = "info" as const;
+const NOTICE_ERROR = "error" as const;
 const SKILL_COMMAND_PREFIX = "skill:";
 const INPUT_SOURCES = new Set(["interactive", "rpc"]);
 
@@ -194,6 +202,53 @@ function formatSkillsMessage(index: SkillIndex): string {
   return lines.join("\n");
 }
 
+/** 注册配置命令，通过 TUI 输入逗号分隔的技能根目录。 */
+function registerConfigCommand(pi: ExtensionAPI): void {
+  const command = {
+    description: i18n.t("configCommandDescription"),
+    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
+    handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+      const argument = args.trim();
+      if (argument && argument !== CONFIG_RESET_COMMAND) {
+        ctx.ui.notify(i18n.t("configCommandUsage"), NOTICE_WARNING);
+        return;
+      }
+      if (argument === CONFIG_RESET_COMMAND) {
+        try {
+          const path = saveConfig(parseConfig({ skillRoots: [DEFAULT_CONFIG_ROOT] }));
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+        } catch (error) {
+          ctx.ui.notify(i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }), NOTICE_ERROR);
+        }
+        return;
+      }
+      if (!ctx.hasUI) {
+        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+        return;
+      }
+
+      const current = loadConfig().config;
+      const input = await ctx.ui.input(
+        i18n.t("configCommandInput"),
+        current.skillRoots.join(ROOT_DISPLAY_SEPARATOR),
+      );
+      if (input === undefined) return;
+      try {
+        const roots = input.split(ROOT_INPUT_SEPARATOR).map((root) => root.trim()).filter(Boolean);
+        const path = saveConfig(parseConfig({ skillRoots: roots }));
+        ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+      } catch (error) {
+        ctx.ui.notify(i18n.t("configCommandInvalid", {
+          error: error instanceof Error ? error.message : String(error),
+        }), NOTICE_ERROR);
+      }
+    },
+  };
+  for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
+}
+
 function registerSkillsCommand(pi: ExtensionAPI, index: SkillIndex): void {
   const command = {
     description: i18n.t("commandDescription"),
@@ -209,18 +264,18 @@ function registerSkillsCommand(pi: ExtensionAPI, index: SkillIndex): void {
 function notifyDiagnostics(ctx: ExtensionContext, loaded: LoadedNestedSkillsConfig, index: SkillIndex): void {
   if (!ctx.hasUI) return;
   for (const warning of loaded.warnings) {
-    ctx.ui.notify(i18n.t("configWarning", { reason: warning }), "warning");
+    ctx.ui.notify(i18n.t("configWarning", { reason: warning }), NOTICE_WARNING);
   }
   for (const warning of index.warnings) {
     ctx.ui.notify(
       i18n.t("scanWarning", { path: warning.path, reason: warning.reason }),
-      "warning",
+      NOTICE_WARNING,
     );
   }
   if (loaded.explicit && index.skills.length === 0) {
     ctx.ui.notify(
       i18n.t("noSkills", { roots: loaded.config.skillRoots.join(", ") || i18n.t("noRoots") }),
-      "warning",
+      NOTICE_WARNING,
     );
   }
 }
@@ -254,6 +309,7 @@ export default function nestedSkillsExtension(pi: ExtensionAPI): void {
     ctx.ui.addAutocompleteProvider((current) => createAutocompleteProvider(current, index));
   });
 
+  registerConfigCommand(pi);
   registerSkillsCommand(pi, index);
 }
 

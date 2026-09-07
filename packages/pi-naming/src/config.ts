@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { i18n } from "./i18n.ts";
 
@@ -91,9 +91,25 @@ export function parseConfig(value: unknown): NamingConfig {
   };
 }
 
+/** 返回当前 Pi agent 目录下的命名配置路径。 */
+export function configPath(
+  agentDir = getAgentDir(),
+): string {
+  return join(agentDir, EXTENSIONS_DIR, PACKAGE_NAME, CONFIG_FILENAME);
+}
+
+/** 将经过校验的配置完整写入配置文件，供配置斜杠命令使用。 */
+export function saveConfig(
+  config: NamingConfig,
+  path = configPath(),
+): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
 /** 仅缺少配置文件时采用默认值，读取和解析错误交给入口报告。 */
 export function loadConfig(
-  path = join(getAgentDir(), EXTENSIONS_DIR, PACKAGE_NAME, CONFIG_FILENAME),
+  path = configPath(),
 ): NamingConfig {
   try {
     return parseConfig(JSON.parse(readFileSync(path, "utf8")));

@@ -1,24 +1,22 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
 export const CONFIG_FILE_NAME = "config.json";
 export const CONFIG_DIRECTORY_NAME = "pi-nested-skills";
-export const SKILL_ROOTS_ENV = "PI_NESTED_SKILLS_ROOTS";
-export const LEGACY_SKILLS_DIR_ENV = "PI_NESTED_SKILLS_DIR";
 
 export interface NestedSkillsConfig {
   /** 包含技能包目录的根目录列表。 */
   skillRoots: string[];
 }
 
-export type ConfigSource = "file" | "environment" | "default";
+export type ConfigSource = "file" | "default";
 
 export interface LoadedNestedSkillsConfig {
   config: NestedSkillsConfig;
   source: ConfigSource;
-  /** 配置文件或环境变量存在但无法使用时的明确诊断。 */
+  /** 配置文件存在但无法使用时的明确诊断。 */
   warnings: string[];
   /** 是否由用户显式提供过根目录配置。 */
   explicit: boolean;
@@ -73,6 +71,21 @@ function normalizeRootValues(value: unknown): string[] | undefined {
   return roots;
 }
 
+/** 校验 TUI 配置输入，并保留早期配置文件的 skillsDir 兼容字段。 */
+export function parseConfig(value: unknown): NestedSkillsConfig {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("configuration must be an object");
+  }
+  const raw = value as ConfigObject;
+  const configured = raw.skillRoots === undefined ? raw.skillsDir : raw.skillRoots;
+  const roots = normalizeRootValues(configured);
+  if (roots === undefined) {
+    throw new Error('configuration field "skillRoots" must be a string or an array of strings');
+  }
+  return { skillRoots: roots };
+}
+
+/** 读取配置文件并返回规范化前的根目录值或明确诊断。 */
 function readConfigFile(path: string): { value?: string[]; warning?: string } {
   if (!existsSync(path)) return {};
 
@@ -96,23 +109,16 @@ function readConfigFile(path: string): { value?: string[]; warning?: string } {
   }
 }
 
-function environmentRoots(env: NodeJS.ProcessEnv): string[] | undefined {
-  const raw = env[SKILL_ROOTS_ENV] ?? env[LEGACY_SKILLS_DIR_ENV];
-  if (raw === undefined) return undefined;
-  return raw
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
+/** 将技能根目录配置写入 Pi agent 配置目录。 */
+export function saveConfig(config: NestedSkillsConfig, agentDir = getAgentDir()): string {
+  const path = configPath(agentDir);
+  mkdirSync(join(agentDir, "extensions", CONFIG_DIRECTORY_NAME), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return path;
 }
 
-/**
- * 读取技能根目录配置：配置文件 > 环境变量 > Pi 标准默认目录。
- * 相对路径以 agent 目录为基准，避免把当前工作目录或维护者机器路径写进配置。
- */
-export function loadConfig(
-  agentDir = getAgentDir(),
-  env: NodeJS.ProcessEnv = process.env,
-): LoadedNestedSkillsConfig {
+/** 读取技能根目录配置：配置文件 > Pi 标准默认目录。 */
+export function loadConfig(agentDir = getAgentDir()): LoadedNestedSkillsConfig {
   const path = configPath(agentDir);
   const fileResult = readConfigFile(path);
   const warnings = fileResult.warning ? [fileResult.warning] : [];
@@ -123,18 +129,6 @@ export function loadConfig(
         skillRoots: fileResult.value.map((value) => resolveSkillRoot(value, agentDir)),
       },
       source: "file",
-      warnings,
-      explicit: true,
-    };
-  }
-
-  const envValue = environmentRoots(env);
-  if (envValue !== undefined) {
-    return {
-      config: {
-        skillRoots: envValue.map((value) => resolveSkillRoot(value, agentDir)),
-      },
-      source: "environment",
       warnings,
       explicit: true,
     };

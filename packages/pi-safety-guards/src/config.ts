@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_PRESETS, PRESETS } from "./presets.ts";
 import { i18n } from "./i18n.ts";
@@ -15,6 +15,43 @@ const DETECTORS = new Set<unknown>(["disk-format", "fork-bomb", "in-place-edit",
 /** 返回 agent 目录下的显式用户配置位置。 */
 export function configPath(): string {
   return join(getAgentDir(), EXTENSIONS_DIR, PACKAGE_NAME, CONFIG_FILENAME);
+}
+
+export interface SafetyConfigDocument {
+  presets: string[];
+  rules: unknown[];
+}
+
+/** 读取配置文件的用户文档，保留预设选择和自定义规则原文。 */
+export function loadConfigDocument(path = configPath()): SafetyConfigDocument {
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    parseConfig(raw);
+    return {
+      presets: raw.presets === undefined ? [...DEFAULT_PRESETS] : [...(raw.presets as string[])],
+      rules: raw.rules === undefined ? [] : [...(raw.rules as unknown[])],
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === FILE_NOT_FOUND_CODE) {
+      return { presets: [...DEFAULT_PRESETS], rules: [] };
+    }
+    throw error;
+  }
+}
+
+/** 将完整的用户配置文档校验后写入文件。 */
+export function saveConfigDocument(document: SafetyConfigDocument, path = configPath()): string {
+  parseConfig(document);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+  return path;
+}
+
+/** 将经过校验的安全规则配置写入配置文件。 */
+export function saveConfig(config: SafetyConfig, path = configPath()): string {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return path;
 }
 
 /** 将配置错误转换成双语诊断，不悄悄忽略未知配置。 */

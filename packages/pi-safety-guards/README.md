@@ -50,6 +50,8 @@ Replace `example-command` with the command to match. See also [config.example.js
 - `message`: optional non-empty text or an object containing `zh-CN` and `en-US`. If omitted, feedback shows the rule ID and action.
 - Empty presets and rules disable checking and report that no protection is active.
 
+Use `/config:safety-guards` to open the normal TUI preset menu, and use `reset` to restore the default preset. Run `/reload` after saving.
+
 ### Actions
 
 | Action | Behavior |
@@ -77,7 +79,7 @@ Use exactly one matcher per rule:
 
 ### Directory rules
 
-Relative roots resolve against Pi's current working directory; absolute paths and `~/` are supported. Only listed roots are allowed. The preset uses `.` for the working directory. Add extra directories and device paths such as `/dev/null` when needed.
+Relative roots resolve against Pi's current working directory; absolute paths and `~/` are supported. Only listed roots are allowed. The preset uses `.` for the working directory. When `pi-add-dir` is installed, its active directory authorization is also honored; after `session_squash`, the guard restores the authorization from the squashed source branch. Add extra directories and device paths such as `/dev/null` when needed.
 
 Custom matchers can use the exported `findOutOfScopeBashPaths(command, cwd, roots)` helper to supply their own roots.
 

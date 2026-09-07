@@ -78,7 +78,11 @@ test("registers resources, input transformation, command and completion hooks", 
       sendUserMessage: async () => {},
     } as unknown as ExtensionAPI;
 
-    process.env.PI_NESTED_SKILLS_ROOTS = root;
+    mkdirSync(join(agentDir, "extensions", "pi-nested-skills"), { recursive: true });
+    writeFileSync(
+      join(agentDir, "extensions", "pi-nested-skills", "config.json"),
+      JSON.stringify({ skillRoots: [root] }),
+    );
     process.env.PI_CODING_AGENT_DIR = agentDir;
     const context = {
       hasUI: true,
@@ -112,7 +116,6 @@ test("registers resources, input transformation, command and completion hooks", 
     assert.ok(autocompleteFactory);
     assert.ok(commands.has("skills"));
   } finally {
-    delete process.env.PI_NESTED_SKILLS_ROOTS;
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     rmSync(agentDir, { recursive: true, force: true });

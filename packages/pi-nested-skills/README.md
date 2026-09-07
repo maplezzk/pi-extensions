@@ -11,6 +11,7 @@ A Pi extension that discovers skills recursively and provides convenient aliases
 - Keeps Pi's native skill loader responsible for frontmatter validation and skill-body expansion; this package does not duplicate `read` compatibility or skill expansion.
 - Extends the native slash-command completion list and preserves built-in Pi command suggestions.
 - Provides `/skills` to list discovered aliases.
+- Provides `/config:nested-skills` to edit the skill roots through the normal TUI input; use `reset` for the default `skills` root.
 - Contributes discovered skill files through Pi's `resources_discover` event.
 - Uses `pi-extensions-i18n` for all user-visible messages.
 
@@ -43,13 +44,7 @@ Start from [`config.example.json`](./config.example.json) and write it to:
 
 A relative root is resolved relative to the Pi agent directory. Each direct child of a root is treated as a skill package, and every visible descendant containing `SKILL.md` is discovered. A root containing `SKILL.md` itself is also accepted as one package.
 
-Environment fallback:
-
-```text
-PI_NESTED_SKILLS_ROOTS=~/shared-skills,skills
-```
-
-The file configuration takes precedence over the environment, and the environment takes precedence over the default `<pi-agent-dir>/skills` root. `PI_NESTED_SKILLS_DIR` remains a compatibility alias for one root.
+Use `/config:nested-skills` to change the roots in the normal TUI input. Enter comma-separated paths, or use `reset` for the default root. Run `/reload` after saving.
 
 ## Aliases and native expansion
 

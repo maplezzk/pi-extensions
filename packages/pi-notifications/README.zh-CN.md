@@ -55,7 +55,7 @@ pi install npm:pi-notifications
 }
 ```
 
-配置在扩展加载时读取。修改后请重新加载 Pi。配置文件不存在时使用默认的 `terminal-notifier` 配置；配置格式损坏时会在 Pi 中明确提示并使用默认配置。
+配置在扩展加载时读取。使用 `/config:notifications` 打开常规 TUI 配置菜单，输入 `reset` 恢复默认值；保存后执行 `/reload`。配置文件不存在时使用默认的 `terminal-notifier` 配置；配置格式损坏时会在 Pi 中明确提示并使用默认配置。
 
 ## 默认 adapter
 

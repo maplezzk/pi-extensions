@@ -11,7 +11,19 @@
 - AI 完全停止时（`agent_settled`，覆盖自动重试、compaction 续跑以及 Esc 中断）追加一行**从发出消息到停止的总耗时**（`⏱ 总耗时 18.9s`）。
 - 每轮 LLM 调用结束后显示 TPS、TTFT、token 数、生成耗时、stall 和可用的综合成本。
 - Telemetry 以 `tps` custom session entry 持久化，并在恢复 session 或 `/tree` 后恢复显示。
-- Metrics 通过 session entry 和通知提供；本包不再注册导出类斜杠命令。
+- Metrics 通过 session entry 和通知提供。使用 `/config:metrics` 打开 TUI 配置菜单，也可以使用 `/config:metrics enable|disable` 直接切换。
+
+## 配置
+
+配置文件为 `<Pi agent 目录>/extensions/pi-metrics/config.json`：
+
+```json
+{
+  "enabled": true
+}
+```
+
+使用 `/config:metrics enable` 或 `/config:metrics disable` 修改配置，也可以使用 `/config:metrics` 打开常规 TUI 菜单；手动修改文件后执行 `/reload`。可参考 [`config.example.json`](./config.example.json)。
 
 ## 从 pi-tps 迁移
 

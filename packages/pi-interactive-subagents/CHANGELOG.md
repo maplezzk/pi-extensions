@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.13.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.12.0...pi-interactive-subagents-v3.13.0) (2026-09-07)
+
+
+### Features
+
+* 提供终端改名结果与目标归属协议 ([f44cf8a](https://github.com/maplezzk/pi-extensions/commit/f44cf8a23faf2fa165dd389cfadcac5ec3efed0f))
+
+
+### Bug Fixes
+
+* terminate interrupted subagent process ([6d3fc80](https://github.com/maplezzk/pi-extensions/commit/6d3fc80613d1b7d2c2c2f00a485caef5ef95e2b2))
+* 子代理传递终端归属并停止覆盖会话标题 ([288ea9d](https://github.com/maplezzk/pi-extensions/commit/288ea9d3d6b97cb612e114d9cbadf607d811367c))
+* 子代理传递终端归属并避免覆盖共享标题 ([73d5ecc](https://github.com/maplezzk/pi-extensions/commit/73d5ecc01568dc566f9a40a8168ccaaac8f58409))
+* 终止被中断的 subagent 进程 ([a93d718](https://github.com/maplezzk/pi-extensions/commit/a93d7181acbfb51b77e192b850904e9dc5bd825f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.4.1 to ^0.5.0
+
 ## [3.12.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.11.1...pi-interactive-subagents-v3.12.0) (2026-09-04)
 
 

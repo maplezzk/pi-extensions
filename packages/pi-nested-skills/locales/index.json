@@ -26,5 +26,29 @@
   "scanWarning": {
     "zh-CN": "扫描技能目录失败：{path}（{reason}）",
     "en-US": "Failed to scan skill path: {path} ({reason})"
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置嵌套技能根目录",
+    "en-US": "Configure nested skill roots"
+  },
+  "configCommandInput": {
+    "zh-CN": "输入技能根目录（多个目录用逗号分隔）",
+    "en-US": "Enter skill roots (separate multiple roots with commas)"
+  },
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:nested-skills（打开配置输入）或 /config:nested-skills reset（恢复默认值）",
+    "en-US": "Usage: /config:nested-skills (open settings) or /config:nested-skills reset (restore defaults)"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "嵌套技能配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Nested skill configuration requires the TUI; run this command in an interactive Pi session."
+  },
+  "configCommandSaved": {
+    "zh-CN": "嵌套技能配置已保存：{path}。请执行 /reload 使配置生效。",
+    "en-US": "Nested skill configuration saved to {path}. Run /reload to apply it."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "嵌套技能配置无效：{error}",
+    "en-US": "Invalid nested skill configuration: {error}"
   }
 }

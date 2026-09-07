@@ -1,10 +1,28 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TerminalRenameOutcome, TerminalRenameTarget, ResolveRenameOptions } from "pi-terminal-mux";
-import { loadConfig, type NamingConfig } from "./config.ts";
+import { configPath, loadConfig, parseConfig, saveConfig, type NamingConfig } from "./config.ts";
 import { i18n } from "./i18n.ts";
 import { getCurrentSessionUserMessages, requestSessionNameWithTimeout, type SessionNameRequester } from "./session-name.ts";
 
 const RENAME_COMMAND = "rename";
+const CONFIG_COMMAND_ALIASES = ["config:naming", "naming-config", "pi-naming-config"] as const;
+const CONFIG_RESET_COMMAND = "reset";
+const CONFIG_OPTION = {
+  automaticNaming: 0,
+  manualNaming: 1,
+  sessionTarget: 2,
+  workspaceTarget: 3,
+  tabTarget: 4,
+  maxLength: 5,
+  preferredLength: 6,
+  language: 7,
+  instructions: 8,
+  timeout: 9,
+} as const;
+const MAX_LENGTH_PRESETS = ["15", "30", "60"] as const;
+const PREFERRED_LENGTH_PRESETS = ["10", "20", "40"] as const;
+const LANGUAGE_PRESETS = ["auto", "中文", "English", "日本語"] as const;
+const TIMEOUT_PRESETS = ["5000", "10000", "30000"] as const;
 const MESSAGE_TYPE = "pi-naming";
 
 export interface TerminalNamingAdapter {
@@ -28,6 +46,152 @@ function report(pi: ExtensionAPI, ctx: ExtensionContext, notice: { message: stri
   const { message, level } = notice;
   if (ctx.hasUI) ctx.ui.notify(message, level);
   else pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true }, { triggerTurn: false });
+}
+
+/** 注册配置命令，通过 TUI 菜单和输入框修改命名配置。 */
+function registerNamingConfigCommand(pi: ExtensionAPI): void {
+  const command = {
+    description: i18n.t("configCommandDescription"),
+    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
+    handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+      const argument = args.trim();
+      if (argument && argument !== CONFIG_RESET_COMMAND) {
+        report(pi, ctx, { message: i18n.t("configCommandUsage"), level: "warning" });
+        return;
+      }
+      if (argument === CONFIG_RESET_COMMAND) {
+        try {
+          saveConfig(parseConfig({}));
+          report(pi, ctx, {
+            message: i18n.t("configCommandSaved", { path: configPath() }),
+            level: "info",
+          });
+        } catch (error) {
+          report(pi, ctx, { message: i18n.t("configCommandInvalid", { error: errorMessage(error) }), level: "error" });
+        }
+        return;
+      }
+      if (!ctx.hasUI) {
+        report(pi, ctx, { message: i18n.t("configCommandInteractiveOnly"), level: "warning" });
+        return;
+      }
+
+      let config: NamingConfig;
+      try {
+        config = loadConfig();
+      } catch (error) {
+        report(pi, ctx, { message: i18n.t("configCommandInvalid", { error: errorMessage(error) }), level: "error" });
+        return;
+      }
+
+      /** Saves one validated menu change and reports its result. */
+      const save = (next: NamingConfig): boolean => {
+        try {
+          saveConfig(next);
+          config = next;
+          report(pi, ctx, { message: i18n.t("configCommandSaved", { path: configPath() }), level: "info" });
+          return true;
+        } catch (error) {
+          report(pi, ctx, { message: i18n.t("configCommandInvalid", { error: errorMessage(error) }), level: "error" });
+          return false;
+        }
+      };
+      /** Formats a boolean setting for the localized menu label. */
+      const toggle = (value: boolean): string => value ? i18n.t("configOn") : i18n.t("configOff");
+      /** Opens one text input for a scalar title setting. */
+      const editText = async (title: string, current: string): Promise<string | undefined> =>
+        ctx.ui.input(title, current);
+
+      /** Opens a choice list for common values and falls back to text only for custom values. */
+      const chooseSettingValue = async (
+        title: string,
+        current: string,
+        options: readonly string[],
+      ): Promise<string | undefined> => {
+        const customChoice = i18n.t("configCustom");
+        const cancelChoice = i18n.t("configCancel");
+        const choices = [
+          ...options.map((value) => i18n.t("configPresetValue", { value })),
+          customChoice,
+          cancelChoice,
+        ];
+        const selected = await ctx.ui.select(title, choices);
+        if (selected === undefined || selected === cancelChoice) return undefined;
+        if (selected === customChoice) return ctx.ui.input(title, current);
+        const index = choices.indexOf(selected);
+        return index >= 0 && index < options.length ? options[index] : undefined;
+      };
+
+      while (true) {
+        const doneChoice = i18n.t("configDone");
+        const choices = [
+          i18n.t("configAutomaticNaming", { value: toggle(config.automaticNaming) }),
+          i18n.t("configManualNaming", { value: toggle(config.manualNaming) }),
+          i18n.t("configSessionTarget", { value: toggle(config.targets.session) }),
+          i18n.t("configWorkspaceTarget", { value: toggle(config.targets.workspace) }),
+          i18n.t("configTabTarget", { value: toggle(config.targets.tab) }),
+          i18n.t("configMaxLength", { value: config.title.maxLength }),
+          i18n.t("configPreferredLength", { value: config.title.preferredLength }),
+          i18n.t("configLanguage", { value: config.title.language }),
+          i18n.t("configInstructions", { value: config.title.instructions || i18n.t("configEmpty") }),
+          i18n.t("configTimeout", { value: config.title.timeoutMs }),
+          doneChoice,
+        ];
+        const selected = await ctx.ui.select(i18n.t("configMenuTitle"), choices);
+        if (selected === undefined || selected === doneChoice) return;
+        const selectedIndex = choices.indexOf(selected);
+        let next: NamingConfig | undefined;
+        if (selectedIndex === CONFIG_OPTION.automaticNaming) {
+          next = parseConfig({ ...config, automaticNaming: !config.automaticNaming });
+        } else if (selectedIndex === CONFIG_OPTION.manualNaming) {
+          next = parseConfig({ ...config, manualNaming: !config.manualNaming });
+        } else if (selectedIndex === CONFIG_OPTION.sessionTarget) {
+          next = parseConfig({ ...config, targets: { ...config.targets, session: !config.targets.session } });
+        } else if (selectedIndex === CONFIG_OPTION.workspaceTarget) {
+          next = parseConfig({ ...config, targets: { ...config.targets, workspace: !config.targets.workspace } });
+        } else if (selectedIndex === CONFIG_OPTION.tabTarget) {
+          next = parseConfig({ ...config, targets: { ...config.targets, tab: !config.targets.tab } });
+        } else {
+          let inputTitle = i18n.t("configTimeoutInput");
+          let inputValue = String(config.title.timeoutMs);
+          let options: readonly string[] = TIMEOUT_PRESETS;
+          if (selectedIndex === CONFIG_OPTION.maxLength) {
+            inputTitle = i18n.t("configMaxLengthInput");
+            inputValue = String(config.title.maxLength);
+            options = MAX_LENGTH_PRESETS;
+          } else if (selectedIndex === CONFIG_OPTION.preferredLength) {
+            inputTitle = i18n.t("configPreferredLengthInput");
+            inputValue = String(config.title.preferredLength);
+            options = PREFERRED_LENGTH_PRESETS;
+          } else if (selectedIndex === CONFIG_OPTION.language) {
+            inputTitle = i18n.t("configLanguageInput");
+            inputValue = config.title.language;
+            options = LANGUAGE_PRESETS;
+          } else if (selectedIndex === CONFIG_OPTION.instructions) {
+            inputTitle = i18n.t("configInstructionsInput");
+            inputValue = config.title.instructions;
+            options = [];
+          }
+          const input = selectedIndex === CONFIG_OPTION.instructions
+            ? await ctx.ui.input(inputTitle, inputValue)
+            : await chooseSettingValue(inputTitle, inputValue, options);
+          if (input === undefined) continue;
+          const title = { ...config.title };
+          if (selectedIndex === CONFIG_OPTION.maxLength) title.maxLength = Number(input.trim());
+          else if (selectedIndex === CONFIG_OPTION.preferredLength) title.preferredLength = Number(input.trim());
+          else if (selectedIndex === CONFIG_OPTION.language) title.language = input;
+          else if (selectedIndex === CONFIG_OPTION.instructions) title.instructions = input;
+          else title.timeoutMs = Number(input.trim());
+          try { next = parseConfig({ ...config, title }); }
+          catch (error) {
+            report(pi, ctx, { message: i18n.t("configCommandInvalid", { error: errorMessage(error) }), level: "error" });
+          }
+        }
+        if (next) save(next);
+      }
+    },
+  };
+  for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
 }
 
 /** 按配置组合统一的自动/手动入口，可注入模型和终端替身做组合测试。 */
@@ -139,6 +303,7 @@ export async function registerNaming(
 
 /** 配置错误在 session_start 报告，不注册不完整的命名功能。 */
 export default async function namingExtension(pi: ExtensionAPI): Promise<void> {
+  registerNamingConfigCommand(pi);
   let config: NamingConfig;
   try { config = loadConfig(); }
   catch (error) {
