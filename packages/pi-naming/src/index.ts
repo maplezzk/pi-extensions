@@ -19,6 +19,10 @@ const CONFIG_OPTION = {
   instructions: 8,
   timeout: 9,
 } as const;
+const MAX_LENGTH_PRESETS = ["15", "30", "60"] as const;
+const PREFERRED_LENGTH_PRESETS = ["10", "20", "40"] as const;
+const LANGUAGE_PRESETS = ["auto", "中文", "English", "日本語"] as const;
+const TIMEOUT_PRESETS = ["5000", "10000", "30000"] as const;
 const MESSAGE_TYPE = "pi-naming";
 
 export interface TerminalNamingAdapter {
@@ -98,6 +102,26 @@ function registerNamingConfigCommand(pi: ExtensionAPI): void {
       const editText = async (title: string, current: string): Promise<string | undefined> =>
         ctx.ui.input(title, current);
 
+      /** Opens a choice list for common values and falls back to text only for custom values. */
+      const chooseSettingValue = async (
+        title: string,
+        current: string,
+        options: readonly string[],
+      ): Promise<string | undefined> => {
+        const customChoice = i18n.t("configCustom");
+        const cancelChoice = i18n.t("configCancel");
+        const choices = [
+          ...options.map((value) => i18n.t("configPresetValue", { value })),
+          customChoice,
+          cancelChoice,
+        ];
+        const selected = await ctx.ui.select(title, choices);
+        if (selected === undefined || selected === cancelChoice) return undefined;
+        if (selected === customChoice) return ctx.ui.input(title, current);
+        const index = choices.indexOf(selected);
+        return index >= 0 && index < options.length ? options[index] : undefined;
+      };
+
       while (true) {
         const doneChoice = i18n.t("configDone");
         const choices = [
@@ -130,20 +154,27 @@ function registerNamingConfigCommand(pi: ExtensionAPI): void {
         } else {
           let inputTitle = i18n.t("configTimeoutInput");
           let inputValue = String(config.title.timeoutMs);
+          let options: readonly string[] = TIMEOUT_PRESETS;
           if (selectedIndex === CONFIG_OPTION.maxLength) {
             inputTitle = i18n.t("configMaxLengthInput");
             inputValue = String(config.title.maxLength);
+            options = MAX_LENGTH_PRESETS;
           } else if (selectedIndex === CONFIG_OPTION.preferredLength) {
             inputTitle = i18n.t("configPreferredLengthInput");
             inputValue = String(config.title.preferredLength);
+            options = PREFERRED_LENGTH_PRESETS;
           } else if (selectedIndex === CONFIG_OPTION.language) {
             inputTitle = i18n.t("configLanguageInput");
             inputValue = config.title.language;
+            options = LANGUAGE_PRESETS;
           } else if (selectedIndex === CONFIG_OPTION.instructions) {
             inputTitle = i18n.t("configInstructionsInput");
             inputValue = config.title.instructions;
+            options = [];
           }
-          const input = await ctx.ui.input(inputTitle, inputValue);
+          const input = selectedIndex === CONFIG_OPTION.instructions
+            ? await ctx.ui.input(inputTitle, inputValue)
+            : await chooseSettingValue(inputTitle, inputValue, options);
           if (input === undefined) continue;
           const title = { ...config.title };
           if (selectedIndex === CONFIG_OPTION.maxLength) title.maxLength = Number(input.trim());

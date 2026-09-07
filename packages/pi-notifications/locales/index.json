@@ -95,6 +95,18 @@
     "zh-CN": "超时毫秒数（正整数）",
     "en-US": "Timeout in milliseconds (positive integer)"
   },
+  "configPresetValue": {
+    "zh-CN": "常用值：{value}",
+    "en-US": "Common value: {value}"
+  },
+  "configCustom": {
+    "zh-CN": "自定义…",
+    "en-US": "Custom…"
+  },
+  "configCancel": {
+    "zh-CN": "取消",
+    "en-US": "Cancel"
+  },
   "configCommandInteractiveOnly": {
     "zh-CN": "通知配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
     "en-US": "Notification configuration requires the TUI; run this command in an interactive Pi session."

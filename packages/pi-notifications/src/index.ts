@@ -49,6 +49,8 @@ const CONFIG_RESET_COMMAND = "reset";
 const CONFIG_OPTION = { enabled: 0, command: 1, args: 2, timeout: 3 } as const;
 const CONFIG_ARG_SEPARATOR = ",";
 const CONFIG_ARG_DISPLAY_SEPARATOR = ", ";
+const COMMAND_PRESETS = ["terminal-notifier", "notify-send"] as const;
+const TIMEOUT_PRESETS = ["1000", "3000", "5000"] as const;
 const NOTICE_WARNING = "warning" as const;
 const NOTICE_INFO = "info" as const;
 const NOTICE_ERROR = "error" as const;
@@ -106,6 +108,26 @@ function registerConfigCommand(pi: ExtensionAPI): void {
       };
       const status = (enabled: boolean): string => enabled ? i18n.t("configOn") : i18n.t("configOff");
 
+      /** Selects a common scalar value and only opens text input for custom values. */
+      const chooseSettingValue = async (
+        title: string,
+        current: string,
+        options: readonly string[],
+      ): Promise<string | undefined> => {
+        const customChoice = i18n.t("configCustom");
+        const cancelChoice = i18n.t("configCancel");
+        const choices = [
+          ...options.map((value) => i18n.t("configPresetValue", { value })),
+          customChoice,
+          cancelChoice,
+        ];
+        const selected = await ctx.ui.select(title, choices);
+        if (selected === undefined || selected === cancelChoice) return undefined;
+        if (selected === customChoice) return ctx.ui.input(title, current);
+        const index = choices.indexOf(selected);
+        return index >= 0 && index < options.length ? options[index] : undefined;
+      };
+
       while (true) {
         const doneChoice = i18n.t("configDone");
         const choices = [
@@ -124,14 +146,17 @@ function registerConfigCommand(pi: ExtensionAPI): void {
         } else {
           let title = i18n.t("configTimeoutInput");
           let current = String(config.timeoutMs);
+          let options: readonly string[] = TIMEOUT_PRESETS;
           if (selectedIndex === CONFIG_OPTION.command) {
             title = i18n.t("configCommandInput");
             current = config.adapter.command;
+            options = COMMAND_PRESETS;
           } else if (selectedIndex === CONFIG_OPTION.args) {
             title = i18n.t("configArgumentsInput");
             current = config.adapter.args.join(CONFIG_ARG_DISPLAY_SEPARATOR);
+            options = [config.adapter.args.join(CONFIG_ARG_DISPLAY_SEPARATOR)];
           }
-          const input = await ctx.ui.input(title, current);
+          const input = await chooseSettingValue(title, current, options);
           if (input === undefined) continue;
           const adapter = { ...config.adapter };
           if (selectedIndex === CONFIG_OPTION.command) adapter.command = input.trim();

@@ -187,6 +187,18 @@
     "zh-CN": "未设置",
     "en-US": "not set"
   },
+  "configPresetValue": {
+    "zh-CN": "常用值：{value}",
+    "en-US": "Common value: {value}"
+  },
+  "configCustom": {
+    "zh-CN": "自定义…",
+    "en-US": "Custom…"
+  },
+  "configCancel": {
+    "zh-CN": "取消",
+    "en-US": "Cancel"
+  },
   "configDone": {
     "zh-CN": "完成",
     "en-US": "Done"
