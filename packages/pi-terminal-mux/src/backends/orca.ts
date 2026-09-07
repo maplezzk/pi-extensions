@@ -211,8 +211,8 @@ function orcaExec(args: string[]): string {
   return result.stdout;
 }
 
-/** 调用 `orca` 命令，失败只记 log 不抛错。用于 send/rename/close 这类 best-effort 操作。 */
-function orcaExecSilent(args: string[]): void {
+/** 调用 `orca` 命令，失败只记 log 不抛错，并返回执行是否成功。 */
+function orcaExecSilent(args: string[]): boolean {
   const cmdline = `orca ${args
     .map((a) => (a.includes(" ") || a.includes('"') ? JSON.stringify(a) : a))
     .join(" ")}`;
@@ -228,7 +228,9 @@ function orcaExecSilent(args: string[]): void {
         (result.stderr ?? "").trim().slice(0, 200),
       )}`,
     );
+    return false;
   }
+  return true;
 }
 
 // ── 对外 API ──
@@ -424,8 +426,8 @@ export function closeOrcaSurface(handle: string): void {
  * 注意：rename 作用于 tab 标题，split pane 与源 pane 共享 tab ——
  * 调用方需确认 target 是独立 tab（create() 产物或 agent 自己的 terminal）。
  */
-export function renameOrcaTerminal(handle: string, name: string): void {
-  orcaExecSilent(["terminal", "rename", "--terminal", handle, "--title", name]);
+export function renameOrcaTerminal(handle: string, name: string): boolean {
+  return orcaExecSilent(["terminal", "rename", "--terminal", handle, "--title", name]);
 }
 
 // ── BackendOps 适配器（薄包装以上原生函数，行为语义见各函数注释） ──

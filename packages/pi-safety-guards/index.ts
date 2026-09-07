@@ -1,6 +1,10 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 import { dirname } from "node:path";
-import { configPath, loadConfig } from "./src/config.ts";
+import { configPath, loadConfig, loadConfigDocument, saveConfigDocument } from "./src/config.ts";
+import { DEFAULT_PRESETS, PRESETS } from "./src/presets.ts";
 import { compileRules, evaluateRules, type ModuleLoader, type PathRuleEvidence } from "./src/engine.ts";
 import { addedDirectoryPathsFromSession } from "./src/bash-directory-scope-utils.ts";
 import { i18n } from "./src/i18n.ts";
@@ -9,11 +13,85 @@ import type { SafetyConfig, SafetyRule } from "./src/types.ts";
 const BASH_TOOL = "bash";
 const ERROR_LEVEL = "error";
 const INFO_LEVEL = "info";
+const WARN_LEVEL = "warning";
 const BLOCK_ACTION = "block";
 const CONFIRM_ACTION = "confirm";
 const WARN_ACTION = "warn";
+const CONFIG_COMMAND_ALIASES = ["config:safety-guards", "safety-guards-config", "pi-safety-guards-config"] as const;
+const CONFIG_RESET_COMMAND = "reset";
+const CONFIG_PRESET_NAMES = Object.keys(PRESETS);
 
-/** 将规则 ID 和用户选择的说明一起展示，不自动执行替代命令。 */
+/** 注册配置命令，通过 TUI 菜单选择安全预设并保留自定义规则。 */
+function registerConfigCommand(pi: ExtensionAPI): void {
+  const command = {
+    description: i18n.t("configCommandDescription"),
+    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
+    /** Handles preset selection and persists each change immediately. */
+    handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+      const argument = args.trim();
+      if (argument && argument !== CONFIG_RESET_COMMAND) {
+        ctx.ui.notify(i18n.t("configCommandUsage"), WARN_LEVEL);
+        return;
+      }
+      if (argument === CONFIG_RESET_COMMAND) {
+        try {
+          const path = saveConfigDocument({ presets: [...DEFAULT_PRESETS], rules: [] });
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), INFO_LEVEL);
+        } catch (error) {
+          ctx.ui.notify(i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }), ERROR_LEVEL);
+        }
+        return;
+      }
+      if (!ctx.hasUI) {
+        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), WARN_LEVEL);
+        return;
+      }
+
+      let document: { presets: string[]; rules: unknown[] };
+      try {
+        document = loadConfigDocument();
+      } catch (error) {
+        ctx.ui.notify(i18n.t("configCommandInvalid", {
+          error: error instanceof Error ? error.message : String(error),
+        }), ERROR_LEVEL);
+        return;
+      }
+      while (true) {
+        const choices = CONFIG_PRESET_NAMES.map((name) => i18n.t("configPreset", {
+          name,
+          value: document.presets.includes(name) ? i18n.t("configOn") : i18n.t("configOff"),
+        }));
+        choices.push(i18n.t("configCustomRules", { count: document.rules.length }), i18n.t("configDone"));
+        const selected = await ctx.ui.select(i18n.t("configMenuTitle"), choices);
+        if (selected === undefined || selected === choices[choices.length - 1]) return;
+        const selectedIndex = choices.indexOf(selected);
+        if (selectedIndex === CONFIG_PRESET_NAMES.length) {
+          ctx.ui.notify(i18n.t("configCustomRulesHint"), INFO_LEVEL);
+          continue;
+        }
+        const preset = CONFIG_PRESET_NAMES[selectedIndex];
+        if (!preset) continue;
+        const presets = document.presets.includes(preset)
+          ? document.presets.filter((name) => name !== preset)
+          : [...document.presets, preset];
+        try {
+          const path = saveConfigDocument({ presets, rules: document.rules });
+          document = { ...document, presets };
+          ctx.ui.notify(i18n.t("configCommandSaved", { path }), INFO_LEVEL);
+        } catch (error) {
+          ctx.ui.notify(i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }), ERROR_LEVEL);
+        }
+      }
+    },
+  };
+  for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
+}
+
+/** 将规则 ID、路径证据和安全重试建议一起展示，不自动执行替代命令。 */
 function describeRule(rule: SafetyRule, evidence?: PathRuleEvidence): string {
   const message = typeof rule.message === "string" ? rule.message : rule.message?.[i18n.locale()];
   const description = message ? `[${rule.id}] ${message}` : i18n.t("ruleMatched", { id: rule.id });
@@ -25,7 +103,10 @@ function describeRule(rule: SafetyRule, evidence?: PathRuleEvidence): string {
     commandPath: violations,
     cwd: evidence.cwd,
     allowedRoots: evidence.allowedRoots.join(", "),
-    suggestion: evidence.suggestedDirectories.map((directory) => i18n.t("addDirectorySuggestion", { directory })).join("\n"),
+    suggestion: evidence.suggestedDirectories.map((directory) => i18n.t("addDirectorySuggestion", {
+      directory,
+      arguments: JSON.stringify({ path: directory }),
+    })).join("\n"),
   })}`;
 }
 
@@ -81,6 +162,7 @@ export async function registerSafetyGuards(
 
 /** 配置或启用规则加载失败时阻断 Bash，避免把失败当作关闭保护。 */
 export default async function piSafetyGuards(pi: ExtensionAPI): Promise<void> {
+  registerConfigCommand(pi);
   try {
     await registerSafetyGuards(pi, loadConfig());
   } catch (error) {
@@ -92,5 +174,9 @@ export default async function piSafetyGuards(pi: ExtensionAPI): Promise<void> {
   }
 }
 
+export { configPath, loadConfig, parseConfig, saveConfig } from "./src/config.ts";
 export type { RuleContext, RuleMatcher } from "./src/types.ts";
-export { findOutOfScopeBashPaths } from "./src/bash-directory-scope-utils.ts";
+export {
+  addedDirectoryPathsFromSession,
+  findOutOfScopeBashPaths,
+} from "./src/bash-directory-scope-utils.ts";

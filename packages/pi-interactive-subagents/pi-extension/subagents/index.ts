@@ -25,9 +25,8 @@ import {
   isMuxAvailable,
   sendEscape,
   shellEscape,
-  renameCurrentTab,
-  renameWorkspace,
-  renameAgent,
+  createSurfaceRenameContext,
+  TERMINAL_RENAME_CONTEXT_ENV,
   readScreen,
   getLastSplitSource,
   clearLastSplitSource,
@@ -897,10 +896,25 @@ function handleSubagentInterrupt(
   running.statusState = forceStatusAfterInterrupt(running.statusState, now);
   updateWidget();
 
-  // Escape only cancels the child's current turn. Do not write the `.exit`
-  // sidecar here: that file is the terminal completion signal consumed by
-  // pollForExit, and writing it would close the pane and remove this running
-  // entry instead of leaving the child alive for another turn.
+  // Interrupting from the parent is terminal: Escape stops the child's active
+  // turn, while the `.exit` sidecar tells the watcher to close the surface and
+  // remove the child from the running set. Without the sidecar, the child Pi
+  // returns to its prompt and the watcher waits forever.
+  if (running.sessionFile) {
+    const exitFile = `${running.sessionFile}.exit`;
+    try {
+      writeFileSync(exitFile, JSON.stringify({ type: "done" }));
+    } catch (writeErr: unknown) {
+      const errorMessage = writeErr instanceof Error ? writeErr.message : String(writeErr);
+      const error =
+        `Failed to signal subagent "${running.name}" termination via ${exitFile}: ` +
+        errorMessage;
+      return {
+        content: [{ type: "text" as const, text: error }],
+        details: { error, id: running.id, name: running.name },
+      };
+    }
+  }
 
   return {
     content: [{ type: "text" as const, text: `Interrupt requested for subagent "${running.name}".` }],
@@ -1119,7 +1133,14 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
   }
 }
 
+/** 每次启动或恢复都用新 surface 重建归属，不能继承父进程的改名范围。 */
+function buildTerminalRenameEnvironment(surface: string, backend = getMuxBackend()): string {
+  const context = createSurfaceRenameContext(surface, backend);
+  return `${TERMINAL_RENAME_CONTEXT_ENV}=${shellEscape(JSON.stringify(context))}`;
+}
+
 export const __test__ = {
+  buildTerminalRenameEnvironment,
   borderLine,
   parseMuxConfigRequest,
   getShellReadyDelayMs,
@@ -1198,6 +1219,7 @@ async function launchSubagent(
   // For new surfaces, pause briefly so the shell is ready before sending the command.
   const surfacePreCreated = !!options?.surface;
   const surface = options?.surface ?? createSurface(params.name);
+  const renameEnvironment = buildTerminalRenameEnvironment(surface);
   const splitFrom = surfacePreCreated ? undefined : (getLastSplitSource() ?? undefined);
   if (!surfacePreCreated) clearLastSplitSource();
   if (!surfacePreCreated) {
@@ -1236,7 +1258,7 @@ async function launchSubagent(
     const sentinelFile = `/tmp/pi-claude-${id}-done`;
     const pluginDir = join(SUBAGENTS_DIR, "plugin");
 
-    const cmdParts: string[] = [];
+    const cmdParts: string[] = [renameEnvironment];
     cmdParts.push(`PI_CLAUDE_SENTINEL=${shellEscape(sentinelFile)}`);
     cmdParts.push("claude");
     cmdParts.push("--dangerously-skip-permissions");
@@ -1340,7 +1362,7 @@ async function launchSubagent(
   }
 
   // Build env prefix: denied tools + subagent identity + config dir propagation
-  const envParts: string[] = [];
+  const envParts: string[] = [renameEnvironment];
 
   // If the target cwd has its own .pi/agent/, use that as the config root.
   // Otherwise propagate the current/global agent dir.
@@ -1412,12 +1434,6 @@ async function launchSubagent(
       `# Surface: ${surface}`,
     ].join("\n"),
   });
-
-  // 延迟重命名 agent 标题（左侧侧栏），需要等 pi 启动被 herdr 检测到
-  const agentName = params.name;
-  const agentSurface = surface;
-  setTimeout(() => renameAgent(agentSurface, agentName), 3000);
-  setTimeout(() => renameAgent(agentSurface, agentName), 5000);
 
   const running: RunningSubagent = {
     id,
@@ -1849,13 +1865,11 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       name: "subagent_interrupt",
       label: "Interrupt Subagent",
       description:
-        "Send Escape to the active turn of a currently running Pi-backed subagent. " +
-        "The child pane, session, watcher, and running entry remain alive; this returns only a local acknowledgement " +
-        "and does not emit a subagent_result solely because of this request.",
+        "Send Escape to stop the active turn of a currently running Pi-backed subagent, then terminate the child Pi process. " +
+        "The parent watcher consumes the completion signal, closes the child pane, and removes the subagent from the running set.",
       promptSnippet:
-        "Send Escape to the active turn of a currently running Pi-backed subagent. " +
-        "The child pane, session, watcher, and running entry remain alive; this returns only a local acknowledgement " +
-        "and does not emit a subagent_result solely because of this request.",
+        "Send Escape to stop the active turn of a currently running Pi-backed subagent, then terminate the child Pi process. " +
+        "The parent watcher consumes the completion signal, closes the child pane, and removes the subagent from the running set.",
       parameters: Type.Object({
         id: Type.Optional(Type.String({ description: "Exact running subagent id" })),
         name: Type.Optional(Type.String({ description: "Exact running subagent display name" })),
@@ -2036,6 +2050,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         const entryCountBefore = getNewEntries(params.sessionPath, 0).length;
 
         const surface = createSurface(name);
+        const renameEnvironment = buildTerminalRenameEnvironment(surface);
         await new Promise<void>((resolve) => setTimeout(resolve, getShellReadyDelayMs()));
 
         // Build pi resume command
@@ -2065,7 +2080,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         }
 
         // Build env prefix — propagate PI_CODING_AGENT_DIR for config isolation
-        const resumeEnvParts: string[] = [];
+        const resumeEnvParts: string[] = [renameEnvironment];
         const { allowSubagentSpawning } = loadSubagentSpawningConfig();
         if (process.env.PI_CODING_AGENT_DIR) {
           resumeEnvParts.push(`PI_CODING_AGENT_DIR=${shellEscape(process.env.PI_CODING_AGENT_DIR)}`);
@@ -2073,6 +2088,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         resumeEnvParts.push(`PI_SUBAGENT_NAME=${shellEscape(name)}`);
         resumeEnvParts.push(`PI_SUBAGENT_SESSION=${shellEscape(params.sessionPath)}`);
         resumeEnvParts.push(`PI_SUBAGENT_ID=${shellEscape(id)}`);
+        resumeEnvParts.push(`PI_SUBAGENT_SURFACE=${shellEscape(surface)}`);
         resumeEnvParts.push(`PI_SUBAGENT_ACTIVITY_FILE=${shellEscape(activityFile)}`);
         resumeEnvParts.push(
           `PI_DENY_TOOLS=${shellEscape([...resolveDenyTools(null, allowSubagentSpawning)].join(","))}`,
@@ -2378,17 +2394,6 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       if (!task) {
         ctx.ui.notify("Usage: /plan <what to build>", "warning");
         return;
-      }
-
-      // Rename workspace and tab to show this is a planning session
-      if (isMuxAvailable()) {
-        try {
-          const label = task.length > 40 ? task.slice(0, 40) + "..." : task;
-          renameWorkspace(`🎯 ${label}`);
-          renameCurrentTab(`🎯 Plan: ${label}`);
-        } catch {
-          // non-critical -- do not block the plan
-        }
       }
 
       // Load the plan skill from the subagents extension directory

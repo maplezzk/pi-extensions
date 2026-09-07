@@ -11,14 +11,24 @@ import { i18n } from "../src/i18n.ts";
 type Handler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown;
 
 /** 最小事件宿主；不提供 shell 执行接口，防止自动执行替代工具。 */
-function host(hasUI = true, accepted = true) {
+function host(
+  hasUI = true,
+  accepted = true,
+  sessionEntries: readonly unknown[] = [],
+  branch: readonly unknown[] = [],
+) {
   const handlers = new Map<string, Handler>();
   const prompts: string[] = [];
   const notices: string[] = [];
-  const pi = { on: (name: string, handler: Handler) => handlers.set(name, handler) } as unknown as ExtensionAPI;
+  const pi = {
+    on: (name: string, handler: Handler) => handlers.set(name, handler),
+    // 配置命令仅需在真实宿主中注册，安全规则测试使用空实现。
+    registerCommand: () => undefined,
+  } as unknown as ExtensionAPI;
   const ctx = {
     cwd: tmpdir(), hasUI,
-    sessionManager: { getEntries: () => [], getBranch: () => [] },
+    sessionManager: { getEntries: () => sessionEntries, getBranch: () => branch },
+
     ui: {
       confirm: async (_title: string, text: string) => { prompts.push(text); return accepted; },
       notify: (text: string) => notices.push(text),
@@ -33,6 +43,34 @@ function host(hasUI = true, accepted = true) {
 function call(command: string, id = "call-1") {
   return { toolName: "bash", toolCallId: id, input: { command } };
 }
+
+test("session_squash 后目录授权仍能通过统一 Bash 规则入口", async () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "safety-squash-"));
+  const externalRoot = join(fixtureRoot, "external");
+  const cwd = join(fixtureRoot, "project");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(externalRoot, { recursive: true });
+  const state = {
+    type: "custom", id: "state-1", parentId: "user-1", customType: "add-dir:state",
+    data: { dirs: [{ absolutePath: externalRoot }] },
+  };
+  const sourceLeaf = { type: "message", id: "leaf-1", parentId: "state-1", message: {} };
+  const squash = {
+    type: "custom_message", id: "squash-1", parentId: "user-1", customType: "session-squash",
+    details: { sourceLeafId: "leaf-1" }, content: "handoff",
+  };
+  const activeBranch = [{ type: "message", id: "user-1", parentId: null, message: {} }, squash];
+  const fake = host(true, true, [state, sourceLeaf, squash], activeBranch);
+  fake.ctx.cwd = cwd;
+  const config = parseConfig({ presets: ["workspace-boundary"] });
+  await registerSafetyGuards(fake.pi, config);
+  const command = `cat ${JSON.stringify(join(externalRoot, "file.txt"))}`;
+  const withoutAuthorization = host();
+  withoutAuthorization.ctx.cwd = cwd;
+  await registerSafetyGuards(withoutAuthorization.pi, config);
+  assert.equal((await withoutAuthorization.emit("tool_call", call(command)) as { block: boolean }).block, true);
+  assert.equal(await fake.emit("tool_call", call(command)), undefined);
+});
 
 test("默认危险操作确认，拒绝或无 UI 时阻断，普通构建不询问", async () => {
   for (const hasUI of [true, false]) {
@@ -113,38 +151,34 @@ test("损坏配置不默默恢复默认预设，而是通知并阻断 Bash", asy
   assert.equal(await fake.emit("tool_call", { toolName: "read", input: {} }), undefined);
 });
 
-test("目录越界反馈真实路径、范围和 add_directory 建议", async () => {
+test("目录越界反馈真实证据、add_directory 参数和会话授权", async () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "safety-evidence-"));
   const cwd = join(fixtureRoot, "workspace");
   const external = join(fixtureRoot, "external");
+  const unrelated = join(fixtureRoot, "unrelated");
   mkdirSync(cwd);
   mkdirSync(external);
-  writeFileSync(join(external, "workflow.md"), "workflow");
+  mkdirSync(unrelated);
+  const externalFile = join(external, "workflow.md");
+  writeFileSync(externalFile, "workflow");
   const fake = host();
-  (fake.ctx as unknown as { cwd: string }).cwd = cwd;
+  fake.ctx.cwd = cwd;
   await registerSafetyGuards(fake.pi, parseConfig({ presets: ["workspace-boundary"] }));
-  const command = `cat ${join(external, "workflow.md")}`;
-  const result = await fake.emit("tool_call", call(command)) as { block: boolean; reason: string };
-  assert.equal(result.block, true);
-  assert.match(result.reason, /workflow\.md/);
-  assert.match(result.reason, /Current working directory|当前工作目录/);
-  assert.match(result.reason, /Allowed roots|允许范围/);
-  assert.match(result.reason, /add_directory/);
-  assert.match(result.reason, /external/);
+  const command = `cat ${externalFile}`;
+  const blocked = await fake.emit("tool_call", call(command)) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /workflow\.md/);
+  assert.match(blocked.reason, /Current working directory|当前工作目录/);
+  assert.match(blocked.reason, /Allowed roots|允许范围/);
+  assert.match(blocked.reason, /add_directory/);
+  assert.match(blocked.reason, /\{"path":".*external"\}/);
 
   const state = {
-    id: "state-1",
-    type: "custom",
-    customType: "add-dir:state",
+    id: "state-1", type: "custom", customType: "add-dir:state",
     data: { dirs: [{ absolutePath: external }] },
   };
-  (fake.ctx as unknown as { sessionManager: unknown }).sessionManager = {
-    getEntries: () => [state],
-    getBranch: () => [state],
-  };
+  fake.ctx.sessionManager = { getEntries: () => [state], getBranch: () => [state] } as never;
   assert.equal(await fake.emit("tool_call", call(command)), undefined);
-  const unrelated = join(fixtureRoot, "unrelated");
-  mkdirSync(unrelated);
   assert.equal((await fake.emit("tool_call", call(`cat ${join(unrelated, "secret.md")}`)) as { block: boolean }).block, true);
 });
 

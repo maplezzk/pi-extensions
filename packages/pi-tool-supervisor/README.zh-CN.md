@@ -136,7 +136,8 @@ condition 返回 `false` 时跳过该 reviewer，不读取其规则文件，也�
 
 - before reviewer 明确拒绝会阻断 Pi 原生工具调用，并用完整 reason 展示独立审计；模型失败/跳过会放行但保持可见，condition 模块加载或执行失败会阻断 before 调用。
 - after 拒绝只提供诊断，不回滚已完成的工具调用；工具失败时跳过 after 审查并保留原始错误。
-- 如果用户打断上级 Agent 请求，所有尚未完成的 reviewer 模型请求会一起取消，尚未发起的 reviewer 会跳过；上级中断记为 skipped，而不是模型调用失败。
+- 审查拒绝、模型失败和配置警告都通过 Pi 的 `ctx.ui.notify` 展示，不直接调用 `console.warn` 或 `console.error`。
+- 如果用户打断上级 Agent 请求，所有尚未完成的 reviewer 模型请求会一起取消；尚未发起的 reviewer 会跳过；上级中断记为 skipped，而不是模型调用失败。
 - 工具调用失败或文件内容没有变化时跳过审查。
 - 扩展不会回滚编辑、阻断操作系统，也不替代 Pi 的权限与沙箱控制。
 

@@ -465,6 +465,7 @@ async function reviewToolResult(options: {
       warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("unchangedFileSkipped")],
     };
     const diagnostic = createReviewDiagnostic(audit, configPath);
+    if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
     return {
       ...result,
       details: { ...(result.details ?? {}), fileEditReview: audit },
@@ -507,6 +508,7 @@ async function reviewToolResult(options: {
       warnings: [...configWarnings, ...(beforeAudit?.warnings ?? [])],
     };
     const diagnostic = createReviewDiagnostic(audit, configPath);
+    if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
     return {
       ...result,
       details: { ...(result.details ?? {}), fileEditReview: audit },
@@ -545,7 +547,7 @@ async function reviewToolResult(options: {
   };
   const diagnostic = createReviewDiagnostic(audit, configPath);
   if (diagnostic) {
-    console.warn(`[pi-tool-supervisor] ${diagnostic.replaceAll("\n", " | ")}`);
+    context.ctx.ui?.notify(diagnostic, "error");
   }
   return {
     ...result,
@@ -635,7 +637,7 @@ async function prepareFileReviewCall(
   };
   if (!loaded.config.enabled) {
     if (loaded.warnings.length > 0) {
-      console.warn(`[pi-tool-supervisor] ${loaded.warnings.join(" | ")}`);
+      context.ctx.ui?.notify(loaded.warnings.join(" | "), "warning");
     }
     return pending;
   }
@@ -705,6 +707,7 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
   );
   const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings };
   const diagnostic = createReviewDiagnostic({ ...audit, filePath: context.toolName }, pending.loaded.configPath);
+  if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
   return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit }, content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content };
 }
 
@@ -958,9 +961,11 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
     const pending = await prepareFileReviewCall(context);
     pendingCalls.set(event.toolCallId, pending);
     if (pending.beforeAudit?.status === REJECTED_STATUS) {
+      const diagnostic = createReviewDiagnostic(pending.beforeAudit, pending.loaded.configPath);
+      if (diagnostic) ctx.ui?.notify(diagnostic, "error");
       pendingCalls.delete(event.toolCallId);
       appendSupervisorFallbackAudit(pi, event.toolName, { fileEditReview: pending.beforeAudit });
-      return { block: true, reason: createReviewDiagnostic(pending.beforeAudit, pending.loaded.configPath) ?? i18n.t("beforeReviewRejectedFallback", { toolName: event.toolName }) };
+      return { block: true, reason: diagnostic ?? i18n.t("beforeReviewRejectedFallback", { toolName: event.toolName }) };
     }
   });
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {

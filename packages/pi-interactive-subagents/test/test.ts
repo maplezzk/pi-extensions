@@ -4,6 +4,8 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, rmSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { TERMINAL_RENAME_CONTEXT_ENV, readSurfaceRenameContext } from "pi-terminal-mux";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as subagentsModule from "../pi-extension/subagents/index.ts";
 
@@ -2002,7 +2004,7 @@ describe("subagent interruption", () => {
     }
   });
 
-  it("does not signal session completion when interrupting a turn", () => {
+  it("signals session completion when interrupting a turn", () => {
     type InterruptTestApi = {
       runningSubagents: Map<string, ReturnType<typeof makeRunning>>;
       /** Invoke the interrupt path with an injectable Escape sender. */
@@ -2028,7 +2030,7 @@ describe("subagent interruption", () => {
         );
 
         assert.equal(result.details.status, "interrupt_requested");
-        assert.equal(existsSync(`${sessionFile}.exit`), false);
+        assert.deepEqual(JSON.parse(readFileSync(`${sessionFile}.exit`, "utf8")), { type: "done" });
         assert.equal(runningMap.has("a1"), true);
       } finally {
         runningMap.clear();
@@ -2586,5 +2588,30 @@ describe("cmux.ts", () => {
       const result = isWezTermAvailable();
       assert.equal(typeof result, "boolean");
     });
+  });
+});
+
+
+describe("terminal rename ownership", () => {
+  it("launch and resume environment replaces inherited ownership with the new surface", () => {
+    const inherited = { version: 1, backend: "cmux", surface: "parent", ownedTarget: { target: "tab", id: "parent" } };
+    for (const surface of ["child-launch", "child-resume", "child-'quoted"]) {
+      const assignment = subagentsModule.__test__.buildTerminalRenameEnvironment(surface, "cmux");
+      const script = `${assignment} ${shellEscape(process.execPath)} -e ${shellEscape(`process.stdout.write(process.env.${TERMINAL_RENAME_CONTEXT_ENV})`)}`;
+      const output = execFileSync("sh", ["-c", script], {
+        encoding: "utf8", env: { ...process.env, [TERMINAL_RENAME_CONTEXT_ENV]: JSON.stringify(inherited) },
+      });
+      const context = readSurfaceRenameContext({ [TERMINAL_RENAME_CONTEXT_ENV]: output });
+      assert.equal(context?.surface, surface);
+      assert.deepEqual(context?.ownedTarget, { target: "tab", id: surface });
+    }
+  });
+
+  it("shared or headless surfaces never grant a workspace or shared tab", () => {
+    for (const backend of ["tmux", "wezterm", "otty", "orca", null] as const) {
+      const assignment = subagentsModule.__test__.buildTerminalRenameEnvironment("child", backend);
+      assert.ok(assignment.includes('"ownedTarget":null'));
+      assert.ok(!assignment.includes('"target":"workspace"'));
+    }
   });
 });

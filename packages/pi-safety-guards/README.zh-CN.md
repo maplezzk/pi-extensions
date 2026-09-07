@@ -50,6 +50,8 @@ pi install npm:pi-safety-guards
 - `message`：可选的非空文本，或包含 `zh-CN`、`en-US` 的对象。不填写时反馈规则 ID 和动作。
 - 预设和规则都为空时关闭检查，并提示当前没有启用保护。
 
+使用 `/config:safety-guards` 打开常规 TUI 预设菜单，输入 `reset` 恢复默认预设；保存后执行 `/reload`。
+
 ### 动作
 
 | 动作 | 行为 |
@@ -77,7 +79,7 @@ pi install npm:pi-safety-guards
 
 ### 目录规则
 
-相对根路径以 Pi 当前工作目录为基准，也支持绝对路径和 `~/`。只有列出的根才被允许，预设中的 `.` 表示工作目录。需要时添加额外目录或 `/dev/null` 等设备路径。
+相对根路径以 Pi 当前工作目录为基准，也支持绝对路径和 `~/`。只有列出的根才被允许，预设中的 `.` 表示工作目录。安装 `pi-add-dir` 时会同时尊重其当前会话目录授权；`session_squash` 后会从被压缩的源分支恢复这份授权。需要时添加额外目录或 `/dev/null` 等设备路径。
 
 自定义匹配器可使用导出的 `findOutOfScopeBashPaths(command, cwd, roots)`，提供自行计算的目录列表。
 
