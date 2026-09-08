@@ -78,5 +78,37 @@
   "extensionConfiguredDescription": {
     "zh-CN": "当前配置的扩展路径",
     "en-US": "Currently configured extension path"
+  },
+  "extensionChooserTitle": {
+    "zh-CN": "选择要加载到 subagent 的扩展",
+    "en-US": "Choose extensions to load in subagents"
+  },
+  "extensionChooserDone": {
+    "zh-CN": "完成并保存",
+    "en-US": "Done and save"
+  },
+  "extensionChooserManual": {
+    "zh-CN": "手动输入扩展路径",
+    "en-US": "Enter extension paths manually"
+  },
+  "extensionCandidateProject": {
+    "zh-CN": "项目扩展",
+    "en-US": "project extension"
+  },
+  "extensionCandidateGlobal": {
+    "zh-CN": "全局扩展",
+    "en-US": "global extension"
+  },
+  "extensionCandidateConfigured": {
+    "zh-CN": "已配置扩展",
+    "en-US": "configured extension"
+  },
+  "extensionCandidateRequired": {
+    "zh-CN": "始终加载，不可移除",
+    "en-US": "always loaded and cannot be removed"
+  },
+  "extensionCandidateMissing": {
+    "zh-CN": "插件未安装，已跳过（完成保存后会移除）",
+    "en-US": "plugin is not installed and will be skipped (removed when saved)"
   }
 }
