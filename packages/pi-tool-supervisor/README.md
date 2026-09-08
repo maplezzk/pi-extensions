@@ -9,7 +9,7 @@ An edit tool can complete successfully while the resulting file still violates l
 ## How it works
 
 - Each reviewer selects `tools`, a `trigger`, and optionally a local `condition` module: omitted fields default to `edit`/`write` + `after`, and `"*"` matches every built-in or custom tool.
-- Before reviewers inspect the proposed input and an explicit rejection blocks the native Pi tool call; model failures remain fail-open and visible, while condition module failures block the before call.
+- Before reviewers inspect the proposed input and an explicit rejection blocks the native Pi tool call; model failures remain fail-open without injecting errors into the Agent's tool result, while the audit card keeps the failed status. Condition module failures block the before call.
 - Captures the file state before `edit` / `write` and the actual file state after the tool result.
 - Sends the real-line-numbered post-edit file with the diff; files above `maxFileContextChars` use bounded excerpts around the first and last changed lines.
 - Supports multiple reviewers running in parallel, each with its own model and one or more rule files.
@@ -133,9 +133,9 @@ A condition returning `false` skips the reviewer without loading its rules or ca
 
 ## Review semantics
 
-- A before reviewer rejection blocks the native tool call and emits a standalone audit with the complete reason; model failures/skips remain fail-open and visible on the next tool result. Condition module load or execution failures are treated as a failed gate and block the before call.
-- An after rejection is diagnostic only and never rolls back a completed tool call; a failed tool skips after review and preserves the original error.
-- Review rejections, reviewer failures, and configuration warnings use Pi's `ctx.ui.notify`; the extension does not call `console.warn` or `console.error` directly.
+- A before reviewer rejection blocks the native tool call and sends the complete reason to the Agent; model failures/skips remain fail-open and stay only in the audit details, without appending an error to the tool result. Condition module load or execution failures are treated as a failed gate and block the before call.
+- An after rejection is diagnostic only and sends the diagnostic to the Agent without rolling back a completed tool call; an after model failure stays only in the audit details and does not append an error diagnostic. A failed tool skips after review and preserves the original error.
+- Review rejections and configuration warnings use Pi's `ctx.ui.notify`; reviewer failures remain in the audit card and are not injected into the Agent's context. The extension does not call `console.warn` or `console.error` directly.
 - If the parent Agent request is interrupted, every in-flight reviewer model request is cancelled together; reviewers not yet started are skipped, and parent cancellation is reported as skipped rather than as a provider failure.
 - A failed tool call or an unchanged file is skipped.
 - The extension does not roll back edits, block the operating system, or replace Pi's permission and sandbox controls.
