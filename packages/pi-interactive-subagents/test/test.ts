@@ -63,6 +63,7 @@ import {
   loadSubagentSpawningConfig,
   saveHerdrMode,
   saveMuxPreference,
+  saveSubagentExtensions,
 } from "../pi-extension/subagents/mux-config.ts";
 
 // --- Helpers ---
@@ -852,6 +853,21 @@ describe("subagent mux config", () => {
     });
   });
 
+  it("saves and normalizes explicit child extensions", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      const saved = saveSubagentExtensions([" ~/one.ts ", "two.ts", "~/one.ts"], configPath);
+
+      assert.deepEqual(saved, {
+        extensions: ["~/one.ts", "two.ts"],
+        source: "file",
+      });
+      assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+        subagentExtensions: ["~/one.ts", "two.ts"],
+      });
+    });
+  });
+
   it("saves a preference and makes it effective immediately", () => {
     withTempDir((dir) => {
       const configPath = join(dir, "config.json");
@@ -930,6 +946,7 @@ describe("subagent mux command parsing", () => {
         preference: string;
         herdrMode?: string;
       } | null;
+      parseSubagentExtensionPaths: (value: string) => string[] | null;
     };
   }).__test__;
 
@@ -946,10 +963,18 @@ describe("subagent mux command parsing", () => {
     assert.equal(testApi.parseMuxConfigRequest("tmux tab"), null);
     assert.equal(testApi.parseMuxConfigRequest("herdr tiles"), null);
   });
+
+  it("parses comma-separated extension paths and rejects empty entries", () => {
+    assert.deepEqual(testApi.parseSubagentExtensionPaths("~/one.ts, relative.ts,~/one.ts"), [
+      "~/one.ts",
+      "relative.ts",
+    ]);
+    assert.equal(testApi.parseSubagentExtensionPaths("~/one.ts,,relative.ts"), null);
+  });
 });
 
 describe("subagent discovery", () => {
-  const testApi = (subagentsModule as any).__test__;
+  const testApi = subagentsModule.__test__;
 
   it("loads session-mode from frontmatter", async () => {
     await withIsolatedAgentEnv(async ({ projectAgentsDir }) => {
