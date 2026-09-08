@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.5.0...pi-terminal-mux-v0.5.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+
 ## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.4.1...pi-terminal-mux-v0.5.0) (2026-09-07)
 
 

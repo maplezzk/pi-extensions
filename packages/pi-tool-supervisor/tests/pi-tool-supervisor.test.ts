@@ -819,8 +819,8 @@ test("generic before 即使输入含 path 也只使用无文件模式规则", as
   }
 });
 
-test("自定义工具支持精确名和通配符 after 审查并展示审计", async () => {
-  type ReviewResult = { details: { fileEditReview: { reviewers: Array<{ name: string }>; status: string }; source: string } };
+test("自定义工具支持精确名和通配符 after 审查并展示失败审计但不注入 Agent", async () => {
+  type ReviewResult = { content: Array<{ text?: string }>; details: { fileEditReview: { reviewers: Array<{ name: string }>; status: string }; source: string } };
   type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -870,9 +870,8 @@ test("自定义工具支持精确名和通配符 after 审查并展示审计", a
     assert.deepEqual(result.details.fileEditReview.reviewers.map((reviewer) => reviewer.name), ["exact", "wildcard"]);
     assert.equal(result.details.fileEditReview.status, "failed");
     assert.equal(result.details.source, "custom");
-    assert.equal(notifications.length, 1);
-    assert.equal(notifications[0]?.type, "error");
-    assert.match(notifications[0]?.message ?? "", /审查未完成/);
+    assert.deepEqual(result.content, [{ type: "text", text: "ok" }]);
+    assert.equal(notifications.length, 0);
   } finally {
     await handlers.get("session_shutdown")?.();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -880,7 +879,7 @@ test("自定义工具支持精确名和通配符 after 审查并展示审计", a
   }
 });
 
-test("generic 载荷序列化失败形成可见 failed 审计并保持原结果", async () => {
+test("generic 载荷序列化失败形成 failed 审计但不注入 Agent", async () => {
   type ReviewResult = { content: Array<{ text?: string }>; details: { original: boolean; fileEditReview: { status: string; reviewers: Array<{ error?: string }> } } };
   type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
   const { default: piSupervisorExtension } = await import("../src/index.ts");
@@ -994,7 +993,7 @@ test("generic before rejected 阻断时诊断使用工具名并追加独立审�
   }
 });
 
-test("before failed 和 skipped 放行时在 tool_result 中保留可见审计", async () => {
+test("before failed 和 skipped 放行时只在 tool_result 详情中保留审计", async () => {
   type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -1043,8 +1042,7 @@ test("before failed 和 skipped 放行时在 tool_result 中保留可见审计",
     const reviewResult = result as { details: { fileEditReview: { status: string; reviewers: Array<{ status: string }> } }; content: Array<{ text?: string }> };
     assert.equal(reviewResult.details.fileEditReview.status, "failed");
     assert.deepEqual(reviewResult.details.fileEditReview.reviewers.map((reviewer) => reviewer.status), ["failed", "skipped"]);
-    assert.match(reviewResult.content.at(-1)?.text ?? "", /文件：custom-tool/);
-    assert.doesNotMatch(reviewResult.content.at(-1)?.text ?? "", /文件：undefined/);
+    assert.deepEqual(reviewResult.content, [{ type: "text", text: "original" }]);
   } finally {
     faux.unregister();
     await handlers.get("session_shutdown")?.();

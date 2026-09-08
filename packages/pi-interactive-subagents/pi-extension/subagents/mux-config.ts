@@ -146,6 +146,16 @@ export function loadSubagentExtensionsConfig(path = muxConfigPath()): SubagentEx
   return { extensions: [...DEFAULT_SUBAGENT_EXTENSIONS], source: "default" };
 }
 
+/** Persist the explicit extension list for child sessions. */
+export function saveSubagentExtensions(
+  extensions: readonly string[],
+  path = muxConfigPath(),
+): SubagentExtensionsConfig {
+  const normalized = [...new Set(extensions.map((extension) => extension.trim()).filter(Boolean))];
+  writeConfigObject(path, { ...readConfigObject(path), subagentExtensions: normalized });
+  return { extensions: normalized, source: "file" };
+}
+
 /** Apply persisted mux and Herdr mode settings when no explicit environment override exists. */
 export function applyPersistedMuxPreference(path = muxConfigPath()): void {
   if (!environmentPreference()) {

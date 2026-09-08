@@ -11,6 +11,8 @@ description: "配置与排查 interactive subagents 的终端复用器、Herdr s
 
 环境变量优先级：`PI_TERMINAL_MUX` > `PI_SUBAGENT_MUX` > 持久化 `mux` > `auto`；`PI_SUBAGENT_HERDR_MODE` > 持久化 `herdrMode` > `split`。
 
+`/config:subagent extensions` 或 `/config:subagent-extensions` 可直接配置 `subagentExtensions`：命令会发现项目级和全局扩展并提供候选列表，`subagent-done.ts` 始终加载且不能移除；已卸载的扩展会被检测并跳过。也可以手动输入路径，命令参数用逗号分隔，输入 `clear` 清空可选扩展。
+
 ## 修改
 
 优先运行：

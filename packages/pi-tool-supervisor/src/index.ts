@@ -2,7 +2,7 @@
  * 文件编辑侧边审查器。
  *
  * edit/write 已经执行完成后，提取实际文件变化并并发交给配置的审查模型。
- * 审查失败不回滚文件；不通过项会追加到 Agent 可见的 tool result，要求立即修正。
+ * 审查失败不回滚文件；只有明确拒绝才会把诊断追加到 Agent 可见的 tool result。
  * 配置文件位于 Pi 的用户扩展配置目录：
  * ~/.pi/agent/extensions/pi-tool-supervisor/config.json
  */
@@ -237,40 +237,26 @@ function withReviewAbortedWarning(warnings: string[], signal?: AbortSignal): str
   return warnings.includes(warning) ? warnings : [...warnings, warning];
 }
 
-/** Produces visible diagnostics for rejected and failed reviewers. */
-function createReviewDiagnostic(
+/** Produces an Agent-visible diagnostic only for explicit reviewer rejections. */
+function createReviewRejectionDiagnostic(
   audit: FileEditReviewAudit,
-  configPath?: string,
 ): string | undefined {
   const rejected = audit.reviewers.filter((reviewer) => reviewer.status === "rejected");
-  const failed = audit.reviewers.filter((reviewer) => reviewer.status === "failed");
-  const lines: string[] = [];
+  if (rejected.length === 0) return undefined;
 
-  if (rejected.length > 0) {
-    lines.push("[文件编辑审查未通过，必须立即修正]");
-    lines.push(audit.filePath ? `文件：${audit.filePath}` : `工具：${audit.toolName}`);
-    for (const reviewer of rejected) {
-      lines.push(`规则审查：${reviewer.name}（${reviewer.rulesFiles?.join(", ") ?? reviewer.rulesFile ?? "未指定规则文件"}）`);
-      if (reviewer.summary) lines.push(`结论：${reviewer.summary}`);
-      for (const finding of reviewer.findings ?? []) {
-        const location = finding.line ? `第 ${finding.line} 行：` : "";
-        const ruleGroup = finding.ruleGroup ? `[${finding.ruleGroup}] ` : "";
-        lines.push(`- ${ruleGroup}${location}${finding.message}`);
-      }
+  const lines: string[] = ["[文件编辑审查未通过，必须立即修正]"];
+  lines.push(audit.filePath ? `文件：${audit.filePath}` : `工具：${audit.toolName}`);
+  for (const reviewer of rejected) {
+    lines.push(`规则审查：${reviewer.name}（${reviewer.rulesFiles?.join(", ") ?? reviewer.rulesFile ?? "未指定规则文件"}）`);
+    if (reviewer.summary) lines.push(`结论：${reviewer.summary}`);
+    for (const finding of reviewer.findings ?? []) {
+      const location = finding.line ? `第 ${finding.line} 行：` : "";
+      const ruleGroup = finding.ruleGroup ? `[${finding.ruleGroup}] ` : "";
+      lines.push(`- ${ruleGroup}${location}${finding.message}`);
     }
-    lines.push("请先修正以上问题，再继续后续任务。不要忽略这条审查结果。");
   }
-
-  if (failed.length > 0) {
-    lines.push("[文件编辑审查未完成，已放行但必须注意]");
-    lines.push(audit.filePath ? `文件：${audit.filePath}` : `工具：${audit.toolName}`);
-    for (const reviewer of failed) {
-      lines.push(`- ${reviewer.name}（${reviewer.rulesFiles?.join(", ") ?? reviewer.rulesFile ?? "未指定规则文件"}）：${reviewer.error ?? "审查模型调用失败"}`);
-    }
-    lines.push(`审查配置：${configPath ?? "未找到"}`);
-  }
-
-  return lines.length > 0 ? lines.join("\n") : undefined;
+  lines.push("请先修正以上问题，再继续后续任务。不要忽略这条审查结果。");
+  return lines.join("\n");
 }
 
 /** Executes one reviewer with parent cancellation and timeout fail-open behavior. */
@@ -393,7 +379,6 @@ async function reviewToolResult(options: {
   context: FileReviewExecutionContext;
   toolName: "edit" | "write";
   config: FileEditReviewConfig;
-  configPath: string;
   configWarnings: string[];
   snapshot: FileSnapshot;
   fallbackDiff: string;
@@ -401,7 +386,7 @@ async function reviewToolResult(options: {
   afterReviewers?: FileEditReviewReviewerConfig[];
   beforeAudit?: FileEditReviewAudit;
 }): Promise<ToolResult> {
-  const { context, toolName, config, configPath, configWarnings, snapshot, fallbackDiff, result, afterReviewers, beforeAudit } = options;
+  const { context, toolName, config, configWarnings, snapshot, fallbackDiff, result, afterReviewers, beforeAudit } = options;
   const configuredAfterReviewers = afterReviewers ?? config.reviewers.filter((reviewer) => reviewer.enabled !== false && reviewerTrigger(reviewer) === AFTER_TRIGGER && reviewerMatchesTool(reviewer, toolName));
   const beforeReviewers = beforeAudit?.reviewers ?? [];
   const startedAt = performance.now();
@@ -464,7 +449,7 @@ async function reviewToolResult(options: {
       durationMs: Math.round(performance.now() - startedAt),
       warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("unchangedFileSkipped")],
     };
-    const diagnostic = createReviewDiagnostic(audit, configPath);
+    const diagnostic = createReviewRejectionDiagnostic(audit);
     if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
     return {
       ...result,
@@ -507,7 +492,7 @@ async function reviewToolResult(options: {
       durationMs: Math.round(performance.now() - startedAt),
       warnings: [...configWarnings, ...(beforeAudit?.warnings ?? [])],
     };
-    const diagnostic = createReviewDiagnostic(audit, configPath);
+    const diagnostic = createReviewRejectionDiagnostic(audit);
     if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
     return {
       ...result,
@@ -545,7 +530,7 @@ async function reviewToolResult(options: {
     durationMs: Math.round(performance.now() - startedAt),
     warnings: auditWarnings,
   };
-  const diagnostic = createReviewDiagnostic(audit, configPath);
+  const diagnostic = createReviewRejectionDiagnostic(audit);
   if (diagnostic) {
     context.ctx.ui?.notify(diagnostic, "error");
   }
@@ -706,7 +691,7 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
     context.signal,
   );
   const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings };
-  const diagnostic = createReviewDiagnostic({ ...audit, filePath: context.toolName }, pending.loaded.configPath);
+  const diagnostic = createReviewRejectionDiagnostic({ ...audit, filePath: context.toolName });
   if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
   return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit }, content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content };
 }
@@ -726,7 +711,6 @@ async function processFileReviewResult(
     context,
     toolName: pending.toolName as typeof EDIT_TOOL | typeof WRITE_TOOL,
     config: loaded.config,
-    configPath: loaded.configPath,
     configWarnings: loaded.warnings,
     snapshot: pending.snapshot,
     fallbackDiff: pending.fallbackDiff,
@@ -961,7 +945,7 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
     const pending = await prepareFileReviewCall(context);
     pendingCalls.set(event.toolCallId, pending);
     if (pending.beforeAudit?.status === REJECTED_STATUS) {
-      const diagnostic = createReviewDiagnostic(pending.beforeAudit, pending.loaded.configPath);
+      const diagnostic = createReviewRejectionDiagnostic(pending.beforeAudit);
       if (diagnostic) ctx.ui?.notify(diagnostic, "error");
       pendingCalls.delete(event.toolCallId);
       appendSupervisorFallbackAudit(pi, event.toolName, { fileEditReview: pending.beforeAudit });

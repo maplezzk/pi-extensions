@@ -2,12 +2,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { keyHint } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 import {
   readdirSync,
   readFileSync,
+  type Dirent,
   writeFileSync,
   existsSync,
   mkdirSync,
@@ -51,6 +52,7 @@ import {
   loadSubagentSpawningConfig,
   saveHerdrMode,
   saveMuxPreference,
+  saveSubagentExtensions,
   SUBAGENT_MUX_BACKENDS,
   type HerdrSurfaceMode,
   type SubagentMuxPreference,
@@ -275,17 +277,167 @@ function getBundledAgentsDir(): string {
 }
 
 const HOME_PREFIX = "~/";
+const PROJECT_EXTENSIONS_DIR = [".pi", "extensions"] as const;
+const GLOBAL_EXTENSIONS_DIR = "extensions";
+const EXTENSION_ENTRY_SUFFIXES = [".ts", ".js", ".mjs", ".cjs"] as const;
+const EXTENSION_DECLARATION_SUFFIX = ".d.ts";
+const EXTENSION_INDEX_FILE_NAMES = ["index.ts", "index.js", "index.mjs", "index.cjs"] as const;
 
-/** Resolve an extension path from the user config against the Pi agent directory. */
-function resolveSubagentExtensionPath(extensionPath: string): string {
-  if (extensionPath === "~") return homedir();
-  if (extensionPath.startsWith(HOME_PREFIX)) return join(homedir(), extensionPath.slice(HOME_PREFIX.length));
-  return isAbsolute(extensionPath) ? extensionPath : join(getAgentConfigDir(), extensionPath);
+const EXTENSION_SOURCE_PROJECT = "project" as const;
+const EXTENSION_SOURCE_GLOBAL = "global" as const;
+const EXTENSION_SOURCE_CONFIGURED = "configured" as const;
+
+type SubagentExtensionCandidateSource =
+  | typeof EXTENSION_SOURCE_PROJECT
+  | typeof EXTENSION_SOURCE_GLOBAL
+  | typeof EXTENSION_SOURCE_CONFIGURED;
+
+export interface SubagentExtensionCandidate {
+  path: string;
+  label: string;
+  source: SubagentExtensionCandidateSource;
+  missing?: boolean;
+  required?: boolean;
 }
 
-/** Load and resolve explicitly configured child-session extension paths. */
+/** Narrow unknown manifest values to object records before reading fields. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Check whether a file can be loaded as an extension entrypoint, excluding declarations. */
+function isExtensionEntry(fileName: string): boolean {
+  return EXTENSION_ENTRY_SUFFIXES.some((suffix) => fileName.endsWith(suffix)) && !fileName.endsWith(EXTENSION_DECLARATION_SUFFIX);
+}
+
+/** Resolve an extension path from the user config against the Pi agent directory. */
+function resolveSubagentExtensionPath(extensionPath: string, agentDir = getAgentConfigDir()): string {
+  if (extensionPath === "~") return homedir();
+  if (extensionPath.startsWith(HOME_PREFIX)) return join(homedir(), extensionPath.slice(HOME_PREFIX.length));
+  return isAbsolute(extensionPath) ? extensionPath : join(agentDir, extensionPath);
+}
+
+/** Read the Pi extension manifest fields needed to discover an installed entrypoint. */
+function readExtensionManifest(extensionDir: string): { name?: string; extensions: string[] } | null {
+  try {
+    const parsed = JSON.parse(readFileSync(join(extensionDir, "package.json"), "utf8")) as unknown;
+    if (!isRecord(parsed)) return null;
+
+    const packageName = typeof parsed.name === "string" ? parsed.name : undefined;
+    const pi = isRecord(parsed.pi) ? parsed.pi : undefined;
+    const configured = pi?.extensions;
+    const extensions = Array.isArray(configured)
+      ? configured.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "")
+      : typeof configured === "string" && configured.trim() !== ""
+        ? [configured]
+        : [];
+    return { name: packageName, extensions };
+  } catch {
+    return null;
+  }
+}
+
+/** Discover extension entrypoints in one Pi extension root without throwing on stale installs. */
+function discoverExtensionRoot(
+  root: string,
+  source: Exclude<SubagentExtensionCandidateSource, "configured">,
+): SubagentExtensionCandidate[] {
+  if (!existsSync(root)) return [];
+
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const candidates: SubagentExtensionCandidate[] = [];
+  const seen = new Set<string>();
+
+  /** Add an existing extension candidate once, using its normalized path as the key. */
+  const add = (path: string, label: string) => {
+    const normalizedPath = resolve(path);
+    if (!existsSync(path) || seen.has(normalizedPath)) return;
+    seen.add(normalizedPath);
+    candidates.push({ path: normalizedPath, label, source });
+  };
+
+  for (const entry of entries) {
+    const entryPath = join(root, entry.name);
+    if (entry.isFile()) {
+      if (isExtensionEntry(entry.name)) add(entryPath, entry.name);
+      continue;
+    }
+    if (!entry.isDirectory()) continue;
+
+    const manifest = readExtensionManifest(entryPath);
+    const manifestEntries = manifest?.extensions ?? [];
+    if (manifestEntries.length > 0) {
+      for (const extension of manifestEntries) {
+        const extensionPath = isAbsolute(extension) ? extension : resolve(entryPath, extension);
+        add(extensionPath, manifest?.name ?? entry.name);
+      }
+      continue;
+    }
+
+    const indexPath = EXTENSION_INDEX_FILE_NAMES
+      .map((fileName) => join(entryPath, fileName))
+      .find((path) => existsSync(path));
+    if (indexPath) {
+      add(indexPath, manifest?.name ?? entry.name);
+      continue;
+    }
+
+    try {
+      for (const child of readdirSync(entryPath, { withFileTypes: true })) {
+        if (child.isFile() && isExtensionEntry(child.name)) {
+          add(join(entryPath, child.name), `${manifest?.name ?? entry.name}/${child.name}`);
+        }
+      }
+    } catch {
+      // An extension can disappear while the chooser is open; skip that entry.
+    }
+  }
+
+  return candidates;
+}
+
+/** Discover project/global extension candidates and retain stale configured paths for cleanup. */
+export function discoverSubagentExtensionCandidates(params: {
+  cwd?: string;
+  agentDir?: string;
+  configured?: readonly string[];
+} = {}): SubagentExtensionCandidate[] {
+  const cwd = params.cwd ?? process.cwd();
+  const agentDir = params.agentDir ?? getAgentConfigDir();
+  const candidates = [
+    ...discoverExtensionRoot(join(cwd, ...PROJECT_EXTENSIONS_DIR), EXTENSION_SOURCE_PROJECT),
+    ...discoverExtensionRoot(join(agentDir, GLOBAL_EXTENSIONS_DIR), EXTENSION_SOURCE_GLOBAL),
+  ];
+  const known = new Set(candidates.map((candidate) => resolve(candidate.path)));
+  const configured = params.configured ?? loadSubagentExtensionsConfig().extensions;
+
+  for (const configuredPath of configured) {
+    const resolvedPath = resolveSubagentExtensionPath(configuredPath, agentDir);
+    const key = resolve(resolvedPath);
+    if (known.has(key)) continue;
+    candidates.push({
+      path: key,
+      label: basename(key),
+      source: EXTENSION_SOURCE_CONFIGURED,
+      missing: !existsSync(key),
+    });
+    known.add(key);
+  }
+
+  return candidates;
+}
+
+/** Load and resolve explicitly configured child-session extension paths that still exist. */
 function getConfiguredSubagentExtensions(): string[] {
-  return loadSubagentExtensionsConfig().extensions.map(resolveSubagentExtensionPath);
+  return loadSubagentExtensionsConfig().extensions
+    .map((extensionPath) => resolveSubagentExtensionPath(extensionPath))
+    .filter((extensionPath) => existsSync(extensionPath));
 }
 
 /** Build the no-discovery flag and explicit extensions for a child Pi command. */
@@ -1037,7 +1189,227 @@ function parseMuxConfigRequest(requested: string): MuxConfigSelection | null {
   return { preference, herdrMode: requestedMode as HerdrSurfaceMode };
 }
 
-/** 保存 mux 选择，并在 Herdr 选项携带模式时一并持久化。 */
+const SUBAGENT_EXTENSIONS_COMMAND = "extensions";
+const SUBAGENT_EXTENSIONS_CLEAR = "clear";
+const SUBAGENT_EXTENSIONS_COMMAND_NAMES = [
+  "config:subagent-extensions",
+  "subagent-extensions",
+] as const;
+
+/** Parse comma-separated extension paths from a slash-command argument. */
+function parseSubagentExtensionPaths(value: string): string[] | null {
+  const parts = value.split(",").map((part) => part.trim());
+  if (parts.length === 0 || parts.some((part) => !part)) return null;
+  return [...new Set(parts)];
+}
+
+/** Format the configured child-session extension paths for user-facing messages. */
+function formatSubagentExtensions(extensions: readonly string[]): string {
+  return extensions.length > 0 ? extensions.join(", ") : i18n.t("extensionNone");
+}
+
+/** Complete the shared subagent configuration command's first argument. */
+function getSubagentConfigArgumentCompletions(argumentPrefix: string) {
+  const trimmedPrefix = argumentPrefix.trimStart();
+  const [firstToken] = trimmedPrefix.split(/\s+/, 1);
+  if (firstToken?.toLowerCase() === SUBAGENT_EXTENSIONS_COMMAND && trimmedPrefix !== firstToken) {
+    return getSubagentExtensionsArgumentCompletions(trimmedPrefix.slice(firstToken.length).trimStart());
+  }
+
+  const prefix = argumentPrefix.trim().toLowerCase();
+  const options = [
+    {
+      value: SUBAGENT_EXTENSIONS_COMMAND,
+      label: SUBAGENT_EXTENSIONS_COMMAND,
+      description: i18n.t("extensionCommandDescription"),
+    },
+    { value: AUTO_MUX_PREFERENCE, label: AUTO_MUX_PREFERENCE, description: i18n.t("muxAuto") },
+    ...SUBAGENT_MUX_BACKENDS.map((backend) => ({
+      value: backend,
+      label: backend,
+      description: i18n.t("muxCommandDescription"),
+    })),
+  ];
+  return options.filter((option) => !prefix || option.value.startsWith(prefix));
+}
+
+/** Complete the dedicated extension command with clear and current paths. */
+function getSubagentExtensionsArgumentCompletions(argumentPrefix: string) {
+  const prefix = argumentPrefix.trim().toLowerCase();
+  const configured = loadSubagentExtensionsConfig().extensions;
+  const options = [
+    {
+      value: SUBAGENT_EXTENSIONS_CLEAR,
+      label: SUBAGENT_EXTENSIONS_CLEAR,
+      description: i18n.t("extensionClearDescription"),
+    },
+    ...configured.map((extension) => ({
+      value: extension,
+      label: extension,
+      description: i18n.t("extensionConfiguredDescription"),
+    })),
+  ];
+  return options.filter((option) => !prefix || option.value.toLowerCase().startsWith(prefix));
+}
+
+/** Return a localized source label for an extension candidate. */
+function extensionCandidateSourceLabel(source: SubagentExtensionCandidateSource): string {
+  if (source === EXTENSION_SOURCE_PROJECT) return i18n.t("extensionCandidateProject");
+  if (source === EXTENSION_SOURCE_GLOBAL) return i18n.t("extensionCandidateGlobal");
+  return i18n.t("extensionCandidateConfigured");
+}
+
+/** Format one candidate for the toggle-style slash-command chooser. */
+function formatExtensionCandidateOption(
+  candidate: SubagentExtensionCandidate,
+  selected: ReadonlySet<string>,
+): string {
+  if (candidate.required) {
+    return `● ${candidate.label} — ${i18n.t("extensionCandidateRequired")}`;
+  }
+  if (candidate.missing) {
+    return `⚠ ${candidate.label} — ${i18n.t("extensionCandidateMissing")}`;
+  }
+  const marker = selected.has(resolve(candidate.path)) ? "●" : "○";
+  return `${marker} ${candidate.label} — ${candidate.path} (${extensionCandidateSourceLabel(candidate.source)})`;
+}
+
+/** Edit explicit paths manually and return the entered values without persisting them. */
+async function editSubagentExtensionsManually(
+  ctx: ExtensionContext,
+  initial: readonly string[],
+): Promise<string[] | undefined> {
+  if (!ctx.hasUI) {
+    ctx.ui.notify(i18n.t("extensionInteractiveOnly"), "warning");
+    return undefined;
+  }
+
+  const value = await ctx.ui.editor(i18n.t("extensionConfigTitle"), initial.join("\n"));
+  if (value === null || value === undefined) return undefined;
+  return value
+    .split(/\r?\n/)
+    .map((extension) => extension.trim())
+    .filter(Boolean);
+}
+
+/** Save a selected extension list and report the effective configuration. */
+function saveSelectedSubagentExtensions(ctx: ExtensionContext, extensions: readonly string[]): void {
+  const saved = saveSubagentExtensions(extensions);
+  ctx.ui.notify(
+    i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+    "info",
+  );
+}
+
+/** Let the user toggle discovered extensions while keeping the built-in done hook fixed. */
+async function chooseSubagentExtensions(ctx: ExtensionContext): Promise<void> {
+  if (!ctx.hasUI) {
+    ctx.ui.notify(i18n.t("extensionInteractiveOnly"), "warning");
+    return;
+  }
+
+  const configured = loadSubagentExtensionsConfig().extensions;
+  const configuredResolved = configured.map((extension) => resolveSubagentExtensionPath(extension));
+  const requiredPath = resolve(join(SUBAGENTS_DIR, SUBAGENT_DONE_EXTENSION_FILE));
+  const candidateMap = new Map<string, SubagentExtensionCandidate>();
+  for (const candidate of [
+    {
+      path: requiredPath,
+      label: SUBAGENT_DONE_EXTENSION_FILE,
+      source: EXTENSION_SOURCE_CONFIGURED,
+      required: true,
+    },
+    ...discoverSubagentExtensionCandidates({ configured }),
+  ]) {
+    const key = resolve(candidate.path);
+    if (!candidateMap.has(key)) candidateMap.set(key, candidate);
+  }
+  const candidates = [...candidateMap.values()];
+  const selected = new Set(
+    configuredResolved
+      .filter((extensionPath) => existsSync(extensionPath))
+      .map((extensionPath) => resolve(extensionPath)),
+  );
+
+  const candidateOptions = new Map<string, SubagentExtensionCandidate>();
+  while (true) {
+    candidateOptions.clear();
+    const options = candidates.map((candidate) => {
+      const option = formatExtensionCandidateOption(candidate, selected);
+      candidateOptions.set(option, candidate);
+      return option;
+    });
+    const doneOption = i18n.t("extensionChooserDone");
+    const manualOption = i18n.t("extensionChooserManual");
+    options.push(manualOption, doneOption);
+
+    const choice = await ctx.ui.select(i18n.t("extensionChooserTitle"), options);
+    if (choice === undefined) return;
+    if (choice === doneOption) {
+      saveSelectedSubagentExtensions(ctx, [...selected]);
+      return;
+    }
+    if (choice === manualOption) {
+      const manual = await editSubagentExtensionsManually(ctx, [...selected]);
+      if (manual !== undefined) {
+        selected.clear();
+        for (const extension of manual) selected.add(resolveSubagentExtensionPath(extension));
+      }
+      continue;
+    }
+
+    const candidate = candidateOptions.get(choice);
+    if (!candidate || candidate.required || candidate.missing) continue;
+    const normalizedPath = resolve(candidate.path);
+    if (selected.has(normalizedPath)) selected.delete(normalizedPath);
+    else selected.add(normalizedPath);
+  }
+}
+
+/** Handle `/config:subagent extensions ...` or the dedicated extension command. */
+async function handleSubagentExtensionsCommand(
+  args: string,
+  ctx: ExtensionContext,
+  hasKeyword: boolean,
+): Promise<boolean> {
+  const requested = args.trim();
+  let extensionArgs = requested;
+
+  if (hasKeyword) {
+    const [keyword] = requested.split(/\s+/, 1);
+    if (keyword?.toLowerCase() !== SUBAGENT_EXTENSIONS_COMMAND) return false;
+    extensionArgs = requested.slice(keyword.length).trim();
+  }
+
+  if (!extensionArgs) {
+    await chooseSubagentExtensions(ctx);
+    return true;
+  }
+
+  if (extensionArgs.toLowerCase() === SUBAGENT_EXTENSIONS_CLEAR) {
+    const saved = saveSubagentExtensions([]);
+    ctx.ui.notify(
+      i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+      "info",
+    );
+    return true;
+  }
+
+  const extensions = parseSubagentExtensionPaths(extensionArgs);
+  if (!extensions) {
+    ctx.ui.notify(i18n.t("extensionInvalid", { value: requested }), "warning");
+    return true;
+  }
+
+  const saved = saveSubagentExtensions(extensions);
+  ctx.ui.notify(
+    i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+    "info",
+  );
+  return true;
+}
+
+/** Save mux selection, and optionally its Herdr surface mode. */
 function saveMuxConfigSelection(selection: MuxConfigSelection): MuxConfigSelection {
   const savedMux = saveMuxPreference(selection.preference);
   const savedMode = selection.herdrMode ? saveHerdrMode(selection.herdrMode).herdrMode : undefined;
@@ -1048,8 +1420,10 @@ function saveMuxConfigSelection(selection: MuxConfigSelection): MuxConfigSelecti
 function registerMuxConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("muxCommandDescription"),
+    getArgumentCompletions: getSubagentConfigArgumentCompletions,
     handler: async (args, ctx) => {
       const requested = args.trim();
+      if (requested && await handleSubagentExtensionsCommand(requested, ctx, true)) return;
       if (requested) {
         const selection = parseMuxConfigRequest(requested);
         if (!selection) {
@@ -1131,6 +1505,17 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
   for (const name of ["config:subagent", "subagent-config", "pi-subagent-config"] as const) {
     pi.registerCommand(name, command);
   }
+
+  const extensionsCommand = {
+    description: i18n.t("extensionCommandDescription"),
+    getArgumentCompletions: getSubagentExtensionsArgumentCompletions,
+    handler: async (args: string, ctx: ExtensionContext) => {
+      await handleSubagentExtensionsCommand(args, ctx, false);
+    },
+  };
+  for (const name of SUBAGENT_EXTENSIONS_COMMAND_NAMES) {
+    pi.registerCommand(name, extensionsCommand);
+  }
 }
 
 /** 每次启动或恢复都用新 surface 重建归属，不能继承父进程的改名范围。 */
@@ -1143,10 +1528,15 @@ export const __test__ = {
   buildTerminalRenameEnvironment,
   borderLine,
   parseMuxConfigRequest,
+  parseSubagentExtensionPaths,
+  getSubagentConfigArgumentCompletions,
+  getSubagentExtensionsArgumentCompletions,
   getShellReadyDelayMs,
   renderSubagentWidgetLines,
   loadAgentDefaults,
   discoverAgentDefinitions,
+  discoverSubagentExtensionCandidates,
+  getConfiguredSubagentExtensions,
   resolveEffectiveSessionMode,
   resolveLaunchBehavior,
   resolveEffectiveInteractive,

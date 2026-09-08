@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-safety-guards-v0.2.0...pi-safety-guards-v0.2.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* explain blocked external Bash paths ([e58fb0a](https://github.com/maplezzk/pi-extensions/commit/e58fb0a904b03aa990c3922390378034ed07da5d))
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+* **safety-guards:** explain blocked external paths ([d02e359](https://github.com/maplezzk/pi-extensions/commit/d02e35940f0e0c803a11c5f842847622dad0601d))
+
 ## [0.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-safety-guards-v0.1.0...pi-safety-guards-v0.2.0) (2026-09-07)
 
 

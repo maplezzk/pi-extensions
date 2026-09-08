@@ -63,6 +63,7 @@ import {
   loadSubagentSpawningConfig,
   saveHerdrMode,
   saveMuxPreference,
+  saveSubagentExtensions,
 } from "../pi-extension/subagents/mux-config.ts";
 
 // --- Helpers ---
@@ -852,6 +853,21 @@ describe("subagent mux config", () => {
     });
   });
 
+  it("saves and normalizes explicit child extensions", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      const saved = saveSubagentExtensions([" ~/one.ts ", "two.ts", "~/one.ts"], configPath);
+
+      assert.deepEqual(saved, {
+        extensions: ["~/one.ts", "two.ts"],
+        source: "file",
+      });
+      assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+        subagentExtensions: ["~/one.ts", "two.ts"],
+      });
+    });
+  });
+
   it("saves a preference and makes it effective immediately", () => {
     withTempDir((dir) => {
       const configPath = join(dir, "config.json");
@@ -930,6 +946,7 @@ describe("subagent mux command parsing", () => {
         preference: string;
         herdrMode?: string;
       } | null;
+      parseSubagentExtensionPaths: (value: string) => string[] | null;
     };
   }).__test__;
 
@@ -946,10 +963,62 @@ describe("subagent mux command parsing", () => {
     assert.equal(testApi.parseMuxConfigRequest("tmux tab"), null);
     assert.equal(testApi.parseMuxConfigRequest("herdr tiles"), null);
   });
+
+  it("parses comma-separated extension paths and rejects empty entries", () => {
+    assert.deepEqual(testApi.parseSubagentExtensionPaths("~/one.ts, relative.ts,~/one.ts"), [
+      "~/one.ts",
+      "relative.ts",
+    ]);
+    assert.equal(testApi.parseSubagentExtensionPaths("~/one.ts,,relative.ts"), null);
+  });
 });
 
 describe("subagent discovery", () => {
-  const testApi = (subagentsModule as any).__test__;
+  const testApi = subagentsModule.__test__;
+
+  it("discovers project and global extension entrypoints and keeps missing configured paths visible", () => {
+    withTempDir((dir) => {
+      const projectDir = join(dir, "project");
+      const agentDir = join(dir, "agent");
+      const projectExtensionDir = join(projectDir, ".pi", "extensions", "project-extension");
+      const globalExtensionDir = join(agentDir, "extensions", "global-extension");
+      mkdirSync(projectExtensionDir, { recursive: true });
+      mkdirSync(globalExtensionDir, { recursive: true });
+      writeFileSync(
+        join(projectExtensionDir, "package.json"),
+        JSON.stringify({ name: "project-extension", pi: { extensions: ["./entry.ts"] } }),
+      );
+      writeFileSync(join(projectExtensionDir, "entry.ts"), "export default () => {};\n");
+      writeFileSync(join(globalExtensionDir, "index.ts"), "export default () => {};\n");
+
+      const candidates = testApi.discoverSubagentExtensionCandidates({
+        cwd: projectDir,
+        agentDir,
+        configured: ["extensions/missing-extension/index.ts"],
+      });
+
+      assert.ok(candidates.some((candidate) => candidate.path.endsWith("project-extension/entry.ts")));
+      assert.ok(candidates.some((candidate) => candidate.path.endsWith("global-extension/index.ts")));
+      assert.deepEqual(
+        candidates.find((candidate) => candidate.missing)?.path,
+        join(agentDir, "extensions/missing-extension/index.ts"),
+      );
+    });
+  });
+
+  it("skips configured extension paths that were uninstalled", async () => {
+    await withIsolatedAgentEnv(async ({ globalDir }) => {
+      const installedPath = join(globalDir, "extensions", "installed.ts");
+      const missingPath = join(globalDir, "extensions", "removed.ts");
+      mkdirSync(join(globalDir, "extensions"), { recursive: true });
+      writeFileSync(installedPath, "export default () => {};\n");
+      const configPath = join(globalDir, "extensions", "pi-interactive-subagents", "config.json");
+      mkdirSync(join(globalDir, "extensions", "pi-interactive-subagents"), { recursive: true });
+      writeFileSync(configPath, JSON.stringify({ subagentExtensions: [installedPath, missingPath] }));
+
+      assert.deepEqual(testApi.getConfiguredSubagentExtensions(), [installedPath]);
+    });
+  });
 
   it("loads session-mode from frontmatter", async () => {
     await withIsolatedAgentEnv(async ({ projectAgentsDir }) => {
