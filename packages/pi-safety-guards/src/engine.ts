@@ -1,8 +1,12 @@
 import { statSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { analyzeShellCommand, type ShellCommandAnalysis } from "./shell-command-utils.ts";
-import { findOutOfScopeBashPaths } from "./bash-directory-scope-utils.ts";
+import {
+  findOutOfScopeBashPaths,
+  resolveBashDirectoryRoots,
+  type BashPathViolation,
+} from "./bash-directory-scope-utils.ts";
 import { i18n } from "./i18n.ts";
 import type { Detector, RuleAction, RuleContext, RuleMatcher, RuleMatch, SafetyConfig, SafetyRule } from "./types.ts";
 
@@ -22,9 +26,17 @@ export interface CompiledRule {
   readonly rule: SafetyRule;
   readonly matcher?: RuleMatcher;
 }
+export interface PathRuleEvidence {
+  readonly cwd: string;
+  readonly allowedRoots: readonly string[];
+  readonly violations: readonly BashPathViolation[];
+  readonly suggestedDirectories: readonly string[];
+}
+
 export interface PolicyDecision {
   readonly action: RuleAction;
   readonly matches: readonly SafetyRule[];
+  readonly pathEvidence: ReadonlyMap<string, PathRuleEvidence>;
 }
 export type ModuleLoader = (path: string) => Promise<unknown>;
 
@@ -112,21 +124,40 @@ function withDeadline<T>(operation: () => Promise<T> | T): Promise<T> {
 }
 
 /** 命令名只建立一次索引；内置检测保持明确的分支。 */
+interface BuiltinMatch {
+  matched: boolean;
+  pathEvidence?: PathRuleEvidence;
+}
+
 function matchesBuiltin(
   match: RuleMatch,
   context: RuleContext,
   analysis: ShellCommandAnalysis,
   commandNames: ReadonlySet<string>,
   additionalRoots: readonly string[],
-): boolean {
-  if ("commands" in match) return match.commands.some((name) => commandNames.has(name));
-  if ("detector" in match) return detect(match.detector, analysis, context.command);
+): BuiltinMatch {
+  if ("commands" in match) return { matched: match.commands.some((name) => commandNames.has(name)) };
+  if ("detector" in match) return { matched: detect(match.detector, analysis, context.command) };
   if ("outsideRoots" in match) {
-    return findOutOfScopeBashPaths(
-      context.command,
-      context.cwd,
-      [...match.outsideRoots, ...additionalRoots],
-    ).length > 0;
+    const roots = [...match.outsideRoots, ...additionalRoots];
+    const violations = findOutOfScopeBashPaths(context.command, context.cwd, roots);
+    if (violations.length === 0) return { matched: false };
+    const suggestedDirectories = [...new Set(violations.map(({ resolvedPath }) => {
+      try {
+        return statSync(resolvedPath).isDirectory() ? resolvedPath : dirname(resolvedPath);
+      } catch {
+        return dirname(resolvedPath);
+      }
+    }))];
+    return {
+      matched: true,
+      pathEvidence: {
+        cwd: context.cwd,
+        allowedRoots: resolveBashDirectoryRoots(context.cwd, roots),
+        violations,
+        suggestedDirectories,
+      },
+    };
   }
   throw new Error(i18n.t("moduleMustExportMatcher"));
 }
@@ -152,17 +183,21 @@ export async function evaluateRules(
   const context = moduleContext(command, cwd, analysis);
   const commandNames = new Set(analysis.commands.map(({ name }) => name));
   const matches: SafetyRule[] = [];
+  const pathEvidence = new Map<string, PathRuleEvidence>();
   for (const { rule, matcher } of rules) {
     try {
-      const matched = matcher
-        ? await withDeadline(() => matcher(context))
+      const result = matcher
+        ? { matched: await withDeadline(() => matcher(context)) }
         : matchesBuiltin(rule.match, context, analysis, commandNames, additionalRoots);
-      if (typeof matched !== "boolean") throw new Error(i18n.t("matcherMustReturnBoolean"));
-      if (matched) matches.push(rule);
+      if (typeof result.matched !== "boolean") throw new Error(i18n.t("matcherMustReturnBoolean"));
+      if (result.matched) {
+        matches.push(rule);
+        if (result.pathEvidence) pathEvidence.set(rule.id, result.pathEvidence);
+      }
     } catch (error) {
       throw ruleFailure(rule.id, error);
     }
   }
   const action = ACTION_ORDER.find((action) => matches.some((rule) => rule.action === action));
-  return action ? { action, matches } : undefined;
+  return action ? { action, matches, pathEvidence } : undefined;
 }

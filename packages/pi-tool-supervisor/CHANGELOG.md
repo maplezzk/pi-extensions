@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.2](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.1...pi-tool-supervisor-v0.6.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* hide supervisor diagnostics from TUI output ([6a13b3d](https://github.com/maplezzk/pi-extensions/commit/6a13b3d42357e6de9f57d2df98d9c94891ba8943))
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+* 隐藏 supervisor 审查错误的原始 TUI 输出 ([ece051b](https://github.com/maplezzk/pi-extensions/commit/ece051bba08167932639ef29a101850b42c36d01))
+
+## [0.6.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.0...pi-tool-supervisor-v0.6.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* 将 supervisor 错误改为 UI 通知 ([2c6270f](https://github.com/maplezzk/pi-extensions/commit/2c6270f49f720e831edd95a7307c5a01f47f9190))
+* 将 supervisor 错误改为 UI 通知 ([c2e463d](https://github.com/maplezzk/pi-extensions/commit/c2e463d9e224a9ed31ac8b14b8ca78c224426ff3))
+
 ## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.5.1...pi-tool-supervisor-v0.6.0) (2026-08-31)
 
 

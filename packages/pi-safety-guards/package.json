@@ -1,6 +1,6 @@
 {
   "name": "pi-safety-guards",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Configurable Bash safety rules with selectable presets and custom matchers for Pi",
   "type": "module",
   "main": "./index.ts",

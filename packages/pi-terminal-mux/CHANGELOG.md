@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.5.0...pi-terminal-mux-v0.5.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+
+## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.4.1...pi-terminal-mux-v0.5.0) (2026-09-07)
+
+
+### Features
+
+* 提供终端改名结果与目标归属协议 ([f44cf8a](https://github.com/maplezzk/pi-extensions/commit/f44cf8a23faf2fa165dd389cfadcac5ec3efed0f))
+* 提供终端目标归属协议并保护共享标题 ([fd29ef8](https://github.com/maplezzk/pi-extensions/commit/fd29ef8ac8f9d2802af219e4898de25015bff3b1))
+* 返回终端改名能力和执行结果 ([97179c4](https://github.com/maplezzk/pi-extensions/commit/97179c4ace36995b567a3003fb9aab914e4e1e04))
+
+
+### Bug Fixes
+
+* 捕获共享终端的准确改名目标 ([3d94110](https://github.com/maplezzk/pi-extensions/commit/3d9411097319dcc5546c22808ec398e0b9d999f1))
+
 ## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.4.0...pi-terminal-mux-v0.4.1) (2026-08-20)
 
 

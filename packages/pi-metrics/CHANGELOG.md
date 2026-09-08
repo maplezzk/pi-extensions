@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.4.0...pi-metrics-v0.4.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+
+## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.3.0...pi-metrics-v0.4.0) (2026-09-07)
+
+
+### Features
+
+* 统一插件配置文件与斜杠命令 ([0a72e38](https://github.com/maplezzk/pi-extensions/commit/0a72e38eca217d044e4a0d36894bba5bc45af256))
+* 统一插件配置文件与斜杠命令 ([5bc2191](https://github.com/maplezzk/pi-extensions/commit/5bc21917f358fc094c832e6f211ec7771349fa8e))
+
+
+### Bug Fixes
+
+* 使用 TUI 配置插件设置 ([47b1524](https://github.com/maplezzk/pi-extensions/commit/47b152459b89a3d41a0c11250f0994bd5d4a8eba))
+* 改为 TUI 配置交互 ([3bd68af](https://github.com/maplezzk/pi-extensions/commit/3bd68afc58dd81f02d32045b2b64d785d70c0542))
+
 ## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.2.3...pi-metrics-v0.3.0) (2026-08-20)
 
 
