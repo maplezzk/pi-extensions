@@ -46,5 +46,37 @@
   "muxInteractiveOnly": {
     "zh-CN": "请在支持 UI 的 Pi 会话中运行 /config:subagent。",
     "en-US": "Run /config:subagent in a Pi session with UI support."
+  },
+  "extensionCommandDescription": {
+    "zh-CN": "配置子 agent 显式加载的扩展",
+    "en-US": "Configure extensions explicitly loaded by child subagents"
+  },
+  "extensionConfigTitle": {
+    "zh-CN": "配置子 agent 扩展（每行一个路径；命令参数用逗号分隔）",
+    "en-US": "Configure subagent extensions (one path per line; comma-separated in commands)"
+  },
+  "extensionSaved": {
+    "zh-CN": "子 agent 扩展已设置为：{value}",
+    "en-US": "Subagent extensions set to: {value}"
+  },
+  "extensionInvalid": {
+    "zh-CN": "扩展配置无效：{value}。编辑器中每行输入一个路径；命令参数请使用逗号分隔，或输入 clear 清空。",
+    "en-US": "Invalid extension configuration: {value}. Use one path per line in the editor, comma-separated paths in commands, or clear to remove them."
+  },
+  "extensionInteractiveOnly": {
+    "zh-CN": "请在支持 UI 的 Pi 会话中配置子 agent 扩展。",
+    "en-US": "Configure subagent extensions in a Pi session with UI support."
+  },
+  "extensionNone": {
+    "zh-CN": "未配置",
+    "en-US": "none"
+  },
+  "extensionClearDescription": {
+    "zh-CN": "清空子 agent 扩展列表",
+    "en-US": "Clear the child-session extension list"
+  },
+  "extensionConfiguredDescription": {
+    "zh-CN": "当前配置的扩展路径",
+    "en-US": "Currently configured extension path"
   }
 }

@@ -51,6 +51,7 @@ import {
   loadSubagentSpawningConfig,
   saveHerdrMode,
   saveMuxPreference,
+  saveSubagentExtensions,
   SUBAGENT_MUX_BACKENDS,
   type HerdrSurfaceMode,
   type SubagentMuxPreference,
@@ -1037,7 +1038,135 @@ function parseMuxConfigRequest(requested: string): MuxConfigSelection | null {
   return { preference, herdrMode: requestedMode as HerdrSurfaceMode };
 }
 
-/** 保存 mux 选择，并在 Herdr 选项携带模式时一并持久化。 */
+const SUBAGENT_EXTENSIONS_COMMAND = "extensions";
+const SUBAGENT_EXTENSIONS_CLEAR = "clear";
+const SUBAGENT_EXTENSIONS_COMMAND_NAMES = [
+  "config:subagent-extensions",
+  "subagent-extensions",
+] as const;
+
+/** Parse comma-separated extension paths from a slash-command argument. */
+function parseSubagentExtensionPaths(value: string): string[] | null {
+  const parts = value.split(",").map((part) => part.trim());
+  if (parts.length === 0 || parts.some((part) => !part)) return null;
+  return [...new Set(parts)];
+}
+
+/** Format the configured child-session extension paths for user-facing messages. */
+function formatSubagentExtensions(extensions: readonly string[]): string {
+  return extensions.length > 0 ? extensions.join(", ") : i18n.t("extensionNone");
+}
+
+/** Complete the shared subagent configuration command's first argument. */
+function getSubagentConfigArgumentCompletions(argumentPrefix: string) {
+  const trimmedPrefix = argumentPrefix.trimStart();
+  const [firstToken] = trimmedPrefix.split(/\s+/, 1);
+  if (firstToken?.toLowerCase() === SUBAGENT_EXTENSIONS_COMMAND && trimmedPrefix !== firstToken) {
+    return getSubagentExtensionsArgumentCompletions(trimmedPrefix.slice(firstToken.length).trimStart());
+  }
+
+  const prefix = argumentPrefix.trim().toLowerCase();
+  const options = [
+    {
+      value: SUBAGENT_EXTENSIONS_COMMAND,
+      label: SUBAGENT_EXTENSIONS_COMMAND,
+      description: i18n.t("extensionCommandDescription"),
+    },
+    { value: AUTO_MUX_PREFERENCE, label: AUTO_MUX_PREFERENCE, description: i18n.t("muxAuto") },
+    ...SUBAGENT_MUX_BACKENDS.map((backend) => ({
+      value: backend,
+      label: backend,
+      description: i18n.t("muxCommandDescription"),
+    })),
+  ];
+  return options.filter((option) => !prefix || option.value.startsWith(prefix));
+}
+
+/** Complete the dedicated extension command with clear and current paths. */
+function getSubagentExtensionsArgumentCompletions(argumentPrefix: string) {
+  const prefix = argumentPrefix.trim().toLowerCase();
+  const configured = loadSubagentExtensionsConfig().extensions;
+  const options = [
+    {
+      value: SUBAGENT_EXTENSIONS_CLEAR,
+      label: SUBAGENT_EXTENSIONS_CLEAR,
+      description: i18n.t("extensionClearDescription"),
+    },
+    ...configured.map((extension) => ({
+      value: extension,
+      label: extension,
+      description: i18n.t("extensionConfiguredDescription"),
+    })),
+  ];
+  return options.filter((option) => !prefix || option.value.toLowerCase().startsWith(prefix));
+}
+
+/** Edit and persist the explicit extension list used by child sessions. */
+async function editSubagentExtensions(ctx: ExtensionContext): Promise<void> {
+  if (!ctx.hasUI) {
+    ctx.ui.notify(i18n.t("extensionInteractiveOnly"), "warning");
+    return;
+  }
+
+  const current = loadSubagentExtensionsConfig().extensions;
+  const value = await ctx.ui.editor(i18n.t("extensionConfigTitle"), current.join("\n"));
+  if (value === null || value === undefined) return;
+
+  const extensions = value
+    .split(/\r?\n/)
+    .map((extension) => extension.trim())
+    .filter(Boolean);
+  const saved = saveSubagentExtensions(extensions);
+  ctx.ui.notify(
+    i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+    "info",
+  );
+}
+
+/** Handle `/config:subagent extensions ...` or the dedicated extension command. */
+async function handleSubagentExtensionsCommand(
+  args: string,
+  ctx: ExtensionContext,
+  hasKeyword: boolean,
+): Promise<boolean> {
+  const requested = args.trim();
+  let extensionArgs = requested;
+
+  if (hasKeyword) {
+    const [keyword] = requested.split(/\s+/, 1);
+    if (keyword?.toLowerCase() !== SUBAGENT_EXTENSIONS_COMMAND) return false;
+    extensionArgs = requested.slice(keyword.length).trim();
+  }
+
+  if (!extensionArgs) {
+    await editSubagentExtensions(ctx);
+    return true;
+  }
+
+  if (extensionArgs.toLowerCase() === SUBAGENT_EXTENSIONS_CLEAR) {
+    const saved = saveSubagentExtensions([]);
+    ctx.ui.notify(
+      i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+      "info",
+    );
+    return true;
+  }
+
+  const extensions = parseSubagentExtensionPaths(extensionArgs);
+  if (!extensions) {
+    ctx.ui.notify(i18n.t("extensionInvalid", { value: requested }), "warning");
+    return true;
+  }
+
+  const saved = saveSubagentExtensions(extensions);
+  ctx.ui.notify(
+    i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+    "info",
+  );
+  return true;
+}
+
+/** Save mux selection, and optionally its Herdr surface mode. */
 function saveMuxConfigSelection(selection: MuxConfigSelection): MuxConfigSelection {
   const savedMux = saveMuxPreference(selection.preference);
   const savedMode = selection.herdrMode ? saveHerdrMode(selection.herdrMode).herdrMode : undefined;
@@ -1048,8 +1177,10 @@ function saveMuxConfigSelection(selection: MuxConfigSelection): MuxConfigSelecti
 function registerMuxConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("muxCommandDescription"),
+    getArgumentCompletions: getSubagentConfigArgumentCompletions,
     handler: async (args, ctx) => {
       const requested = args.trim();
+      if (requested && await handleSubagentExtensionsCommand(requested, ctx, true)) return;
       if (requested) {
         const selection = parseMuxConfigRequest(requested);
         if (!selection) {
@@ -1131,6 +1262,17 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
   for (const name of ["config:subagent", "subagent-config", "pi-subagent-config"] as const) {
     pi.registerCommand(name, command);
   }
+
+  const extensionsCommand = {
+    description: i18n.t("extensionCommandDescription"),
+    getArgumentCompletions: getSubagentExtensionsArgumentCompletions,
+    handler: async (args: string, ctx: ExtensionContext) => {
+      await handleSubagentExtensionsCommand(args, ctx, false);
+    },
+  };
+  for (const name of SUBAGENT_EXTENSIONS_COMMAND_NAMES) {
+    pi.registerCommand(name, extensionsCommand);
+  }
 }
 
 /** 每次启动或恢复都用新 surface 重建归属，不能继承父进程的改名范围。 */
@@ -1143,6 +1285,9 @@ export const __test__ = {
   buildTerminalRenameEnvironment,
   borderLine,
   parseMuxConfigRequest,
+  parseSubagentExtensionPaths,
+  getSubagentConfigArgumentCompletions,
+  getSubagentExtensionsArgumentCompletions,
   getShellReadyDelayMs,
   renderSubagentWidgetLines,
   loadAgentDefaults,

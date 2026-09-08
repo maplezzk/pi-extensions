@@ -173,6 +173,8 @@ The persisted Herdr mode, child-spawning policy, and explicit child-extension li
 
 `herdrMode` accepts `split` (default, backward-compatible pane layout) or `tab` (one background tab per subagent). The `/config:subagent herdr split|tab` command updates this field. `allowSubagentSpawning` is a global switch for whether child subagents may create or manage other subagents; it defaults to `false`. Set it to `true` to enable the lifecycle tools in child sessions when the corresponding extension is selected. `subagentExtensions` is an optional list of extension paths to load explicitly in child sessions; automatic project/global extension discovery is disabled. Paths may be absolute, start with `~/`, or be relative to `PI_CODING_AGENT_DIR`. `subagent-done.ts` is always loaded. Explicit `deny-tools` restrictions still apply.
 
+You can configure `subagentExtensions` from the input slash-command menu instead of editing JSON: `/config:subagent extensions` opens a one-path-per-line editor, `/config:subagent extensions path-a.ts,path-b.ts` saves directly, and `/config:subagent extensions clear` removes all entries. The dedicated `/config:subagent-extensions` command (also `/subagent-extensions`) supports the same behavior. Changes apply to the next child session.
+
 `config.json` is gitignored so local overrides don't get committed.
 
 ---

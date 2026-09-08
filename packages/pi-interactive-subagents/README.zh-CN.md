@@ -62,7 +62,9 @@ zellij --session pi   # 然后运行 pi
 }
 ```
 
-`herdrMode` 支持 `split`（默认，兼容原有 pane 布局）和 `tab`（每个 subagent 独立后台 Tab）。`allowSubagentSpawning` 是全局开关，控制子 agent 是否可以创建或管理其他 subagent，默认值为 `false`；设置为 `true` 后，子 agent 才会获得这些生命周期工具。`subagentExtensions` 是可选扩展路径列表；子 agent 不再自动发现项目级和全局扩展，只加载列表中的扩展，`subagent-done.ts` 始终加载。路径可以是绝对路径、`~/` 路径，或相对于 `PI_CODING_AGENT_DIR` 的路径。`/config:subagent herdr split|tab` 会更新 Herdr 字段。
+`herdrMode` 支持 `split`（默认，兼容原有分屏布局）和 `tab`（每个 subagent 独立后台 Tab）。`allowSubagentSpawning` 是全局开关，控制子 agent 是否可以创建或管理其他 subagent，默认值为 `false`；设置为 `true` 后，子 agent 才会获得这些生命周期工具。`subagentExtensions` 是可选扩展路径列表；子 agent 不再自动发现项目级和全局扩展，只加载列表中的扩展，`subagent-done.ts` 始终加载。路径可以是绝对路径、`~/` 路径，或相对于 `PI_CODING_AGENT_DIR` 的路径。`/config:subagent herdr split|tab` 会更新 Herdr 字段。
+
+现在也可以直接在输入框使用斜杠命令配置扩展：`/config:subagent extensions` 打开“每行一个路径”的编辑器，`/config:subagent extensions path-a.ts,path-b.ts` 直接保存，`/config:subagent extensions clear` 清空列表。另提供 `/config:subagent-extensions`（别名 `/subagent-extensions`），用法相同。修改会在下一个子会话启动时生效。
 
 ## 致谢
 
