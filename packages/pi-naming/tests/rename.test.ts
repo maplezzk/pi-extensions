@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { createSurfaceRenameContext, resolveTerminalRenameTargets, TERMINAL_RENAME_CONTEXT_ENV, type TerminalRenameTarget } from "pi-terminal-mux";
 import { parseConfig } from "../src/config.ts";
-import { registerNaming, type TerminalNamingAdapter } from "../src/index.ts";
+import { registerNaming, registerNamingConfigCommand, type TerminalNamingAdapter } from "../src/index.ts";
 import type { SessionNameRequest } from "../src/session-name.ts";
 
 type Input = { text?: string; source?: string };
@@ -48,6 +48,55 @@ test("只注册 /rename，显式名称同步三个目标且不调用模型", asy
   await h.commands.get("rename")!.handler(label, h.ctx);
   assert.equal(h.name(), label);
   assert.deepEqual(h.renamed.map(([, title]) => title), [label, label]);
+});
+
+test("命名仅按 targets 请求明确终端目标，不转换后端环境变量", async () => {
+  const h = harness();
+  let options: Parameters<TerminalNamingAdapter["resolve"]>[0] | undefined;
+  h.terminal.resolve = (value) => { options = value; return []; };
+  await registerNaming(h.pi, parseConfig({ targets: { session: false, workspace: true, tab: false } }), { loadTerminal: async () => h.terminal });
+  await h.commands.get("rename")!.handler("Workspace title", h.ctx);
+  assert.deepEqual(options, { tab: false, workspace: true });
+});
+
+test("配置菜单保存 targets 后，reload 的自动与手动入口只作用于保存的目标", async () => {
+  const menu = harness();
+  let saved = parseConfig({});
+  let selectedTarget = false;
+  Object.assign(menu.ctx.ui, {
+    select: async (_title: string, choices: string[]) => {
+      if (!selectedTarget) {
+        selectedTarget = true;
+        return choices.find((choice) => /session|会话/.test(choice));
+      }
+      return choices.at(-1);
+    },
+    input: async () => assert.fail("unexpected config input"),
+  });
+  registerNamingConfigCommand(menu.pi, {
+    load: () => saved,
+    save: (config) => { saved = config; },
+    path: () => "/configured/pi-naming.json",
+  });
+  await menu.commands.get("config:naming")!.handler("", menu.ctx);
+  assert.equal(saved.targets.session, false);
+
+  const manual = harness();
+  await registerNaming(manual.pi, saved, { loadTerminal: async () => manual.terminal });
+  await manual.commands.get("rename")!.handler("Saved target", manual.ctx);
+  assert.equal(manual.name(), undefined);
+  assert.deepEqual(manual.renamed.map(([reference]) => reference.operation), ["workspace", "tab"]);
+
+  const reloaded = harness();
+  await registerNaming(reloaded.pi, parseConfig({ automaticNaming: true, manualNaming: false, targets: { workspace: false, tab: false } }), {
+    loadTerminal: async () => assert.fail("terminal must not load after reload"),
+    requestName: async () => "Automatic session",
+  });
+  reloaded.events.get("session_start")!({}, reloaded.ctx);
+  reloaded.events.get("input")!({ text: "Task", source: "interactive" }, reloaded.ctx);
+  await flush();
+  assert.equal(reloaded.name(), "Automatic session");
+  assert.equal(reloaded.renamed.length, 0);
 });
 
 test("首条真实输入和手动生成使用相同目标、标题配置", async () => {
@@ -149,7 +198,7 @@ test("没有终端、加载失败或协议损坏仍能改 session，并报告原
   }
 });
 
-for (const backend of ["cmux", "tmux"] as const) {
+for (const backend of ["cmux", "tmux", "herdr"] as const) {
   test(`${backend} 组合子代理只修改获授目标，绝不改 workspace`, async () => {
     const h = harness();
     const context = createSurfaceRenameContext("child", backend);
@@ -159,7 +208,7 @@ for (const backend of ["cmux", "tmux"] as const) {
     await h.commands.get("rename")!.handler("Child", h.ctx);
     assert.equal(h.name(), "Child");
     assert.ok(h.renamed.every(([target]) => target.operation !== "workspace" && target.id === "child"));
-    assert.equal(h.renamed.length, backend === "cmux" ? 1 : 0);
+    assert.equal(h.renamed.length, backend === "cmux" || backend === "herdr" ? 1 : 0);
     assert.ok(h.notices.some((message) => /共享|shared/.test(message)));
   });
 }

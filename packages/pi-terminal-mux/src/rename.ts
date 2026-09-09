@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { getMuxBackend, type MuxBackend } from "./detection.ts";
-import { getRenameCapability, type RenameOperation, type RenameTarget } from "./surface.ts";
+import { type RenameOperation, type RenameTarget } from "./surface.ts";
 import { getCreatedHerdrTabId } from "./backends/herdr.ts";
 import { AGENT_OTTY_PANE_ID, getTabIdForPane } from "./backends/otty.ts";
 import { renameOrcaTerminal } from "./backends/orca.ts";
@@ -108,6 +108,25 @@ export interface ResolveRenameOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+/** 新的明确目标路径只判断后端能力；旧公开 API 的环境开关不参与这里。 */
+function explicitRenameCapability(
+  operation: RenameOperation,
+  backend: MuxBackend | null,
+): { backend: MuxBackend; target: RenameTarget } | undefined {
+  if (!backend) return undefined;
+  if (operation === "tab") {
+    const target: Record<MuxBackend, RenameTarget> = {
+      muxy: "pane", cmux: "tab", tmux: "window", zellij: "pane", wezterm: "tab",
+      herdr: "tab", otty: "tab", orca: "terminal",
+    };
+    return { backend, target: target[backend] };
+  }
+  const target: Partial<Record<MuxBackend, RenameTarget>> = {
+    cmux: "workspace", tmux: "session", wezterm: "window", herdr: "workspace",
+  };
+  return target[backend] ? { backend, target: target[backend] } : undefined;
+}
+
 /** 返回当前进程的明确目标 ID，不以当前焦点或第一个 tab 代替未知身份。 */
 function currentTargetId(reference: { backend: MuxBackend; operation: RenameOperation; env: NodeJS.ProcessEnv }, query: RenameIdQuery): string | undefined {
   const { backend, operation, env } = reference;
@@ -154,16 +173,15 @@ export function resolveTerminalRenameTargets(options: ResolveRenameOptions, quer
       }
       continue;
     }
-    const capability = getRenameCapability(operation, backend, env);
-    if (capability.status !== "supported") {
-      outcomes.push({ status: "skipped", operation, reason: capability.status,
-        ...(capability.status === "disabled" ? { setting: capability.setting } : {}) });
+    const capability = explicitRenameCapability(operation, backend);
+    if (!capability) {
+      outcomes.push({ status: "skipped", operation, reason: "unsupported" });
       continue;
     }
     try {
       const id = currentTargetId({ backend: capability.backend, operation, env }, query);
       outcomes.push(id?.trim() ? { status: "ready", reference: {
-        backend: capability.backend, operation, target: capability.backend === "orca" ? "tab" : capability.target, id,
+        backend: capability.backend, operation, target: capability.target, id,
         scope: operation === "workspace" || ["tmux", "wezterm", "herdr", "otty", "orca"].includes(capability.backend) ? "shared" : "surface",
       } } : { status: "skipped", operation, reason: "missing-id" });
     } catch (error) {

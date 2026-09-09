@@ -42,7 +42,7 @@ pi install npm:pi-naming
 }
 ```
 
-`automaticNaming` 和 `manualNaming` 独立控制自动入口和 `/rename` 命令。`targets` 分别控制 session、workspace、tab；全部默认开启。仅需 session 命名时关闭两个终端目标，此时不加载终端模块。
+`automaticNaming` 和 `manualNaming` 独立控制自动入口和 `/rename` 命令。`targets` 直接分别控制 session、workspace、tab，三个目标默认开启。仅需 session 命名时关闭两个终端目标，此时不加载终端模块。
 
 | 标题字段 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -64,9 +64,9 @@ pi install npm:pi-naming
 - tmux/WezTerm/Otty/Orca 分屏不代表独占 window/tab，归属无法确认时跳过并说明原因，不扩大操作范围。
 - 使用 `pi-interactive-subagents` 时，需在它的 `subagentExtensions` 中显式加载本包入口；仅在主会话安装本包不会绕过子代理的扩展隔离设置。
 
-普通会话使用配置文件中的 mux 默认值。以下终端变量仅作为旧版启动器的兼容输入保留：`PI_SUBAGENT_RENAME_TMUX_WINDOW=1`、`PI_SUBAGENT_RENAME_TMUX_SESSION=1`、`PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1`。终端目标缺少 ID 时不会使用当前焦点或第一个 tab 代替。实际目标可能是 pane、tab、window、workspace 或 session，结果中会说明。
+普通会话会请求每个启用且具备明确 ID 的目标，包括受支持的 tmux 和 Herdr 目标。此目标解析路径刻意忽略旧变量 `PI_SUBAGENT_RENAME_TMUX_WINDOW`、`PI_SUBAGENT_RENAME_TMUX_SESSION`、`PI_SUBAGENT_RENAME_HERDR_WORKSPACE`；它们仅保留给 terminal-mux 的旧公开改名接口。即使环境变量为 `1`，关闭的 `targets` 也绝不执行。终端目标缺少 ID 时不会使用当前焦点或第一个 tab 代替。实际目标可能是 pane、tab、window、workspace 或 session，结果中会说明。
 
-发布前，terminal-mux 依赖下限必须对齐实际提供目标归属 API 的已发布版本。
+`pi-naming` 依赖已发布且导出 `resolveTerminalRenameTargets`、`renameTerminalTarget` 的 `pi-terminal-mux` 版本。必须先由 release-please 发布 terminal-mux，再由其生成的 pi-naming Release PR 更新最低依赖范围；不手动发布，也不预先把范围改成未发布版本。
 
 ## 验证
 

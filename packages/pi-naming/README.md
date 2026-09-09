@@ -42,7 +42,7 @@ File: `<pi-agent-dir>/extensions/pi-naming/config.json`; respects `PI_CODING_AGE
 }
 ```
 
-`automaticNaming` and `manualNaming` independently control the automatic input hook and `/rename`. `targets` controls session, workspace and tab separately; all default to enabled. Disable both terminal targets for session-only naming without loading the terminal module.
+`automaticNaming` and `manualNaming` independently control the automatic input hook and `/rename`. `targets` directly controls session, workspace and tab separately; all targets default to enabled. Disable both terminal targets for session-only naming without loading the terminal module.
 
 | Title field | Default | Meaning |
 | --- | --- | --- |
@@ -64,9 +64,9 @@ For longer English titles use `maxLength: 60`, `preferredLength: 40`, `language:
 - tmux/WezTerm/Otty/Orca splits do not prove exclusive window/tab ownership. Unverified targets are skipped with an explanation rather than expanding the operation's scope.
 - With `pi-interactive-subagents`, explicitly include this package's entrypoint in `subagentExtensions`. Installing it in the parent does not bypass child extension isolation.
 
-Ordinary sessions use the configured terminal-mux defaults. The following terminal-mux variables remain only as compatibility inputs for older launchers: `PI_SUBAGENT_RENAME_TMUX_WINDOW=1`, `PI_SUBAGENT_RENAME_TMUX_SESSION=1`, `PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1`. Missing target IDs never fall back to current focus or the first tab. Actual targets can be panes, tabs, windows, workspaces or sessions and are reported in results.
+Ordinary sessions request every enabled target with an explicit ID, including supported tmux and Herdr targets. This target-resolution path deliberately ignores the legacy `PI_SUBAGENT_RENAME_TMUX_WINDOW`, `PI_SUBAGENT_RENAME_TMUX_SESSION` and `PI_SUBAGENT_RENAME_HERDR_WORKSPACE` switches; those variables remain only for terminal-mux's older public rename APIs. A disabled `targets` entry does not run even if an environment variable is set. Missing IDs never fall back to current focus or the first tab.
 
-Before publication, align the terminal-mux dependency minimum with a published version providing the target ownership API.
+`pi-naming` requires a `pi-terminal-mux` release that exports `resolveTerminalRenameTargets` and `renameTerminalTarget`. Release-please must release terminal-mux first; its generated pi-naming release PR then updates the minimum dependency range. Do not manually publish or preemptively raise the range to an unpublished version.
 
 ## Validation
 

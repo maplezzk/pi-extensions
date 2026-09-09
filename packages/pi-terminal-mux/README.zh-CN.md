@@ -93,7 +93,7 @@ export PI_SUBAGENT_HERDR_MODE=tab
 | `pollForExit(surface, signal, opts)` | 等待 surface 内进程退出：优先 `.exit` sidecar 文件，其次屏幕 sentinel（`__SUBAGENT_DONE_<code>__`），headless 走子进程 exit |
 | `getLastSplitSource()` / `clearLastSplitSource()` | 最近一次分屏的来源 pane（用于 UI 展示） |
 
-各后端的实际目标不同：muxy/zellij 的 tab 重命名作用于 pane；tmux 在开启对应变量后作用于 window/session；WezTerm 的 workspace 重命名作用于 window；cmux 和 Herdr 提供原生 workspace 重命名；Otty、Orca 没有 workspace 重命名。Headless 会明确返回 `unsupported`，不再静默成功。
+各后端的实际目标不同：muxy/zellij 的 tab 重命名作用于 pane；tmux 作用于 window/session；WezTerm 的 workspace 重命名作用于 window；cmux 和 Herdr 提供原生 workspace 重命名；Otty、Orca 没有 workspace 重命名。`resolveTerminalRenameTargets` 是明确 ID 路径，忽略旧环境开关；`getRenameCapability`、`renameCurrentTab`、`renameWorkspace` 保持旧开关行为。Headless 会明确返回 `unsupported`，不再静默成功。
 
 ### 探测与工具
 
@@ -123,9 +123,9 @@ export PI_SUBAGENT_HERDR_MODE=tab
 |------|------|
 | `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` | 强制指定后端 |
 | `PI_SUBAGENT_ZELLIJ_MIN_COLUMNS` / `PI_SUBAGENT_ZELLIJ_MIN_ROWS` | zellij 分屏最小可用尺寸（默认 50×10，不满足时改堆叠） |
-| `PI_SUBAGENT_RENAME_TMUX_WINDOW` / `PI_SUBAGENT_RENAME_TMUX_SESSION` | tmux 下允许 renameCurrentTab / renameWorkspace（默认不动用户命名） |
+| `PI_SUBAGENT_RENAME_TMUX_WINDOW` / `PI_SUBAGENT_RENAME_TMUX_SESSION` | tmux 下旧 `getRenameCapability` / `renameCurrentTab` / `renameWorkspace` 的兼容开关；明确目标解析忽略 |
 | `PI_SUBAGENT_HERDR_MODE` | herdr surface 放置模式：`split`（默认）或 `tab` |
-| `PI_SUBAGENT_RENAME_HERDR_WORKSPACE` | herdr 下允许 renameWorkspace |
+| `PI_SUBAGENT_RENAME_HERDR_WORKSPACE` | herdr 下旧 `getRenameCapability` / `renameWorkspace` 的兼容开关；明确目标解析忽略 |
 | `PI_EXTENSIONS_LOCALE` | 提示文案语言（`zh-CN` / `en-US` / `auto`），由 pi-extensions-i18n 提供 |
 
 ## 设计约束
@@ -145,6 +145,6 @@ MIT
 
 `resolveTerminalRenameTargets({ tab, workspace })` 返回明确的目标 ID、`surface`/`shared` 范围，或逐目标跳过/失败结果。`renameTerminalTarget(reference, title)` 对捕获的身份执行改名。调用方决定何时改、改哪些目标；库不生成标题，也不修改 Pi session。
 
-受限子进程不能改 workspace。cmux surface、muxy/zellij pane、Herdr pane 或明确新建的 Herdr tab 可以授予。tmux/WezTerm/Otty/Orca 的分屏不能证明独占 window/tab，改名会跳过，不扩大到共享父目标。普通会话必须能确定自身目标 ID；缺失时不退回当前焦点或第一个 tab。普通会话仍遵守各后端原有的改名开关。
+受限子进程不能改 workspace。cmux surface、muxy/zellij pane、Herdr pane 或明确新建的 Herdr tab 可以授予。tmux/WezTerm/Otty/Orca 的分屏不能证明独占 window/tab，改名会跳过，不扩大到共享父目标。普通会话必须能确定自身目标 ID；缺失时不退回当前焦点或第一个 tab。明确目标解析直接使用后端能力，独立于旧改名开关。
 
 协议 JSON 损坏或版本未知会报错，不能退回无限制范围。只有旧子代理身份标志、没有归属协议时，终端改名受限，直到启动方提供归属。此协议用于可信本地进程协作，不是安全沙箱。WezTerm/Otty 创建分屏时不会重命名共享 tab。

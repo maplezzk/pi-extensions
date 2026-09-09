@@ -9,9 +9,9 @@ description: 配置 Pi 统一 /rename、首条消息命名和终端目标归属�
 
 Use `/config:naming` to open the normal TUI settings menu; use `reset` for defaults and reload after saving.
 
-- `automaticNaming` / `manualNaming` 控制自动输入和 `/rename [名称]`，`targets` 分别控制 session/workspace/tab。Control automatic input and `/rename [name]`; `targets` selects session/workspace/tab.
+- `automaticNaming` / `manualNaming` 控制自动输入和 `/rename [名称]`，`targets` 直接分别控制 session/workspace/tab。Control automatic input and `/rename [name]`; `targets` directly selects session/workspace/tab.
 - `title` 控制长度、语言、补充提示和超时；模型鉴权复用 Pi。Controls length, language, instructions and timeout; model authentication comes from Pi.
-- 无终端也可命名 session；终端失败与跳过必须报告。Session naming works without a terminal; report terminal failures and skips.
+- 无终端也可命名 session；终端失败与跳过必须报告。普通会话明确目标路径不受旧 `PI_SUBAGENT_RENAME_*` 变量影响；关闭 target 即使变量为 `1` 也不执行。Session naming works without a terminal; report terminal failures and skips. The ordinary-session explicit-target path ignores legacy `PI_SUBAGENT_RENAME_*` variables; a disabled target never runs even when a variable is `1`.
 - 子进程归属由启动方通过 mux 协议提供，不把 pane 扩大为共享 tab，不修改父 workspace。Launchers grant child targets through the mux protocol; never expand a pane to a shared tab or rename the parent workspace.
 - 子代理需要显式配置 `subagentExtensions` 加载 naming。Child extension isolation requires explicitly loading naming in `subagentExtensions`.
 
