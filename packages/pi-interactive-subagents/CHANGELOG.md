@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.14.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.13.1...pi-interactive-subagents-v3.14.0) (2026-09-09)
+
+
+### Features
+
+* 增加 subagent 扩展候选配置 ([1742b64](https://github.com/maplezzk/pi-extensions/commit/1742b64eac6c214d5e96407c6c0c2b2d4fe8ad7e))
+* 支持斜杠命令配置 subagent 扩展 ([52905ae](https://github.com/maplezzk/pi-extensions/commit/52905ae0267c0ad653f39914ea2e91c4b685e438))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.5.1 to ^0.6.0
+
 ## [3.13.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.13.0...pi-interactive-subagents-v3.13.1) (2026-09-07)
 
 

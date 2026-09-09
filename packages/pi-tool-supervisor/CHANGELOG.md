@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.3](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.2...pi-tool-supervisor-v0.6.3) (2026-09-09)
+
+
+### Bug Fixes
+
+* hide supervisor reviewer failures from Agent ([3c0c25d](https://github.com/maplezzk/pi-extensions/commit/3c0c25da2fd3a263de7d07c94dba81c6f7607cd9))
+* 隐藏审查失败给 Agent 的错误 ([d29af84](https://github.com/maplezzk/pi-extensions/commit/d29af8469f071569ff1056d408fbd34882a10a41))
+
 ## [0.6.2](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.1...pi-tool-supervisor-v0.6.2) (2026-09-07)
 
 
