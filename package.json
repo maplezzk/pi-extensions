@@ -29,9 +29,10 @@
   "scripts": {
     "test": "node scripts/run-workspaces.mjs test",
     "typecheck": "node scripts/run-workspaces.mjs typecheck",
-    "check": "npm run typecheck && npm test && node scripts/check-no-local-bindings.mjs && node scripts/check-package-config.mjs && node scripts/check-tool-supervisor-ui-output.mjs && node scripts/check-release-order.mjs",
+    "check": "npm run typecheck && npm test && node scripts/check-no-local-bindings.mjs && node scripts/check-package-config.mjs && node scripts/check-tool-supervisor-ui-output.mjs && node scripts/check-release-order.mjs && npm run test:release-publish-coverage",
     "check:tool-supervisor-ui": "node scripts/check-tool-supervisor-ui-output.mjs",
-    "check:release-order": "node scripts/check-release-order.mjs"
+    "check:release-order": "node scripts/check-release-order.mjs",
+    "test:release-publish-coverage": "node --test scripts/release-publish-coverage.test.mjs"
   },
   "engines": {
     "node": ">=22"
