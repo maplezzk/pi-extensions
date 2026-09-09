@@ -6,7 +6,7 @@
  *
  * Checks:
  * 1. release-please-config.json paths exist on disk
- * 2. release.yml publish matrix covers all release-please packages
+ * 2. release.yml publish jobs cover all release-please packages
  * 3. Each package has required files (package.json, index.ts, README.md, README.zh-CN.md, tsconfig.json)
  * 4. package.json has required fields (name, version, description, main, exports, files, license)
  * 5. i18n catalogs have both zh-CN and en-US for every key
@@ -17,6 +17,7 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { collectPublishedPackageDirectories } from "./release-publish-coverage.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const PACKAGES_DIR = join(ROOT, "packages");
@@ -101,28 +102,27 @@ if (!existsSync(rpConfigPath)) {
   }
 
   // ---------------------------------------------------------------------------
-  // 2. release.yml publish matrix covers all release-please packages
+  // 2. release.yml publish jobs cover all release-please packages
   // ---------------------------------------------------------------------------
   const releaseYmlPath = join(ROOT, ".github/workflows/release.yml");
   if (!existsSync(releaseYmlPath)) {
     error(".github/workflows/release.yml not found");
   } else {
     const releaseContent = readFileSync(releaseYmlPath, "utf8");
-    // Extract "- dir: packages/xxx" entries from the publish-npm matrix
-    const matrixDirs = [...releaseContent.matchAll(/-\s*dir:\s*(packages\/[\w-]+)/g)].map((m) => m[1]);
+    const publishedDirectories = collectPublishedPackageDirectories(releaseContent);
 
-    if (matrixDirs.length === 0) {
-      error("release.yml: no '- dir: packages/...' entries found in publish matrix");
+    if (publishedDirectories.length === 0) {
+      error("release.yml: no package publish working directory found");
     } else {
       for (const pkgPath of rpPackages) {
-        if (!matrixDirs.includes(pkgPath)) {
-          error(`release.yml publish matrix is missing "${pkgPath}" (present in release-please-config.json)`);
+        if (!publishedDirectories.includes(pkgPath)) {
+          error(`release.yml publish jobs are missing "${pkgPath}" (present in release-please-config.json)`);
         }
       }
 
-      for (const dir of matrixDirs) {
+      for (const dir of publishedDirectories) {
         if (!rpPackages.includes(dir)) {
-          warn(`release.yml publish matrix has "${dir}" which is not in release-please-config.json`);
+          warn(`release.yml publish jobs include "${dir}" which is not in release-please-config.json`);
         }
       }
     }

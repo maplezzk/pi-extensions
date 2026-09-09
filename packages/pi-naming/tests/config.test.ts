@@ -32,7 +32,7 @@ test("标题偏好可配置，未知字段与非法值明确拒绝", () => {
   const title = { maxLength: 60, preferredLength: 40, language: "en", instructions: "Use sentence case", timeoutMs: 20000 };
   assert.deepEqual(parseConfig({ title }).title, title);
   for (const value of [null, [],
-    { unknown: true }, { targets: null }, { targets: { unknown: true } }, { targets: { session: "false" } },
+    { unknown: true }, { allowWorkspaceRename: false }, { targets: null }, { targets: { unknown: true } }, { targets: { session: "false" } },
     { title: null }, { title: { typo: 1 } }, { title: { maxLength: 0 } },
     { title: { maxLength: 1.5 } }, { title: { preferredLength: 16 } },
     { title: { timeoutMs: -1 } }, { title: { timeoutMs: 2147483648 } },

@@ -37,13 +37,13 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # Release PR 合并后按包发布 npm（OIDC trusted publishing，免 token）
+  # 其它独立包并行发布；terminal-mux 与 naming 有明确的发布顺序。
   publish-npm:
     needs: release-please
     if: ${{ github.event_name == 'push' && needs.release-please.outputs.paths_released }}
     runs-on: ubuntu-latest
     strategy:
-      # 单个包发布失败（如缺 trusted publisher / 版本冲突）不连累其它包，各自独立发布
+      # 单个包发布失败（如缺 trusted publisher / 版本冲突）不连累其它独立包。
       fail-fast: false
       matrix:
         include:
@@ -51,7 +51,6 @@ jobs:
           - dir: packages/pi-distill
           - dir: packages/pi-tool-supervisor
           - dir: packages/pi-extensions-tool-display
-          - dir: packages/pi-terminal-mux
           - dir: packages/pi-metrics
           - dir: packages/pi-models-discovery
           - dir: packages/pi-session-tools
@@ -61,7 +60,6 @@ jobs:
           - dir: packages/pi-safety-guards
           - dir: packages/pi-nested-skills
           - dir: packages/pi-notifications
-          - dir: packages/pi-naming
     steps:
       - uses: actions/checkout@v4
 
@@ -86,6 +84,89 @@ jobs:
       - name: Publish to npm
         if: ${{ contains(needs.release-please.outputs.paths_released, matrix.dir) }}
         working-directory: ${{ matrix.dir }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" =~ -[a-zA-Z] ]]; then
+            echo "Publishing prerelease version $VERSION with tag 'beta'"
+            npm publish --provenance --tag beta
+          else
+            echo "Publishing stable version $VERSION"
+            npm publish --provenance
+          fi
+
+  # pi-naming imports terminal-mux at runtime. When both changed, wait for mux npm publication.
+  publish-terminal-mux:
+    needs: release-please
+    if: ${{ github.event_name == 'push' && contains(needs.release-please.outputs.paths_released, 'packages/pi-terminal-mux') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Update npm for OIDC support
+        run: |
+          corepack enable npm
+          corepack prepare npm@latest --activate
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Publish to npm
+        working-directory: packages/pi-terminal-mux
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" =~ -[a-zA-Z] ]]; then
+            echo "Publishing prerelease version $VERSION with tag 'beta'"
+            npm publish --provenance --tag beta
+          else
+            echo "Publishing stable version $VERSION"
+            npm publish --provenance
+          fi
+
+  # If mux is not released in this run, an already published compatible mux satisfies naming.
+  # If mux is released, naming is eligible only after its npm publication succeeds.
+  publish-naming:
+    needs: [release-please, publish-terminal-mux]
+    if: ${{ always() && github.event_name == 'push' && contains(needs.release-please.outputs.paths_released, 'packages/pi-naming') && (needs.publish-terminal-mux.result == 'success' || needs.publish-terminal-mux.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Update npm for OIDC support
+        run: |
+          corepack enable npm
+          corepack prepare npm@latest --activate
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify published terminal-mux dependency
+        working-directory: packages/pi-naming
+        run: |
+          RANGE=$(node -p "require('./package.json').dependencies['pi-terminal-mux']")
+          npm view "pi-terminal-mux@$RANGE" version > /dev/null
+
+      - name: Publish to npm
+        working-directory: packages/pi-naming
         run: |
           VERSION=$(node -p "require('./package.json').version")
           if [[ "$VERSION" =~ -[a-zA-Z] ]]; then
@@ -130,6 +211,13 @@ jobs:
         run: |
           ACTUAL_VERSION=$(node -p "require('./package.json').version")
           test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
+
+      - name: Verify published terminal-mux dependency for naming retry
+        if: ${{ inputs.package_dir == 'packages/pi-naming' }}
+        working-directory: packages/pi-naming
+        run: |
+          RANGE=$(node -p "require('./package.json').dependencies['pi-terminal-mux']")
+          npm view "pi-terminal-mux@$RANGE" version > /dev/null
 
       - name: Publish to npm
         working-directory: ${{ inputs.package_dir }}

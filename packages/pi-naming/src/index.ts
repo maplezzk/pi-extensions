@@ -48,8 +48,17 @@ function report(pi: ExtensionAPI, ctx: ExtensionContext, notice: { message: stri
   else pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true }, { triggerTurn: false });
 }
 
+export interface NamingConfigStore {
+  load(): NamingConfig;
+  save(config: NamingConfig): void;
+  path(): string;
+}
+
 /** 注册配置命令，通过 TUI 菜单和输入框修改命名配置。 */
-function registerNamingConfigCommand(pi: ExtensionAPI): void {
+export function registerNamingConfigCommand(
+  pi: ExtensionAPI,
+  store: NamingConfigStore = { load: loadConfig, save: saveConfig, path: configPath },
+): void {
   const command = {
     description: i18n.t("configCommandDescription"),
     getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
@@ -61,9 +70,9 @@ function registerNamingConfigCommand(pi: ExtensionAPI): void {
       }
       if (argument === CONFIG_RESET_COMMAND) {
         try {
-          saveConfig(parseConfig({}));
+          store.save(parseConfig({}));
           report(pi, ctx, {
-            message: i18n.t("configCommandSaved", { path: configPath() }),
+            message: i18n.t("configCommandSaved", { path: store.path() }),
             level: "info",
           });
         } catch (error) {
@@ -78,7 +87,7 @@ function registerNamingConfigCommand(pi: ExtensionAPI): void {
 
       let config: NamingConfig;
       try {
-        config = loadConfig();
+        config = store.load();
       } catch (error) {
         report(pi, ctx, { message: i18n.t("configCommandInvalid", { error: errorMessage(error) }), level: "error" });
         return;
@@ -87,9 +96,9 @@ function registerNamingConfigCommand(pi: ExtensionAPI): void {
       /** Saves one validated menu change and reports its result. */
       const save = (next: NamingConfig): boolean => {
         try {
-          saveConfig(next);
+          store.save(next);
           config = next;
-          report(pi, ctx, { message: i18n.t("configCommandSaved", { path: configPath() }), level: "info" });
+          report(pi, ctx, { message: i18n.t("configCommandSaved", { path: store.path() }), level: "info" });
           return true;
         } catch (error) {
           report(pi, ctx, { message: i18n.t("configCommandInvalid", { error: errorMessage(error) }), level: "error" });
