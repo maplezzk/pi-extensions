@@ -66,7 +66,7 @@ For longer English titles use `maxLength: 60`, `preferredLength: 40`, `language:
 
 Ordinary sessions request every enabled target with an explicit ID, including supported tmux and Herdr targets. This target-resolution path deliberately ignores the legacy `PI_SUBAGENT_RENAME_TMUX_WINDOW`, `PI_SUBAGENT_RENAME_TMUX_SESSION` and `PI_SUBAGENT_RENAME_HERDR_WORKSPACE` switches; those variables remain only for terminal-mux's older public rename APIs. A disabled `targets` entry does not run even if an environment variable is set. Missing IDs never fall back to current focus or the first tab.
 
-`pi-naming` requires a `pi-terminal-mux` release that exports `resolveTerminalRenameTargets` and `renameTerminalTarget`. Release-please must release terminal-mux first; its generated pi-naming release PR then updates the minimum dependency range. Do not manually publish or preemptively raise the range to an unpublished version.
+`pi-naming` requires a published `pi-terminal-mux` version that exports `resolveTerminalRenameTargets` and `renameTerminalTarget`. Release-please updates workspace dependency ranges in release PRs. When one release publishes both packages, CI publishes terminal-mux first and publishes naming only after that npm publication succeeds; a naming-only release uses the already published compatible mux. Do not manually publish or preemptively raise the range to an unpublished version.
 
 ## Validation
 

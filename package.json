@@ -29,8 +29,9 @@
   "scripts": {
     "test": "node scripts/run-workspaces.mjs test",
     "typecheck": "node scripts/run-workspaces.mjs typecheck",
-    "check": "npm run typecheck && npm test && node scripts/check-no-local-bindings.mjs && node scripts/check-package-config.mjs && node scripts/check-tool-supervisor-ui-output.mjs",
-    "check:tool-supervisor-ui": "node scripts/check-tool-supervisor-ui-output.mjs"
+    "check": "npm run typecheck && npm test && node scripts/check-no-local-bindings.mjs && node scripts/check-package-config.mjs && node scripts/check-tool-supervisor-ui-output.mjs && node scripts/check-release-order.mjs",
+    "check:tool-supervisor-ui": "node scripts/check-tool-supervisor-ui-output.mjs",
+    "check:release-order": "node scripts/check-release-order.mjs"
   },
   "engines": {
     "node": ">=22"
