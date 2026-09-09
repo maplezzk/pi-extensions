@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.5.1...pi-terminal-mux-v0.6.0) (2026-09-09)
+
+
+### Features
+
+* 通用化终端命名目标解析 ([fe5323d](https://github.com/maplezzk/pi-extensions/commit/fe5323d7e2f028a87d7ad51f1ff99c3e49410fc6))
+* 通用化终端命名目标解析 ([125d775](https://github.com/maplezzk/pi-extensions/commit/125d77518dc4b67781fc59a9759938286e2cfb07))
+
 ## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.5.0...pi-terminal-mux-v0.5.1) (2026-09-07)
 
 
