@@ -60,6 +60,7 @@ jobs:
           - dir: packages/pi-safety-guards
           - dir: packages/pi-nested-skills
           - dir: packages/pi-notifications
+          - dir: packages/pi-auto-goal
     steps:
       - uses: actions/checkout@v4
 
