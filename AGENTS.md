@@ -28,7 +28,7 @@ Each package owns its entrypoint, tests, configuration example, localization res
 
 ## Package boundaries
 
-- `pi-spec-mode` is independently installable; see `packages/pi-spec-mode/README.md` for its configuration, behavior, and tests.
+- `pi-spec` is independently installable; see `packages/pi-spec/README.md` for its configuration, behavior, and tests.
 
 - `pi-distill` discovers active tools with object parameter schemas and observes their results through Pi's native `tool_call` and `tool_result` events. It does not register duplicate tools.
 - `pi-tool-supervisor` reviews the actual before/after diff of `edit` and `write` against configured rule files. It reports findings but is not an operating-system sandbox or an edit rollback mechanism.

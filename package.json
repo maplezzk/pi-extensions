@@ -18,8 +18,7 @@
       "!packages/pi-terminal-mux/index.ts"
     ],
     "skills": [
-      "packages/*/SKILL.md",
-      "packages/pi-spec-mode/skills"
+      "packages/*/SKILL.md"
     ]
   },
   "peerDependencies": {

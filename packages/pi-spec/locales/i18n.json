@@ -1,7 +1,143 @@
 {
   "commands.spec": {
-    "zh-CN": "规格驱动开发工作流（new/use/status/approve/revise/continue/stop）",
-    "en-US": "Spec-driven development workflow (new/use/status/approve/revise/continue/stop)"
+    "zh-CN": "规格驱动开发工作流；不带参数会列出当前状态可用的动作",
+    "en-US": "Spec-driven development workflow; no arguments lists the actions available now"
+  },
+  "actions.new.label": {
+    "zh-CN": "新建规格",
+    "en-US": "Create a new spec"
+  },
+  "actions.new.description": {
+    "zh-CN": "创建并激活一个新规格，会依次询问名称和标题",
+    "en-US": "Create and activate a spec; asks for a name and title"
+  },
+  "actions.use.label": {
+    "zh-CN": "激活已有规格",
+    "en-US": "Activate an existing spec"
+  },
+  "actions.use.description": {
+    "zh-CN": "从项目 .pi/specs/ 中选择一个规格",
+    "en-US": "Choose one of the specs in this project's .pi/specs/"
+  },
+  "actions.status.label": {
+    "zh-CN": "查看当前进度",
+    "en-US": "Show current progress"
+  },
+  "actions.status.description": {
+    "zh-CN": "显示阶段、状态和剩余任务",
+    "en-US": "Show the stage, status and remaining tasks"
+  },
+  "actions.approve.label": {
+    "zh-CN": "批准 {stage}，进入{next}",
+    "en-US": "Approve {stage} and move to {next}"
+  },
+  "actions.approve.description": {
+    "zh-CN": "文档已提交，等待你确认当前版本",
+    "en-US": "The document is submitted and waiting for your confirmation"
+  },
+  "actions.revise.label": {
+    "zh-CN": "回退到更早阶段",
+    "en-US": "Reopen an earlier stage"
+  },
+  "actions.revise.description": {
+    "zh-CN": "重新打开某个已开始阶段的文档，并清除下游批准",
+    "en-US": "Reopen a started stage's document and clear downstream approvals"
+  },
+  "actions.continue.label": {
+    "zh-CN": "继续执行已批准任务",
+    "en-US": "Continue the approved tasks"
+  },
+  "actions.continue.description": {
+    "zh-CN": "把控制权交回模型，按依赖继续实现",
+    "en-US": "Hand control back to the model to keep implementing"
+  },
+  "actions.stop.label": {
+    "zh-CN": "退出规格模式",
+    "en-US": "Exit spec mode"
+  },
+  "actions.stop.description": {
+    "zh-CN": "恢复原工具集，磁盘产物保留",
+    "en-US": "Restore the previous tool set; disk artifacts are kept"
+  },
+  "menu.title": {
+    "zh-CN": "规格 {slug} · {stage} · {status}，现在做什么？",
+    "en-US": "Spec {slug} · {stage} · {status}. What next?"
+  },
+  "menu.titleInactive": {
+    "zh-CN": "当前没有激活的规格，现在做什么？",
+    "en-US": "No active spec. What next?"
+  },
+  "menu.titleBlocked": {
+    "zh-CN": "规格恢复失败，已阻止工具执行。先选择处理方式：",
+    "en-US": "Spec recovery failed and tools are blocked. Choose how to proceed:"
+  },
+  "menu.pickSpec": {
+    "zh-CN": "选择要激活的规格",
+    "en-US": "Select a spec to activate"
+  },
+  "menu.pickStage": {
+    "zh-CN": "选择要回退重开的阶段",
+    "en-US": "Select the stage to reopen"
+  },
+  "menu.specSummary": {
+    "zh-CN": "{stage} · {status}",
+    "en-US": "{stage} · {status}"
+  },
+  "menu.specUnreadable": {
+    "zh-CN": "状态不可读：{reason}",
+    "en-US": "state unreadable: {reason}"
+  },
+  "menu.usageHeader": {
+    "zh-CN": "当前可用动作（非交互模式不提供菜单）：",
+    "en-US": "Available actions (no menu in non-interactive mode):"
+  },
+  "menu.cancelled": {
+    "zh-CN": "已取消，未做任何修改",
+    "en-US": "Cancelled; nothing was changed"
+  },
+  "new.slugPrompt": {
+    "zh-CN": "新规格名称（小写字母、数字、连字符）",
+    "en-US": "New spec name (lowercase letters, digits, hyphens)"
+  },
+  "new.slugPlaceholder": {
+    "zh-CN": "例如 checkout-flow",
+    "en-US": "for example checkout-flow"
+  },
+  "new.titlePrompt": {
+    "zh-CN": "规格标题",
+    "en-US": "Spec title"
+  },
+  "errors.noSpecsFound": {
+    "zh-CN": "项目里还没有任何规格，先用 /spec new 创建一个。",
+    "en-US": "This project has no specs yet; create one with /spec new first."
+  },
+  "errors.approvalNotPending": {
+    "zh-CN": "当前没有待批文档（状态：{status}），不需要请求批准。",
+    "en-US": "Nothing is awaiting approval (status: {status}); no approval request is needed."
+  },
+  "approve.cancelled": {
+    "zh-CN": "已取消批准，文档仍处于待批状态",
+    "en-US": "Approval cancelled; the document is still awaiting approval"
+  },
+  "approvalRequest.description": {
+    "zh-CN": "请你确认提交的规格文档。会弹出确认对话框；用户未按键就不会产生批准，也不会自动推进阶段。",
+    "en-US": "Ask you to confirm the submitted spec document. Opens a confirmation dialog; without a keypress there is no approval and no automatic stage advance."
+  },
+  "approvalRequest.snippet": {
+    "zh-CN": "请用户确认当前待批文档",
+    "en-US": "Ask the user to confirm the pending document"
+  },
+  "approvalRequest.guidelines": {
+    "zh-CN": "spec_submit 返回待批后调用 spec_request_approval 请用户确认；不要假装用户已批准，也不要改用其他方式推进阶段。",
+    "en-US": "After spec_submit reports a pending document, call spec_request_approval to ask the user; never claim approval the user did not give."
+  },
+  "approvalRequest.approved": {
+    "zh-CN": "{detail} 请按当前阶段方法继续。",
+    "en-US": "{detail} Continue with the current stage procedure."
+  },
+  "approvalRequest.rejected": {
+    "zh-CN": "未产生批准：{detail}",
+    "en-US": "No approval was produced: {detail}"
   },
   "submit.description": {
     "zh-CN": "提交当前阶段的规格文档供用户审阅。写完当前阶段文档后必须调用；不会自动批准。",
@@ -16,8 +152,20 @@
     "en-US": "Use spec_submit to hand in the current stage document and wait for explicit user approval."
   },
   "errors.noSlug": {
-    "zh-CN": "用法：/spec new <slug> [--title \"标题\"]",
-    "en-US": "Usage: /spec new <slug> [--title \"title\"]"
+    "zh-CN": "没有提供规格名称。直接运行 /spec new 会提示你输入。",
+    "en-US": "No spec name was provided. Run /spec new on its own to be prompted."
+  },
+  "errors.useNeedsSlug": {
+    "zh-CN": "非交互模式需要显式指定规格名：/spec use <slug>。",
+    "en-US": "Non-interactive mode needs an explicit spec name: /spec use <slug>."
+  },
+  "errors.reviseNeedsStage": {
+    "zh-CN": "非交互模式需要显式指定阶段：/spec revise <requirements|design|tasks|verification>。",
+    "en-US": "Non-interactive mode needs an explicit stage: /spec revise <requirements|design|tasks|verification>."
+  },
+  "errors.unknownSubcommand": {
+    "zh-CN": "未知子命令 {sub}，下面列出当前可用的动作。",
+    "en-US": "Unknown subcommand {sub}; current actions are listed below."
   },
   "errors.slugInvalid": {
     "zh-CN": "slug 只能包含小写字母、数字、连字符（不得以连字符开头或结尾）：{slug}",
@@ -163,18 +311,6 @@
     "zh-CN": "文档已登记待批。请切换到交互模式执行 /spec approve 完成批准。",
     "en-US": "Document registered for review. Switch to interactive mode and run /spec approve to confirm."
   },
-  "context.planStage": {
-    "zh-CN": "[SPEC MODE - {stage}]\n当前阶段：{stage}（{status}）。\n正在编写的文档：{path}\n完成后必须调用 spec_submit 提交，等待用户批准。\n禁止运行 bash 命令；禁止修改代码；本阶段只能编辑上述这一份文档。",
-    "en-US": "[SPEC MODE - {stage}]\nCurrent stage: {stage} ({status}).\nDocument being written: {path}\nCall spec_submit when done and wait for user approval.\nDo NOT run bash commands; do NOT modify code; only edit that single document in this stage."
-  },
-  "context.execute": {
-    "zh-CN": "[SPEC MODE - IMPLEMENTATION]\n执行已批准的 tasks.md。\n剩余任务：\n{remaining}\n每完成一个任务，在回复中包含标记：[DONE:TASK-id]。\n全部完成后任务状态由插件自动更新，无需手动修改 tasks.md。",
-    "en-US": "[SPEC MODE - IMPLEMENTATION]\nExecute approved tasks.md.\nRemaining tasks:\n{remaining}\nAfter completing each task, include a marker: [DONE:TASK-id].\nThe plugin updates task state automatically; do not edit tasks.md manually."
-  },
-  "context.verify": {
-    "zh-CN": "[SPEC MODE - VERIFICATION]\n所有任务已完成。请按照 tasks.md 中的 Verification 执行验证，并把结果写入 verification.md 后调用 spec_submit。",
-    "en-US": "[SPEC MODE - VERIFICATION]\nAll tasks are done. Run verifications from tasks.md, write results into verification.md, then call spec_submit."
-  },
   "ui.taskProgress": {
     "zh-CN": "任务进度：{done}/{total}",
     "en-US": "Tasks: {done}/{total}"
@@ -196,8 +332,8 @@
     "en-US": "strict: approve requirements, design, and tasks separately"
   },
   "ui.profileQuick": {
-    "zh-CN": "quick：最终统一审批（需求设计自动推进，任务后一次授权）",
-    "en-US": "quick: auto-advance requirements/design, approve once before coding"
+    "zh-CN": "quick：自动接受需求和设计，任务与验证仍需人工审批",
+    "en-US": "quick: accept requirements/design automatically; tasks and verification need human approval"
   },
   "ui.created": {
     "zh-CN": "已创建并激活规格 {slug}（{profile}）",
@@ -251,6 +387,18 @@
     "zh-CN": "继续执行已批准的规格任务。",
     "en-US": "Continue executing the approved spec tasks."
   },
+  "ui.frontmatterRepaired": {
+    "zh-CN": "已按 state.json 校准派生 frontmatter：{files}",
+    "en-US": "Derived frontmatter brought back in line with state.json: {files}"
+  },
+  "frontmatter.notice": {
+    "zh-CN": "本区块由 pi-spec 自动生成，仅供阅读；状态与批准以 state.json 为准",
+    "en-US": "Generated by pi-spec for readability; state.json is authoritative for state and approval"
+  },
+  "errors.frontmatterSyncFailed": {
+    "zh-CN": "派生 frontmatter 写入失败（state.json 不受影响）：{files}",
+    "en-US": "Failed to write derived frontmatter (state.json is unaffected): {files}"
+  },
   "errors.transitionRejected": {
     "zh-CN": "状态机拒绝了操作 {action}（当前：{status}）",
     "en-US": "State machine rejected {action} (current: {status})"
@@ -280,8 +428,8 @@
     "en-US": "Warnings (non-blocking)"
   },
   "submit.awaiting": {
-    "zh-CN": "文档已登记待批，请等待用户执行 /spec approve。",
-    "en-US": "Artifact is awaiting approval; wait for the user to run /spec approve."
+    "zh-CN": "文档已登记待批。调用 spec_request_approval 请用户确认，或等待用户执行 /spec approve。",
+    "en-US": "Artifact is awaiting approval. Call spec_request_approval to ask the user, or wait for the user to run /spec approve."
   },
   "submit.advanced": {
     "zh-CN": "已按 quick 模式推进到 {stage}，请继续起草该阶段文档。",
@@ -306,5 +454,61 @@
   "template.verification": {
     "zh-CN": "# Verification: {title}\n\n结论：\n命令：\n",
     "en-US": "# Verification: {title}\n\nVerdict:\nCommand:\n"
+  },
+  "errors.stateSchema": {
+    "zh-CN": "规格状态格式、标识或审批链无效。",
+    "en-US": "Invalid spec state format, identity, or approval chain."
+  },
+  "errors.stateMissing": {
+    "zh-CN": "规格状态文件已丢失，拒绝覆盖",
+    "en-US": "Spec state file is missing; refusing to overwrite"
+  },
+  "errors.revisionConflict": {
+    "zh-CN": "状态版本冲突：磁盘 {disk}，预期 {expected}",
+    "en-US": "State revision conflict: disk {disk}, expected {expected}"
+  },
+  "errors.confirmationChanged": {
+    "zh-CN": "规格或文档版本已变化，本次操作已停止。请检查当前状态后重试。",
+    "en-US": "The spec or document version changed. This operation was stopped; review the current state and retry."
+  },
+  "errors.operationFailed": {
+    "zh-CN": "规格操作失败，未完成：{reason}",
+    "en-US": "Spec operation failed and did not complete: {reason}"
+  },
+  "errors.restoreBlocked": {
+    "zh-CN": "规格恢复失败，已阻止工具执行：{reason}。请用 /spec use <slug> 重新选择或 /spec stop 退出。",
+    "en-US": "Spec recovery failed; tool execution is blocked: {reason}. Recover with /spec use <slug> or exit with /spec stop."
+  },
+  "errors.unknownTask": {
+    "zh-CN": "忽略未知任务完成标记：{task}，它不在当前已批准的任务定义中。",
+    "en-US": "Ignoring completion marker for unknown task {task}; it is not in the current approved task definitions."
+  },
+  "context.current": {
+    "zh-CN": "当前规格：{slug}；阶段：{phase}；状态：{status}；模式：{profile}；revision：{revision}。仅以此当前状态和当前阶段方法为准，历史阶段说明不再适用。规格目录：{directory}。",
+    "en-US": "Current spec: {slug}; phase: {phase}; status: {status}; profile: {profile}; revision: {revision}. Follow this current state and procedure; historical stage instructions no longer apply. Spec directory: {directory}."
+  },
+  "context.remaining": {
+    "zh-CN": "当前未完成任务：{remaining}。完成标记不是验证证据。",
+    "en-US": "Currently incomplete tasks: {remaining}. Completion markers are not verification evidence."
+  },
+  "context.draft": {
+    "zh-CN": "当前可编辑产物：{path}。完成文档后调用 spec_submit，按返回状态继续或等待。",
+    "en-US": "Current editable artifact: {path}. Call spec_submit after writing it, then continue or wait according to the returned state."
+  },
+  "context.waiting": {
+    "zh-CN": "已提交，等待用户批准（spec_request_approval 或 /spec approve）。不要编辑文档、继续实现或重复提交；需修改时请用户 /spec revise {phase}。",
+    "en-US": "Submitted; wait for user approval (spec_request_approval or /spec approve). Do not edit documents, continue implementation or resubmit; ask the user for /spec revise {phase} if changes are needed."
+  },
+  "context.complete": {
+    "zh-CN": "验证文档已获批准，规格工作流完成。汇报实际证据与残留项，不创建新阶段文档、不继续执行。新工作请用户 revise 或 /spec stop。",
+    "en-US": "The verification artifact is approved and this spec workflow is complete. Report actual evidence and residuals; do not create another stage artifact or continue execution. Ask the user to revise or /spec stop for new work."
+  },
+  "errors.procedure": {
+    "zh-CN": "当前阶段方法加载失败：{reason}",
+    "en-US": "Failed to load the current stage procedure: {reason}"
+  },
+  "errors.emptyProcedure": {
+    "zh-CN": "阶段方法正文为空：{phase}",
+    "en-US": "Empty stage procedure: {phase}"
   }
 }

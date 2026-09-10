@@ -1,5 +1,5 @@
 {
-  "name": "pi-spec-mode",
+  "name": "@maplezzk/pi-spec",
   "version": "0.1.0",
   "description": "Pi 终端内规格驱动开发工作流：requirements→design→tasks 持久产物、逐阶段批准、写入守卫",
   "type": "module",
@@ -11,7 +11,7 @@
     "index.ts",
     "src",
     "locales",
-    "skills",
+    "procedures",
     "test",
     "config.example.json",
     "README.md",
@@ -31,8 +31,7 @@
       "../pi-extensions-i18n/index.ts"
     ],
     "skills": [
-      "./SKILL.md",
-      "./skills"
+      "./SKILL.md"
     ]
   },
   "engines": {
@@ -40,12 +39,12 @@
   },
   "license": "MIT",
   "author": "maplezzk",
-  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-spec-mode",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-spec",
   "bugs": "https://github.com/maplezzk/pi-extensions/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maplezzk/pi-extensions.git",
-    "directory": "packages/pi-spec-mode"
+    "directory": "packages/pi-spec"
   },
   "publishConfig": {
     "access": "public",

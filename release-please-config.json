@@ -17,6 +17,6 @@
     "packages/pi-session-resources": {},
     "packages/pi-dynamic-workflows": {},
     "packages/pi-interactive-subagents": {},
-    "packages/pi-spec-mode": {}
+    "packages/pi-spec": {}
   }
 }

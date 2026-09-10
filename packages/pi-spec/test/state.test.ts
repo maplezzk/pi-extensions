@@ -153,7 +153,7 @@ describe("写入门禁", () => {
     assert.equal(computeWriteArtifact(s), null);
   });
 
-  test("执行阶段允许 tasks.md，完成阶段禁止", () => {
+  test("执行阶段冻结任务定义，验证阶段允许验证文档", () => {
     let s = createState("x", "x", "strict");
     s = run(s, { type: "submit", sha256: sha("r") });
     s = run(s, { type: "approve" });
@@ -161,7 +161,7 @@ describe("写入门禁", () => {
     s = run(s, { type: "approve" });
     s = run(s, { type: "submit", sha256: sha("t") });
     s = run(s, { type: "approve" });
-    assert.equal(computeWriteArtifact(s), "tasks");
+    assert.equal(computeWriteArtifact(s), null);
     s = run(s, { type: "all_tasks_done" });
     assert.equal(computeWriteArtifact(s), "verification");
   });

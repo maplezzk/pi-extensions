@@ -34,6 +34,16 @@ export const STAGE_ORDER: Phase[] = [
   "complete",
 ];
 
+/**
+ * 磁盘记录的协议版本。两个版本记录形状相同，区别只在文档指纹口径：
+ * v2 起指纹只覆盖 frontmatter 之后的正文，所以同步派生显示层不会让批准失效。
+ * 写入一律用 STATE_SCHEMA，读取同时兼容 v1。
+ */
+export const LEGACY_STATE_SCHEMA = "pi-spec-mode/v1";
+export const STATE_SCHEMA = "pi-spec-mode/v2";
+/** 能出现在磁盘记录里的 schema 取值。 */
+export type SchemaVersion = typeof LEGACY_STATE_SCHEMA | typeof STATE_SCHEMA;
+
 export interface ArtifactRecord {
   /** 最近一次 submit 时文档哈希 */
   sha256?: string;
@@ -44,7 +54,8 @@ export interface ArtifactRecord {
 }
 
 export interface StateFile {
-  schema: "pi-spec-mode/v1";
+  /** 磁盘记录里可能是旧版本；内存中的状态由 loadState 统一升级成 STATE_SCHEMA。 */
+  schema: SchemaVersion;
   id: string;
   title: string;
   profile: Profile;
@@ -82,7 +93,7 @@ export function createState(
   profile: Profile,
 ): StateFile {
   return {
-    schema: "pi-spec-mode/v1",
+    schema: STATE_SCHEMA,
     id: slug,
     title,
     profile,
@@ -106,14 +117,13 @@ export function parseStatusKey(state: StateFile): string {
 
 /**
  * 当前阶段允许通过 write/edit 修改的文档；返回 null 表示该阶段不允许
- * 用普通写入工具改任何文档（执行阶段只允许 tasks.md 记录，见 policy.ts）。
+ * 用普通写入工具改任何规格文档；执行阶段任务定义保持冻结。
  */
 export function computeWriteArtifact(state: StateFile): Artifact | null {
   if (state.phase === "requirements" && state.status === "drafting")
     return "requirements";
   if (state.phase === "design" && state.status === "drafting") return "design";
   if (state.phase === "tasks" && state.status === "drafting") return "tasks";
-  if (state.phase === "implementation") return "tasks";
   if (state.phase === "verification" && state.status === "drafting")
     return "verification";
   return null;
@@ -161,7 +171,7 @@ function clearAndJump(
   state.phase = phase;
   state.status = status;
   state.activeTask = null;
-  state.completedTasks = [];
+  if (phase !== "verification" && phase !== "complete") state.completedTasks = [];
   return state;
 }
 
@@ -284,6 +294,7 @@ export function transition(
       if (state.phase !== "implementation" || state.status !== "in_progress") {
         return { ok: false, error: `task_done 只在实现执行中有效，当前：${from}` };
       }
+      if (state.completedTasks.includes(event.taskId)) return { ok: true, state };
       const next = bump(cloneState(state));
       next.activeTask = event.taskId;
       if (!next.completedTasks.includes(event.taskId)) {
@@ -313,6 +324,7 @@ export function invalidateIfStale(
     ["requirements", "requirements"],
     ["design", "design"],
     ["tasks", "tasks"],
+    ["verification", "verification"],
   ];
   for (const [artifact, stage] of stages) {
     const rec = next.artifacts[artifact];
@@ -321,7 +333,7 @@ export function invalidateIfStale(
     next.phase = stage;
     next.status = "drafting";
     next.activeTask = null;
-    next.completedTasks = [];
+    if (artifact !== "verification") next.completedTasks = [];
     return bump(next);
   }
 

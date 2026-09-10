@@ -154,9 +154,9 @@ describe("allowedArtifactForPhase", () => {
     assert.equal(r, null);
   });
 
-  test("实现阶段允许 tasks.md 记录", () => {
+  test("实现阶段禁止修改任务定义", () => {
     const r = allowedArtifactForPhase(at("implementation", "in_progress"), cwd);
-    assert.equal(r?.artifact, "tasks");
+    assert.equal(r, null);
   });
 
   test("完成阶段禁止任何规格文档写入", () => {
