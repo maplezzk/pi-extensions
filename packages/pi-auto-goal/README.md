@@ -32,6 +32,7 @@ The judge never sees your other session branches.
 - **No interruption of your typing**: the verdict is discarded if you started a new turn, queued a message, or the branch moved while the judge was running.
 - **Conservative verdicts**: the built-in judge prompt treats thin evidence, polite closings, and analysis-only output as incomplete, and falls back to "stop" when the evidence is ambiguous.
 - **Explicit failures**: judge, authentication, timeout, and send errors are reported in the UI; a failed judgement is never treated as an acceptable stop.
+- **Persistent sessions only**: judgement runs in TUI and RPC modes. Print and JSON modes skip it, because the session already shuts down once the agent settles and an automatic continuation could never execute.
 
 ## Configuration
 
