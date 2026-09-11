@@ -1,6 +1,6 @@
 {
   "name": "pi-auto-goal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi stop guard: judges premature agent stops with a second model and continues the task",
   "type": "module",
   "main": "./index.ts",

@@ -14,5 +14,5 @@
   "packages/pi-nested-skills": "0.2.1",
   "packages/pi-notifications": "0.2.1",
   "packages/pi-naming": "0.3.0",
-  "packages/pi-auto-goal": "0.1.0"
+  "packages/pi-auto-goal": "0.2.0"
 }
