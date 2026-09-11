@@ -68,6 +68,8 @@ npm run check
 
 The check command runs workspace type checks, tests, and the portability/i18n gates.
 
+The repository pins `https://registry.npmjs.org/` in `.npmrc` so lockfile tarball URLs stay portable. Installing through a mirror registry rewrites those URLs and makes `npm ci` fail on npm 12+ with `EALLOWREMOTE`; `node scripts/check-lockfile-registry.mjs` (part of `npm run check`) blocks that before merge.
+
 ## License
 
 [MIT](./LICENSE)
