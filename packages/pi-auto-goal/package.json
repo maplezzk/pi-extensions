@@ -1,0 +1,75 @@
+{
+  "name": "pi-auto-goal",
+  "version": "0.1.0",
+  "description": "Pi stop guard: judges premature agent stops with a second model and continues the task",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "locales",
+    "config.example.json",
+    "README.md",
+    "README.zh-CN.md",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts",
+      "../pi-extensions-i18n/index.ts"
+    ],
+    "skills": [
+      "./SKILL.md"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "maplezzk",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-auto-goal",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-auto-goal"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "coding-agent",
+    "auto-continue",
+    "stop-guard",
+    "agent-supervision"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
+    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0"
+  },
+  "dependencies": {
+    "pi-extensions-i18n": "^0.4.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@earendil-works/pi-tui": "0.80.10",
+    "@types/node": "24.12.4",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  }
+}

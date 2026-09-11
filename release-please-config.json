@@ -20,6 +20,7 @@
     "packages/pi-safety-guards": {},
     "packages/pi-nested-skills": {},
     "packages/pi-notifications": {},
-    "packages/pi-naming": {}
+    "packages/pi-naming": {},
+    "packages/pi-auto-goal": {}
   }
 }

@@ -1,0 +1,166 @@
+{
+  "judgeSystemPrompt": {
+    "zh-CN": "你是 Pi 编码 agent 的「提前停止判定器」。你会看到用户本轮的原始请求、agent 停止前的最后输出，以及本轮的工具调用轨迹。请判断 agent 此刻停止是否可接受。\n\n只有满足以下任一条件才算可以正常停止：\n1. 用户请求涉及的全部步骤都已完成，并且有可见证据（改动结果、测试输出、检查结论）；\n2. agent 正在向用户提问，或必须由用户做决策、授权、选择才能继续；\n3. 遇到真实阻塞：缺少凭据或权限、缺少只有用户能提供的信息、必须等待用户操作或外部结果；\n4. 用户请求本身是纯问答或闲聊，已经得到完整回答。\n\n出现以下任一情况，必须判为提前停止：\n1. 用户请求包含多个步骤，agent 只完成一部分就停下；\n2. agent 自己列出了后续计划或待办，却没有执行；\n3. agent 以「我将」「接下来会」「如果需要我继续」之类的话收尾；\n4. agent 声称完成，却没有做任何验证，而任务要求可验证的交付；\n5. agent 把「等待用户确认」当成默认收尾，但用户并没有要求先确认。\n\n判定规则：\n- 只依据证据，不做乐观推断；证据不足且存在多种解释时判 stop。\n- 礼貌收尾语、进度汇报、只做分析描述，都不算任务完成。\n- confidence 是你对结论的把握，取值 0 到 1。\n- 只输出一个 JSON 对象，不要输出解释文字，也不要代码块标记：\n{\"decision\":\"continue\" 或 \"stop\",\"confidence\":0.0,\"reason\":\"...\"}\nreason 用一句话说明还缺什么，或者为什么可以停。",
+    "en-US": "You are the premature-stop judge for a Pi coding agent. You will see the user's original request for this round, the agent's final output before stopping, and the tool-call trace of this round. Decide whether stopping now is acceptable.\n\nStopping is acceptable only when one of these holds:\n1. Every step of the user request is complete and visible evidence exists (applied changes, test output, verified findings);\n2. The agent is asking the user a question, or the user must decide, authorize, or choose before work can continue;\n3. There is a real blocker: missing credentials or permissions, missing information only the user can provide, or a required user action or external result;\n4. The request was plain Q&A or chat and has been fully answered.\n\nYou must rule premature stop when any of these holds:\n1. The request has multiple steps and the agent completed only part of them;\n2. The agent listed a plan or todo items and then did not execute them;\n3. The agent ended with \"I will\", \"next I would\", or \"let me know if you want me to continue\";\n4. The agent claims completion without any verification while the task required verifiable delivery;\n5. The agent treated \"waiting for user confirmation\" as the default ending although the user never asked to confirm first.\n\nRules:\n- Judge on evidence only, never on optimism; when evidence is thin and multiple readings exist, choose stop.\n- Polite closings, progress reports, and analysis-only output never count as task completion.\n- confidence is your certainty, from 0 to 1.\n- Output a single JSON object, no prose and no code fence:\n{\"decision\":\"continue\" or \"stop\",\"confidence\":0.0,\"reason\":\"...\"}\nKeep reason to one sentence: what is still missing, or why stopping is fine."
+  },
+  "judgeUserPrompt": {
+    "zh-CN": "<user-request>\n{userRequest}\n</user-request>\n\n<agent-final-output>\n{finalOutput}\n</agent-final-output>\n\n<tool-trace>\n{toolTrace}\n</tool-trace>",
+    "en-US": "<user-request>\n{userRequest}\n</user-request>\n\n<agent-final-output>\n{finalOutput}\n</agent-final-output>\n\n<tool-trace>\n{toolTrace}\n</tool-trace>"
+  },
+  "judgeFinalOutputEmpty": {
+    "zh-CN": "（agent 没有任何文本输出）",
+    "en-US": "(the agent produced no text output)"
+  },
+  "judgeToolTraceEmpty": {
+    "zh-CN": "（本轮没有任何工具调用）",
+    "en-US": "(no tool calls in this round)"
+  },
+  "judgeModelCurrentFallback": {
+    "zh-CN": "当前会话模型",
+    "en-US": "current session model"
+  },
+  "judgeModelMissing": {
+    "zh-CN": "判定模型不可用：{model}。请在配置里检查 model 字段。",
+    "en-US": "Judge model unavailable: {model}. Check the model field in the configuration."
+  },
+  "judgeAuthFailed": {
+    "zh-CN": "判定模型鉴权失败：{error}",
+    "en-US": "Judge model authentication failed: {error}"
+  },
+  "judgeRequestFailed": {
+    "zh-CN": "判定模型请求失败：{error}",
+    "en-US": "Judge model request failed: {error}"
+  },
+  "judgeResponseUnparsed": {
+    "zh-CN": "判定模型返回无法解析的响应：{response}",
+    "en-US": "Judge model returned an unparsable response: {response}"
+  },
+  "judgeResponseEmpty": {
+    "zh-CN": "（空响应）",
+    "en-US": "(empty response)"
+  },
+  "judgeTimeout": {
+    "zh-CN": "判定请求超过 {seconds} 秒没有返回，已中止。",
+    "en-US": "Judge request exceeded {seconds}s and was aborted."
+  },
+  "judgeFailed": {
+    "zh-CN": "提前停止判定失败：{error}",
+    "en-US": "Premature-stop judgement failed: {error}"
+  },
+  "continueMessageDefault": {
+    "zh-CN": "你停下来了，但这一轮任务并没有完成，我不接受这个结果。现在立刻继续执行剩余步骤：不要再汇报计划、不要再问我要不要继续，也不要重复总结已经做过的部分。\n\n你留下的缺口：{reason}\n\n直接动手把缺的做完，做完自行验证并给出最终结果。完成之前不要停下来等我确认。",
+    "en-US": "You stopped, but this task is not finished and I will not accept that. Continue with the remaining steps right now: do not restate your plan, do not ask whether you should continue, and do not re-summarize what you already did.\n\nWhat is still missing: {reason}\n\nDo the missing work, verify it yourself, and report the final result. Do not stop for my confirmation before it is done."
+  },
+  "continueMessageReasonAppendix": {
+    "zh-CN": "你留下的缺口：{reason}",
+    "en-US": "What is still missing: {reason}"
+  },
+  "continueMessageNoReason": {
+    "zh-CN": "你停在任务中途，剩余步骤还没有完成。",
+    "en-US": "You stopped in the middle of the task with steps still unfinished."
+  },
+  "continueSendFailed": {
+    "zh-CN": "自动催停消息发送失败：{error}",
+    "en-US": "Failed to send the automatic continuation message: {error}"
+  },
+  "forcedDecisionContinueReason": {
+    "zh-CN": "受控实验：强制判定为提前停止",
+    "en-US": "Controlled experiment: forced premature-stop decision"
+  },
+  "forcedDecisionStopReason": {
+    "zh-CN": "受控实验：强制判定为可停止",
+    "en-US": "Controlled experiment: forced acceptable-stop decision"
+  },
+  "autoContinueSent": {
+    "zh-CN": "判定为提前停止，已自动要求继续：{reason}（本次干预 {budget}）",
+    "en-US": "Premature stop detected; continuation requested automatically: {reason} (intervention {budget})"
+  },
+  "stopDecisionNotified": {
+    "zh-CN": "判定停止合理，未干预：{reason}",
+    "en-US": "Stop judged acceptable; no intervention: {reason}"
+  },
+  "budgetExhausted": {
+    "zh-CN": "本轮已自动催停 {budget} 次，到达上限，不再干预。",
+    "en-US": "Automatic continuation budget exhausted for this request ({budget}); no further intervention."
+  },
+  "noUserRequest": {
+    "zh-CN": "找不到本轮的原始用户请求，跳过判定。",
+    "en-US": "No original user request found for this round; skipped the judgement."
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置提前停止判定（pi-auto-goal）",
+    "en-US": "Configure premature-stop judgement (pi-auto-goal)"
+  },
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:auto-goal（打开配置菜单）、enable、disable、status 或 reset",
+    "en-US": "Usage: /config:auto-goal (open settings), enable, disable, status, or reset"
+  },
+  "configMenuTitle": {
+    "zh-CN": "自动催停配置",
+    "en-US": "Auto-continue settings"
+  },
+  "configEnabled": {
+    "zh-CN": "启用判定：{value}",
+    "en-US": "Judgement enabled: {value}"
+  },
+  "configOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configDone": {
+    "zh-CN": "完成",
+    "en-US": "Done"
+  },
+  "configUnlimited": {
+    "zh-CN": "不限制",
+    "en-US": "unlimited"
+  },
+  "configModelCurrent": {
+    "zh-CN": "当前会话模型",
+    "en-US": "current session model"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "自动催停配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Auto-continue configuration requires the TUI; run this command in an interactive Pi session."
+  },
+  "configCommandSaved": {
+    "zh-CN": "自动催停配置已保存：{path}。请执行 /reload 使配置生效。",
+    "en-US": "Auto-continue configuration saved to {path}. Run /reload to apply it."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "自动催停配置无效：{error}",
+    "en-US": "Invalid auto-continue configuration: {error}"
+  },
+  "configLoadFailed": {
+    "zh-CN": "自动催停配置读取失败：{path}（{error}）。本次使用默认配置。",
+    "en-US": "Failed to read auto-continue configuration: {path} ({error}). Defaults are used for this session."
+  },
+  "configStatusTitle": {
+    "zh-CN": "pi-auto-goal 状态",
+    "en-US": "pi-auto-goal status"
+  },
+  "configStatusEnabled": {
+    "zh-CN": "启用：{value}",
+    "en-US": "Enabled: {value}"
+  },
+  "configStatusModel": {
+    "zh-CN": "判定模型：{value}",
+    "en-US": "Judge model: {value}"
+  },
+  "configStatusLimit": {
+    "zh-CN": "干预上限：{value}",
+    "en-US": "Intervention limit: {value}"
+  },
+  "configStatusThreshold": {
+    "zh-CN": "置信度阈值：{value}",
+    "en-US": "Confidence threshold: {value}"
+  },
+  "configStatusUsed": {
+    "zh-CN": "本会话已干预：{value}",
+    "en-US": "Interventions in this session: {value}"
+  }
+}
