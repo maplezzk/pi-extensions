@@ -6,7 +6,18 @@
 
 - 结果渲染 middleware 的注册、注销和状态判断；
 - Pi 展示宿主尚未加载时的 pending 注册队列；
-- 安全识别组件，以及把审计面板追加到原始工具结果后的通用组件组合。
+- 安全识别组件，以及把审计面板追加到原始工具结果后的通用组件组合；
+- Pi fullscreen TUI 下用鼠标点击单独展开或收起工具结果。
+
+鼠标展开依赖单独的 `pi-viewport-mouse` 扩展。请同时安装两个包，并使用 fullscreen 模式运行 Pi：
+
+```bash
+pi install npm:pi-viewport-mouse
+pi install npm:pi-extensions-tool-display
+pi --tui-mode fullscreen
+```
+
+点击可展开的工具结果时，只会切换当前结果；`Ctrl+O` 仍然保留 Pi 原生的全局展开/收起行为。普通 TUI 模式下不会启用鼠标展开，也不会影响滚动、文本选择和拖拽。
 
 它同时是一个独立的 Pi 扩展。可以把这个包直接加入 Pi 的 package 列表加载工具展示宿主；`pi-distill`、`pi-tool-supervisor` 的包清单也会声明这个依赖的扩展入口，因此安装功能包时只会加载一个公共宿主，不需要额外安装第二份宿主包。
 

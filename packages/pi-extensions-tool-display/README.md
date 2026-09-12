@@ -6,7 +6,18 @@ It provides:
 
 - registration, disposal, and activity checks for result-render middleware;
 - a pending registration queue for when the Pi display host loads later;
-- safe component detection and a helper for appending an audit panel to the original tool result.
+- safe component detection and a helper for appending an audit panel to the original tool result;
+- optional mouse click toggling for individual tool results in Pi fullscreen TUI mode.
+
+Mouse expansion uses the separate `pi-viewport-mouse` extension. Install both packages and run Pi in fullscreen mode:
+
+```bash
+pi install npm:pi-viewport-mouse
+pi install npm:pi-extensions-tool-display
+pi --tui-mode fullscreen
+```
+
+Clicking an expandable tool result toggles only that result. `Ctrl+O` keeps its native global expand/collapse behavior. Mouse expansion is inactive in regular TUI mode and does not affect scrolling, selection, or drag behavior.
 
 It is also a standalone Pi extension. Install or include this package in Pi's package list to load the actual tool-display host. Feature package manifests include this dependency's extension entry, so installing either feature package loads one shared host without requiring a second host package.
 
