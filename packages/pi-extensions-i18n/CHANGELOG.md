@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.4.0...pi-extensions-i18n-v0.4.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* pi peer 范围只保留下限 &gt;=0.80.0 ([fdc012c](https://github.com/maplezzk/pi-extensions/commit/fdc012c7a0a968712cea4430afd7780eab53420b))
+* 去掉 pi peer 上界并升级依赖到 0.85.1 ([28e897e](https://github.com/maplezzk/pi-extensions/commit/28e897eb45d76e91ca8ac6ac2a508a36c76c5682))
+* 放宽 pi peer 范围并升级依赖到 0.85.1 ([3444c0c](https://github.com/maplezzk/pi-extensions/commit/3444c0cb4836006348fc6a9fbd30fe36bdc98ced))
+
 ## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.3.1...pi-extensions-i18n-v0.4.0) (2026-08-20)
 
 
