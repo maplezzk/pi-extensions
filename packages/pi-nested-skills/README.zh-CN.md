@@ -66,7 +66,7 @@ pi install npm:pi-nested-skills
 ## 要求
 
 - Node.js 22 或更高版本。
-- Pi `>=0.80.0 <0.81.0`。
+- Pi `>=0.80.0`。
 
 ## 许可证
 
