@@ -57,7 +57,7 @@
     "compaction"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.86.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
     "typebox": "*"
   },
   "dependencies": {

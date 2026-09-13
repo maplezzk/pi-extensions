@@ -61,8 +61,8 @@
     "pi-terminal-mux": "^0.6.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.86.0",
-    "@earendil-works/pi-ai": ">=0.80.0 <0.86.0"
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
+    "@earendil-works/pi-ai": ">=0.80.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.85.1",

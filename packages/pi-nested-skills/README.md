@@ -66,7 +66,7 @@ The package does not access credentials, make network requests, start processes,
 ## Requirements
 
 - Node.js 22 or newer.
-- Pi `>=0.80.0 <0.86.0`.
+- Pi `>=0.80.0`.
 
 ## License
 

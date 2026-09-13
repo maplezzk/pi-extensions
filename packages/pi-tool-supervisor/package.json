@@ -55,9 +55,9 @@
     "coding-agent"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.80.0 <0.86.0",
-    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.86.0",
-    "@earendil-works/pi-tui": ">=0.80.0 <0.86.0"
+    "@earendil-works/pi-ai": ">=0.80.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
+    "@earendil-works/pi-tui": ">=0.80.0"
   },
   "dependencies": {
     "diff": "^8.0.4",
