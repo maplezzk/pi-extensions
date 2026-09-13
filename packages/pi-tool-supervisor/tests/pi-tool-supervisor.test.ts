@@ -983,7 +983,9 @@ test("generic before rejected 阻断时诊断使用工具名并追加独立审�
     assert.equal(entries[0]?.data.audit.toolName, "custom-tool");
     assert.equal(notifications.length, 1);
     assert.equal(notifications[0]?.type, "error");
+    assert.match(notifications[0]?.message ?? "", /^\[supervisor\] /);
     assert.match(notifications[0]?.message ?? "", /审查未通过/);
+    assert.doesNotMatch(notifications[0]?.message ?? "", /\u001b\[/);
     assert.equal(await handlers.get("tool_result")?.({ toolCallId: "blocked-1" }, context), undefined);
   } finally {
     faux.unregister();
@@ -1276,6 +1278,60 @@ test("配置 UI 可以编辑并持久化 reviewer 的 tools 和 trigger", async 
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   }
+});
+
+test("用户可见提示统一带 [supervisor] 来源标签", async () => {
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const commands = new Map<string, ConfigCommand>();
+  const pi = {
+    getAllTools: () => [],
+    registerEntryRenderer: () => undefined,
+    appendEntry: () => undefined,
+    registerCommand: (name: string, command: ConfigCommand) => commands.set(name, command),
+    on: () => undefined,
+  } as unknown as Parameters<typeof piSupervisorExtension>[0];
+  piSupervisorExtension(pi);
+  const notifications: Array<{ message: string; type?: string }> = [];
+  /** 记录非交互提示，断言来源标签存在。 */
+  const recordNotification = (message: string, type?: string) => notifications.push({ message, type });
+  const ctx = { hasUI: false, ui: { notify: recordNotification } };
+
+  await commands.get("config:tool-supervisor")?.handler("", ctx);
+
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0]?.type, "warning");
+  assert.match(notifications[0]?.message ?? "", /^\[supervisor\] /);
+  assert.doesNotMatch(notifications[0]?.message ?? "", /\u001b\[/);
+});
+
+test("TUI 模式下只给 [supervisor] 标签上色，正文保持纯文本", async () => {
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const commands = new Map<string, ConfigCommand>();
+  const pi = {
+    getAllTools: () => [],
+    registerEntryRenderer: () => undefined,
+    appendEntry: () => undefined,
+    registerCommand: (name: string, command: ConfigCommand) => commands.set(name, command),
+    on: () => undefined,
+  } as unknown as Parameters<typeof piSupervisorExtension>[0];
+  piSupervisorExtension(pi);
+  const notifications: Array<{ message: string; type?: string }> = [];
+  /** 记录 TUI 提示，断言只有标签带上颜色。 */
+  const recordNotification = (message: string, type?: string) => notifications.push({ message, type });
+  const ctx = {
+    hasUI: false,
+    mode: "tui",
+    ui: {
+      notify: recordNotification,
+      theme: { fg: (color: string, text: string) => `<${color}>${text}</${color}>` },
+    },
+  };
+
+  await commands.get("config:tool-supervisor")?.handler("", ctx);
+
+  assert.equal(notifications.length, 1);
+  assert.match(notifications[0]?.message ?? "", /^<success>\[supervisor\]<\/success> /);
+  assert.equal((notifications[0]?.message ?? "").match(/<success>/g)?.length, 1);
 });
 
 test("新配置不存在时读取 pi-file-edit-review 旧配置", async () => {

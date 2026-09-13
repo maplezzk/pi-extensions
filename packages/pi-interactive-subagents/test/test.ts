@@ -2684,3 +2684,47 @@ describe("terminal rename ownership", () => {
     }
   });
 });
+
+describe("subagent notice source", () => {
+  /** 收集 notify 输出的最小 UI 上下文。 */
+  function createNoticeContext(mode: string | undefined, theme?: { fg(color: string, text: string): string }) {
+    const notified: Array<{ message: string; level: string | undefined }> = [];
+    const ctx = {
+      mode,
+      ui: {
+        notify(message: string, type?: string) {
+          notified.push({ message, level: type });
+        },
+        theme,
+      },
+    };
+    return { ctx, notified };
+  }
+
+  it("prefixes every notice with the subagents tag", () => {
+    const { ctx, notified } = createNoticeContext(undefined);
+    subagentsModule.__test__.notify(ctx as any, "hello", "info");
+    assert.deepEqual(notified, [{ message: "[subagents] hello", level: "info" }]);
+  });
+
+  it("keeps the notice level so warning and error keep Pi's own prefix", () => {
+    const { ctx, notified } = createNoticeContext(undefined);
+    subagentsModule.__test__.notify(ctx as any, "careful", "warning");
+    subagentsModule.__test__.notify(ctx as any, "boom", "error");
+    assert.deepEqual(notified, [
+      { message: "[subagents] careful", level: "warning" },
+      { message: "[subagents] boom", level: "error" },
+    ]);
+  });
+
+  it("colors only the tag and only in tui mode, never the message body", () => {
+    const theme = { fg: (color: string, text: string) => `<${color}>${text}</>` };
+    const tui = createNoticeContext("tui", theme);
+    subagentsModule.__test__.notify(tui.ctx as any, "colored", "info");
+    assert.deepEqual(tui.notified, [{ message: "<toolTitle>[subagents]</> colored", level: "info" }]);
+
+    const nonTui = createNoticeContext("rpc", theme);
+    subagentsModule.__test__.notify(nonTui.ctx as any, "plain", "info");
+    assert.deepEqual(nonTui.notified, [{ message: "[subagents] plain", level: "info" }]);
+  });
+});

@@ -1,12 +1,12 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { createTranslator, loadCatalog, notifyWithSource } from "pi-extensions-i18n";
 import { Type } from "typebox";
 import { loadConfig, saveConfig } from "./config.ts";
 import { cancelRunningWorkflow, createWorkflowTool, renderWorkflowThemed } from "./index.ts";
+import { NOTICE_SOURCE } from "./notice.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
-const LOG_PREFIX = "[pi-dynamic-workflows]";
 
 export default function extension(pi: ExtensionAPI) {
   // Subagent session 不注册 workflow 工具：subagent 是 workflow 的执行节点，
@@ -122,13 +122,20 @@ function registerConfigCommand(pi: ExtensionAPI) {
 
         if (choice === choices[0]) {
           const saved = saveConfig({ backend: cfg.backend === "subagent" ? "workflow" : "subagent" });
-          ctx.ui.notify(`${LOG_PREFIX} ${i18n.t("savedBackend", { value: saved.backend })}`, "info");
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: "info",
+            message: i18n.t("savedBackend", { value: saved.backend }),
+          });
         } else if (choice === choices[1]) {
           const saved = saveConfig({ async: !cfg.async });
-          ctx.ui.notify(
-            `${LOG_PREFIX} ${i18n.t("savedAsync", { value: saved.async ? on : off })} ${i18n.t("reloadHint")}`,
-            "info",
-          );
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: "info",
+            message: `${i18n.t("savedAsync", { value: saved.async ? on : off })} ${i18n.t("reloadHint")}`,
+          });
         }
       }
     },

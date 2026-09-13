@@ -9,7 +9,9 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { notifyWithSource, type NoticeLevel } from "pi-extensions-i18n";
 import { i18n } from "./i18n.ts";
+import { NOTICE_SOURCE } from "./notice.ts";
 import {
   configPath,
   DEFAULT_AUTO_GOAL_CONFIG,
@@ -29,13 +31,12 @@ import {
   buildStatusLine,
   colorizeText,
   type ColoredLine,
-  type StatusColor,
 } from "./status-line.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
-const NOTICE_INFO = "info";
-const NOTICE_WARNING = "warning";
-const NOTICE_ERROR = "error";
+const NOTICE_INFO: NoticeLevel = "info";
+const NOTICE_WARNING: NoticeLevel = "warning";
+const NOTICE_ERROR: NoticeLevel = "error";
 /** 页脚状态行占用的键：一个扩展只占一行。 */
 const STATUS_KEY = "pi-auto-goal";
 
@@ -145,10 +146,10 @@ function buildStatusText(runtime: AutoGoalRuntime): string {
 function persistConfig(next: AutoGoalConfig, ctx: ExtensionCommandContext): boolean {
   try {
     const path = saveConfig(next);
-    ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_INFO, message: i18n.t("configCommandSaved", { path }) });
     return true;
   } catch (error) {
-    ctx.ui.notify(i18n.t("configCommandInvalid", { error: errorText(error) }), NOTICE_ERROR);
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_ERROR, message: i18n.t("configCommandInvalid", { error: errorText(error) }) });
     return false;
   }
 }
@@ -175,7 +176,7 @@ async function runConfigMenu(runtime: AutoGoalRuntime, ctx: ExtensionCommandCont
   const selected = await ctx.ui.select(i18n.t("configMenuTitle"), [toggleChoice, statusChoice, doneChoice]);
   if (selected === undefined || selected === doneChoice) return;
   if (selected === statusChoice) {
-    ctx.ui.notify(buildStatusText(runtime), NOTICE_INFO);
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_INFO, message: buildStatusText(runtime) });
     return;
   }
   const enabled = selected === toggleChoice
@@ -187,7 +188,7 @@ async function runConfigMenu(runtime: AutoGoalRuntime, ctx: ExtensionCommandCont
 /** 处理带参数的配置命令。 */
 function runConfigArgument(value: string, runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): void {
   if (value === CONFIG_STATUS_COMMAND) {
-    ctx.ui.notify(buildStatusText(runtime), NOTICE_INFO);
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_INFO, message: buildStatusText(runtime) });
     return;
   }
   if (value === CONFIG_RESET_COMMAND) {
@@ -209,7 +210,7 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
       const value = args.trim();
       if (value && !CONFIG_ARGUMENTS.includes(value as (typeof CONFIG_ARGUMENTS)[number])) {
-        ctx.ui.notify(i18n.t("configCommandUsage"), NOTICE_WARNING);
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_WARNING, message: i18n.t("configCommandUsage") });
         return;
       }
       if (value) {
@@ -217,7 +218,7 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
         return;
       }
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_WARNING, message: i18n.t("configCommandInteractiveOnly") });
         return;
       }
       await runConfigMenu(runtime, ctx);
@@ -227,25 +228,19 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
 }
 
 /**
- * 按主题给文本上色，返回带色文本（纯查询，不写 UI）。
- * 颜色只在 TUI 下添加：其他模式把文本转发给前端，ANSI 序列会变成可见乱码。
+ * 把一行状态写进页脚；关闭状态行时保持原状。
+ *
+ * 页脚状态行不能改走共享的 notifyWithSource：它会给消息加「来源标签」前缀，
+ * 而页脚这里显示的是一条结论（如「已催促 1/2」），宽度有限且已有语义色（status-line 决定），
+ * 再加扩展标签既挤占宽度，也会和其它扩展的提示混淆。
  */
-function coloredText(
-  ctx: Pick<ExtensionContext, "mode" | "ui">,
-  color: StatusColor,
-  text: string,
-): string {
-  return colorizeText({ text, color }, ctx.mode, ctx.ui.theme);
-}
-
-/** 把一行状态写进页脚；关闭状态行时保持原状。 */
 function writeStatusLine(
   ctx: Pick<ExtensionContext, "mode" | "ui">,
   runtime: AutoGoalRuntime,
   line: ColoredLine,
 ): void {
   if (!runtime.config.showStatusLine) return;
-  ctx.ui.setStatus(STATUS_KEY, coloredText(ctx, line.color, line.text));
+  ctx.ui.setStatus(STATUS_KEY, colorizeText(line, ctx.mode, ctx.ui.theme));
 }
 
 /** 把判定结果落到 UI 与会话：只有 continue 才会真的发消息。 */
@@ -262,39 +257,45 @@ function applyOutcome(
       try {
         pi.sendUserMessage(outcome.message);
       } catch (error) {
-        ctx.ui.notify(i18n.t("continueSendFailed", { error: errorText(error) }), NOTICE_ERROR);
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_ERROR, message: i18n.t("continueSendFailed", { error: errorText(error) }) });
         return;
       }
       runtime.used += 1;
       runtime.injectedUserTexts.add(outcome.message.trim());
       // 干预和错误用 warning 级别，呈现为黄色，从正常输出里一眼能认出来。
-      ctx.ui.notify(
-        coloredText(ctx, "warning", i18n.t("autoContinueSent", { reason: outcome.reason, budget: outcome.budget })),
-        NOTICE_WARNING,
-      );
+      notifyWithSource({
+        ctx,
+        source: NOTICE_SOURCE,
+        level: NOTICE_WARNING,
+        message: i18n.t("autoContinueSent", { reason: outcome.reason, budget: outcome.budget }),
+      });
       return;
     }
     case "stop": {
       if (runtime.config.notifyOnStopDecision) {
-        ctx.ui.notify(
-          coloredText(ctx, "success", i18n.t("stopDecisionNotified", { reason: outcome.reason })),
-          NOTICE_INFO,
-        );
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: NOTICE_INFO,
+          message: i18n.t("stopDecisionNotified", { reason: outcome.reason }),
+        });
       }
       return;
     }
     case "skipped": {
       if (outcome.code === STOP_SKIP_BUDGET && !runtime.budgetNoticeSent) {
         runtime.budgetNoticeSent = true;
-        ctx.ui.notify(
-          coloredText(ctx, "warning", i18n.t("budgetExhausted", { budget: outcome.budget })),
-          NOTICE_WARNING,
-        );
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: NOTICE_WARNING,
+          message: i18n.t("budgetExhausted", { budget: outcome.budget }),
+        });
       }
       return;
     }
     case "failed": {
-      ctx.ui.notify(coloredText(ctx, "error", outcome.error), NOTICE_ERROR);
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_ERROR, message: outcome.error });
       return;
     }
   }
@@ -377,10 +378,12 @@ export default function piAutoGoal(pi: ExtensionAPI): void {
 
   if (error !== undefined) {
     pi.on("session_start", (_event, ctx) => {
-      ctx.ui.notify(
-        i18n.t("configLoadFailed", { path: configPath(), error: errorText(error) }),
-        NOTICE_WARNING,
-      );
+      notifyWithSource({
+        ctx,
+        source: NOTICE_SOURCE,
+        level: NOTICE_WARNING,
+        message: i18n.t("configLoadFailed", { path: configPath(), error: errorText(error) }),
+      });
     });
   }
 }

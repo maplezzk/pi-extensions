@@ -19,7 +19,7 @@ function host(
 ) {
   const handlers = new Map<string, Handler>();
   const prompts: string[] = [];
-  const notices: string[] = [];
+  const notices: { message: string; level?: "info" | "warning" | "error" }[] = [];
   const pi = {
     on: (name: string, handler: Handler) => handlers.set(name, handler),
     // 配置命令仅需在真实宿主中注册，安全规则测试使用空实现。
@@ -31,7 +31,8 @@ function host(
 
     ui: {
       confirm: async (_title: string, text: string) => { prompts.push(text); return accepted; },
-      notify: (text: string) => notices.push(text),
+      /** 记录提示正文与 Pi 的 notify 级别；无 mode/theme 时标签为纯文本。 */
+      notify: (message: string, level?: "info" | "warning" | "error") => notices.push({ message, level }),
     },
   } as unknown as ExtensionContext;
   return { pi, handlers, prompts, notices, ctx,
@@ -116,6 +117,8 @@ test("全部禁用不注册执行 hook，启动时说明没有保护", async () 
   assert.equal(fake.handlers.has("tool_call"), false);
   await fake.emit("session_start");
   assert.equal(fake.notices.length, 1);
+  assert.match(fake.notices[0]?.message ?? "", /^\[safety\] /);
+  assert.equal(fake.notices[0]?.level, "info");
 });
 
 test("解析和规则异常返回显式阻断，不吞掉失败", async () => {
@@ -147,6 +150,8 @@ test("损坏配置不默默恢复默认预设，而是通知并阻断 Bash", asy
   await extension(fake.pi);
   await fake.emit("session_start");
   assert.equal(fake.notices.length, 1);
+  assert.match(fake.notices[0]?.message ?? "", /^\[safety\] /);
+  assert.equal(fake.notices[0]?.level, "error");
   assert.equal((await fake.emit("tool_call", call("npm test")) as { block: boolean }).block, true);
   assert.equal(await fake.emit("tool_call", { toolName: "read", input: {} }), undefined);
 });

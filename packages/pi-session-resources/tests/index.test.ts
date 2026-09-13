@@ -56,7 +56,7 @@ test("registers a composable custom editor picker without persistent widgets or 
   const { pi, events, commands, shortcuts } = createPiMock();
   let editorFactory: EditorFactory | undefined;
   let previousEditorRead = false;
-  const notifications: string[] = [];
+  const notifications: { message: string; level?: string }[] = [];
   const context = {
     mode: "tui",
     cwd: resolve("/workspace/project"),
@@ -76,9 +76,9 @@ test("registers a composable custom editor picker without persistent widgets or 
       setEditorComponent(factory: EditorFactory): void {
         editorFactory = factory;
       },
-      /** Records command feedback. */
-      notify(message: string): void {
-        notifications.push(message);
+      /** Records command feedback, including the Pi notify level. */
+      notify(message: string, type?: "info" | "warning" | "error"): void {
+        notifications.push({ message, level: type });
       },
     },
   } as unknown as ExtensionContext;
@@ -108,10 +108,12 @@ test("registers a composable custom editor picker without persistent widgets or 
 
   const command = commands.get("config:session-resources") as SessionResourcesCommand;
   await command.handler("disable", context as unknown as ExtensionCommandContext);
-  assert.match(notifications.at(-1) ?? "", /disabled/);
+  assert.match(notifications.at(-1)?.message ?? "", /^\[resources\] .*disabled/);
+  assert.equal(notifications.at(-1)?.level, "info");
   assert.equal(loadConfig().enabled, false);
   await command.handler("enable", context as unknown as ExtensionCommandContext);
-  assert.match(notifications.at(-1) ?? "", /enabled/);
+  assert.match(notifications.at(-1)?.message ?? "", /^\[resources\] .*enabled/);
+  assert.equal(notifications.at(-1)?.level, "info");
   assert.equal(loadConfig().enabled, true);
 
   const shutdown = events.get("session_shutdown");

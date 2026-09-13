@@ -5,12 +5,26 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { fuzzyFilter } from "@earendil-works/pi-tui";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import {
+  createTranslator,
+  loadCatalog,
+  notifyWithSource,
+  type NoticeColor,
+  type NoticeLevel,
+  type NoticeSource,
+} from "pi-extensions-i18n";
 import { loadConfig, parseConfig, saveConfig, type LoadedNestedSkillsConfig } from "./config.ts";
 import { scanSkillRoots, type NestedSkill, type SkillScanResult } from "./skills.ts";
 
 const messages = loadCatalog(new URL("../locales/index.json", import.meta.url));
 const i18n = createTranslator(messages);
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "skills";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "success";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 const COMMAND_NAME = "skills";
 const COMMAND_ALIASES = [COMMAND_NAME] as const;
@@ -19,13 +33,18 @@ const CONFIG_RESET_COMMAND = "reset";
 const DEFAULT_CONFIG_ROOT = "skills";
 const ROOT_INPUT_SEPARATOR = ",";
 const ROOT_DISPLAY_SEPARATOR = ", ";
-const NOTICE_WARNING = "warning" as const;
-const NOTICE_INFO = "info" as const;
-const NOTICE_ERROR = "error" as const;
+const NOTICE_WARNING: NoticeLevel = "warning";
+const NOTICE_INFO: NoticeLevel = "info";
+const NOTICE_ERROR: NoticeLevel = "error";
 const SKILL_COMMAND_PREFIX = "skill:";
 const INPUT_SOURCES = new Set(["interactive", "rpc"]);
 
 type SkillCommandContext = ExtensionCommandContext;
+
+/** 统一的带来源提示出口，保持所有 notify 调用点只传正文与级别。 */
+function notify(ctx: ExtensionContext, message: string, level: NoticeLevel): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
 
 interface SkillCandidate {
   alias: string;
@@ -210,22 +229,22 @@ function registerConfigCommand(pi: ExtensionAPI): void {
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
       const argument = args.trim();
       if (argument && argument !== CONFIG_RESET_COMMAND) {
-        ctx.ui.notify(i18n.t("configCommandUsage"), NOTICE_WARNING);
+        notify(ctx, i18n.t("configCommandUsage"), NOTICE_WARNING);
         return;
       }
       if (argument === CONFIG_RESET_COMMAND) {
         try {
           const path = saveConfig(parseConfig({ skillRoots: [DEFAULT_CONFIG_ROOT] }));
-          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+          notify(ctx, i18n.t("configCommandSaved", { path }), NOTICE_INFO);
         } catch (error) {
-          ctx.ui.notify(i18n.t("configCommandInvalid", {
+          notify(ctx, i18n.t("configCommandInvalid", {
             error: error instanceof Error ? error.message : String(error),
           }), NOTICE_ERROR);
         }
         return;
       }
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+        notify(ctx, i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
         return;
       }
 
@@ -238,9 +257,9 @@ function registerConfigCommand(pi: ExtensionAPI): void {
       try {
         const roots = input.split(ROOT_INPUT_SEPARATOR).map((root) => root.trim()).filter(Boolean);
         const path = saveConfig(parseConfig({ skillRoots: roots }));
-        ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+        notify(ctx, i18n.t("configCommandSaved", { path }), NOTICE_INFO);
       } catch (error) {
-        ctx.ui.notify(i18n.t("configCommandInvalid", {
+        notify(ctx, i18n.t("configCommandInvalid", {
           error: error instanceof Error ? error.message : String(error),
         }), NOTICE_ERROR);
       }
@@ -264,16 +283,18 @@ function registerSkillsCommand(pi: ExtensionAPI, index: SkillIndex): void {
 function notifyDiagnostics(ctx: ExtensionContext, loaded: LoadedNestedSkillsConfig, index: SkillIndex): void {
   if (!ctx.hasUI) return;
   for (const warning of loaded.warnings) {
-    ctx.ui.notify(i18n.t("configWarning", { reason: warning }), NOTICE_WARNING);
+    notify(ctx, i18n.t("configWarning", { reason: warning }), NOTICE_WARNING);
   }
   for (const warning of index.warnings) {
-    ctx.ui.notify(
+    notify(
+      ctx,
       i18n.t("scanWarning", { path: warning.path, reason: warning.reason }),
       NOTICE_WARNING,
     );
   }
   if (loaded.explicit && index.skills.length === 0) {
-    ctx.ui.notify(
+    notify(
+      ctx,
       i18n.t("noSkills", { roots: loaded.config.skillRoots.join(", ") || i18n.t("noRoots") }),
       NOTICE_WARNING,
     );

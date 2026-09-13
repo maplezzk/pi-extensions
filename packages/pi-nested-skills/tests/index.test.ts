@@ -60,6 +60,59 @@ test("does not guess an ambiguous frontmatter name", () => {
   }
 });
 
+test("prefixes user notices with the skills source tag without ANSI outside tui", async () => {
+  const { root } = createIndex();
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-nested-skills-notice-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  try {
+    const events = new Map<string, (...args: unknown[]) => unknown>();
+    const commands = new Map<string, { handler(args: string, ctx: unknown): Promise<void> }>();
+    const notices: string[] = [];
+    const pi = {
+      on(name: string, handler: unknown) {
+        events.set(name, handler as (...args: unknown[]) => unknown);
+      },
+      registerCommand(name: string, command: unknown) {
+        commands.set(name, command as { handler(args: string, ctx: unknown): Promise<void> });
+      },
+      sendUserMessage: async () => {},
+    } as unknown as ExtensionAPI;
+
+    mkdirSync(join(agentDir, "extensions", "pi-nested-skills"), { recursive: true });
+    writeFileSync(
+      join(agentDir, "extensions", "pi-nested-skills", "config.json"),
+      JSON.stringify({ skillRoots: [root] }),
+    );
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const context = {
+      hasUI: true,
+      mode: "rpc",
+      ui: {
+        notify(message: string) {
+          notices.push(message);
+        },
+        addAutocompleteProvider() {},
+      },
+    } as unknown as ExtensionContext;
+
+    const { default: extension } = await import("../src/index.ts");
+    extension(pi);
+
+    const command = commands.get("config:nested-skills");
+    assert.ok(command);
+    await command.handler("unsupported-argument", context);
+
+    assert.equal(notices.length, 1);
+    assert.match(notices[0], /^\[skills\] /);
+    assert.doesNotMatch(notices[0], /\u001B\[/);
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    rmSync(agentDir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("registers resources, input transformation, command and completion hooks", async () => {
   const { root } = createIndex();
   const agentDir = mkdtempSync(join(tmpdir(), "pi-nested-skills-agent-"));

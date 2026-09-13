@@ -8,6 +8,19 @@ import { collectSessionResources, collectToolResources, ResourceIndex } from "./
 import { i18n } from "./i18n.ts";
 import { SessionResourceEditor } from "./picker.ts";
 import { configPath, loadConfig, saveConfig } from "./config.ts";
+import { notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "resources";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "toolTitle";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
+/** 统一提示出口：加来源标签后交给 Pi 的 notify，避免用户分不清消息来源。 */
+function notify(ctx: ExtensionContext | ExtensionCommandContext, message: string, level: "info" | "warning" | "error"): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
 
 const COMMAND_NAMES = ["config:session-resources", "session-resources"] as const;
 const COMMAND_ACTION = {
@@ -54,7 +67,7 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     if (configError !== undefined) {
-      ctx.ui.notify(i18n.t("configLoadFailed", {
+      notify(ctx, i18n.t("configLoadFailed", {
         path: configPath(),
         error: configError instanceof Error ? configError.message : String(configError),
       }), "warning");
@@ -96,11 +109,11 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const action = args.trim().toLowerCase();
       if (!action) {
-        ctx.ui.notify(i18n.t(pickerEnabled ? "referenceHint" : "referenceDisabledHint"), "info");
+        notify(ctx, i18n.t(pickerEnabled ? "referenceHint" : "referenceDisabledHint"), "info");
         return;
       }
       if (!COMMAND_ACTIONS.includes(action as CommandAction)) {
-        ctx.ui.notify(i18n.t("commandUsage"), "warning");
+        notify(ctx, i18n.t("commandUsage"), "warning");
         return;
       }
 
@@ -108,9 +121,9 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
       try {
         saveConfig({ enabled });
         pickerEnabled = enabled;
-        ctx.ui.notify(i18n.t(pickerEnabled ? "enabled" : "disabled"), "info");
+        notify(ctx, i18n.t(pickerEnabled ? "enabled" : "disabled"), "info");
       } catch (error) {
-        ctx.ui.notify(i18n.t("configSaveFailed", {
+        notify(ctx, i18n.t("configSaveFailed", {
           path: configPath(),
           error: error instanceof Error ? error.message : String(error),
         }), "error");

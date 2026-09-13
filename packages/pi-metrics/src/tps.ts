@@ -11,7 +11,9 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { notifyWithSource } from "pi-extensions-i18n";
 import { i18n } from "./i18n.ts";
+import { NOTICE_SOURCE } from "./notice.ts";
 
 interface TurnStartEvent {
   type: "turn_start";
@@ -330,11 +332,11 @@ function restoreTPSNotification(
     const data = entry.data as Record<string, unknown> | null | undefined;
     if (!data) continue;
     if (typeof data.model === "object" && data.model !== null) {
-      schedule(() => ctx.ui.notify(composeDisplayString(data as unknown as TurnTelemetry), "info"));
+      schedule(() => notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: composeDisplayString(data as unknown as TurnTelemetry) }));
       return;
     }
     if (typeof data.message === "string") {
-      schedule(() => ctx.ui.notify(data.message as string, "info"));
+      schedule(() => notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: data.message as string }));
       return;
     }
   }
@@ -392,7 +394,7 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     committed.telemetry = corrected;
     pi.appendEntry("tps", corrected);
     pi.events?.emit("tps:telemetry", corrected);
-    if (committed.ctx.hasUI) committed.ctx.ui.notify(composeDisplayString(corrected), "info");
+    if (committed.ctx.hasUI) notifyWithSource({ ctx: committed.ctx, source: NOTICE_SOURCE, level: "info", message: composeDisplayString(corrected) });
   });
 
   pi.on("session_shutdown", () => {
@@ -513,7 +515,7 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     };
     pi.appendEntry("tps", telemetry);
     pi.events?.emit("tps:telemetry", telemetry);
-    if (ctx.hasUI) ctx.ui.notify(composeDisplayString(telemetry), "info");
+    if (ctx.hasUI) notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: composeDisplayString(telemetry) });
   });
 
 }

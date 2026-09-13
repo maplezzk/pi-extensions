@@ -236,7 +236,7 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
       abortCount += 1;
     },
     ui: {
-      /** 记录折叠完成通知。 */
+      /** 记录折叠完成通知；带来源标签的文本原样收集。 */
       notify(text: string) {
         notifications.push(text);
       },
@@ -373,6 +373,9 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   assert.doesNotMatch(sent.content, /<read-files>/);
   assert.equal(sent.details.summary, sent.content);
   assert.ok(notifications.length >= 5);
+  // 所有提示都带来源标签，且非 TUI 环境下不带 ANSI 颜色。
+  assert.ok(notifications.every((text) => text.startsWith("[session] ")));
+  assert.ok(notifications.every((text) => !text.includes("\u001b[")));
 
   await configCommand.handler("force off", context);
   const normalResult = await squashTool.execute(

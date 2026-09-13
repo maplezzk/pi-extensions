@@ -1,6 +1,7 @@
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
+  ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { dirname } from "node:path";
 import { configPath, loadConfig, loadConfigDocument, saveConfigDocument } from "./src/config.ts";
@@ -9,6 +10,14 @@ import { compileRules, evaluateRules, type ModuleLoader, type PathRuleEvidence }
 import { addedDirectoryPathsFromSession } from "./src/bash-directory-scope-utils.ts";
 import { i18n } from "./src/i18n.ts";
 import type { SafetyConfig, SafetyRule } from "./src/types.ts";
+import { notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "safety";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "warning";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 const BASH_TOOL = "bash";
 const ERROR_LEVEL = "error";
@@ -21,6 +30,11 @@ const CONFIG_COMMAND_ALIASES = ["config:safety-guards", "safety-guards-config", 
 const CONFIG_RESET_COMMAND = "reset";
 const CONFIG_PRESET_NAMES = Object.keys(PRESETS);
 
+/** 统一提示出口：加来源标签后交给 Pi 的 notify，避免用户分不清消息来源。 */
+function notify(ctx: ExtensionContext | ExtensionCommandContext, message: string, level: "info" | "warning" | "error"): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
+
 /** 注册配置命令，通过 TUI 菜单选择安全预设并保留自定义规则。 */
 function registerConfigCommand(pi: ExtensionAPI): void {
   const command = {
@@ -30,22 +44,22 @@ function registerConfigCommand(pi: ExtensionAPI): void {
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
       const argument = args.trim();
       if (argument && argument !== CONFIG_RESET_COMMAND) {
-        ctx.ui.notify(i18n.t("configCommandUsage"), WARN_LEVEL);
+        notify(ctx, i18n.t("configCommandUsage"), WARN_LEVEL);
         return;
       }
       if (argument === CONFIG_RESET_COMMAND) {
         try {
           const path = saveConfigDocument({ presets: [...DEFAULT_PRESETS], rules: [] });
-          ctx.ui.notify(i18n.t("configCommandSaved", { path }), INFO_LEVEL);
+          notify(ctx, i18n.t("configCommandSaved", { path }), INFO_LEVEL);
         } catch (error) {
-          ctx.ui.notify(i18n.t("configCommandInvalid", {
+          notify(ctx, i18n.t("configCommandInvalid", {
             error: error instanceof Error ? error.message : String(error),
           }), ERROR_LEVEL);
         }
         return;
       }
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), WARN_LEVEL);
+        notify(ctx, i18n.t("configCommandInteractiveOnly"), WARN_LEVEL);
         return;
       }
 
@@ -53,7 +67,7 @@ function registerConfigCommand(pi: ExtensionAPI): void {
       try {
         document = loadConfigDocument();
       } catch (error) {
-        ctx.ui.notify(i18n.t("configCommandInvalid", {
+        notify(ctx, i18n.t("configCommandInvalid", {
           error: error instanceof Error ? error.message : String(error),
         }), ERROR_LEVEL);
         return;
@@ -68,7 +82,7 @@ function registerConfigCommand(pi: ExtensionAPI): void {
         if (selected === undefined || selected === choices[choices.length - 1]) return;
         const selectedIndex = choices.indexOf(selected);
         if (selectedIndex === CONFIG_PRESET_NAMES.length) {
-          ctx.ui.notify(i18n.t("configCustomRulesHint"), INFO_LEVEL);
+          notify(ctx, i18n.t("configCustomRulesHint"), INFO_LEVEL);
           continue;
         }
         const preset = CONFIG_PRESET_NAMES[selectedIndex];
@@ -79,9 +93,9 @@ function registerConfigCommand(pi: ExtensionAPI): void {
         try {
           const path = saveConfigDocument({ presets, rules: document.rules });
           document = { ...document, presets };
-          ctx.ui.notify(i18n.t("configCommandSaved", { path }), INFO_LEVEL);
+          notify(ctx, i18n.t("configCommandSaved", { path }), INFO_LEVEL);
         } catch (error) {
-          ctx.ui.notify(i18n.t("configCommandInvalid", {
+          notify(ctx, i18n.t("configCommandInvalid", {
             error: error instanceof Error ? error.message : String(error),
           }), ERROR_LEVEL);
         }
@@ -118,7 +132,7 @@ export async function registerSafetyGuards(
 ): Promise<void> {
   const rules = await compileRules(config, options.configDirectory ?? dirname(configPath()), options.loader);
   if (rules.length === 0) {
-    pi.on("session_start", (_event, ctx) => ctx.ui.notify(i18n.t("noRules"), INFO_LEVEL));
+    pi.on("session_start", (_event, ctx) => notify(ctx, i18n.t("noRules"), INFO_LEVEL));
     return;
   }
   const warnings = new Map<string, string>();
@@ -167,7 +181,7 @@ export default async function piSafetyGuards(pi: ExtensionAPI): Promise<void> {
     await registerSafetyGuards(pi, loadConfig());
   } catch (error) {
     const reason = i18n.t("configLoadFailed", { error: error instanceof Error ? error.message : String(error) });
-    pi.on("session_start", (_event, ctx) => ctx.ui.notify(reason, ERROR_LEVEL));
+    pi.on("session_start", (_event, ctx) => notify(ctx, reason, ERROR_LEVEL));
     pi.on("tool_call", (event) => {
       if (event.toolName === BASH_TOOL) return { block: true, reason };
     });

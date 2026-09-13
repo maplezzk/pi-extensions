@@ -728,7 +728,7 @@ test("提炼首次失败后默认重试一次并可成功返回", async () => {
     assert.equal(result.details?.outputSummaryStatus, "summarized");
     assert.equal(result.content[0]?.text, "ERROR at checkout.ts:8; inspect the payment provider");
     assert.deepEqual(notices, [{
-      message: "Distillation hit a non-timeout error; starting retry 1/1: temporary provider failure",
+      message: "[distill] Distillation hit a non-timeout error; starting retry 1/1: temporary provider failure",
       type: "warning",
     }]);
   });
@@ -1546,8 +1546,11 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
       hasUI: true,
       ui: { notify: (message: string) => { statsMessage = message; } },
     });
+    assert.match(statsMessage, /^\[distill\] /);
     assert.match(statsMessage, /Tool results|工具结果/);
     assert.match(statsMessage, /Model total tokens|模型总 Token/);
+    // 非 TUI 模式下不带 ANSI 颜色。
+    assert.doesNotMatch(statsMessage, /\u001B\[/);
 
     const selections: Array<string | undefined> = ["Tool outputRequest", "write", "custom-tool", undefined, undefined];
     await commandHandler?.("", {

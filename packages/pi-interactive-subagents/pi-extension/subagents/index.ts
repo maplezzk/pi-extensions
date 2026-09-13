@@ -4,7 +4,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { createTranslator, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 import {
   readdirSync,
   readFileSync,
@@ -86,6 +86,21 @@ import {
 } from "./activity.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../../locales/index.json", import.meta.url)));
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "subagents";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "toolTitle";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
+/**
+ * 统一的用户可见提示出口：加来源标签后交给 Pi 的 notify。
+ * 包内所有 notify 都走这里，避免遗漏标签或颜色。
+ */
+function notify(ctx: ExtensionContext, message: string, level: "info" | "warning" | "error"): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
 
 /** Absolute path to `pi-extension/subagents`. https://github.com/nodejs/node/issues/37845 */
 const SUBAGENTS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -1280,7 +1295,7 @@ async function editSubagentExtensionsManually(
   initial: readonly string[],
 ): Promise<string[] | undefined> {
   if (!ctx.hasUI) {
-    ctx.ui.notify(i18n.t("extensionInteractiveOnly"), "warning");
+    notify(ctx, i18n.t("extensionInteractiveOnly"), "warning");
     return undefined;
   }
 
@@ -1295,7 +1310,7 @@ async function editSubagentExtensionsManually(
 /** Save a selected extension list and report the effective configuration. */
 function saveSelectedSubagentExtensions(ctx: ExtensionContext, extensions: readonly string[]): void {
   const saved = saveSubagentExtensions(extensions);
-  ctx.ui.notify(
+  notify(ctx,
     i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
     "info",
   );
@@ -1304,7 +1319,7 @@ function saveSelectedSubagentExtensions(ctx: ExtensionContext, extensions: reado
 /** Let the user toggle discovered extensions while keeping the built-in done hook fixed. */
 async function chooseSubagentExtensions(ctx: ExtensionContext): Promise<void> {
   if (!ctx.hasUI) {
-    ctx.ui.notify(i18n.t("extensionInteractiveOnly"), "warning");
+    notify(ctx, i18n.t("extensionInteractiveOnly"), "warning");
     return;
   }
 
@@ -1388,7 +1403,7 @@ async function handleSubagentExtensionsCommand(
 
   if (extensionArgs.toLowerCase() === SUBAGENT_EXTENSIONS_CLEAR) {
     const saved = saveSubagentExtensions([]);
-    ctx.ui.notify(
+    notify(ctx,
       i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
       "info",
     );
@@ -1397,12 +1412,12 @@ async function handleSubagentExtensionsCommand(
 
   const extensions = parseSubagentExtensionPaths(extensionArgs);
   if (!extensions) {
-    ctx.ui.notify(i18n.t("extensionInvalid", { value: requested }), "warning");
+    notify(ctx, i18n.t("extensionInvalid", { value: requested }), "warning");
     return true;
   }
 
   const saved = saveSubagentExtensions(extensions);
-  ctx.ui.notify(
+  notify(ctx,
     i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
     "info",
   );
@@ -1427,7 +1442,7 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
       if (requested) {
         const selection = parseMuxConfigRequest(requested);
         if (!selection) {
-          ctx.ui.notify(i18n.t("muxInvalid", { value: requested }), "warning");
+          notify(ctx, i18n.t("muxInvalid", { value: requested }), "warning");
           return;
         }
         try {
@@ -1435,18 +1450,18 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
           const herdrMode = saved.preference === HERDR_MUX_BACKEND
             ? saved.herdrMode ?? loadHerdrModeConfig().herdrMode
             : undefined;
-          ctx.ui.notify(
+          notify(ctx,
             i18n.t("muxSaved", { value: muxPreferenceLabel(saved.preference, herdrMode) }),
             "info",
           );
         } catch (error) {
-          ctx.ui.notify(String(error), "error");
+          notify(ctx, String(error), "error");
         }
         return;
       }
 
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("muxInteractiveOnly"), "warning");
+        notify(ctx, i18n.t("muxInteractiveOnly"), "warning");
         return;
       }
 
@@ -1491,14 +1506,14 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
       if (!selected) return;
       try {
         const saved = saveMuxConfigSelection(selected);
-        ctx.ui.notify(
+        notify(ctx,
           i18n.t("muxSaved", {
             value: muxPreferenceLabel(saved.preference, saved.herdrMode),
           }),
           "info",
         );
       } catch (error) {
-        ctx.ui.notify(String(error), "error");
+        notify(ctx, String(error), "error");
       }
     },
   };
@@ -1525,6 +1540,8 @@ function buildTerminalRenameEnvironment(surface: string, backend = getMuxBackend
 }
 
 export const __test__ = {
+  notify,
+  NOTICE_SOURCE,
   buildTerminalRenameEnvironment,
   borderLine,
   parseMuxConfigRequest,
@@ -2614,7 +2631,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const trimmed = args.trim();
       if (!trimmed) {
-        ctx.ui.notify("Usage: /subagent <agent> [task]", "warning");
+        notify(ctx, "Usage: /subagent <agent> [task]", "warning");
         return;
       }
 
@@ -2624,7 +2641,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 
       const defs = loadAgentDefaults(agentName);
       if (!defs) {
-        ctx.ui.notify(
+        notify(ctx,
           `Agent "${agentName}" not found in ~/.pi/agent/agents/ or .pi/agents/`,
           "error",
         );
@@ -2782,7 +2799,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const task = args.trim();
       if (!task) {
-        ctx.ui.notify("Usage: /plan <what to build>", "warning");
+        notify(ctx, "Usage: /plan <what to build>", "warning");
         return;
       }
 
