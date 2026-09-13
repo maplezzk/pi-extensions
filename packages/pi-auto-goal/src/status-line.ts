@@ -4,7 +4,7 @@
  * 本模块不接触 Pi 的 UI 对象；调用方负责把颜色套到主题上并写进页脚。
  */
 import { i18n } from "./i18n.ts";
-import type { StopOutcome } from "./evaluate.ts";
+import { STOP_SKIP_BUDGET, type StopOutcome } from "./evaluate.ts";
 
 /**
  * 状态行颜色。取值是 Pi 主题色的子集：
@@ -42,9 +42,10 @@ const CONFIDENCE_DECIMALS = 1;
 
 /**
  * 把一次判定结果渲染成页脚状态行。
- * 只有真的产生了判定结论才会更新状态，这样「状态行停在上一轮结果」就说明本轮没有判定。
+ * 产生结论的轮次（含「取消」「失败」）都会更新状态行，
+ * 而「用户主动打断」这类不判定的轮次由调用方直接给出状态行，不走这里。
  */
-export function buildStatusLine(outcome: StopOutcome): ColoredLine | undefined {
+export function buildStatusLine(outcome: StopOutcome): ColoredLine {
   switch (outcome.kind) {
     case "continue":
       return { text: i18n.t("statusContinue", { budget: outcome.budget }), color: "warning" };
@@ -54,10 +55,29 @@ export function buildStatusLine(outcome: StopOutcome): ColoredLine | undefined {
         color: "success",
       };
     case "skipped":
-      return outcome.code === "budget"
-        ? { text: i18n.t("statusBudget", { budget: outcome.budget }), color: "dim" }
-        : undefined;
+      return {
+        text: outcome.code === STOP_SKIP_BUDGET
+          ? i18n.t("statusBudget", { budget: outcome.budget })
+          : i18n.t("statusCanceled"),
+        color: "dim",
+      };
     case "failed":
       return { text: i18n.t("statusFailed"), color: "error" };
   }
+}
+
+/**
+ * 用户主动打断（按 Esc）时的状态行。
+ * 这一轮不会产生判定结论，页脚明确写出原因，避免被误读成「判定为可停止」。
+ */
+export function buildCanceledStatusLine(): ColoredLine {
+  return { text: i18n.t("statusCanceled"), color: "dim" };
+}
+
+/**
+ * 本轮以异常或中断结束时的状态行。
+ * 结束原因是 error 或缺失时，无法断定是用户取消，所以不使用「已打断」这个很具体的说法。
+ */
+export function buildNotCompletedStatusLine(): ColoredLine {
+  return { text: i18n.t("statusNotCompleted"), color: "dim" };
 }

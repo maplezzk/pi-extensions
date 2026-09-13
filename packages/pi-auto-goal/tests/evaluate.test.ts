@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_AUTO_GOAL_CONFIG, type AutoGoalConfig } from "../src/config.ts";
-import { evaluateStop, STOP_SKIP_BUDGET } from "../src/evaluate.ts";
+import { evaluateStop, STOP_SKIP_BUDGET, STOP_SKIP_CANCELED } from "../src/evaluate.ts";
 import type { StopVerdict, StopVerdictRequester } from "../src/verdict.ts";
 import type { TurnSnapshot } from "../src/session-context.ts";
 
@@ -166,6 +166,23 @@ test("判定超时被中止并报告超时文案", async () => {
 
   assert.equal(outcome.kind, "failed");
   assert.match(outcome.kind === "failed" ? outcome.error : "", /判定请求超过 1 秒|exceeded 1s/);
+});
+
+test("用户打断导致判定中止时归为取消，不报错误文案", async () => {
+  const controller = new AbortController();
+  const outcomePromise = evaluateStop({
+    snapshot: SNAPSHOT,
+    config: configWith({ timeoutSeconds: 30 }),
+    judge: hangingJudge,
+    used: 0,
+    signal: controller.signal,
+  });
+  // 判定进行中用户按下 Esc：父级信号中止，子请求随之中止。
+  controller.abort();
+  const outcome = await outcomePromise;
+
+  assert.equal(outcome.kind, "skipped");
+  assert.equal(outcome.kind === "skipped" ? outcome.code : "", STOP_SKIP_CANCELED);
 });
 
 test("上限为 0 表示不限制干预次数", async () => {

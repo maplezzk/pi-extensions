@@ -18,12 +18,19 @@ import {
   saveConfig,
   type AutoGoalConfig,
 } from "./config.ts";
-import { collectTurnSnapshot } from "./session-context.ts";
+import { collectTurnSnapshot, readLastAssistantStopReason, STOP_REASON_ABORTED } from "./session-context.ts";
 import { evaluateStop, STOP_SKIP_BUDGET, type StopOutcome } from "./evaluate.ts";
 import { createJudgeModelInvoker, createJudgeModelSource } from "./judge-model.ts";
 import { createStopVerdictRequester } from "./verdict.ts";
-import { formatBudget } from "./guard.ts";
-import { buildStatusLine, colorizeText, type StatusColor } from "./status-line.ts";
+import { formatBudget, isJudgeableStopReason } from "./guard.ts";
+import {
+  buildCanceledStatusLine,
+  buildNotCompletedStatusLine,
+  buildStatusLine,
+  colorizeText,
+  type ColoredLine,
+  type StatusColor,
+} from "./status-line.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
 const NOTICE_INFO = "info";
@@ -231,15 +238,14 @@ function coloredText(
   return colorizeText({ text, color }, ctx.mode, ctx.ui.theme);
 }
 
-/** 计算要写进页脚的判定状态行；不展示时返回 undefined。 */
-function buildDisplayLine(
+/** 把一行状态写进页脚；关闭状态行时保持原状。 */
+function writeStatusLine(
   ctx: Pick<ExtensionContext, "mode" | "ui">,
   runtime: AutoGoalRuntime,
-  outcome: StopOutcome,
-): string | undefined {
-  if (!runtime.config.showStatusLine) return undefined;
-  const line = buildStatusLine(outcome);
-  return line ? coloredText(ctx, line.color, line.text) : undefined;
+  line: ColoredLine,
+): void {
+  if (!runtime.config.showStatusLine) return;
+  ctx.ui.setStatus(STATUS_KEY, coloredText(ctx, line.color, line.text));
 }
 
 /** 把判定结果落到 UI 与会话：只有 continue 才会真的发消息。 */
@@ -249,8 +255,7 @@ function applyOutcome(
   runtime: AutoGoalRuntime,
   outcome: StopOutcome,
 ): void {
-  const statusLine = buildDisplayLine(ctx, runtime, outcome);
-  if (statusLine !== undefined) ctx.ui.setStatus(STATUS_KEY, statusLine);
+  writeStatusLine(ctx, runtime, buildStatusLine(outcome));
   switch (outcome.kind) {
     case "continue": {
       // 先发送再记账：发送失败不应该消耗干预预算。
@@ -315,7 +320,20 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
     if (ctx.hasPendingMessages()) return;
 
     syncSession(runtime, ctx);
-    const snapshot = collectTurnSnapshot(ctx.sessionManager.getBranch(), {
+    const branch = ctx.sessionManager.getBranch();
+    // 只判定「正常跑完」的轮次。
+    // 用户按 Esc 打断时结束原因是 aborted 或 error、内容为空；
+    // 把这种轮次当成提前停止去催，会立刻把 agent 复活，让人以为 Esc 没生效。
+    const stopReason = readLastAssistantStopReason(branch);
+    if (!isJudgeableStopReason(stopReason)) {
+      writeStatusLine(
+        ctx,
+        runtime,
+        stopReason === STOP_REASON_ABORTED ? buildCanceledStatusLine() : buildNotCompletedStatusLine(),
+      );
+      return;
+    }
+    const snapshot = collectTurnSnapshot(branch, {
       maxUserRequestChars: runtime.config.maxUserRequestChars,
       maxFinalOutputChars: runtime.config.maxFinalOutputChars,
       maxToolTraceEntries: runtime.config.maxToolTraceEntries,
