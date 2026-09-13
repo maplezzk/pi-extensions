@@ -195,6 +195,14 @@
     "zh-CN": "⚖ 判定失败",
     "en-US": "⚖ judge failed"
   },
+  "statusCanceled": {
+    "zh-CN": "⚖ 已打断，未判定",
+    "en-US": "⚖ interrupted, not judged"
+  },
+  "statusNotCompleted": {
+    "zh-CN": "⚖ 本轮未正常结束，未判定",
+    "en-US": "⚖ turn did not finish normally, not judged"
+  },
   "configStatusUsed": {
     "zh-CN": "本会话已干预：{value}",
     "en-US": "Interventions in this session: {value}"
