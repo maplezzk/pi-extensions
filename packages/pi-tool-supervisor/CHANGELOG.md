@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.4](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.3...pi-tool-supervisor-v0.6.4) (2026-09-13)
+
+
+### Bug Fixes
+
+* pi peer 范围只保留下限 &gt;=0.80.0 ([fdc012c](https://github.com/maplezzk/pi-extensions/commit/fdc012c7a0a968712cea4430afd7780eab53420b))
+* 去掉 pi peer 上界并升级依赖到 0.85.1 ([28e897e](https://github.com/maplezzk/pi-extensions/commit/28e897eb45d76e91ca8ac6ac2a508a36c76c5682))
+* 放宽 pi peer 范围并升级依赖到 0.85.1 ([3444c0c](https://github.com/maplezzk/pi-extensions/commit/3444c0cb4836006348fc6a9fbd30fe36bdc98ced))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.0 to ^0.4.1
+    * pi-extensions-tool-display bumped from ^1.1.1 to ^1.1.2
+
 ## [0.6.3](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.2...pi-tool-supervisor-v0.6.3) (2026-09-09)
 
 
