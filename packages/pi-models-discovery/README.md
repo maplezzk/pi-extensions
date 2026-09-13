@@ -59,6 +59,7 @@ Forces a rediscovery of every discovery provider and updates the local cache, no
 - **Offline / fetch failure**: handwritten `models` in models.json (if any) are kept as a fallback, and an explicit warning is surfaced via in-session notify — never a silent degradation. One provider failing does not affect the others.
 - **apiKey resolution** (discovery request only): supports literals and `$ENV_VAR` / `${ENV_VAR}` interpolation; `!command` values skip discovery with an explicit warning (chat requests are still resolved by pi itself and are unaffected).
 - Default parameters for discovered models: `reasoning: true`, `input: ["text", "image"]`, zero cost, `contextWindow` 1M, `maxTokens` 64K, `compat.supportsDeveloperRole: false`. Provider-level `compat` is merged into every discovered model.
+- Discovered models do not declare `thinkingLevelMap`, so pi applies the provider's default thinking-level mapping (standard levels through `high`; the extended `xhigh` / `max` levels are not exposed). `/models` cannot report per-model thinking capability, and the extension does not guess it — declare `thinkingLevelMap` yourself in a handwritten `models` entry if a provider needs something different.
 - Model metadata may carry `name` / `context_window` (or `contextWindow`) / `max_tokens` (or `maxTokens`); defaults are used when absent.
 
 The old `/model-discovery`, `/model-discovery-refresh`, `/pi-model-discovery`, and `/pi-model-discovery-refresh` names remain available as compatibility aliases.
