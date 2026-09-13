@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.7.3...pi-distill-v1.8.0) (2026-09-13)
+
+
+### Features
+
+* 所有扩展提示统一加来源标签与颜色 ([21ad9d9](https://github.com/maplezzk/pi-extensions/commit/21ad9d97347118a9817ae445bc03544b7c1c66da))
+* 所有扩展提示统一加来源标签与颜色 ([a06c6f8](https://github.com/maplezzk/pi-extensions/commit/a06c6f86367fc7b43f14b34f754bddc4b6dd340a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.1 to ^0.5.0
+    * pi-extensions-tool-display bumped from ^1.1.2 to ^1.2.0
+
 ## [1.7.3](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.7.2...pi-distill-v1.7.3) (2026-09-13)
 
 
