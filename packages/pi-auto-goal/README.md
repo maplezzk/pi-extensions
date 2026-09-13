@@ -50,6 +50,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
   "notifyOnStopDecision": false,
+  "judgeMaxTokens": 2000,
   "continueMessageTemplate": "",
   "forcedDecision": "auto"
 }
@@ -67,10 +68,20 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | `maxFinalOutputChars` | `4000` | Truncation limit for the agent's final output. |
 | `maxToolTraceEntries` | `20` | Maximum tool-trace lines. |
 | `notifyOnStopDecision` | `false` | Also notify when the judge accepts the stop. |
+| `judgeMaxTokens` | `2000` | Output-token ceiling for one judge call, clamped to the model's own output limit. |
 | `continueMessageTemplate` | `""` | Overrides the built-in message; supports `{reason}`. |
 | `forcedDecision` | `"auto"` | Override verdict for controlled experiments: `auto` (normal), `continue` (always treat as premature stop), `stop` (always treat as acceptable stop). |
 
 Unknown fields and invalid values are rejected with an explicit error instead of being silently ignored.
+
+### Why the judge no longer answers with an empty response
+
+The judge only needs one JSON verdict, but reasoning models spend output budget on thinking first. `judgeMaxTokens` used to be a fixed 400: once thinking consumed it, the response contained only a thinking block and no text at all, which surfaced as the opaque "unparsable response: (empty response)". Now:
+
+- the judge always runs at the lowest thinking strength (Pi clamps it to the lowest level the model supports, so models that cannot disable thinking still work);
+- the output ceiling defaults to 2000 and is configurable through `judgeMaxTokens`;
+- a truncated response with no text is retried once with a doubled budget;
+- if it still fails, the error carries `stopReason` and a part summary (for example `stopReason=length, parts=thinking:400`) instead of just "empty response".
 
 ### Commands
 

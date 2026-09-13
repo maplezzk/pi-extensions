@@ -15,6 +15,7 @@ Read `<pi-agent-dir>/extensions/pi-auto-goal/config.json` and respect `PI_CODING
 - `confidenceThreshold` 是触发干预所需的最低置信度，`notifyOnStopDecision` 决定「可以停止」的判定是否也提示。`confidenceThreshold` is the minimum confidence required to intervene; `notifyOnStopDecision` also reports acceptable stops.
 - `includeToolTrace`、`maxUserRequestChars`、`maxFinalOutputChars`、`maxToolTraceEntries` 控制交给判定模型的上下文规模。`includeToolTrace`, `maxUserRequestChars`, `maxFinalOutputChars`, and `maxToolTraceEntries` size the judge context.
 - `timeoutSeconds` 超时后中止判定并报告，不视为「可以停止」。`timeoutSeconds` aborts and reports a timed-out judgement instead of treating it as an acceptable stop.
+- `judgeMaxTokens` 是单次判定调用的输出上限（默认 2000，会被收敛到模型上限）。判定固定使用最低思考强度；若响应被截断且没有文本，会自动翻倍预算重试一次，仍失败则报出 `stopReason` 与内容块摘要。`judgeMaxTokens` is the output ceiling for one judge call (default 2000, clamped to the model limit). The judge always runs at the lowest thinking strength; a truncated response without text is retried once with a doubled budget, and a remaining failure reports `stopReason` plus a part summary.
 - `print` / `json` 模式不判定：agent 停止后会话即收尾，settled 回调的 ctx 已失效。Print and JSON modes skip judgement because the session already shuts down and the settled ctx is stale.
 - `continueMessageTemplate` 覆盖内置催促文案，支持 `{reason}`；缺少占位符时理由会追加到末尾。`continueMessageTemplate` overrides the built-in continuation message and supports `{reason}`; the reason is appended when the placeholder is missing.
 

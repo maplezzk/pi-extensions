@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   createJudgeModelInvoker,
+  resolveJudgeMaxTokens,
   resolveJudgeModel,
   type JudgeAuth,
   type JudgeCompletion,
@@ -58,7 +59,7 @@ function capturingCompletion(): { completion: JudgeCompletion; calls: CapturedCa
       apiKey: options.auth.apiKey,
       signal: options.signal,
     });
-    return { text: '{"decision":"stop","confidence":1,"reason":"完成"}', stopReason: "stop" };
+    return { text: '{"decision":"stop","confidence":1,"reason":"完成"}', stopReason: "stop", partTypes: ["text:40"] };
   };
   return { completion, calls };
 }
@@ -104,9 +105,66 @@ test("响应文本只取文本块", async () => {
     completion: async () => ({
       text: "第一段\n第二段",
       stopReason: "stop",
+      partTypes: ["text:9"],
     }),
   });
   assert.equal((await invoke({ snapshot: SNAPSHOT })).text, "第一段\n第二段");
+});
+
+test("判定输出预算取配置值与模型上限的较小值", async () => {
+  const { completion, calls } = capturingCompletion();
+  await createJudgeModelInvoker({ source: sourceWith(), completion, maxTokens: 2000 })({ snapshot: SNAPSHOT });
+  assert.equal(calls[0].maxTokens, 2000);
+
+  const small = { ...TEST_MODEL, maxTokens: 500 };
+  await createJudgeModelInvoker({
+    source: sourceWith({ sessionModel: small, findModel: () => small }),
+    completion,
+    maxTokens: 2000,
+  })({ snapshot: SNAPSHOT });
+  assert.equal(calls[1].maxTokens, 500);
+
+  assert.equal(resolveJudgeMaxTokens(TEST_MODEL, 1), 1);
+});
+
+test("输出被截断且没有文本时用翻倍预算重试一次", async () => {
+  const budgets: number[] = [];
+  const completion: JudgeCompletion = async (options) => {
+    budgets.push(options.maxTokens);
+    if (budgets.length === 1) return { text: "", stopReason: "length", partTypes: ["thinking:16"] };
+    return { text: '{"decision":"continue","confidence":1,"reason":"没做完"}', stopReason: "stop", partTypes: ["text:60"] };
+  };
+  const response = await createJudgeModelInvoker({ source: sourceWith(), completion, maxTokens: 200 })({
+    snapshot: SNAPSHOT,
+  });
+
+  assert.deepEqual(budgets, [200, 400]);
+  assert.equal(response.text.includes("continue"), true);
+});
+
+test("有文本或已经到模型上限时不做重试", async () => {
+  const withText: number[] = [];
+  await createJudgeModelInvoker({
+    source: sourceWith(),
+    maxTokens: 200,
+    completion: async (options) => {
+      withText.push(options.maxTokens);
+      return { text: '{"decision":"stop","confidence":1,"reason":"够了"}', stopReason: "length", partTypes: ["text:20"] };
+    },
+  })({ snapshot: SNAPSHOT });
+  assert.deepEqual(withText, [200]);
+
+  const atCeiling: number[] = [];
+  const capped = { ...TEST_MODEL, maxTokens: 200 };
+  await createJudgeModelInvoker({
+    source: sourceWith({ sessionModel: capped, findModel: () => capped }),
+    maxTokens: 200,
+    completion: async (options) => {
+      atCeiling.push(options.maxTokens);
+      return { text: "", stopReason: "length", partTypes: ["thinking:200"] };
+    },
+  })({ snapshot: SNAPSHOT });
+  assert.deepEqual(atCeiling, [200]);
 });
 
 test("模型不存在与鉴权失败都显式报错", async () => {

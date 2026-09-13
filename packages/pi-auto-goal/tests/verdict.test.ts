@@ -18,7 +18,12 @@ const SNAPSHOT: TurnSnapshot = {
 };
 
 /** 返回固定响应并记录请求的判定调用替身。 */
-function recordingInvoker(options: { text: string; stopReason?: string; errorMessage?: string }): {
+function recordingInvoker(options: {
+  text: string;
+  stopReason?: string;
+  errorMessage?: string;
+  partTypes?: string[];
+}): {
   invoke: JudgeInvoker;
   requests: JudgeRequest[];
 } {
@@ -29,6 +34,7 @@ function recordingInvoker(options: { text: string; stopReason?: string; errorMes
       text: options.text,
       stopReason: options.stopReason ?? "stop",
       errorMessage: options.errorMessage,
+      partTypes: options.partTypes ?? ["text:0"],
     };
   };
   return { invoke, requests };
@@ -82,6 +88,34 @@ test("空输出与空工具轨迹使用占位文案", () => {
   const user = buildJudgeUserPrompt({ userRequest: "任务", finalOutput: "", toolTrace: [] });
   assert.match(user, /\(agent 没有任何文本输出\)|（agent 没有任何文本输出）/);
   assert.match(user, /\(本轮没有任何工具调用\)|（本轮没有任何工具调用）/);
+});
+
+test("输出被截断且没有文本时报成「预算不足」，并带上诊断信息", async () => {
+  const truncated = createStopVerdictRequester(recordingInvoker({
+    text: "   ",
+    stopReason: "length",
+    partTypes: ["thinking:400"],
+  }).invoke);
+  await assert.rejects(truncated({ snapshot: SNAPSHOT }), (error: Error) => {
+    assert.match(error.message, /截断|truncated/);
+    // 诊断信息必须说明「只有思考块、没有文本」，否则下次仍然只能看到「空响应」。
+    assert.match(error.message, /stopReason=length|结束原因=length/);
+    assert.match(error.message, /thinking:400/);
+    return true;
+  });
+});
+
+test("非截断的空响应也带上内容块诊断", async () => {
+  const empty = createStopVerdictRequester(recordingInvoker({
+    text: "",
+    stopReason: "stop",
+    partTypes: ["thinking:174"],
+  }).invoke);
+  await assert.rejects(empty({ snapshot: SNAPSHOT }), (error: Error) => {
+    assert.match(error.message, /空响应|empty response/);
+    assert.match(error.message, /thinking:174/);
+    return true;
+  });
 });
 
 test("判定流程把原始响应转换成结构化结论并透传中止信号", async () => {

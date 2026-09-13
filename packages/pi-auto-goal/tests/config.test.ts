@@ -11,6 +11,11 @@ test("空配置回落默认值，且默认允许自动催停两次", () => {
   assert.equal(DEFAULT_AUTO_GOAL_CONFIG.maxAutoContinues, 2);
 });
 
+test("默认判定输出上限给推理型模型留出余量", () => {
+  assert.equal(DEFAULT_AUTO_GOAL_CONFIG.judgeMaxTokens, 2000);
+  assert.equal(parseConfig({}).judgeMaxTokens, 2000);
+});
+
 test("布尔、字符串与数值字段按类型校验", () => {
   assert.equal(parseConfig({ enabled: false }).enabled, false);
   assert.equal(parseConfig({ includeToolTrace: false }).includeToolTrace, false);
@@ -22,6 +27,8 @@ test("布尔、字符串与数值字段按类型校验", () => {
   assert.equal(parseConfig({ continueMessageTemplate: "继续：{reason}" }).continueMessageTemplate, "继续：{reason}");
   assert.equal(parseConfig({ forcedDecision: "continue" }).forcedDecision, "continue");
   assert.equal(parseConfig({ forcedDecision: "stop" }).forcedDecision, "stop");
+  assert.equal(parseConfig({ judgeMaxTokens: 16 }).judgeMaxTokens, 16);
+  assert.equal(parseConfig({ judgeMaxTokens: 8000 }).judgeMaxTokens, 8000);
 
   for (const value of [
     { enabled: "true" },
@@ -39,6 +46,10 @@ test("布尔、字符串与数值字段按类型校验", () => {
     { model: 1 },
     { forcedDecision: "yes" },
     { forcedDecision: 1 },
+    { judgeMaxTokens: 15 },
+    { judgeMaxTokens: 64001 },
+    { judgeMaxTokens: 1.5 },
+    { judgeMaxTokens: "2000" },
     null,
     [],
     "config",

@@ -33,6 +33,8 @@ export interface AutoGoalConfig {
   maxToolTraceEntries: number;
   /** 判定为「可以停止」时是否也弹出提示。 */
   notifyOnStopDecision: boolean;
+  /** 单次判定调用的输出 token 上限；调试时可适当调高以避免推理占满预算。 */
+  judgeMaxTokens: number;
   /** 自动催促消息模板；空字符串表示使用内置模板。支持 {reason} 占位。 */
   continueMessageTemplate: string;
   /** 受控实验：覆写判定结果；auto 表示正常判定。 */
@@ -51,6 +53,17 @@ const DEFAULT_MAX_USER_REQUEST_CHARS = 2000;
 const DEFAULT_MAX_FINAL_OUTPUT_CHARS = 4000;
 /** 默认工具轨迹条数上限。 */
 const DEFAULT_MAX_TOOL_TRACE_ENTRIES = 20;
+/**
+ * 默认判定输出上限。
+ * 判定只需要一个 JSON 结论，但推理型模型会先花掉一部分输出预算用于思考；
+ * 上限本身不预留额度，所以给足余量不会增加正常情况下的开销，
+ * 却能避免「推理占满预算、只剩空响应」的失败模式。
+ */
+const DEFAULT_JUDGE_MAX_TOKENS = 2000;
+/** 判定输出上限下界，同时满足 OpenAI Responses 对 max_output_tokens 的最小要求。 */
+const JUDGE_MAX_TOKENS_MIN = 16;
+/** 判定输出上界，避免配置笔误导致超长请求。 */
+const JUDGE_MAX_TOKENS_MAX = 64000;
 /** 置信度下界。 */
 const CONFIDENCE_THRESHOLD_MIN = 0;
 /** 置信度上界。 */
@@ -74,6 +87,7 @@ export const DEFAULT_AUTO_GOAL_CONFIG: AutoGoalConfig = {
   maxFinalOutputChars: DEFAULT_MAX_FINAL_OUTPUT_CHARS,
   maxToolTraceEntries: DEFAULT_MAX_TOOL_TRACE_ENTRIES,
   notifyOnStopDecision: false,
+  judgeMaxTokens: DEFAULT_JUDGE_MAX_TOKENS,
   continueMessageTemplate: "",
   forcedDecision: "auto",
 };
@@ -84,6 +98,12 @@ const BOOLEAN_FIELDS = ["enabled", "includeToolTrace", "notifyOnStopDecision"] a
 const POSITIVE_INTEGER_FIELDS = ["maxUserRequestChars", "maxFinalOutputChars"] as const;
 /** 允许为 0（表示不限制）的整数字段清单。 */
 const NON_NEGATIVE_INTEGER_FIELDS = ["maxAutoContinues", "maxToolTraceEntries"] as const;
+/** 带上下界的整数字段清单。 */
+const BOUNDED_INTEGER_FIELDS: ReadonlyArray<{
+  key: "judgeMaxTokens";
+  minimum: number;
+  maximum: number;
+}> = [{ key: "judgeMaxTokens", minimum: JUDGE_MAX_TOKENS_MIN, maximum: JUDGE_MAX_TOKENS_MAX }];
 /** 字符串字段清单。 */
 const STRING_FIELDS = ["model", "continueMessageTemplate"] as const;
 /** 全部合法字段名；出现其它键即视为配置错误。 */
@@ -95,6 +115,7 @@ const KNOWN_FIELDS = new Set([
   "forcedDecision",
   "confidenceThreshold",
   "timeoutSeconds",
+  "judgeMaxTokens",
 ]);
 
 /** 返回 pi-auto-goal 配置文件路径。 */
@@ -105,12 +126,23 @@ export function configPath(agentDir = getAgentDir()): string {
 /** 模型字段格式：provider/modelId，provider 段允许字母数字点划线。 */
 const MODEL_PATTERN = /^[\w.-]+\/[\w.\-:]+$/;
 
-/** 校验整数字段，拒绝小数与越界值。 */
-function parseInteger(raw: Record<string, unknown>, key: string, minimum: number): number {
+/**
+ * 校验整数字段，拒绝小数与越界值。
+ * 只传 minimum 时按「不小于该值」校验，同时传 maximum 时额外校验上界。
+ */
+function parseInteger(
+  raw: Record<string, unknown>,
+  key: string,
+  minimum: number,
+  maximum?: number,
+): number {
   const value = raw[key];
   if (value === undefined) return DEFAULT_AUTO_GOAL_CONFIG[key as keyof AutoGoalConfig] as number;
   if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
     throw new Error(`${key} must be an integer >= ${minimum}`);
+  }
+  if (maximum !== undefined && value > maximum) {
+    throw new Error(`${key} must be an integer <= ${maximum}`);
   }
   return value;
 }
@@ -153,6 +185,9 @@ export function parseConfig(value: unknown): AutoGoalConfig {
   }
   for (const key of NON_NEGATIVE_INTEGER_FIELDS) {
     config[key] = parseInteger(raw, key, 0);
+  }
+  for (const field of BOUNDED_INTEGER_FIELDS) {
+    config[field.key] = parseInteger(raw, field.key, field.minimum, field.maximum);
   }
   config.confidenceThreshold = parseNumber(
     raw,

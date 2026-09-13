@@ -50,6 +50,7 @@ pi install npm:pi-auto-goal
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
   "notifyOnStopDecision": false,
+  "judgeMaxTokens": 2000,
   "continueMessageTemplate": "",
   "forcedDecision": "auto"
 }
@@ -67,10 +68,20 @@ pi install npm:pi-auto-goal
 | `maxFinalOutputChars` | `4000` | agent 最后输出截断长度。 |
 | `maxToolTraceEntries` | `20` | 工具轨迹最大条数。 |
 | `notifyOnStopDecision` | `false` | 判定为「可以停止」时是否也提示。 |
+| `judgeMaxTokens` | `2000` | 单次判定调用的输出 token 上限，同时会被收敛到模型自身的输出上限。 |
 | `continueMessageTemplate` | `""` | 覆盖内置催促文案，支持 `{reason}` 占位。 |
 | `forcedDecision` | `"auto"` | 受控实验开关：`auto`（正常判定）、`continue`（强制判定为提前停止）、`stop`（强制判定为可停止）。 |
 
 未知字段与非法值会明确报错，不会被静默忽略。
+
+### 判定调用为什么不会“空响应”
+
+判定只需要一个 JSON 结论，但推理型模型会先把输出预算花在思考上。历史上 `judgeMaxTokens` 固定为 400，一旦思考把预算吃光，响应里就只剩思考块、没有任何文本，用户看到的是含糊的「无法解析的响应：（空响应）」。现在：
+
+- 判定调用固定使用最低思考强度（Pi 会收敛到模型支持的最低档，不支持关闭思考的模型也不报错）；
+- 输出上限默认 2000，并可用 `judgeMaxTokens` 调整；
+- 若仍然被截断且没有文本，自动用翻倍预算重试一次；
+- 仍失败时，错误文案带上 `stopReason` 与内容块摘要（如 `结束原因=length，内容块=thinking:400`），不再只说「空响应」。
 
 ### 命令
 
