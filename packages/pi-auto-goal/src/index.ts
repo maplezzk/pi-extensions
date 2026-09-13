@@ -123,6 +123,7 @@ function buildStatusText(runtime: AutoGoalRuntime): string {
     i18n.t("configStatusModel", { value: config.model || i18n.t("configModelCurrent") }),
     i18n.t("configStatusLimit", { value: limit }),
     i18n.t("configStatusThreshold", { value: String(config.confidenceThreshold) }),
+    i18n.t("configStatusJudgeTokens", { value: String(config.judgeMaxTokens) }),
     i18n.t("configStatusUsed", { value: String(runtime.used) }),
   ].join("\n");
 }
@@ -276,7 +277,10 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
     try {
       // 每次判定都从当前上下文取模型与鉴权，避免会话切模型后用到旧配置。
       const judge = createStopVerdictRequester(
-        createJudgeModelInvoker({ source: createJudgeModelSource(ctx, runtime.config) }),
+        createJudgeModelInvoker({
+          source: createJudgeModelSource(ctx, runtime.config),
+          maxTokens: runtime.config.judgeMaxTokens,
+        }),
       );
       const outcome = await evaluateStop({
         snapshot,

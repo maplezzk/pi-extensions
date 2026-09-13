@@ -31,6 +31,11 @@ const RAW_RESPONSE_CHARS = 400;
 const STOP_REASON_ERROR = "error";
 /** 模型结束原因：请求被中止。 */
 const STOP_REASON_ABORTED = "aborted";
+/**
+ * 模型结束原因：输出被 maxTokens 截断。
+ * 导出给模型接入层，用于判断是否值得用更大预算重试。
+ */
+export const STOP_REASON_LENGTH = "length";
 
 /** 判定模型返回的原始文本响应。 */
 export interface JudgeResponse {
@@ -40,6 +45,11 @@ export interface JudgeResponse {
   stopReason: string;
   /** 失败原因，仅失败时有值。 */
   errorMessage?: string;
+  /**
+   * 响应内容块摘要（形如 "thinking:174"）。
+   * 响应没有文本块时，它直接把「模型到底返回了什么」写进错误文案。
+   */
+  partTypes: readonly string[];
 }
 
 /** 一次判定请求：本轮快照加上外部中止信号。 */
@@ -134,8 +144,19 @@ export function createStopVerdictRequester(invoke: JudgeInvoker): StopVerdictReq
     const verdict = parseJudgeVerdict(response.text);
     if (!verdict) {
       const excerpt = response.text.trim().slice(0, RAW_RESPONSE_CHARS);
+      const diagnostics = i18n.t("judgeResponseDiagnostics", {
+        stopReason: response.stopReason,
+        parts: response.partTypes.length > 0
+          ? response.partTypes.join(", ")
+          : i18n.t("judgeResponseNoParts"),
+      });
+      // 截断且没有任何文本时，真实原因在输出预算，而不是模型乱答。
+      if (!excerpt && response.stopReason === STOP_REASON_LENGTH) {
+        throw new Error(i18n.t("judgeResponseTruncated", { diagnostics }));
+      }
       throw new Error(i18n.t("judgeResponseUnparsed", {
         response: excerpt || i18n.t("judgeResponseEmpty"),
+        diagnostics,
       }));
     }
     return verdict;

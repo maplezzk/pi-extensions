@@ -32,8 +32,20 @@
     "en-US": "Judge model request failed: {error}"
   },
   "judgeResponseUnparsed": {
-    "zh-CN": "判定模型返回无法解析的响应：{response}",
-    "en-US": "Judge model returned an unparsable response: {response}"
+    "zh-CN": "判定模型返回无法解析的响应：{response}（{diagnostics}）",
+    "en-US": "Judge model returned an unparsable response: {response} ({diagnostics})"
+  },
+  "judgeResponseTruncated": {
+    "zh-CN": "判定模型输出被截断，没有任何文本：{diagnostics}。请调大 judgeMaxTokens，或改用不会长时间思考的判定模型。",
+    "en-US": "Judge model output was truncated with no text: {diagnostics}. Raise judgeMaxTokens, or use a judge model that does not spend long on reasoning."
+  },
+  "judgeResponseDiagnostics": {
+    "zh-CN": "结束原因={stopReason}，内容块={parts}",
+    "en-US": "stopReason={stopReason}, parts={parts}"
+  },
+  "judgeResponseNoParts": {
+    "zh-CN": "无内容块",
+    "en-US": "none"
   },
   "judgeResponseEmpty": {
     "zh-CN": "（空响应）",
@@ -158,6 +170,10 @@
   "configStatusThreshold": {
     "zh-CN": "置信度阈值：{value}",
     "en-US": "Confidence threshold: {value}"
+  },
+  "configStatusJudgeTokens": {
+    "zh-CN": "判定输出上限：{value} tokens",
+    "en-US": "Judge output limit: {value} tokens"
   },
   "configStatusUsed": {
     "zh-CN": "本会话已干预：{value}",
