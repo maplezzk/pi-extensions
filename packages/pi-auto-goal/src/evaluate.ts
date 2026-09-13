@@ -19,6 +19,11 @@ export interface JudgeAbortHandle {
   signal: AbortSignal;
   /** 本次中止是否由超时触发。 */
   hasTimedOut: () => boolean;
+  /**
+   * 父级信号是否已中止（例如用户按 Esc 打断）。
+   * 这种情况是用户主动取消，不是判定失败，不该当成错误上报。
+   */
+  hasParentAborted: () => boolean;
   /** 释放定时器与父级监听，必须在请求结束后调用。 */
   dispose: () => void;
 }
@@ -30,16 +35,22 @@ export interface JudgeAbortHandle {
 export function createJudgeAbortHandle(limitMs: number, parentSignal?: AbortSignal): JudgeAbortHandle {
   const controller = new AbortController();
   let timedOut = false;
+  let parentAborted = false;
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, limitMs);
-  const abortFromParent = () => controller.abort();
+  /** 父级中止时记录原因并中止子请求，供后面区分「取消」与「失败」。 */
+  const abortFromParent = () => {
+    parentAborted = true;
+    controller.abort();
+  };
   parentSignal?.addEventListener("abort", abortFromParent, { once: true });
 
   return {
     signal: controller.signal,
     hasTimedOut: () => timedOut,
+    hasParentAborted: () => parentAborted,
     dispose: () => {
       clearTimeout(timer);
       parentSignal?.removeEventListener("abort", abortFromParent);
@@ -50,8 +61,11 @@ export function createJudgeAbortHandle(limitMs: number, parentSignal?: AbortSign
 /** 跳过判定的原因码：自动干预预算用尽。 */
 export const STOP_SKIP_BUDGET = "budget" as const;
 
-/** 跳过判定的原因码；调用方据此决定是否提示。 */
-export type StopSkipCode = typeof STOP_SKIP_BUDGET;
+/** 跳过判定的原因码：用户主动打断了这一轮。 */
+export const STOP_SKIP_CANCELED = "canceled" as const;
+
+/** 跳过判定的原因码；调用方据此决定提示文案。 */
+export type StopSkipCode = typeof STOP_SKIP_BUDGET | typeof STOP_SKIP_CANCELED;
 
 /** 一次判定的结果。 */
 export type StopOutcome =
@@ -93,12 +107,18 @@ async function resolveVerdict({
   config,
   judge,
   signal,
-}: Omit<EvaluateStopRequest, "used">): Promise<{ kind: "verdict"; verdict: StopVerdict } | { kind: "error"; error: string }> {
+}: Omit<EvaluateStopRequest, "used">): Promise<
+  | { kind: "verdict"; verdict: StopVerdict }
+  | { kind: "canceled" }
+  | { kind: "error"; error: string }
+> {
   const handle = createJudgeAbortHandle(config.timeoutSeconds * MILLISECONDS_PER_SECOND, signal);
   try {
     const verdict = await judge({ snapshot, signal: handle.signal });
     return { kind: "verdict", verdict };
   } catch (error) {
+    // 用户主动打断导致的中止不是失败，不该报错。
+    if (handle.hasParentAborted()) return { kind: "canceled" };
     return {
       kind: "error",
       error: handle.hasTimedOut()
@@ -153,6 +173,15 @@ export async function evaluateStop({
   }
 
   const judged = await resolveVerdict({ snapshot, config, judge, signal });
+  if (judged.kind === "canceled") {
+    return {
+      kind: "skipped",
+      code: STOP_SKIP_CANCELED,
+      used,
+      limit: config.maxAutoContinues,
+      budget: formatBudget(config.maxAutoContinues, used),
+    };
+  }
   if (judged.kind === "error") return { kind: "failed", error: judged.error };
   const verdict = judged.verdict;
 

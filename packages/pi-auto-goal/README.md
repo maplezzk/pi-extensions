@@ -85,9 +85,17 @@ The footer always carries one coloured line with the latest verdict (`showStatus
 | `⚖ stop accepted 0.92` | green | Judged as a normal stop; no intervention. |
 | `⚖ continued 1/2` | yellow | Judged as a premature stop; the continuation was sent. |
 | `⚖ budget exhausted 2/2` | grey | Intervention budget for this request is used up. |
+| `⚖ interrupted, not judged` | grey | You pressed Esc; the judgement stood down. |
+| `⚖ turn did not finish normally, not judged` | grey | The turn ended with a failure or a truncated record. |
 | `⚖ judge failed` | red | The judge call failed (details in the notification). |
 
-Two things have to hold for "this turn was not judged": the status line still shows the previous verdict, and no new notification appeared. Typical reasons are a non-tui/rpc mode, or you already started typing so the judgement stepped aside.
+### Which turns get judged
+
+Only turns that finished normally: the last assistant message ends with `stop` (the agent finished its turn) or `length` (output hit the length cap).
+
+When you press Esc, the turn ends with `aborted` or `error` and empty content — that is your decision, not the agent's stop decision. Such turns used to be judged as "premature stop" and continued automatically, so pressing Esc looked like it did nothing; now they are never judged and only get a footer line saying "not judged".
+
+Two things have to hold for "this turn was not judged": the status line still shows the previous verdict, and no new notification appeared. Typical reasons are a non-tui/rpc mode, you already started typing, or one of those two non-judged endings.
 
 The same verdict also produces one coloured notification (yellow for intervention, green for an accepted stop, red for failure); `notifyOnStopDecision` controls whether the accepted-stop one is shown. Colours are only added in TUI mode, so other modes never see raw ANSI.
 

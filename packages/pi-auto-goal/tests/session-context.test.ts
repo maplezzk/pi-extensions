@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { collectTurnSnapshot, getTextContent, truncateText, type TurnSnapshotOptions } from "../src/session-context.ts";
+import { collectTurnSnapshot, getTextContent, readLastAssistantStopReason, truncateText, type TurnSnapshotOptions } from "../src/session-context.ts";
 
 /** 默认测试参数：足够大，避免无关注释。 */
 const OPTIONS: TurnSnapshotOptions = {
@@ -120,4 +120,29 @@ test("assistant 只有工具调用没有文本时，最后输出为空字符串"
 
   assert.ok(snapshot);
   assert.equal(snapshot.finalOutput, "");
+});
+
+/** 构造一条带结束原因的 session 消息条目。 */
+function assistantEntry(stopReason?: string): { type: string; message: { role: string; content: unknown; stopReason?: string } } {
+  return { type: "message", message: { role: "assistant", content: [], stopReason } };
+}
+
+test("读取最后一条 assistant 的结束原因，用于区分「被取消」与「自己停下」", () => {
+  assert.equal(readLastAssistantStopReason([
+    messageEntry("user", "任务"),
+    assistantEntry("stop"),
+    assistantEntry("aborted"),
+  ]), "aborted");
+
+  assert.equal(readLastAssistantStopReason([
+    messageEntry("user", "任务"),
+    assistantEntry("aborted"),
+    messageEntry("user", "又来一轮"),
+    assistantEntry("stop"),
+  ]), "stop");
+
+  // 没有结束原因的 assistant（例如流式中断留下的残缺消息）不能当成取消。
+  assert.equal(readLastAssistantStopReason([assistantEntry(undefined)]), undefined);
+  assert.equal(readLastAssistantStopReason([messageEntry("user", "任务")]), undefined);
+  assert.equal(readLastAssistantStopReason([]), undefined);
 });

@@ -20,3 +20,19 @@ export function hasContinueBudget(limit: number, used: number): boolean {
 export function formatBudget(limit: number, used: number): string {
   return limit <= UNLIMITED_CONTINUES ? `${used}/∞` : `${used}/${limit}`;
 }
+
+/**
+ * 可以判定的模型结束原因：agent（或输出长度限制）让这一轮正常跑完。
+ * stop 是 agent 自己结束本轮，length 是输出被长度上限截断；
+ * 其余取值（aborted/error/toolUse/缺失）都表示这一轮没跑完，
+ * 此时去判定「是否提前停止」会把用户的主动打断或请求失败当成 agent 的决定。
+ */
+export const JUDGEABLE_STOP_REASONS: ReadonlySet<string> = new Set(["stop", "length"]);
+
+/**
+ * 这一轮的结束原因是否值得判定。
+ * 只依据结束原因，不猜测其它上下文，便于确定性测试。
+ */
+export function isJudgeableStopReason(stopReason: string | undefined): boolean {
+  return stopReason !== undefined && JUDGEABLE_STOP_REASONS.has(stopReason);
+}

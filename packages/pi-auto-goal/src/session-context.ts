@@ -15,6 +15,7 @@ type EntryLike = {
   message?: {
     role?: unknown;
     content?: unknown;
+    stopReason?: unknown;
   };
 };
 
@@ -121,6 +122,27 @@ function findLastUserIndex(entries: readonly EntryLike[], injected: ReadonlySet<
     return index;
   }
   return -1;
+}
+
+/**
+ * 运行被取消的结束原因。
+ * 用户按 Esc 打断、或会话被中断时，最后一条 assistant 消息都是这个原因。
+ */
+export const STOP_REASON_ABORTED = "aborted";
+
+/**
+ * 读取最后一条 assistant 消息的结束原因。
+ * 调用方用它区分「agent 自己决定停下」与「这一轮被取消」：
+ * 被取消的轮次不是 agent 的停止决定，不能当成提前停止去催。
+ */
+export function readLastAssistantStopReason(entries: readonly EntryLike[]): string | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!isMessageEntry(entry, "assistant")) continue;
+    const stopReason = entry.message?.stopReason;
+    return typeof stopReason === "string" ? stopReason : undefined;
+  }
+  return undefined;
 }
 
 /** 在给定下标之后查找最后一段 assistant 文本输出。 */
