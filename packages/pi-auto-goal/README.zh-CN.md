@@ -16,7 +16,7 @@ Pi 的停止守卫：agent 停下来时，用第二个模型判断这次停止�
 pi install npm:pi-auto-goal
 ```
 
-安装或改配置后执行 `/reload`。
+安装后执行 `/reload`；用 `/config:auto-goal` 改的配置立即生效，手动改配置文件才需要 `/reload`。
 
 除非 `enabled` 为 false，每次完全停止都会判定一次，所以一句普通问答也会多花一次判定调用。判定输入包括：
 
@@ -50,6 +50,7 @@ pi install npm:pi-auto-goal
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
   "notifyOnStopDecision": false,
+  "showStatusLine": true,
   "judgeMaxTokens": 2000,
   "continueMessageTemplate": "",
   "forcedDecision": "auto"
@@ -68,11 +69,27 @@ pi install npm:pi-auto-goal
 | `maxFinalOutputChars` | `4000` | agent 最后输出截断长度。 |
 | `maxToolTraceEntries` | `20` | 工具轨迹最大条数。 |
 | `notifyOnStopDecision` | `false` | 判定为「可以停止」时是否也提示。 |
+| `showStatusLine` | `true` | 把最近一次判定结论写成页脚的一行状态（带颜色，一直留在那里）。 |
 | `judgeMaxTokens` | `2000` | 单次判定调用的输出 token 上限，同时会被收敛到模型自身的输出上限。 |
 | `continueMessageTemplate` | `""` | 覆盖内置催促文案，支持 `{reason}` 占位。 |
 | `forcedDecision` | `"auto"` | 受控实验开关：`auto`（正常判定）、`continue`（强制判定为提前停止）、`stop`（强制判定为可停止）。 |
 
 未知字段与非法值会明确报错，不会被静默忽略。
+
+### 怎么知道它到底有没有触发
+
+页脚会常驻一行带颜色的判定结论（由 `showStatusLine` 控制，默认开）：
+
+| 状态行 | 颜色 | 含义 |
+| --- | --- | --- |
+| `⚖ 停止合理 0.92` | 绿 | 判定为正常结束，没有干预。 |
+| `⚖ 已催促 1/2` | 黄 | 判定为提前停止，已自动发催促。 |
+| `⚖ 已达上限 2/2` | 灰 | 本轮干预次数用尽，不再干预。 |
+| `⚖ 判定失败` | 红 | 判定调用失败（详情在同时弹出的提示里）。 |
+
+两件事同时成立时才算「这一轮没有判定」：页脚还停在上一轮的结论，且没有任何新提示。常见原因是当前不是 tui/rpc 模式、或你已经在打字导致判定主动让路。
+
+同一轮还会弹一条彩色提示（干预为黄色、可停为绿色、失败为红色），`notifyOnStopDecision` 控制「可以停止」那条是否也弹。颜色只在 TUI 下添加，其他模式不会出现 ANSI 乱码。
 
 ### 判定调用为什么不会“空响应”
 
@@ -86,7 +103,7 @@ pi install npm:pi-auto-goal
 ### 命令
 
 - `/config:auto-goal` — TUI 配置菜单（别名：`/auto-goal`、`/pi-auto-goal-config`）。
-- `/config:auto-goal enable|disable|status|reset` — 非交互式写法；`status` 显示生效配置与本会话已干预次数。
+- `/config:auto-goal enable|disable|status|reset` — 非交互式写法；`status` 显示生效配置与本会话已干预次数。配置命令改完立即生效。
 
 ## 开发
 

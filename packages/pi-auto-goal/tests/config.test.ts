@@ -11,6 +11,11 @@ test("空配置回落默认值，且默认允许自动催停两次", () => {
   assert.equal(DEFAULT_AUTO_GOAL_CONFIG.maxAutoContinues, 2);
 });
 
+test("默认开启页脚状态行，默认不提示「可以停止」", () => {
+  assert.equal(DEFAULT_AUTO_GOAL_CONFIG.showStatusLine, true);
+  assert.equal(DEFAULT_AUTO_GOAL_CONFIG.notifyOnStopDecision, false);
+});
+
 test("默认判定输出上限给推理型模型留出余量", () => {
   assert.equal(DEFAULT_AUTO_GOAL_CONFIG.judgeMaxTokens, 2000);
   assert.equal(parseConfig({}).judgeMaxTokens, 2000);
@@ -20,6 +25,7 @@ test("布尔、字符串与数值字段按类型校验", () => {
   assert.equal(parseConfig({ enabled: false }).enabled, false);
   assert.equal(parseConfig({ includeToolTrace: false }).includeToolTrace, false);
   assert.equal(parseConfig({ notifyOnStopDecision: true }).notifyOnStopDecision, true);
+  assert.equal(parseConfig({ showStatusLine: false }).showStatusLine, false);
   assert.equal(parseConfig({ maxAutoContinues: 0 }).maxAutoContinues, 0);
   assert.equal(parseConfig({ maxAutoContinues: 5 }).maxAutoContinues, 5);
   assert.equal(parseConfig({ confidenceThreshold: 1 }).confidenceThreshold, 1);
@@ -33,6 +39,7 @@ test("布尔、字符串与数值字段按类型校验", () => {
   for (const value of [
     { enabled: "true" },
     { includeToolTrace: 1 },
+    { showStatusLine: "yes" },
     { maxAutoContinues: -1 },
     { maxAutoContinues: 1.5 },
     { maxToolTraceEntries: -1 },

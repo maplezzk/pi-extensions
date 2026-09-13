@@ -16,7 +16,7 @@ When the verdict is "still missing" with enough confidence, the extension sends 
 pi install npm:pi-auto-goal
 ```
 
-Run `/reload` after installation or configuration changes.
+Run `/reload` after installing; configuration changed through `/config:auto-goal` takes effect immediately, while editing the config file by hand still needs `/reload`.
 
 Every fully settled turn is judged (unless `enabled` is false), so a single-line question also costs one judge call. Judged contexts:
 
@@ -50,6 +50,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
   "notifyOnStopDecision": false,
+  "showStatusLine": true,
   "judgeMaxTokens": 2000,
   "continueMessageTemplate": "",
   "forcedDecision": "auto"
@@ -68,11 +69,27 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | `maxFinalOutputChars` | `4000` | Truncation limit for the agent's final output. |
 | `maxToolTraceEntries` | `20` | Maximum tool-trace lines. |
 | `notifyOnStopDecision` | `false` | Also notify when the judge accepts the stop. |
+| `showStatusLine` | `true` | Keep the latest verdict as one coloured line in the footer. |
 | `judgeMaxTokens` | `2000` | Output-token ceiling for one judge call, clamped to the model's own output limit. |
 | `continueMessageTemplate` | `""` | Overrides the built-in message; supports `{reason}`. |
 | `forcedDecision` | `"auto"` | Override verdict for controlled experiments: `auto` (normal), `continue` (always treat as premature stop), `stop` (always treat as acceptable stop). |
 
 Unknown fields and invalid values are rejected with an explicit error instead of being silently ignored.
+
+### How to tell whether it fired
+
+The footer always carries one coloured line with the latest verdict (`showStatusLine`, on by default):
+
+| Status line | Colour | Meaning |
+| --- | --- | --- |
+| `⚖ stop accepted 0.92` | green | Judged as a normal stop; no intervention. |
+| `⚖ continued 1/2` | yellow | Judged as a premature stop; the continuation was sent. |
+| `⚖ budget exhausted 2/2` | grey | Intervention budget for this request is used up. |
+| `⚖ judge failed` | red | The judge call failed (details in the notification). |
+
+Two things have to hold for "this turn was not judged": the status line still shows the previous verdict, and no new notification appeared. Typical reasons are a non-tui/rpc mode, or you already started typing so the judgement stepped aside.
+
+The same verdict also produces one coloured notification (yellow for intervention, green for an accepted stop, red for failure); `notifyOnStopDecision` controls whether the accepted-stop one is shown. Colours are only added in TUI mode, so other modes never see raw ANSI.
 
 ### Why the judge no longer answers with an empty response
 
