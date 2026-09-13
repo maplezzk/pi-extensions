@@ -18,8 +18,10 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { notifyWithSource } from "pi-extensions-i18n";
 import { formatDone, formatTick } from "./format-utils.ts";
 import { i18n } from "./i18n.ts";
+import { NOTICE_SOURCE } from "./notice.ts";
 
 const TICK_MS = 1000;
 
@@ -74,7 +76,7 @@ export default function (pi: ExtensionAPI) {
     // 恢复 pi 默认 working 文字（下次 streaming 由 pi 内部重置）
     ctx.ui.setWorkingMessage(undefined);
     // 在 chat 流末尾插入一条 dim 灰文本
-    ctx.ui.notify(i18n.t("elapsedDone", { value: formatDone(elapsed) }), "info");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: i18n.t("elapsedDone", { value: formatDone(elapsed) }) });
   });
 
   pi.on("agent_end", async (_event, ctx) => {
@@ -93,7 +95,7 @@ export default function (pi: ExtensionAPI) {
 
     ctx.ui.setWorkingMessage(undefined);
     if (runElapsed > 0) {
-      ctx.ui.notify(i18n.t("elapsedTotal", { value: formatDone(runElapsed) }), "info");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: i18n.t("elapsedTotal", { value: formatDone(runElapsed) }) });
     }
   });
 }

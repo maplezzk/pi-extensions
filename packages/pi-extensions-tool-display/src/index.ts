@@ -22,6 +22,18 @@ import {
   type ConfigLoadResult,
   type ToolDisplayConfig,
 } from "./types.js";
+import {
+  notifyWithSource,
+  type NoticeColor,
+  type NoticeSource,
+} from "pi-extensions-i18n";
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "display";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "muted";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 export * from "./result-render-middleware.js";
 
@@ -118,14 +130,16 @@ export function ensureToolDisplayHost(
 
     const saved = saveToolDisplayConfig(normalized);
     if (!saved.success && saved.error) {
-      ctx.ui.notify(saved.error, "error");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "error", message: saved.error });
     }
 
     if (requiresReload) {
-      ctx.ui.notify(
-        "Global switch or tool ownership updates apply after /reload.",
-        "warning",
-      );
+      notifyWithSource({
+        ctx,
+        source: NOTICE_SOURCE,
+        level: "warning",
+        message: "Global switch or tool ownership updates apply after /reload.",
+      });
     }
   };
 
@@ -152,7 +166,7 @@ export function ensureToolDisplayHost(
   pi.on("session_start", async (_event, ctx) => {
     refreshCapabilities();
     if (pendingLoadError) {
-      ctx.ui.notify(pendingLoadError, "warning");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: pendingLoadError });
       pendingLoadError = undefined;
     }
   });

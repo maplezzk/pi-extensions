@@ -113,3 +113,36 @@ test("formats input and completion notifications through the lifecycle handlers"
     rmSync(agentDir, { recursive: true, force: true });
   }
 });
+
+test("prefixes config command notices with the notify source tag", async () => {
+  const notices: Array<{ message: string; level: string }> = [];
+  let registered:
+    | { handler: (args: string, context: unknown) => Promise<unknown> }
+    | undefined;
+  const pi = {
+    on() {},
+    registerCommand(_name: string, command: { handler: (args: string, context: unknown) => Promise<unknown> }) {
+      registered = command;
+    },
+  } as unknown as ExtensionAPI;
+  piNotifications(pi);
+
+  const context = {
+    cwd: "/tmp/example-project",
+    hasUI: true,
+    ui: {
+      notify(message: string, level: string) {
+        notices.push({ message, level });
+      },
+    },
+  };
+  assert.ok(registered);
+  await registered.handler("unexpected-argument", context);
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].level, "warning");
+  assert.ok(
+    notices[0].message.startsWith("[notify] "),
+    `expected a notify source tag, got: ${notices[0].message}`,
+  );
+});

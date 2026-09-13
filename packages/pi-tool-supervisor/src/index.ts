@@ -8,7 +8,7 @@
  */
 
 import { complete } from "@earendil-works/pi-ai/compat";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { createTranslator, loadCatalog, notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -58,6 +58,12 @@ import {
 } from "./review-utils.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "supervisor";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "success";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 const AFTER_TRIGGER: ReviewTrigger = "after";
 const BEFORE_TRIGGER: ReviewTrigger = "before";
 const MILLISECONDS_PER_SECOND = 1000;
@@ -195,6 +201,15 @@ function getRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+
+/**
+ * 统一提示出口：加来源标签后交给 Pi 的 notify。
+ * 沿用原有 `ctx.ui?.notify` 语义：上下文没有 UI 时跳过提示，而不是把异常抛到审查流程里。
+ */
+function notify(ctx: ExtensionContext | ExtensionCommandContext, message: string, level: NoticeLevel): void {
+  if (!ctx.ui) return;
+  notifyWithSource({ ctx: { mode: ctx.mode, ui: ctx.ui }, source: NOTICE_SOURCE, level, message });
+}
 
 /** Detects tool execution failure without inspecting arbitrary detail fields. */
 function isFailedToolResult(result: ToolResult): boolean {
@@ -450,7 +465,7 @@ async function reviewToolResult(options: {
       warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("unchangedFileSkipped")],
     };
     const diagnostic = createReviewRejectionDiagnostic(audit);
-    if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
+    if (diagnostic) notify(context.ctx, diagnostic, "error");
     return {
       ...result,
       details: { ...(result.details ?? {}), fileEditReview: audit },
@@ -493,7 +508,7 @@ async function reviewToolResult(options: {
       warnings: [...configWarnings, ...(beforeAudit?.warnings ?? [])],
     };
     const diagnostic = createReviewRejectionDiagnostic(audit);
-    if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
+    if (diagnostic) notify(context.ctx, diagnostic, "error");
     return {
       ...result,
       details: { ...(result.details ?? {}), fileEditReview: audit },
@@ -532,7 +547,7 @@ async function reviewToolResult(options: {
   };
   const diagnostic = createReviewRejectionDiagnostic(audit);
   if (diagnostic) {
-    context.ctx.ui?.notify(diagnostic, "error");
+    notify(context.ctx, diagnostic, "error");
   }
   return {
     ...result,
@@ -622,7 +637,7 @@ async function prepareFileReviewCall(
   };
   if (!loaded.config.enabled) {
     if (loaded.warnings.length > 0) {
-      context.ctx.ui?.notify(loaded.warnings.join(" | "), "warning");
+      notify(context.ctx, loaded.warnings.join(" | "), "warning");
     }
     return pending;
   }
@@ -692,7 +707,7 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
   );
   const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings };
   const diagnostic = createReviewRejectionDiagnostic({ ...audit, filePath: context.toolName });
-  if (diagnostic) context.ctx.ui?.notify(diagnostic, "error");
+  if (diagnostic) notify(context.ctx, diagnostic, "error");
   return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit }, content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content };
 }
 
@@ -728,7 +743,7 @@ async function inputPositiveInteger(
   const value = await ctx.ui.input(title, String(current));
   if (value === undefined) return undefined;
   if (!/^\d+$/.test(value.trim()) || Number(value) <= 0) {
-    ctx.ui.notify(i18n.t("positiveInteger"), "error");
+    notify(ctx, i18n.t("positiveInteger"), "error");
     return undefined;
   }
   return Number(value);
@@ -742,7 +757,7 @@ async function inputModel(
   if (value === undefined) return undefined;
   const normalized = value.trim();
   if (!/^[^/\s]+\/[^/\s]+$/.test(normalized)) {
-    ctx.ui.notify(i18n.t("modelInvalid"), "error");
+    notify(ctx, i18n.t("modelInvalid"), "error");
     return undefined;
   }
   return normalized;
@@ -758,7 +773,7 @@ async function inputList(
   if (value === undefined) return undefined;
   const items = value.split(",").map((item) => item.trim()).filter(Boolean);
   if (required && items.length === 0) {
-    ctx.ui.notify(i18n.t("listRequired"), "error");
+    notify(ctx, i18n.t("listRequired"), "error");
     return undefined;
   }
   return items;
@@ -835,7 +850,7 @@ async function saveFileEditReviewConfig(
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   const saved = loadFileEditReviewConfig(configPath);
   if (saved.warnings.length > 0) {
-    ctx.ui.notify(i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
+    notify(ctx, i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
   }
 }
 
@@ -856,7 +871,7 @@ async function addReviewer(
 async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: string): Promise<void> {
   const loaded = loadFileEditReviewConfig();
   if (loaded.warnings.length > 0) {
-    ctx.ui.notify(i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }), "warning");
+    notify(ctx, i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }), "warning");
   }
   const config: FileEditReviewConfig = {
     ...loaded.config,
@@ -918,7 +933,7 @@ function registerReviewConfigCommand(pi: ExtensionAPI): void {
     description: i18n.t("commandDescription"),
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("interactiveOnly"), "warning");
+        notify(ctx, i18n.t("interactiveOnly"), "warning");
         return;
       }
       await runReviewConfigUi(ctx, getPiSupervisorConfigPath());
@@ -946,7 +961,7 @@ export default function piSupervisorExtension(pi: ExtensionAPI) {
     pendingCalls.set(event.toolCallId, pending);
     if (pending.beforeAudit?.status === REJECTED_STATUS) {
       const diagnostic = createReviewRejectionDiagnostic(pending.beforeAudit);
-      if (diagnostic) ctx.ui?.notify(diagnostic, "error");
+      if (diagnostic) notify(ctx, diagnostic, "error");
       pendingCalls.delete(event.toolCallId);
       appendSupervisorFallbackAudit(pi, event.toolName, { fileEditReview: pending.beforeAudit });
       return { block: true, reason: diagnostic ?? i18n.t("beforeReviewRejectedFallback", { toolName: event.toolName }) };

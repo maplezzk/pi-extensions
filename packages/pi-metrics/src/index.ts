@@ -3,7 +3,8 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { createTranslator, loadCatalog, notifyWithSource } from "pi-extensions-i18n";
+import { NOTICE_SOURCE } from "./notice.ts";
 import turnElapsed from "./turn-elapsed.ts";
 import tps from "./tps.ts";
 import { configPath, loadConfig, parseConfig, saveConfig, type MetricsConfig } from "./config.ts";
@@ -29,32 +30,42 @@ function registerConfigCommand(pi: ExtensionAPI): void {
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
       const value = args.trim();
       if (value && value !== CONFIG_RESET_COMMAND && value !== ENABLE_COMMAND && value !== DISABLE_COMMAND) {
-        ctx.ui.notify(i18n.t("configCommandUsage"), NOTICE_WARNING);
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_WARNING, message: i18n.t("configCommandUsage") });
         return;
       }
       if (value === CONFIG_RESET_COMMAND || value === ENABLE_COMMAND || value === DISABLE_COMMAND) {
         try {
           const config = parseConfig(value === CONFIG_RESET_COMMAND ? {} : { enabled: value === ENABLE_COMMAND });
           const path = saveConfig(config);
-          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+          notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_INFO, message: i18n.t("configCommandSaved", { path }) });
         } catch (error) {
-          ctx.ui.notify(i18n.t("configCommandInvalid", {
-            error: error instanceof Error ? error.message : String(error),
-          }), NOTICE_ERROR);
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: NOTICE_ERROR,
+            message: i18n.t("configCommandInvalid", {
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          });
         }
         return;
       }
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_WARNING, message: i18n.t("configCommandInteractiveOnly") });
         return;
       }
       let current: MetricsConfig;
       try {
         current = loadConfig();
       } catch (error) {
-        ctx.ui.notify(i18n.t("configCommandInvalid", {
-          error: error instanceof Error ? error.message : String(error),
-        }), NOTICE_ERROR);
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: NOTICE_ERROR,
+          message: i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        });
         return;
       }
       const enabledChoice = i18n.t("configEnabled", { value: i18n.t(current.enabled ? "configOn" : "configOff") });
@@ -69,11 +80,16 @@ function registerConfigCommand(pi: ExtensionAPI): void {
       const choice = selected === enabledChoice ? CONFIG_CHOICE.enabled : CONFIG_CHOICE.disabled;
       try {
         const path = saveConfig({ enabled: choice === CONFIG_CHOICE.enabled });
-        ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_INFO, message: i18n.t("configCommandSaved", { path }) });
       } catch (error) {
-        ctx.ui.notify(i18n.t("configCommandInvalid", {
-          error: error instanceof Error ? error.message : String(error),
-        }), NOTICE_ERROR);
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: NOTICE_ERROR,
+          message: i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        });
       }
     },
   };
@@ -93,10 +109,15 @@ export default function piHud(pi: ExtensionAPI): void {
   }
   if (configError !== undefined) {
     pi.on("session_start", (_event, ctx: ExtensionContext) => {
-      ctx.ui.notify(i18n.t("configLoadFailed", {
-        path: configPath(),
-        error: configError instanceof Error ? configError.message : String(configError),
-      }), NOTICE_WARNING);
+      notifyWithSource({
+        ctx,
+        source: NOTICE_SOURCE,
+        level: NOTICE_WARNING,
+        message: i18n.t("configLoadFailed", {
+          path: configPath(),
+          error: configError instanceof Error ? configError.message : String(configError),
+        }),
+      });
     });
   }
   if (!config.enabled) return;

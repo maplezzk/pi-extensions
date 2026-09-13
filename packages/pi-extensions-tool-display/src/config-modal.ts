@@ -11,11 +11,29 @@ import {
 import { shortenPath } from "./render-utils.js";
 import type { InspectorSettingItem } from "./settings-inspector-modal.js";
 import { type ToolDisplayConfig } from "./types.js";
+import {
+	notifyWithSource,
+	type NoticeColor,
+	type NoticeLevel,
+	type NoticeSource,
+} from "pi-extensions-i18n";
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "display";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "muted";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 interface ToolDisplayConfigController {
 	getConfig(): ToolDisplayConfig;
 	setConfig(next: ToolDisplayConfig, ctx: ExtensionCommandContext): void;
 	getCapabilities(): ToolDisplayCapabilities;
+}
+
+/** 带来源标签的用户提示；集中走统一出口，调用点不再直接碰 ctx.ui.notify。 */
+function notify(ctx: ExtensionCommandContext, message: string, level: NoticeLevel): void {
+	notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
 }
 
 interface ModalOverlayOptions {
@@ -483,7 +501,8 @@ export function handleToolDisplayArgs(args: string, ctx: ExtensionCommandContext
 	const normalized = raw.toLowerCase();
 
 	if (normalized === "show") {
-		ctx.ui.notify(
+		notify(
+			ctx,
 			`tool-display: ${summarizeConfig(controller.getConfig(), controller.getCapabilities())}`,
 			"info",
 		);
@@ -492,7 +511,7 @@ export function handleToolDisplayArgs(args: string, ctx: ExtensionCommandContext
 
 	if (normalized === "reset") {
 		controller.setConfig(applyPreset("opencode", controller.getConfig().enabled), ctx);
-		ctx.ui.notify("Tool display preset reset to opencode.", "info");
+		notify(ctx, "Tool display preset reset to opencode.", "info");
 		return true;
 	}
 
@@ -500,16 +519,16 @@ export function handleToolDisplayArgs(args: string, ctx: ExtensionCommandContext
 		const candidate = normalized.slice("preset ".length).trim();
 		const preset = parseToolDisplayPreset(candidate);
 		if (!preset) {
-			ctx.ui.notify(`Unknown preset. Use: /config:tool-display preset ${PRESET_COMMAND_HINT}`, "warning");
+			notify(ctx, `Unknown preset. Use: /config:tool-display preset ${PRESET_COMMAND_HINT}`, "warning");
 			return true;
 		}
 
 		controller.setConfig(applyPreset(preset, controller.getConfig().enabled), ctx);
-		ctx.ui.notify(`Tool display preset set to ${preset}.`, "info");
+		notify(ctx, `Tool display preset set to ${preset}.`, "info");
 		return true;
 	}
 
-	ctx.ui.notify(`Usage: /config:tool-display [show|reset|preset ${PRESET_COMMAND_HINT}]`, "warning");
+	notify(ctx, `Usage: /config:tool-display [show|reset|preset ${PRESET_COMMAND_HINT}]`, "warning");
 	return true;
 }
 
@@ -523,7 +542,7 @@ export async function runToolDisplayCommandHandler(
 	}
 
 	if (!ctx.hasUI) {
-		ctx.ui.notify("/config:tool-display requires interactive TUI mode.", "warning");
+		notify(ctx, "/config:tool-display requires interactive TUI mode.", "warning");
 		return;
 	}
 

@@ -2,6 +2,14 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import type { TerminalRenameOutcome, TerminalRenameTarget, ResolveRenameOptions } from "pi-terminal-mux";
 import { configPath, loadConfig, parseConfig, saveConfig, type NamingConfig } from "./config.ts";
 import { i18n } from "./i18n.ts";
+import { notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "naming";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "toolTitle";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 import { getCurrentSessionUserMessages, requestSessionNameWithTimeout, type SessionNameRequester } from "./session-name.ts";
 
 const RENAME_COMMAND = "rename";
@@ -44,7 +52,7 @@ function errorMessage(error: unknown): string {
 /** 无交互 UI 时仍通过 Pi 消息报告结果，不静默吞错。 */
 function report(pi: ExtensionAPI, ctx: ExtensionContext, notice: { message: string; level: "info" | "warning" | "error" }): void {
   const { message, level } = notice;
-  if (ctx.hasUI) ctx.ui.notify(message, level);
+  if (ctx.hasUI) notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
   else pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true }, { triggerTurn: false });
 }
 

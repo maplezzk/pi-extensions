@@ -12,6 +12,7 @@ import {
 } from "./adapter.ts";
 import { loadConfigWithDiagnostics, parseConfig, saveConfig, type NotificationConfig } from "./config.ts";
 import { i18n } from "./i18n.ts";
+import { notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
 
 export type { NotificationConfig } from "./config.ts";
 export type {
@@ -55,9 +56,21 @@ const NOTICE_WARNING = "warning" as const;
 const NOTICE_INFO = "info" as const;
 const NOTICE_ERROR = "error" as const;
 
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "notify";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "muted";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
 const pendingNotices: Notice[] = [];
 let activeRuntime: NotificationRuntime | undefined;
 let noticeKeys = new Set<string>();
+
+/** 统一的带来源提示出口；所有用户可见提示都经此加上标签。 */
+function notifySource(ctx: ExtensionContext | ExtensionCommandContext, level: NoticeLevel, message: string): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
 
 /** 注册配置命令，通过 TUI 菜单和输入框修改通知配置。 */
 function registerConfigCommand(pi: ExtensionAPI): void {
@@ -67,22 +80,22 @@ function registerConfigCommand(pi: ExtensionAPI): void {
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
       const argument = args.trim();
       if (argument && argument !== CONFIG_RESET_COMMAND) {
-        ctx.ui.notify(i18n.t("configCommandUsage"), NOTICE_WARNING);
+        notifySource(ctx, NOTICE_WARNING, i18n.t("configCommandUsage"));
         return;
       }
       if (argument === CONFIG_RESET_COMMAND) {
         try {
           const path = saveConfig(parseConfig({}));
-          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+          notifySource(ctx, NOTICE_INFO, i18n.t("configCommandSaved", { path }));
         } catch (error) {
-          ctx.ui.notify(i18n.t("configCommandInvalid", {
+          notifySource(ctx, NOTICE_ERROR, i18n.t("configCommandInvalid", {
             error: error instanceof Error ? error.message : String(error),
-          }), NOTICE_ERROR);
+          }));
         }
         return;
       }
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
+        notifySource(ctx, NOTICE_WARNING, i18n.t("configCommandInteractiveOnly"));
         return;
       }
 
@@ -90,20 +103,20 @@ function registerConfigCommand(pi: ExtensionAPI): void {
       try {
         config = loadConfigWithDiagnostics().config;
       } catch (error) {
-        ctx.ui.notify(i18n.t("configCommandInvalid", {
+        notifySource(ctx, NOTICE_ERROR, i18n.t("configCommandInvalid", {
           error: error instanceof Error ? error.message : String(error),
-        }), NOTICE_ERROR);
+        }));
         return;
       }
       const save = (next: NotificationConfig): void => {
         try {
           const path = saveConfig(next);
           config = next;
-          ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+          notifySource(ctx, NOTICE_INFO, i18n.t("configCommandSaved", { path }));
         } catch (error) {
-          ctx.ui.notify(i18n.t("configCommandInvalid", {
+          notifySource(ctx, NOTICE_ERROR, i18n.t("configCommandInvalid", {
             error: error instanceof Error ? error.message : String(error),
-          }), NOTICE_ERROR);
+          }));
         }
       };
       const status = (enabled: boolean): string => enabled ? i18n.t("configOn") : i18n.t("configOff");
@@ -167,17 +180,17 @@ function registerConfigCommand(pi: ExtensionAPI): void {
             const timeoutMs = Number(input.trim());
             try { next = parseConfig({ ...config, timeoutMs }); }
             catch (error) {
-              ctx.ui.notify(i18n.t("configCommandInvalid", {
+              notifySource(ctx, NOTICE_ERROR, i18n.t("configCommandInvalid", {
                 error: error instanceof Error ? error.message : String(error),
-              }), NOTICE_ERROR);
+              }));
             }
           }
           if (selectedIndex === CONFIG_OPTION.command || selectedIndex === CONFIG_OPTION.args) {
             try { next = parseConfig({ ...config, adapter }); }
             catch (error) {
-              ctx.ui.notify(i18n.t("configCommandInvalid", {
+              notifySource(ctx, NOTICE_ERROR, i18n.t("configCommandInvalid", {
                 error: error instanceof Error ? error.message : String(error),
-              }), NOTICE_ERROR);
+              }));
             }
           }
         }
@@ -355,7 +368,7 @@ function showNotice(notice: Notice, context?: ExtensionContext): void {
   noticeKeys.add(key);
 
   if (context?.ui) {
-    context.ui.notify(notice.message, notice.level);
+    notifySource(context, notice.level, notice.message);
   } else {
     pendingNotices.push(notice);
   }
@@ -369,7 +382,7 @@ function queueNotice(key: string, message: string): void {
 
 function flushPendingNotices(context: ExtensionContext): void {
   for (const notice of pendingNotices.splice(0)) {
-    context.ui.notify(notice.message, notice.level);
+    notifySource(context, notice.level, notice.message);
   }
 }
 

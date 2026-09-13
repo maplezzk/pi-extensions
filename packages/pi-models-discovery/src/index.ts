@@ -48,20 +48,29 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { createTranslator, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
 const FETCH_TIMEOUT_MS = 5000;
 const DISCOVERY_MARKER = "discoverModels";
 const LOG_PREFIX = "[model-discovery]";
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "models";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "accent";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 const API_CHOICES = ["openai-completions", "anthropic-messages", "openai-responses", "google-generative-ai"] as const;
 
-/** 用户可见消息（级别与 ctx.ui.notify 的 type 对齐） */
+/** 用户可见消息（级别与 ctx.ui.notify 的 type 对齐）；供通知中继与无 ctx 的收集队列共用 */
 interface Notice {
 	level: "info" | "warning" | "error";
 	message: string;
 }
+
+/** 用户可见消息的统一出口：带来源标签与颜色（有 UI 传入 ctx 时），否则交给外部回调转发 */
+type NoticeSink = (notice: Notice, ctx?: CommandCtx) => void;
 
 /** models.json 中 provider 条目的读取形态（含发现标记） */
 interface DiscoveryProviderEntry {
@@ -470,7 +479,7 @@ function registerFromCache(
 }
 
 /** /config:model-discovery 交互式配置命令；旧名称保留为兼容别名。 */
-function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache) {
+function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache, sink: NoticeSink) {
 	const command = {
 		description: i18n.t("commandDescription"),
 		handler: async (_args, ctx) => {
@@ -478,7 +487,7 @@ function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache) {
 			while (true) {
 				const { data, error } = await readModelsFile();
 				if (error) {
-					ctx.ui.notify(`${LOG_PREFIX} ${error}`, "error");
+					sink({ level: "error", message: `${LOG_PREFIX} ${error}` }, ctx);
 					return;
 				}
 				const providers = pickDiscoveryProviders(data);
@@ -496,12 +505,12 @@ function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache) {
 				if (choice === undefined || choice === EXIT) return;
 
 				if (choice === ADD) {
-					await addProviderFlow(pi, ctx, data, fetchCache);
+					await addProviderFlow(pi, ctx, data, fetchCache, sink);
 					continue;
 				}
 				const selected = providers[choices.indexOf(choice)];
 				if (selected) {
-					await manageProviderFlow(pi, ctx, data, selected, fetchCache);
+					await manageProviderFlow(pi, ctx, data, selected, fetchCache, sink);
 				}
 			}
 		},
@@ -512,19 +521,19 @@ function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache) {
 }
 
 /** /config:model-discovery-refresh 强制刷新命令；旧名称保留为兼容别名。 */
-function registerRefreshCommand(pi: ExtensionAPI) {
+function registerRefreshCommand(pi: ExtensionAPI, sink: NoticeSink) {
 	const command = {
 		description: i18n.t("refreshDescription"),
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) return;
 			const { data, error } = await readModelsFile();
 			if (error) {
-				ctx.ui.notify(`${LOG_PREFIX} ${error}`, "error");
+				sink({ level: "error", message: `${LOG_PREFIX} ${error}` }, ctx);
 				return;
 			}
 			const providers = pickDiscoveryProviders(data);
 			if (providers.length === 0) {
-				ctx.ui.notify(i18n.t("refreshEmpty"), "info");
+				sink({ level: "info", message: i18n.t("refreshEmpty") }, ctx);
 				return;
 			}
 			// 每次刷新用新的请求级缓存：同 baseUrl 的 provider 仍共享一次请求，但不复用启动期结果
@@ -533,18 +542,24 @@ function registerRefreshCommand(pi: ExtensionAPI) {
 			for (const entry of providers) {
 				const notices: Notice[] = [];
 				const result = await discoverAndRegister(pi, entry, fetchCache, notices);
-				for (const notice of notices) ctx.ui.notify(notice.message, notice.level);
+				for (const notice of notices) sink(notice, ctx);
 				if (result) {
-					ctx.ui.notify(
-						`${LOG_PREFIX} ${i18n.t("discoveredInfo", { id: entry.id, count: result.count, models: result.models.map((m) => m.id).join(", ") })}`,
-						"info",
+					sink(
+						{
+							level: "info",
+							message: `${LOG_PREFIX} ${i18n.t("discoveredInfo", { id: entry.id, count: result.count, models: result.models.map((m) => m.id).join(", ") })}`,
+						},
+						ctx,
 					);
 					ok++;
 				}
 			}
-			ctx.ui.notify(
-				i18n.t("refreshDone", { ok, total: providers.length }),
-				ok === providers.length ? "info" : "warning",
+			sink(
+				{
+					level: ok === providers.length ? "info" : "warning",
+					message: i18n.t("refreshDone", { ok, total: providers.length }),
+				},
+				ctx,
 			);
 		},
 	};
@@ -555,28 +570,28 @@ function registerRefreshCommand(pi: ExtensionAPI) {
 
 type CommandCtx = Parameters<Parameters<ExtensionAPI["registerCommand"]>[1]["handler"]>[1];
 
-/** 将收集到的 Notice 一次性 flush 到 UI */
+/** 将收集到的 Notice 逐条经来源包装后 flush 到 UI */
 function flushNotices(ctx: CommandCtx, notices: Notice[]): void {
-	for (const notice of notices) ctx.ui.notify(notice.message, notice.level);
+	for (const notice of notices) notifyWithSource({ ctx, source: NOTICE_SOURCE, level: notice.level, message: notice.message });
 }
 
 /** /config:model-discovery 添加 provider 交互流程 */
-async function addProviderFlow(pi: ExtensionAPI, ctx: CommandCtx, data: Record<string, unknown>, fetchCache: FetchCache) {
+async function addProviderFlow(pi: ExtensionAPI, ctx: CommandCtx, data: Record<string, unknown>, fetchCache: FetchCache, sink: NoticeSink) {
 	const existingIds = new Set(Object.keys((data.providers ?? {}) as Record<string, unknown>));
 	const id = (await ctx.ui.input(i18n.t("providerId")))?.trim();
 	if (!id) return;
 	if (!/^[a-z0-9][a-z0-9-]*$/i.test(id)) {
-		ctx.ui.notify(i18n.t("invalidId"), "error");
+		sink({ level: "error", message: i18n.t("invalidId") }, ctx);
 		return;
 	}
 	if (existingIds.has(id)) {
-		ctx.ui.notify(i18n.t("exists", { id }), "error");
+		sink({ level: "error", message: i18n.t("exists", { id }) }, ctx);
 		return;
 	}
 	const baseUrl = (await ctx.ui.input(i18n.t("baseUrl")))?.trim();
 	if (!baseUrl) return;
 	if (!/^https?:\/\//.test(baseUrl)) {
-		ctx.ui.notify(i18n.t("invalidUrl"), "error");
+		sink({ level: "error", message: i18n.t("invalidUrl") }, ctx);
 		return;
 	}
 	const api = await ctx.ui.select(i18n.t("api"), [...API_CHOICES]);
@@ -595,9 +610,9 @@ async function addProviderFlow(pi: ExtensionAPI, ctx: CommandCtx, data: Record<s
 	data.providers = providers;
 	try {
 		const { backup } = await writeModelsFile(data);
-		ctx.ui.notify(i18n.t("written", { backup }), "info");
+		sink({ level: "info", message: i18n.t("written", { backup }) }, ctx);
 	} catch (err) {
-		ctx.ui.notify(`${LOG_PREFIX} ${err instanceof Error ? err.message : err}`, "error");
+		sink({ level: "error", message: `${LOG_PREFIX} ${err instanceof Error ? err.message : err}` }, ctx);
 		return;
 	}
 
@@ -610,9 +625,9 @@ async function addProviderFlow(pi: ExtensionAPI, ctx: CommandCtx, data: Record<s
 	);
 	flushNotices(ctx, notices);
 	if (result) {
-		ctx.ui.notify(i18n.t("discovered", { id, count: result.count }), "info");
+		sink({ level: "info", message: i18n.t("discovered", { id, count: result.count }) }, ctx);
 	} else {
-		ctx.ui.notify(i18n.t("firstFailed", { id }), "warning");
+		sink({ level: "warning", message: i18n.t("firstFailed", { id }) }, ctx);
 	}
 }
 
@@ -623,6 +638,7 @@ async function manageProviderFlow(
 	data: Record<string, unknown>,
 	entry: DiscoveryProviderEntry,
 	fetchCache: FetchCache,
+	sink: NoticeSink,
 ) {
 	const REDISCOVER = i18n.t("rediscover");
 	const REMOVE = i18n.t("remove");
@@ -638,7 +654,7 @@ async function manageProviderFlow(
 		const result = await discoverAndRegister(pi, entry, fetchCache, notices);
 		flushNotices(ctx, notices);
 		if (result) {
-			ctx.ui.notify(i18n.t("rediscovered", { id: entry.id, count: result.count }), "info");
+			sink({ level: "info", message: i18n.t("rediscovered", { id: entry.id, count: result.count }) }, ctx);
 		}
 		return;
 	}
@@ -654,15 +670,20 @@ async function manageProviderFlow(
 		const notices: Notice[] = [];
 		await removeCachedModels(entry.id, notices);
 		flushNotices(ctx, notices);
-		ctx.ui.notify(i18n.t("removed", { id: entry.id, backup }), "info");
+		sink({ level: "info", message: i18n.t("removed", { id: entry.id, backup }) }, ctx);
 	} catch (err) {
-		ctx.ui.notify(`${LOG_PREFIX} ${err instanceof Error ? err.message : err}`, "error");
+		sink({ level: "error", message: `${LOG_PREFIX} ${err instanceof Error ? err.message : err}` }, ctx);
 	}
 }
 
 export default async function (pi: ExtensionAPI) {
 	// 加载期没有 ctx，消息统一收集，session_start 时 flush（运行期后续追加的也会在下个 session 补发）
 	const pendingNotices: Notice[] = [];
+	// 有 UI 时走统一来源包装；无 UI 时退到日志前缀，不静默丢掉提示
+	const sink: NoticeSink = (notice, ctx) => {
+		if (ctx) notifyWithSource({ ctx, source: NOTICE_SOURCE, level: notice.level, message: notice.message });
+		else pendingNotices.push(notice);
+	};
 	const { data, error } = await readModelsFile();
 	if (error) {
 		pendingNotices.push({ level: "warning", message: `${LOG_PREFIX} ${error}` });
@@ -688,12 +709,12 @@ export default async function (pi: ExtensionAPI) {
 		}
 	}
 
-	registerDiscoveryCommand(pi, fetchCache);
-	registerRefreshCommand(pi);
+	registerDiscoveryCommand(pi, fetchCache, sink);
+	registerRefreshCommand(pi, sink);
 
 	pi.on("session_start", (_event, ctx) => {
 		for (const notice of pendingNotices.splice(0)) {
-			ctx.ui.notify(notice.message, notice.level);
+			notifyWithSource({ ctx, source: NOTICE_SOURCE, level: notice.level, message: notice.message });
 		}
 	});
 }

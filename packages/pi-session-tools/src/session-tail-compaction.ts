@@ -53,6 +53,37 @@ import {
   type TailStartErrorCode,
 } from "./session-tail-compaction-utils.ts";
 import { i18n } from "./i18n.ts";
+import {
+  notifyWithSource,
+  type NoticeColor,
+  type NoticeLevel,
+  type NoticeSource,
+} from "pi-extensions-i18n";
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "session";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "accent";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
+/**
+ * 统一的用户可见提示出口：加来源标签后交给 Pi 的 notify。
+ * 所有提示都必须经过这里，避免个别调用点漏掉来源标签。
+ */
+function notifySession(
+  ctx: { mode?: string; ui: NoticeContextUi },
+  message: string,
+  level: NoticeLevel,
+): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
+
+/** notifySession 需要的最小 UI 上下文；由 Pi 的 ctx 结构满足。 */
+type NoticeContextUi = {
+  notify(message: string, type?: NoticeLevel): void;
+  theme?: { fg(color: NoticeColor, text: string): string };
+};
 
 /** validateTailStart 失败码 → i18n key 的映射，集中维护。 */
 const TAIL_START_ERROR_I18N_KEY: Record<TailStartErrorCode, string> = {
@@ -124,7 +155,7 @@ const THRESHOLDS_ENV_VAR = "PI_SESSION_TOOLS_SQUASH_THRESHOLDS";
 /** 加载期产生的待发送通知（无 ctx，推迟到 session_start flush）。 */
 const pendingNotices: Array<{
   text: string;
-  level: "info" | "warning" | "error";
+  level: NoticeLevel;
 }> = [];
 
 /** 已提示过的阈值 key（按 session 隔离，上下文跌回阈值以下自动恢复）。 */
@@ -380,7 +411,8 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       attempt: 0,
     };
     pi.setActiveTools([...FORCE_ALLOWED_TOOLS]);
-    ctx.ui.notify(
+    notifySession(
+      ctx,
       i18n.t("forceInterruptNotice", {
         tokens: formatTokens(tokens),
         threshold: formatTokens(threshold),
@@ -518,7 +550,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       if (forceState) {
         if (forceState.sessionId !== ctx.sessionManager.getSessionId()) {
           restoreToolsAfterForce();
-          ctx.ui.notify(i18n.t("forceSwitched"), "warning");
+          notifySession(ctx, i18n.t("forceSwitched"), "warning");
           return;
         }
         triggerForcedSquashTurn();
@@ -531,7 +563,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
     if (pending.sessionId !== ctx.sessionManager.getSessionId()) {
       pending = null;
       restoreToolsAfterForce();
-      ctx.ui.notify(i18n.t("switched"), "warning");
+      notifySession(ctx, i18n.t("switched"), "warning");
       return;
     }
 
@@ -597,7 +629,8 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       throw new Error(i18n.t("branchFailed", { error: String(error) }));
     }
 
-    ctx.ui.notify(
+    notifySession(
+      ctx,
       i18n.t("done", {
         from: request.fromUserInputIndex,
       }),
@@ -653,7 +686,7 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
   // 加载期通知（如配置解析失败）延迟到首个 session 开始时统一发送。
   pi.on("session_start", async (_event, ctx) => {
     for (const notice of pendingNotices.splice(0)) {
-      ctx.ui.notify(notice.text, notice.level);
+      notifySession(ctx, notice.text, notice.level);
     }
   });
 
@@ -686,7 +719,7 @@ async function handleConfigCommand(
   onForceDisabled: () => void,
 ): Promise<void> {
   if (!ctx.hasUI) {
-    ctx.ui.notify(i18n.t("configNoUi"), "warning");
+    notifySession(ctx, i18n.t("configNoUi"), "warning");
     return;
   }
   const requested = args.trim();
@@ -695,13 +728,14 @@ async function handleConfigCommand(
     if (command.toLowerCase() === FORCE_CONFIG_COMMAND) {
       const forceValue = commandArgs.join(" ").trim().toLowerCase();
       if (!forceValue) {
-        ctx.ui.notify(i18n.t("configForceUsage"), "error");
+        notifySession(ctx, i18n.t("configForceUsage"), "error");
         return;
       }
       if (FORCE_CONFIG_DISABLED_VALUES.has(forceValue)) {
         const configPath = saveForceSquashRatio(null);
         onForceDisabled();
-        ctx.ui.notify(
+        notifySession(
+          ctx,
           i18n.t("configForceDisabled", { path: configPath }),
           "info",
         );
@@ -709,14 +743,16 @@ async function handleConfigCommand(
       }
       const forceRatio = Number(forceValue);
       if (!isForceSquashRatio(forceRatio)) {
-        ctx.ui.notify(
+        notifySession(
+          ctx,
           i18n.t("configForceParseError", { value: forceValue }),
           "error",
         );
         return;
       }
       const configPath = saveForceSquashRatio(forceRatio);
-      ctx.ui.notify(
+      notifySession(
+        ctx,
         i18n.t("configForceSaved", {
           ratio: forceRatio,
           path: configPath,
@@ -728,11 +764,12 @@ async function handleConfigCommand(
 
     const parsed = parseSquashThresholds(requested.split(","));
     if (parsed.length === 0) {
-      ctx.ui.notify(i18n.t("configParseError", { value: requested }), "error");
+      notifySession(ctx, i18n.t("configParseError", { value: requested }), "error");
       return;
     }
     const configPath = saveSquashThresholds(parsed);
-    ctx.ui.notify(
+    notifySession(
+      ctx,
       i18n.t("configSaved", {
         thresholds: serializeThresholds(parsed).join(", "),
         path: configPath,
@@ -749,11 +786,12 @@ async function handleConfigCommand(
   if (value === undefined) return;
   const parsed = parseSquashThresholds(value.split(","));
   if (parsed.length === 0) {
-    ctx.ui.notify(i18n.t("configParseError", { value }), "error");
+    notifySession(ctx, i18n.t("configParseError", { value }), "error");
     return;
   }
   const configPath = saveSquashThresholds(parsed);
-  ctx.ui.notify(
+  notifySession(
+    ctx,
     i18n.t("configSaved", {
       thresholds: serializeThresholds(parsed).join(", "),
       path: configPath,
@@ -812,7 +850,8 @@ function checkContextThreshold(
       ? formatContextPercentage(tokens, contextWindow)
       : formatPercentage(measuredPercentage);
   const thresholdText = formatTokens(candidate.resolved);
-  ctx.ui.notify(
+  notifySession(
+    ctx,
     i18n.t("contextHintNotice", {
       tokens: tokensText,
       contextWindow: contextWindowText,

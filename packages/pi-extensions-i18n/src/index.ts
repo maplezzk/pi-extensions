@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { notifyWithSource, type NoticeColor, type NoticeSource } from "./notice.ts";
 
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
@@ -190,20 +191,32 @@ const commandMessages = loadCatalog(
   new URL("../locales/command.json", import.meta.url),
 );
 
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "language";
+/** 提示标签颜色；与其它扩展错开。 */
+const NOTICE_COLOR: NoticeColor = "accent";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
 function registerLocaleCommand(pi: ExtensionAPI): void {
   const i18n = createTranslator(commandMessages);
   const command = {
     description: i18n.t("description"),
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("noUi"), "warning");
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("noUi") });
         return;
       }
 
       const requested = args.trim();
       const directPreference = requested ? parseLocalePreference(requested) : undefined;
       if (requested && !directPreference) {
-        ctx.ui.notify(i18n.t("invalid", { value: requested }), "error");
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: "error",
+          message: i18n.t("invalid", { value: requested }),
+        });
         return;
       }
 
@@ -238,12 +251,19 @@ function registerLocaleCommand(pi: ExtensionAPI): void {
         const overrideNotice = envOverride
           ? `\n${i18n.t("envOverride", { env: LOCALE_ENV })}`
           : "";
-        ctx.ui.notify(
-          `${i18n.t("saved", { locale: preference })}${overrideNotice}\n${configPath}`,
-          "info",
-        );
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: "info",
+          message: `${i18n.t("saved", { locale: preference })}${overrideNotice}\n${configPath}`,
+        });
       } catch (error) {
-        ctx.ui.notify(i18n.t("failed", { error: String(error) }), "error");
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: "error",
+          message: i18n.t("failed", { error: String(error) }),
+        });
       }
     },
   };
@@ -255,3 +275,15 @@ function registerLocaleCommand(pi: ExtensionAPI): void {
 export default function piI18n(pi: ExtensionAPI): void {
   registerLocaleCommand(pi);
 }
+
+export {
+  formatNotice,
+  notifyWithSource,
+  NOTICE_COLOR_MODE,
+  type NoticeColor,
+  type NoticeContext,
+  type NoticeLevel,
+  type NoticeRenderOptions,
+  type NoticeSendOptions,
+  type NoticeSource,
+} from "./notice.ts";

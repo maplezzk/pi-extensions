@@ -43,7 +43,7 @@ import { getTextContent, hasNonTextContent, limitReturnedToolResult } from "./ou
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { createTranslator, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 import {
   buildSummaryPrompt,
   buildSummarySystemPrompt,
@@ -109,6 +109,13 @@ type ToolResultEventPatch = {
 
 export const OUTPUT_REQUEST_DESCRIPTION = i18n.t("outputRequestDescription");
 const OUTPUT_REQUEST_SYSTEM_GUIDELINE = i18n.t("outputRequestSystemGuideline");
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "distill";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "muted";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 type SummaryDecisionMode = "RAW" | "SUMMARY";
 type SummaryReasonCode =
@@ -921,12 +928,12 @@ async function summarizeOutputWithRetries(
       }
       if (timedOut) timeoutRetries += 1;
       else errorRetries += 1;
-      context.ctx.ui.notify(i18n.t("retryingSummary", {
+      notifyWithSource({ ctx: context.ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("retryingSummary", {
         kind: i18n.t(timedOut ? "retryKindTimeout" : "retryKindError"),
         retry: retriesUsed + 1,
         limit: retryLimit,
         error: error instanceof Error ? error.message : String(error),
-      }), "warning");
+      }) });
     } finally {
       clearTimeout(timeout);
       context.signal?.removeEventListener("abort", abortFromParent);
@@ -955,9 +962,9 @@ export async function processToolResult(
   const maxReturnedChars = config?.maxOutputChars ?? 10_000;
   const finish = (candidate: ToolResult) => limitReturnedToolResult(candidate, maxReturnedChars);
   if (loaded.warnings.length > 0) {
-    context.ctx.ui.notify(i18n.t("configWarnings", {
+    notifyWithSource({ ctx: context.ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("configWarnings", {
       warnings: loaded.warnings.join(" "),
-    }), "warning");
+    }) });
   }
 
   if (config && loaded.enabled && !isDistillToolEnabled(config, context.toolName)) return result;
@@ -1325,7 +1332,7 @@ async function editDistillNumber(
   const value = await ctx.ui.input(title, String(current));
   if (value === undefined) return undefined;
   if (!/^\d+$/.test(value.trim()) || Number(value) <= 0) {
-    ctx.ui.notify(i18n.t("positiveInteger"), "error");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "error", message: i18n.t("positiveInteger") });
     return undefined;
   }
   return Number(value);
@@ -1341,7 +1348,7 @@ async function editDistillNonNegativeInteger(
   const normalized = value.trim();
   const parsed = Number(normalized);
   if (!/^\d+$/.test(normalized) || !Number.isSafeInteger(parsed)) {
-    ctx.ui.notify(i18n.t("nonNegativeInteger"), "error");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "error", message: i18n.t("nonNegativeInteger") });
     return undefined;
   }
   return parsed;
@@ -1358,7 +1365,7 @@ async function editDistillModel(
   if (value === undefined) return undefined;
   const normalized = value.trim();
   if (normalized && !/^[^/\s]+\/[^/\s]+$/.test(normalized)) {
-    ctx.ui.notify(i18n.t("modelInvalid"), "error");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "error", message: i18n.t("modelInvalid") });
     return undefined;
   }
   return normalized;
@@ -1374,7 +1381,7 @@ async function saveDistillConfigFile(
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   const saved = loadDistillConfig();
   if (saved.warnings.length > 0) {
-    ctx.ui.notify(i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }) });
   }
   onSaved?.();
 }
@@ -1396,7 +1403,7 @@ async function runDistillToolConfigUi(
 ): Promise<void> {
   const toolNames = getConfigurableToolNames(pi);
   if (toolNames.length === 0) {
-    ctx.ui.notify(i18n.t("noConfigurableTools"), "warning");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("noConfigurableTools") });
     return;
   }
 
@@ -1423,7 +1430,7 @@ async function runDistillConfigUi(
 ): Promise<void> {
   const loaded = loadDistillConfig();
   if (loaded.warnings.length > 0) {
-    ctx.ui.notify(i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }), "warning");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }) });
   }
   const config = getDistillUiConfig();
 
@@ -1532,7 +1539,7 @@ function registerDistillConfigCommand(
     description: i18n.t("commandDescription"),
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("interactiveOnly"), "warning");
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("interactiveOnly") });
         return;
       }
       await runDistillConfigUi(ctx, pi, getDistillConfigPath(), () => onSaved(ctx));
@@ -1551,10 +1558,10 @@ function registerDistillStatsCommand(
     description: i18n.t("statsCommandDescription"),
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("interactiveOnly"), "warning");
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("interactiveOnly") });
         return;
       }
-      ctx.ui.notify(formatDistillSessionStats(getStats()), "info");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: formatDistillSessionStats(getStats()) });
     },
   });
 }
@@ -1570,7 +1577,7 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     const reportWarning = (message: string) => {
       if (reportedWarnings.has(message)) return;
       reportedWarnings.add(message);
-      ctx.ui.notify(message, "warning");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message });
     };
     try {
       extendDistillToolParameters(pi, loadDistillConfig(), reportWarning);

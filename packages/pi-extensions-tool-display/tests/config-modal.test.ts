@@ -122,7 +122,7 @@ test("'show' argument notifies with config summary", async () => {
 	await handler("show", ctx);
 
 	assert.equal(notifications.length, 1);
-	assert.match(notifications[0]?.message ?? "", /^tool-display: /);
+	assert.match(notifications[0]?.message ?? "", /^\[display\] tool-display: /);
 	assert.ok(notifications[0]?.message.includes("enabled=on"));
 	assert.ok(notifications[0]?.message.includes("preset=opencode"));
 	assert.ok(notifications[0]?.message.includes("mcp=hidden"), "MCP setting in summary with MCP capability");
@@ -131,6 +131,44 @@ test("'show' argument notifies with config summary", async () => {
 		"RTK hints in summary with RTK capability",
 	);
 	assert.equal(notifications[0]?.level, "info");
+});
+
+test("'show' prefixes every notice with the display source tag", async () => {
+	const { api, getHandler } = createPiStub();
+	const { controller } = createControllerStub();
+	const { ctx, notifications } = createCtxStub(true);
+
+	registerToolDisplayCommand(api, controller);
+	const handler = getHandler();
+	assert.ok(handler);
+
+	await handler("show", ctx);
+
+	assert.equal(notifications.length, 1);
+	assert.ok(
+		notifications[0]?.message.startsWith("[display] "),
+		`expected notice to start with the display tag, got: ${notifications[0]?.message}`,
+	);
+	assert.ok(
+		!notifications[0]?.message.includes("\u001b["),
+		"non-TUI contexts must not receive ANSI escapes",
+	);
+});
+
+test("warning notices also carry the display source tag", async () => {
+	const { api, getHandler } = createPiStub();
+	const { controller } = createControllerStub();
+	const { ctx, notifications } = createCtxStub(false);
+
+	registerToolDisplayCommand(api, controller);
+	const handler = getHandler();
+	assert.ok(handler);
+
+	await handler("", ctx);
+
+	assert.equal(notifications.length, 1);
+	assert.equal(notifications[0]?.level, "warning");
+	assert.match(notifications[0]?.message ?? "", /^\[display\] /);
 });
 
 test("global switch is exposed by the settings modal and updates enabled", () => {

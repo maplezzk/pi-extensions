@@ -14,6 +14,7 @@ Independent Pi extensions still need the same operational pieces: a portable con
 - `/config:language` interactive command, plus `/config:language en-US` direct selection.
 - Catalog loading and validation requiring both language entries for every message key.
 - Translator interpolation for user-facing UI, command descriptions, and agent prompts.
+- A single notice outlet, `notifyWithSource`, that prefixes every user-visible notice with a short source tag in the package's own label colour. Pi renders `info` notices as dim, unprefixed text, so without a tag you cannot tell which extension spoke.
 
 ## Install
 
@@ -50,8 +51,24 @@ PI_EXTENSIONS_LOCALE=en-US pi
 ```
 
 ## Extension author API
+The package exports the locale and catalog primitives used by the feature packages, plus the shared notice outlet:
 
-The package exports the locale and catalog primitives used by the feature packages:
+```ts
+import { notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+
+/** Short, unique notice tag for this package. */
+const NOTICE_TAG = "distill";
+/** Label colour; keep it distinct from sibling packages. */
+const NOTICE_COLOR: NoticeColor = "muted";
+/** This package's notice source. */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
+notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("failed") });
+```
+
+This renders as `[distill] message`: the tag carries the package colour, the message stays untouched, and `level` still decides Pi's yellow `Warning:` / red `Error:` prefix. Colours are only added in tui mode; rpc/print/json get plain text so no ANSI leaks into other frontends. Use `formatNotice({ source, message, mode, theme })` when you only need the rendered string.
+
+Other exports:
 
 ```ts
 import {

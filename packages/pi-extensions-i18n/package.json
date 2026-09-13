@@ -17,7 +17,7 @@
     "tsconfig.json"
   ],
   "scripts": {
-    "test": "tsx --test tests/pi-i18n.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"

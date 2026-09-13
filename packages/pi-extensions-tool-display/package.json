@@ -47,13 +47,17 @@
     "coding-agent",
     "tool-display"
   ],
+  "dependencies": {
+    "pi-extensions-i18n": "^0.4.0"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.80.0",
     "@earendil-works/pi-tui": ">=0.80.0"
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./index.ts",
+      "../pi-extensions-i18n/index.ts"
     ],
     "skills": [
       "./SKILL.md"
