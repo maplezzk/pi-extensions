@@ -23,11 +23,14 @@ import { evaluateStop, STOP_SKIP_BUDGET, type StopOutcome } from "./evaluate.ts"
 import { createJudgeModelInvoker, createJudgeModelSource } from "./judge-model.ts";
 import { createStopVerdictRequester } from "./verdict.ts";
 import { formatBudget } from "./guard.ts";
+import { buildStatusLine, colorizeText, type StatusColor } from "./status-line.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
 const NOTICE_INFO = "info";
 const NOTICE_WARNING = "warning";
 const NOTICE_ERROR = "error";
+/** 页脚状态行占用的键：一个扩展只占一行。 */
+const STATUS_KEY = "pi-auto-goal";
 
 /** 允许自动判定的运行模式。 */
 type JudgeMode = "tui" | "rpc";
@@ -124,18 +127,35 @@ function buildStatusText(runtime: AutoGoalRuntime): string {
     i18n.t("configStatusLimit", { value: limit }),
     i18n.t("configStatusThreshold", { value: String(config.confidenceThreshold) }),
     i18n.t("configStatusJudgeTokens", { value: String(config.judgeMaxTokens) }),
+    i18n.t("configStatusStatusLine", {
+      value: i18n.t(config.showStatusLine ? "configOn" : "configOff"),
+    }),
     i18n.t("configStatusUsed", { value: String(runtime.used) }),
   ].join("\n");
 }
 
-/** 保存配置并把结果反馈到 UI；保存失败必须报错而不是静默。 */
-function persistConfig(next: AutoGoalConfig, ctx: ExtensionCommandContext): void {
+/** 保存配置并把结果反馈到 UI；保存失败必须报错而不是静默，返回是否真的保存成功。 */
+function persistConfig(next: AutoGoalConfig, ctx: ExtensionCommandContext): boolean {
   try {
     const path = saveConfig(next);
     ctx.ui.notify(i18n.t("configCommandSaved", { path }), NOTICE_INFO);
+    return true;
   } catch (error) {
     ctx.ui.notify(i18n.t("configCommandInvalid", { error: errorText(error) }), NOTICE_ERROR);
+    return false;
   }
+}
+
+/**
+ * 保存配置，并在保存成功时同步运行期配置。
+ * 运行期配置是判定时的唯一读取源，所以配置命令改完立即生效；
+ * 手动改配置文件仍需要 /reload 重新加载。
+ */
+function applyConfig(next: AutoGoalConfig, runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): void {
+  if (!persistConfig(next, ctx)) return;
+  runtime.config = next;
+  // 已关闭或已隐藏状态行时撤下它，避免残留上一轮的结论。
+  if (!next.enabled || !next.showStatusLine) ctx.ui.setStatus(STATUS_KEY, undefined);
 }
 
 /** 处理交互式菜单选择。 */
@@ -154,7 +174,7 @@ async function runConfigMenu(runtime: AutoGoalRuntime, ctx: ExtensionCommandCont
   const enabled = selected === toggleChoice
     ? !runtime.config.enabled
     : runtime.config.enabled;
-  persistConfig({ ...runtime.config, enabled }, ctx);
+  applyConfig({ ...runtime.config, enabled }, runtime, ctx);
 }
 
 /** 处理带参数的配置命令。 */
@@ -164,11 +184,11 @@ function runConfigArgument(value: string, runtime: AutoGoalRuntime, ctx: Extensi
     return;
   }
   if (value === CONFIG_RESET_COMMAND) {
-    persistConfig({ ...DEFAULT_AUTO_GOAL_CONFIG }, ctx);
+    applyConfig({ ...DEFAULT_AUTO_GOAL_CONFIG }, runtime, ctx);
     return;
   }
   if (value === CONFIG_ENABLE_COMMAND || value === CONFIG_DISABLE_COMMAND) {
-    persistConfig({ ...runtime.config, enabled: value === CONFIG_ENABLE_COMMAND }, ctx);
+    applyConfig({ ...runtime.config, enabled: value === CONFIG_ENABLE_COMMAND }, runtime, ctx);
   }
 }
 
@@ -199,6 +219,29 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
   for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
 }
 
+/**
+ * 按主题给文本上色，返回带色文本（纯查询，不写 UI）。
+ * 颜色只在 TUI 下添加：其他模式把文本转发给前端，ANSI 序列会变成可见乱码。
+ */
+function coloredText(
+  ctx: Pick<ExtensionContext, "mode" | "ui">,
+  color: StatusColor,
+  text: string,
+): string {
+  return colorizeText({ text, color }, ctx.mode, ctx.ui.theme);
+}
+
+/** 计算要写进页脚的判定状态行；不展示时返回 undefined。 */
+function buildDisplayLine(
+  ctx: Pick<ExtensionContext, "mode" | "ui">,
+  runtime: AutoGoalRuntime,
+  outcome: StopOutcome,
+): string | undefined {
+  if (!runtime.config.showStatusLine) return undefined;
+  const line = buildStatusLine(outcome);
+  return line ? coloredText(ctx, line.color, line.text) : undefined;
+}
+
 /** 把判定结果落到 UI 与会话：只有 continue 才会真的发消息。 */
 function applyOutcome(
   pi: ExtensionAPI,
@@ -206,6 +249,8 @@ function applyOutcome(
   runtime: AutoGoalRuntime,
   outcome: StopOutcome,
 ): void {
+  const statusLine = buildDisplayLine(ctx, runtime, outcome);
+  if (statusLine !== undefined) ctx.ui.setStatus(STATUS_KEY, statusLine);
   switch (outcome.kind) {
     case "continue": {
       // 先发送再记账：发送失败不应该消耗干预预算。
@@ -217,27 +262,34 @@ function applyOutcome(
       }
       runtime.used += 1;
       runtime.injectedUserTexts.add(outcome.message.trim());
+      // 干预和错误用 warning 级别，呈现为黄色，从正常输出里一眼能认出来。
       ctx.ui.notify(
-        i18n.t("autoContinueSent", { reason: outcome.reason, budget: outcome.budget }),
-        NOTICE_INFO,
+        coloredText(ctx, "warning", i18n.t("autoContinueSent", { reason: outcome.reason, budget: outcome.budget })),
+        NOTICE_WARNING,
       );
       return;
     }
     case "stop": {
       if (runtime.config.notifyOnStopDecision) {
-        ctx.ui.notify(i18n.t("stopDecisionNotified", { reason: outcome.reason }), NOTICE_INFO);
+        ctx.ui.notify(
+          coloredText(ctx, "success", i18n.t("stopDecisionNotified", { reason: outcome.reason })),
+          NOTICE_INFO,
+        );
       }
       return;
     }
     case "skipped": {
       if (outcome.code === STOP_SKIP_BUDGET && !runtime.budgetNoticeSent) {
         runtime.budgetNoticeSent = true;
-        ctx.ui.notify(i18n.t("budgetExhausted", { budget: outcome.budget }), NOTICE_WARNING);
+        ctx.ui.notify(
+          coloredText(ctx, "warning", i18n.t("budgetExhausted", { budget: outcome.budget })),
+          NOTICE_WARNING,
+        );
       }
       return;
     }
     case "failed": {
-      ctx.ui.notify(outcome.error, NOTICE_ERROR);
+      ctx.ui.notify(coloredText(ctx, "error", outcome.error), NOTICE_ERROR);
       return;
     }
   }

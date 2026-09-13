@@ -5,9 +5,9 @@ description: 配置与排查 pi-auto-goal 的提前停止判定、判定模型�
 
 # 配置 pi-auto-goal / Configure pi-auto-goal
 
-读取 `<pi-agent-dir>/extensions/pi-auto-goal/config.json`，遵守 `PI_CODING_AGENT_DIR`。用 `/config:auto-goal` 打开 TUI 菜单，参数 `enable`、`disable`、`status`、`reset` 执行对应动作；保存后执行 `/reload` 生效。
+读取 `<pi-agent-dir>/extensions/pi-auto-goal/config.json`，遵守 `PI_CODING_AGENT_DIR`。用 `/config:auto-goal` 打开 TUI 菜单，参数 `enable`、`disable`、`status`、`reset` 执行对应动作；配置命令改完立即生效，手改文件才需 `/reload`。
 
-Read `<pi-agent-dir>/extensions/pi-auto-goal/config.json` and respect `PI_CODING_AGENT_DIR`. Use `/config:auto-goal` for the TUI menu, or the `enable`, `disable`, `status`, and `reset` arguments; run `/reload` after saving.
+Read `<pi-agent-dir>/extensions/pi-auto-goal/config.json` and respect `PI_CODING_AGENT_DIR`. Use `/config:auto-goal` for the TUI menu, or the `enable`, `disable`, `status`, and `reset` arguments; configuration through that command takes effect immediately, while hand-edited files need `/reload`.
 
 - `enabled` 关闭整个判定，不产生任何模型调用。`enabled` turns off all judgement and model calls.
 - `model` 为 `provider/modelId` 时用专用模型判定，留空则复用当前会话模型；模型不存在会明确报错。A non-empty `model` (`provider/modelId`) uses a dedicated judge model; empty reuses the current session model, and a missing model is reported as an error.
@@ -16,6 +16,7 @@ Read `<pi-agent-dir>/extensions/pi-auto-goal/config.json` and respect `PI_CODING
 - `includeToolTrace`、`maxUserRequestChars`、`maxFinalOutputChars`、`maxToolTraceEntries` 控制交给判定模型的上下文规模。`includeToolTrace`, `maxUserRequestChars`, `maxFinalOutputChars`, and `maxToolTraceEntries` size the judge context.
 - `timeoutSeconds` 超时后中止判定并报告，不视为「可以停止」。`timeoutSeconds` aborts and reports a timed-out judgement instead of treating it as an acceptable stop.
 - `judgeMaxTokens` 是单次判定调用的输出上限（默认 2000，会被收敛到模型上限）。判定固定使用最低思考强度；若响应被截断且没有文本，会自动翻倍预算重试一次，仍失败则报出 `stopReason` 与内容块摘要。`judgeMaxTokens` is the output ceiling for one judge call (default 2000, clamped to the model limit). The judge always runs at the lowest thinking strength; a truncated response without text is retried once with a doubled budget, and a remaining failure reports `stopReason` plus a part summary.
+- `showStatusLine` 把最近一次判定结论常驻在页脚一行（默认开，颜色区分：绿=停止合理、黄=已催促、灰=已达上限、红=判定失败）。页脚停在旧结论且没有新提示，才说明本轮没有判定。`showStatusLine` pins the latest verdict to one footer line (on by default; green accepted stop, yellow continuation, grey budget exhausted, red failure). A stale footer line plus no new notification is what "this turn was not judged" looks like.
 - `print` / `json` 模式不判定：agent 停止后会话即收尾，settled 回调的 ctx 已失效。Print and JSON modes skip judgement because the session already shuts down and the settled ctx is stale.
 - `continueMessageTemplate` 覆盖内置催促文案，支持 `{reason}`；缺少占位符时理由会追加到末尾。`continueMessageTemplate` overrides the built-in continuation message and supports `{reason}`; the reason is appended when the placeholder is missing.
 

@@ -9,6 +9,7 @@
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
   "notifyOnStopDecision": false,
+  "showStatusLine": true,
   "judgeMaxTokens": 2000,
   "continueMessageTemplate": "",
   "forcedDecision": "auto"

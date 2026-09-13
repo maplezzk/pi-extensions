@@ -33,6 +33,8 @@ export interface AutoGoalConfig {
   maxToolTraceEntries: number;
   /** 判定为「可以停止」时是否也弹出提示。 */
   notifyOnStopDecision: boolean;
+  /** 是否把最近一次判定结论写成页脚的一行状态。 */
+  showStatusLine: boolean;
   /** 单次判定调用的输出 token 上限；调试时可适当调高以避免推理占满预算。 */
   judgeMaxTokens: number;
   /** 自动催促消息模板；空字符串表示使用内置模板。支持 {reason} 占位。 */
@@ -87,13 +89,14 @@ export const DEFAULT_AUTO_GOAL_CONFIG: AutoGoalConfig = {
   maxFinalOutputChars: DEFAULT_MAX_FINAL_OUTPUT_CHARS,
   maxToolTraceEntries: DEFAULT_MAX_TOOL_TRACE_ENTRIES,
   notifyOnStopDecision: false,
+  showStatusLine: true,
   judgeMaxTokens: DEFAULT_JUDGE_MAX_TOKENS,
   continueMessageTemplate: "",
   forcedDecision: "auto",
 };
 
 /** 布尔字段清单。 */
-const BOOLEAN_FIELDS = ["enabled", "includeToolTrace", "notifyOnStopDecision"] as const;
+const BOOLEAN_FIELDS = ["enabled", "includeToolTrace", "notifyOnStopDecision", "showStatusLine"] as const;
 /** 必须为正整数的字段清单。 */
 const POSITIVE_INTEGER_FIELDS = ["maxUserRequestChars", "maxFinalOutputChars"] as const;
 /** 允许为 0（表示不限制）的整数字段清单。 */
