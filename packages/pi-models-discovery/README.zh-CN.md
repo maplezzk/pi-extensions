@@ -59,6 +59,7 @@ pi install npm:pi-models-discovery
 - **离线 / 拉取失败**：保留 models.json 里手写的 `models`（如有，作为回退），并通过会话内 notify 显式警告，不静默降级；单个 provider 失败不影响其他 provider。
 - **apiKey 解析**（仅发现请求）：支持字面量与 `$ENV_VAR` / `${ENV_VAR}` 插值；`!command` 形式跳过发现并显式警告（聊天请求仍由 pi 自身解析执行，不受影响）。
 - 发现的模型默认参数：`reasoning: true`、`input: ["text", "image"]`、cost 全 0、`contextWindow` 1M、`maxTokens` 64K、`compat.supportsDeveloperRole: false`；provider 级 `compat` 会合并进每个发现的模型。
+- 发现的模型不声明 `thinkingLevelMap`，由 pi 按 provider 默认映射决定可选思考等级（标准等级直至 `high`，不提供扩展的 `xhigh` / `max`）。`/models` 无法逐个模型返回思考能力，扩展也不替它猜；个别 provider 需要不同映射时，请在 models.json 里手写该模型的 `models` 条目自行声明。
 - 模型元数据可携带 `name` / `context_window`（或 `contextWindow`）/ `max_tokens`（或 `maxTokens`），缺失时用默认值。
 
 旧的 `/model-discovery`、`/model-discovery-refresh`、`/pi-model-discovery` 和 `/pi-model-discovery-refresh` 名称仍作为兼容别名保留。

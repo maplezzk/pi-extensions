@@ -303,13 +303,6 @@ function buildModel(
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: contextWindow ?? 1_000_000,
 		maxTokens: maxTokens ?? 65_536,
-		thinkingLevelMap: {
-			minimal: null,
-			low: null,
-			medium: null,
-			high: "high",
-			xhigh: "max",
-		},
 		compat: {
 			supportsDeveloperRole: false,
 			...providerCompat,
