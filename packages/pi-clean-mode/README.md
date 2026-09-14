@@ -98,7 +98,7 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 | `showRunHeader` | Show the `Took …` header above the final answer. |
 | `showExpandHint` | Append the expand hint to the header. |
 | `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
-| `showActivityArea` | Show the live activity area above the editor while the agent runs. |
+| `showActivityArea` | Show the live activity area at the end of the transcript while the agent runs. |
 | `activityRows` | Activity area height, 1-6 (default 4). |
 | `animateActivity` | Animate the activity glyph; off keeps a still marker. |
 
@@ -108,23 +108,30 @@ Set `PI_CLEAN_MODE_DEBUG=1` to append event and render decisions to `<pi agent d
 
 ## Live activity area
 
-While the agent runs, a small area above the editor shows what is happening right now:
+While the agent runs, a small block is appended to the end of the transcript:
 
 ```
+用户：帮我改一下 xxx
+用时 21s ⌄
+▸ 探索 · 5 步
 │ ◑ 思考  正在追踪 token 失效路径…
 │ ⠹ 运行命令 npm test
 │   ↳ 12 passing
 │ 读取 4 · 搜索 3 · 命令 1 · 42s
 ```
 
+It lives in the transcript and scrolls with the conversation, instead of being a status bar pinned above the editor — scroll up into history and it scrolls away with the content, matching the Codex desktop client.
+
 Contents come from real events only — the running tool, its latest output line, the thinking head, and counters. Parallel calls collapse into one summary line.
 
-Two implementation constraints matter, both taken from how `pi-desktop-transcript` handles the same problem:
+Two implementation constraints matter:
 
-1. **`ctx.ui.setWidget` repaints the whole screen.** The lines are rendered into a string first and compared with the previous tick; if the content is identical, `setWidget` is not called at all.
+1. **Unchanged content never repaints.** Each tick renders the lines into a string and compares it with the previous tick; when it matches, no repaint is requested at all. The cost of a repaint lands on the content height change.
 2. **Motion is capped at 2.5fps (400ms)**, the timer only exists while a run is active, and it is `unref()`-ed. With `animateActivity: false` it slows to 1s and shows still markers.
 
 While the area shows the current action, Pi's own `Working...` line and hidden-thinking placeholder are suppressed so the two do not say the same thing twice.
+
+The lines are appended to the transcript container's `render` output. That container is located by walking the TUI component tree (it is the only one holding assistant messages directly), and it is identified by property shape rather than `instanceof`, so it still works when the extension and Pi each load their own copy of `pi-tui`.
 
 ## Compatibility
 

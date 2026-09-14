@@ -6,8 +6,8 @@
  *
  * - assistant 消息：工作过程（带 tool call）整条隐藏；最终答案保留；
  * - 工具行：整行隐藏，由于空渲染会返回 []，连前置空行一起消失；
- * - 折叠头：作为最终答案容器里的第一个子组件插入，并包一层 MouseRegion，
- *   因此全屏模式下可以鼠标点击切换折叠状态。
+ * - 折叠头：作为本轮第一条 assistant 消息内容容器的第一个子组件插入，并包一层
+ *   MouseRegion，因此全屏模式下可以鼠标点击切换折叠状态。
  *
  * 为什么可以用「带不带 tool call」区分工作过程与最终答案：agent 循环在没有
  * tool call 时结束，所以一次运行里不带 tool call 的 assistant 消息只有最后一条。
@@ -186,6 +186,22 @@ function getOrCreateRunHeader(host: AssistantMessageHost, deps: ComponentPatchDe
 }
 
 /**
+ * 刷新容器的鼠标高度表。
+ *
+ * `Container.render` 的副作用是登记「每个子组件占几行」，鼠标命中靠这份表把屏幕
+ * 坐标换算到具体子组件。收起态下正文行会被丢掉，但仍必须先跑一次容器渲染，否则
+ * 折叠头会沿用上一帧的旧表——那一帧折叠头还没出现（耗时要等运行结束才有），
+ * 点击就被派发到正文子容器上，表现为「点了没反应」。返回值是正文行，这里刻意丢掉。
+ */
+function refreshContainerMouseLayout(
+	host: AssistantMessageHost,
+	width: number,
+	originalRender: AssistantRenderMethod,
+): void {
+	originalRender.call(host, width);
+}
+
+/**
  * 包装 assistant 消息的 render。
  *
  * 折叠头在展开态由内容容器里的子组件渲染；折叠态下如果本体内容被隐藏，就只
@@ -212,7 +228,10 @@ function buildAssistantMessageRender(
 			return [];
 		}
 
-		return getOrCreateRunHeader(this, deps).render(width);
+		const headerLines = getOrCreateRunHeader(this, deps).render(width);
+		refreshContainerMouseLayout(this, width, originalRender);
+
+		return headerLines;
 	};
 }
 

@@ -21,24 +21,25 @@ const NPM_TEST_LINES = ["│ ⠹ 运行命令 npm test"];
 /** 内容变化对比用的第二组行。 */
 const NPM_BUILD_LINES = ["│ ⠸ 运行命令 npm run build"];
 
-/** 记录一次 setWidget 调用的实参。 */
-interface WidgetCall {
-	key: string;
-	/** 传 undefined 表示摘掉 widget。 */
-	content: unknown;
-}
-
-/** 测试用的假 UI 宿主，记录所有显示层调用。 */
+/**
+ * 测试用的假 UI 宿主。
+ *
+ * 活动行内联在 transcript 里，所以宿主侧要观察的是「请求了几次重绘」和
+ * 「有没有挂过 transcript 补丁」，而不是过去那种 setWidget 调用。
+ */
 interface FakeHost {
 	host: ActivityUiHost;
-	widgets: WidgetCall[];
+	/** 显示层调用计数。 */
+	calls: { renders: number; attaches: number };
+	/** Pi 内置 Working 提示的显隐变化。 */
 	workingVisible: boolean[];
+	/** 隐藏思考占位文案的每次设置。 */
 	thinkingLabels: Array<string | undefined>;
 }
 
 /** 造一个记录调用的假 UI 宿主；不需要伪造整个 ExtensionContext。 */
 function createFakeHost(): FakeHost {
-	const widgets: WidgetCall[] = [];
+	const calls = { renders: 0, attaches: 0 };
 	const workingVisible: boolean[] = [];
 	const thinkingLabels: Array<string | undefined> = [];
 
@@ -51,10 +52,6 @@ function createFakeHost(): FakeHost {
 				// 不改变文本，便于直接断言。
 				bold: (text: string) => text,
 			},
-			/** 记录每次挂载或摘掉 widget 的实参。 */
-			setWidget: (key: string, content: unknown) => {
-				widgets.push({ key, content });
-			},
 			/** 记录 Pi 内置 Working 提示的显隐变化。 */
 			setWorkingVisible: (visible: boolean) => {
 				workingVisible.push(visible);
@@ -64,9 +61,17 @@ function createFakeHost(): FakeHost {
 				thinkingLabels.push(label);
 			},
 		},
+		/** 活动行内联渲染，刷新只体现为一次重绘请求。 */
+		requestRender: () => {
+			calls.renders += 1;
+		},
+		/** 记录补丁挂载尝试。 */
+		attachTranscript: () => {
+			calls.attaches += 1;
+		},
 	};
 
-	return { host, widgets, workingVisible, thinkingLabels };
+	return { host, calls, workingVisible, thinkingLabels };
 }
 
 /** 造一个返回固定行的渲染依赖。 */
@@ -85,46 +90,63 @@ function activeSnapshot(): ActivitySnapshot {
 	return { ...createActivitySnapshot(), active: true };
 }
 
-test("内容不变时跳过第二次 setWidget，避免整屏重绘", () => {
+test("内容不变时跳过重绘", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
 	const deps = createDeps(activeSnapshot());
 
 	refreshActivityArea(runtime, fake.host, deps);
-	const afterFirst = fake.widgets.length;
+	const rendersAfterFirst = fake.calls.renders;
 
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.equal(fake.widgets.length, afterFirst, "签名相同不应再次调用 setWidget");
+	assert.equal(fake.calls.renders, rendersAfterFirst, "签名相同就不应再请求重绘");
 });
 
-test("内容变化时重新挂载 widget", () => {
+/**
+ * 合约：transcript 容器要等第一条 assistant 消息出现才存在，所以运行中每次刷新
+ * 都试挂一次；已挂上时是常量时间的短路。
+ */
+test("运行中每次刷新都试挂补丁，便于等第一条 assistant 消息出现后补上", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	const deps = createDeps(activeSnapshot());
+
+	refreshActivityArea(runtime, fake.host, deps);
+	refreshActivityArea(runtime, fake.host, deps);
+	assert.equal(fake.calls.attaches, 2, "内容无变化也要重试挂载，已挂上时是短路");
+});
+
+test("内容变化时更新行并请求重绘", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
 	let lines = NPM_TEST_LINES;
 	const deps: ActivityAreaDeps = {
 		getSnapshot: () => activeSnapshot(),
-		// 本用例只关心内容变化触发重挂载。
+		// 本用例只关心内容变化触发重绘。
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
 		renderLines: () => lines,
 	};
 
 	refreshActivityArea(runtime, fake.host, deps);
-	const afterFirst = fake.widgets.length;
+	assert.deepEqual(runtime.lines, NPM_TEST_LINES, "runtime 应持有当前渲染行");
+	const rendersAfterFirst = fake.calls.renders;
 
 	lines = NPM_BUILD_LINES;
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.equal(fake.widgets.length, afterFirst + 1, "内容变化应重新挂载");
+	assert.equal(fake.calls.renders, rendersAfterFirst + 1, "内容变化应请求重绘");
+	assert.deepEqual(runtime.lines, NPM_BUILD_LINES, "runtime 的行应跟着更新");
 });
 
-test("没有内容时摘掉 widget 而不是画空 widget", () => {
+test("没有内容时清空行，只请求重绘不挂补丁", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
 	const deps = createDeps(createActivitySnapshot());
 
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.equal(fake.widgets.length, 1);
-	assert.equal(fake.widgets[0]?.content, undefined);
+	assert.deepEqual(runtime.lines, [], "未运行时不应留下任何活动行");
+	assert.equal(fake.calls.renders, 1, "清空行也要重绘一次");
+	assert.equal(fake.calls.attaches, 0, "没有内容时不需要挂 transcript 补丁");
 });
 
 test("活动区有内容时隐藏 Pi 内置 Working，清理时恢复", () => {
@@ -160,17 +182,19 @@ test("定时器启动后存在，停止后释放", () => {
 	assert.equal(runtime.timer, undefined);
 });
 
-test("清理活动区会同时停掉定时器并摘掉 widget", () => {
+test("清理活动区会停掉定时器、清空行并请求重绘", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
 	const deps = createDeps(activeSnapshot());
 
 	startActivityTimer(runtime, fake.host, deps);
+	const rendersAfterStart = fake.calls.renders;
 	clearActivityArea(runtime, fake.host);
 
 	assert.equal(runtime.timer, undefined, "清理后不应残留定时器");
-	assert.equal(fake.widgets[fake.widgets.length - 1]?.content, undefined);
-	assert.equal(runtime.widgetSignature, undefined);
+	assert.equal(runtime.linesSignature, undefined);
+	assert.deepEqual(runtime.lines, [], "清理后不应残留活动行");
+	assert.equal(fake.calls.renders, rendersAfterStart + 1, "清理后应重绘一次把行摘掉");
 });
 
 test("重复启动定时器不会叠加", () => {

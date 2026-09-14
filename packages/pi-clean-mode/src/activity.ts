@@ -1,12 +1,12 @@
 /**
  * 实时活动区的纯逻辑。
  *
- * 目标：运行期间在编辑器上方用固定行数展示「现在在做什么」，而不是让 transcript
+ * 目标：运行期间在对话流末尾用固定行数展示「现在在做什么」，而不是让 transcript
  * 里的行反复增减。内容全部来自真实事件，不生成推测出来的进度。
  *
- * 参考实现（pi-desktop-transcript）的关键约束：`setWidget` 会重绘整屏，
- * 因此行内容必须可比较、内容不变时要能整体跳过重绘；真正调用 setWidget 的
- * 职责在 activity-area.ts。
+ * 关键约束：行每 tick 都会重算，但内容常常没变（耗时没走到下一秒、动画帧循环回同一
+ * 格），因此行内容必须可比较、不变时要能整体跳过重绘；真正决定「要不要重绘」以及在
+ * 哪里渲染的职责在 activity-area.ts 与 transcript-tail.ts。
  */
 
 import { formatDuration } from "./duration.js";

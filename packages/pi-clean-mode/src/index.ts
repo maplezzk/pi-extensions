@@ -41,6 +41,7 @@ import {
 	startActivityTimer,
 	type ActivityAreaDeps,
 	type ActivityAreaRuntime,
+	type ActivityUiHost,
 } from "./activity-area.js";
 import { installComponentPatches, type ToolRowGroupInfo } from "./component-patches.js";
 import {
@@ -59,6 +60,7 @@ import {
 } from "./action-groups.js";
 import { i18n } from "./i18n.js";
 import { applyCollapsed, createInitialState, settleRun, startRun } from "./run-state.js";
+import { createTranscriptTail, type TranscriptTail } from "./transcript-tail.js";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "./types.js";
 
 /** 折叠/展开快捷键；f2 未被 Pi 内置键位占用。 */
@@ -112,6 +114,10 @@ interface Runtime {
 	activity: ActivitySnapshot;
 	/** 实时活动区的运行时（定时器与签名缓存）。 */
 	activityArea: ActivityAreaRuntime;
+	/** 活动区 UI 宿主；session_start 里构造一次，事件回调与定时器复用同一个对象。 */
+	activityHost?: ActivityUiHost;
+	/** transcript 末尾补丁；活动行靠它内联进对话流。 */
+	transcriptTail?: TranscriptTail;
 	/** 每轮耗时账本，把耗时绑定到具体的最终答案消息上。 */
 	runDurations: RunDurationLedger;
 }
@@ -254,6 +260,44 @@ function createActivityDeps(runtime: Runtime): ActivityAreaDeps {
 			});
 		},
 	};
+}
+
+/**
+ * 把扩展上下文适配成活动区需要的窄接口。
+ *
+ * 活动行内联在 transcript 末尾，不再走 widget：requestRender 把新行真的画出来，
+ * attachTranscript 保证补丁已挂上（transcript 容器可能晚于扩展加载才出现）。
+ * 整个会话只构造一次，存进 runtime 供事件回调与定时器共用。
+ */
+function createActivityHost(runtime: Runtime, ctx: ExtensionContext): ActivityUiHost {
+	return {
+		ui: {
+			theme: ctx.ui.theme,
+			setWorkingVisible: (visible) => ctx.ui.setWorkingVisible(visible),
+			setHiddenThinkingLabel: (label) => ctx.ui.setHiddenThinkingLabel(label),
+		},
+		requestRender: () => requestRender(runtime),
+		attachTranscript: () => {
+			// 新挂上补丁的那一次要自己补个重绘：这一帧的活动行才画得出来。
+			if (runtime.transcriptTail?.attach()) {
+				requestRender(runtime);
+			}
+		},
+	};
+}
+
+/**
+ * 取活动区宿主。
+ *
+ * 活动事件只会在 session_start 之后触发，所以正常路径上一定已经构造过；真缺失
+ * 说明事件顺序变了，直接报错而不是静默不显示。
+ */
+function requireActivityHost(runtime: Runtime): ActivityUiHost {
+	const host = runtime.activityHost;
+	if (!host) {
+		throw new Error("pi-clean-mode: activity host used before session_start");
+	}
+	return host;
 }
 
 /** 取一个工具行的动作组快照，供渲染决策使用。 */
@@ -445,6 +489,13 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 			return NO_CONTENT_COMPONENT;
 		});
 
+		// 补丁与宿主都在这里装配一次，之后事件回调只做取值与复用。
+		runtime.transcriptTail = createTranscriptTail({
+			getRoot: () => runtime.tui,
+			getLines: () => runtime.activityArea.lines,
+		});
+		runtime.activityHost = createActivityHost(runtime, ctx);
+
 		installPatches(runtime);
 		requestRender(runtime);
 		debugLog("session_start", `debug file=${debugLogPath()} actionGroups=${runtime.config.enableActionGroups}`);
@@ -468,7 +519,11 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 
 		runtime.activity = { ...createActivitySnapshot(), active: true, startedAtMs: runtime.runStartedAtMs };
 		if (isActivityEnabled(runtime)) {
-			startActivityTimer(runtime.activityArea, ctx, createActivityDeps(runtime));
+			startActivityTimer(
+				runtime.activityArea,
+				requireActivityHost(runtime),
+				createActivityDeps(runtime),
+			);
 		}
 
 		requestRender(runtime);
@@ -480,7 +535,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 			return;
 		}
 		noteToolStarted(runtime, event);
-		startActivityTimer(runtime.activityArea, ctx, createActivityDeps(runtime));
+		startActivityTimer(runtime.activityArea, requireActivityHost(runtime), createActivityDeps(runtime));
 	});
 
 	// 工具流式输出：只保留最后一行作为输出尾巴。
@@ -519,7 +574,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		runtime.runStartedAtMs = undefined;
 		runtime.activity = { ...runtime.activity, active: false };
 		runtime.runDurations.bindDuration(runtime.state.runDurationMs);
-		clearActivityArea(runtime.activityArea, ctx);
+		clearActivityArea(runtime.activityArea, requireActivityHost(runtime));
 		requestRender(runtime);
 	});
 
@@ -542,11 +597,15 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		debugLog("tool_call", `${event.toolCallId} -> group=${runtime.actionGroups.currentGroupId}`);
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
+	pi.on("session_shutdown", async () => {
+		// 清理要先于置空：clearActivityArea 还需要宿主去恢复 Pi 的内置提示。
+		clearActivityArea(runtime.activityArea, requireActivityHost(runtime));
 		runtime.restorePatches?.();
 		runtime.restorePatches = undefined;
+		runtime.transcriptTail?.restore();
+		runtime.transcriptTail = undefined;
+		runtime.activityHost = undefined;
 		runtime.tui = undefined;
-		clearActivityArea(runtime.activityArea, ctx);
 	});
 
 	pi.registerShortcut(TOGGLE_SHORTCUT, {

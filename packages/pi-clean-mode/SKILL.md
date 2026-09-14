@@ -18,7 +18,7 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 | `showRunHeader` | `true` | 折叠时在最终答案上方显示 `用时 …` |
 | `showExpandHint` | `true` | 折叠头末尾附带展开提示 |
 | `enableActionGroups` | `true` | 把一个 turn 的多条工具调用收成一行组头 |
-| `showActivityArea` | `true` | 编辑器上方的实时活动区 |
+| `showActivityArea` | `true` | 对话流末尾的实时活动区 |
 | `activityRows` | `4` | 活动区高度，1-6 |
 | `animateActivity` | `true` | 活动区动画；关闭后只保留静止标记 |
 
@@ -36,22 +36,25 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 | 运行结束后没有自动收起 | 本轮是否手动切换过 —— 手动切换会压制本轮自动收起，这是预期行为；否则检查 `agent_settled` 是否触发、TUI 句柄是否取得 |
 | 耗时头上方太挤或下方空太多 | 耗时头子组件应输出「空行 + 耗时头」两行；下方间距由内容容器自带的 Spacer 提供，不要再加尾随空行 |
 | 鼠标点不动 | 是否全屏模式；常规模式终端自己接管鼠标，Pi 收不到点击 |
+| 收起态点不动耗时头 | 收起态是否绕过了容器渲染：`Container` 在 `render` 里登记每个子组件的高度，鼠标命中靠这份表算坐标；跳过就会沿用旧表，点击被派发到正文子容器上（见 `component-patches.ts` 的 `refreshContainerMouseLayout`） |
 | 多条工具调用没有收成组头 | `enableActionGroups` 是否为 on；这些调用之间是否夹了解说（夹了就会断开成两组）；同组只有一条时不折叠 |
 | 组头文案里的步数不对 | 检查 `turn_start` 是否每轮都触发，以及 `tool_call` 是否带上了 toolCallId |
 | 折叠后最终答案不见了 | 该消息是否被判定成「带 tool call」。`stopReason === "length"` 的截断回复可能含未完成的 tool call，从而被当作工作过程隐藏 |
 | 耗时头不显示 | `showRunHeader` 是否为 on；`runDurationMs` 是否为空（缺少 `agent_start` 时无耗时） |
-| 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示） |
-| 活动区闪或卡 | 检查是否绕过了内容签名去重而直接调 `setWidget`；`setWidget` 会重绘整屏，内容无变化必须跳过 |
-| 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea` |
+| 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；transcript 容器是否已定位到（容器要等第一条 assistant 消息出现） |
+| 活动区闪或卡 | 检查是否绕过了内容签名去重而每次 tick 都请求重绘；行内容不变时必须跳过 |
+| 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 并请求一次重绘） |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
 
 ## 实时活动区的三条约束
 
-改动 activity.ts / activity-area.ts 时必须遵守：
+改动 activity.ts / activity-area.ts / transcript-tail.ts 时必须遵守：
 
-1. `setWidget` 会重绘整屏 → 先把行拼成字符串比较签名，不变就完全跳过调用；
+1. 行内容不变就完全不请求重绘 → 先把行拼成字符串比较签名，不变就直接返回；
 2. 动画固定 400ms（关闭动画 1000ms），定时器 `unref()`；
-3. 定时器只在运行时存在，`agent_settled` 立即停掉并摘掉 widget。
+3. 定时器只在运行时存在，`agent_settled` 立即停掉并清空 `runtime.lines`。
+
+活动行内联在 transcript 末尾：`transcript-tail.ts` 把 transcript 容器的 `render` 尾部接上 `runtime.lines`，容器靠遍历组件树定位（唯一直接持有 assistant 消息的那个），判定用 `contentContainer` + `hasToolCalls` 属性特征而不是 `instanceof`。
 
 ## 边界
 

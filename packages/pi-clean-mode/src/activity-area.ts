@@ -1,62 +1,66 @@
 /**
  * 实时活动区的运行时。
  *
- * 为什么需要这一层签名去重：`ctx.ui.setWidget` 会重绘整屏。参考实现
- * （pi-desktop-transcript）的做法是先把行渲染成字符串比较签名，内容与上一 tick
- * 完全一致时直接返回，不调用 setWidget；同时把动画压到 2.5fps，并让定时器只在
- * 运行期间存在。三者一起才能既表达「正在做什么」又不把整屏刷成噪点。
+ * 活动行内联在 transcript 末尾（见 transcript-tail.ts），不再用 Pi 的 widget：
+ * widget 固定在编辑器上下方，滚历史时它不动，看起来像钉在底部的一条状态。
+ *
+ * 为什么还要签名去重：活动行每 tick 都会重算，但内容常常没变（例如耗时没走到
+ * 下一秒、动画帧循环回同一格）。内容不变时完全跳过重绘，让整屏刷新只发生在真正
+ * 有新信息的时候；同时把动画压到 2.5fps，并让定时器只在运行期间存在。
+ *
+ * 刷新只做两件事：更新 runtime.lines，再请求重绘。这两个动作
+ * （attachTranscript / requestRender）是 ActivityUiHost 的必需成员，刻意不套
+ * safeUiCall：它们抛错说明扩展入口的适配层坏了，应当暴露而不是吞掉；safeUiCall
+ * 只用于老版本 Pi 可能缺失的可选 UI 方法。
  */
 
 import type { ActivityPainter, ActivitySnapshot } from "./activity.js";
 
-/** 活动区 widget 的 key。 */
-const ACTIVITY_WIDGET_KEY = "pi-clean-mode-activity";
 /** 开启动画时的刷新间隔，约 2.5fps。 */
 const ANIMATED_INTERVAL_MS = 400;
 /** 关闭动画时的刷新间隔，只是为了让耗时数字仍然更新。 */
 const STILL_INTERVAL_MS = 1000;
-/** 空行集，用于没有内容可显示的组件。 */
-const NO_LINES: string[] = [];
-
-/**
- * 活动区 widget 组件：Pi 只要求 render 与 invalidate 两个成员。
- */
-export interface ActivityWidgetComponent {
-	/** 输出当前活动区行。 */
-	render(): string[];
-	/** Component 接口要求；活动区不缓存行，所以是空实现。 */
-	invalidate(): void;
-}
 
 /**
  * 活动区需要的 UI 能力。
  *
- * 刻意比 `ExtensionContext` 窄：这里只用到主题取色、挂载 widget、以及两个内置
- * 提示的显隐开关，窄接口让测试无需伪造整个上下文。
+ * 刻意比 `ExtensionContext` 窄：这里只用到主题取色、两个内置提示的显隐开关，
+ * 以及触发重绘与挂载 transcript 末尾补丁，窄接口让测试无需伪造整个上下文。
  *
  * `setHiddenThinkingLabel("")` 表示把占位文案清空（活动区已经在展示真实思考头部），
  * 传 `undefined` 则是恢复 Pi 的默认占位文案。
  */
 export interface ActivityUiHost {
 	ui: {
-		/** 主题取色能力，用于生成可比较的签名。 */
+		/** 主题取色能力，用于渲染活动行。 */
 		theme: ActivityPainter;
-		/**
-		 * 挂载或摘掉 widget；undefined 表示摘掉。
-		 * content 的最终解释权在 Pi，因此类型保持宽泛，由调用处提供组件工厂。
-		 */
-		setWidget(key: string, content: unknown): void;
 		/** 控制 Pi 内置 Working 提示的显隐。 */
 		setWorkingVisible(visible: boolean): void;
 		/** 设置 Pi 隐藏思考块的占位文案。 */
 		setHiddenThinkingLabel(label?: string): void;
 	};
+	/** 把最新活动行刷到屏幕上。 */
+	requestRender(): void;
+	/**
+	 * 确保 transcript 容器已接管末尾行。
+	 *
+	 * 契约：宿主内部在同一次调用里处理「刚挂上」的情况（自己补一次重绘），
+	 * 因此首次挂载后的第一帧就能看到活动行，调用方不需要关心返回值。
+	 */
+	attachTranscript(): void;
 }
 
 /** 活动区运行时持有的可变状态。 */
 export interface ActivityAreaRuntime {
-	/** 上一次交给 setWidget 的内容签名，用于跳过无变化的重绘。 */
-	widgetSignature?: string;
+	/** 上一次渲染结果的行签名，用于跳过无变化的重绘。 */
+	linesSignature?: string;
+	/**
+	 * 当前要展示在 transcript 末尾的行；空数组表示不展示。
+	 *
+	 * 本文件只负责写：每次重算后与 linesSignature 成对更新，由扩展入口通过
+	 * `getLines` 交给 transcript-tail 在渲染时读取。
+	 */
+	lines: string[];
 	/** 动画帧序号。 */
 	frame: number;
 	/** 刷新定时器；只在运行期间存在。 */
@@ -93,7 +97,7 @@ export interface ActivityLinesInput {
 
 /** 创建活动区运行时状态。 */
 export function createActivityAreaRuntime(): ActivityAreaRuntime {
-	return { frame: 0, workingSuppressed: false };
+	return { frame: 0, workingSuppressed: false, lines: [] };
 }
 
 /** 安全调用 ui 上的可选方法；老版本或极简上下文可能不提供。 */
@@ -105,59 +109,28 @@ function safeUiCall(action: () => void): void {
 	}
 }
 
-/**
- * 用当前主题渲染活动区行并拼成签名；无内容时返回空字符串。
- *
- * 签名只用于比较是否需要重绘，因此用扩展上下文里的当前主题即可。
- */
-function buildSignature(
+/** 按当前主题与快照渲染活动行；未运行时返回空行集。 */
+function renderActivityLines(
 	runtime: ActivityAreaRuntime,
 	host: ActivityUiHost,
 	deps: ActivityAreaDeps,
-): string {
-	const snapshot = deps.getSnapshot();
-	if (!snapshot.active) {
-		return "";
+): string[] {
+	if (!deps.getSnapshot().active) {
+		return [];
 	}
-	const lines = deps.renderLines({
+	return deps.renderLines({
 		painter: host.ui.theme,
 		frame: runtime.frame,
 		maxRows: deps.getMaxRows(),
 		animated: deps.isAnimated(),
 	});
-	return lines.join("\n");
-}
-
-/** 把渲染好的行挂到 widget 上，使用 Pi 传入的主题与实时动画帧。 */
-function mountActivityWidget(
-	runtime: ActivityAreaRuntime,
-	host: ActivityUiHost,
-	deps: ActivityAreaDeps,
-): void {
-	host.ui.setWidget(ACTIVITY_WIDGET_KEY, (_tui: unknown, theme: ActivityPainter): ActivityWidgetComponent => ({
-		/** 每次重绘都按当时的主题与动画帧重新生成行。 */
-		render: () => {
-			const snapshot = deps.getSnapshot();
-			if (!snapshot.active) {
-				return NO_LINES;
-			}
-			return deps.renderLines({
-				painter: theme,
-				frame: runtime.frame,
-				maxRows: deps.getMaxRows(),
-				animated: deps.isAnimated(),
-			});
-		},
-		/** Component 接口要求；行内容实时生成，没有缓存需要清理。 */
-		invalidate: () => {},
-	}));
 }
 
 /**
  * 刷新活动区。
  *
- * 内容签名与上一 tick 相同时完全跳过 setWidget，因为 setWidget 会重绘整屏；
- * 没有内容可显示时把 widget 摘掉，而不是画一个空 widget。
+ * 行内容与上一 tick 完全一致时直接返回，不触发重绘；行有变化时先挂上 transcript
+ * 末尾补丁，再请求重绘，保证补丁生效前不会白刷一帧。
  */
 export function refreshActivityArea(
 	runtime: ActivityAreaRuntime,
@@ -166,19 +139,32 @@ export function refreshActivityArea(
 ): void {
 	runtime.lastHost = host;
 
-	const signature = buildSignature(runtime, host, deps);
-	if (signature === runtime.widgetSignature) {
+	const lines = renderActivityLines(runtime, host, deps);
+	const signature = lines.join("\n");
+
+	// transcript 容器要等第一条 assistant 消息出现才存在，所以只要还在运行就每次
+	// 刷新都试挂一次；已挂上时是常量时间的短路，还没挂上才走一次组件树查找。
+	// 这里不问签名：新挂上时宿主会自己补一次重绘，不会漏掉这一帧。
+	if (lines.length > 0) {
+		host.attachTranscript();
+	}
+
+	if (signature === runtime.linesSignature) {
 		return;
 	}
-	runtime.widgetSignature = signature;
+
+	// lines 与 linesSignature 必须成对落盘：前者决定屏幕上画什么，后者决定下一
+	// tick 要不要重画。提前 return 之前不留下这两者不一致的窗口。
+	runtime.linesSignature = signature;
+	runtime.lines = lines;
 
 	if (!signature) {
-		safeUiCall(() => host.ui.setWidget(ACTIVITY_WIDGET_KEY, undefined));
+		host.requestRender();
 		restorePiWorkingIndicator(runtime, host);
 		return;
 	}
 
-	mountActivityWidget(runtime, host, deps);
+	host.requestRender();
 
 	// 活动区已经在展示当前动作，Pi 内置的 Working 提示就是重复信息。
 	safeUiCall(() => host.ui.setWorkingVisible(false));
@@ -196,11 +182,12 @@ function restorePiWorkingIndicator(runtime: ActivityAreaRuntime, host: ActivityU
 	runtime.workingSuppressed = false;
 }
 
-/** 移除活动区、恢复 Pi 内置提示并停止定时器。 */
+/** 移除活动行、恢复 Pi 内置提示并停止定时器。 */
 export function clearActivityArea(runtime: ActivityAreaRuntime, host: ActivityUiHost): void {
 	stopActivityTimer(runtime);
-	runtime.widgetSignature = undefined;
-	safeUiCall(() => host.ui.setWidget(ACTIVITY_WIDGET_KEY, undefined));
+	runtime.linesSignature = undefined;
+	runtime.lines = [];
+	host.requestRender();
 	restorePiWorkingIndicator(runtime, host);
 }
 
