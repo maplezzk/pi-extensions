@@ -32,6 +32,7 @@ import {
   buildVerdictNotice,
   type VerdictNotice,
 } from "./verdict-notice.ts";
+import { buildModelChoices, formatModelValue, modelFromChoice } from "./model-choice.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
 const NOTICE_INFO: NoticeLevel = "info";
@@ -51,11 +52,14 @@ const JUDGE_MODES: ReadonlySet<string> = new Set<JudgeMode>(["tui", "rpc"]);
 /** 配置命令别名。 */
 const CONFIG_COMMAND_ALIASES = ["config:auto-goal", "auto-goal", "pi-auto-goal-config"] as const;
 /** 配置命令支持的非交互参数。 */
-const CONFIG_ARGUMENTS = ["enable", "disable", "status", "reset"] as const;
+const CONFIG_ARGUMENTS = ["enable", "disable", "status", "reset", "model"] as const;
 const CONFIG_ENABLE_COMMAND = "enable";
 const CONFIG_DISABLE_COMMAND = "disable";
 const CONFIG_STATUS_COMMAND = "status";
 const CONFIG_RESET_COMMAND = "reset";
+const CONFIG_MODEL_COMMAND = "model";
+/** `model` 参数里表示「复用当前会话模型」的取值。 */
+const CONFIG_MODEL_REUSE_VALUES: readonly string[] = ["default", "current", "session"];
 
 /** 扩展运行期状态。 */
 interface AutoGoalRuntime {
@@ -158,17 +162,81 @@ function applyConfig(next: AutoGoalConfig, runtime: AutoGoalRuntime, ctx: Extens
   runtime.config = next;
 }
 
+/** 配置里判定模型的展示文本：空值表示复用当前会话模型。 */
+function judgeModelLabel(runtime: AutoGoalRuntime): string {
+  return formatModelValue(runtime.config.model, i18n.t("configModelCurrent"));
+}
+
+/**
+ * 交互式选择判定模型：列出当前可用模型，首项是「复用当前会话模型」。
+ * 没有可用模型时明确报出，不静默什么都不做。
+ */
+async function chooseJudgeModel(runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): Promise<void> {
+  const current = judgeModelLabel(runtime);
+  const choices = buildModelChoices(ctx.modelRegistry.getAvailable(), i18n.t("configModelReuse"));
+  if (choices.length <= 1) {
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: NOTICE_WARNING,
+      message: i18n.t("configModelEmpty"),
+    });
+    return;
+  }
+  const selected = await ctx.ui.select(
+    i18n.t("configModelTitle", { value: current }),
+    choices.map((choice) => choice.label),
+  );
+  if (selected === undefined) return;
+  applyConfig({ ...runtime.config, model: modelFromChoice(selected, choices) }, runtime, ctx);
+}
+
+/** 处理 /config:auto-goal model：无值时显示当前模型，有值时设置。 */
+function runModelArgument(value: string, runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): void {
+  if (value === "") {
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: NOTICE_INFO,
+      message: i18n.t("configStatusModel", { value: judgeModelLabel(runtime) }),
+    });
+    return;
+  }
+  const model = CONFIG_MODEL_REUSE_VALUES.includes(value) ? "" : value;
+  try {
+    const next = parseConfig({ ...runtime.config, model });
+    applyConfig(next, runtime, ctx);
+  } catch (error) {
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: NOTICE_WARNING,
+      message: i18n.t("configModelInvalid", { value, error: errorText(error) }),
+    });
+  }
+}
+
 /** 处理交互式菜单选择。 */
 async function runConfigMenu(runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): Promise<void> {
   const toggleChoice = i18n.t("configEnabled", {
     value: i18n.t(runtime.config.enabled ? "configOff" : "configOn"),
   });
+  const modelChoice = i18n.t("configStatusModel", { value: judgeModelLabel(runtime) });
   const statusChoice = i18n.t("configStatusTitle");
   const doneChoice = i18n.t("configDone");
-  const selected = await ctx.ui.select(i18n.t("configMenuTitle"), [toggleChoice, statusChoice, doneChoice]);
+  const selected = await ctx.ui.select(i18n.t("configMenuTitle"), [
+    toggleChoice,
+    modelChoice,
+    statusChoice,
+    doneChoice,
+  ]);
   if (selected === undefined || selected === doneChoice) return;
   if (selected === statusChoice) {
     notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_INFO, message: buildStatusText(runtime) });
+    return;
+  }
+  if (selected === modelChoice) {
+    await chooseJudgeModel(runtime, ctx);
     return;
   }
   const enabled = selected === toggleChoice
@@ -179,6 +247,11 @@ async function runConfigMenu(runtime: AutoGoalRuntime, ctx: ExtensionCommandCont
 
 /** 处理带参数的配置命令。 */
 function runConfigArgument(value: string, runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): void {
+  const [head, ...rest] = value.split(/\s+/);
+  if (head === CONFIG_MODEL_COMMAND) {
+    runModelArgument(rest.join(" ").trim(), runtime, ctx);
+    return;
+  }
   if (value === CONFIG_STATUS_COMMAND) {
     notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_INFO, message: buildStatusText(runtime) });
     return;
@@ -201,7 +274,8 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
     /** 按参数执行配置动作，无参数时打开 TUI 菜单。 */
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
       const value = args.trim();
-      if (value && !CONFIG_ARGUMENTS.includes(value as (typeof CONFIG_ARGUMENTS)[number])) {
+      const head = value.split(/\s+/)[0] ?? "";
+      if (value && !CONFIG_ARGUMENTS.includes(head as (typeof CONFIG_ARGUMENTS)[number])) {
         notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_WARNING, message: i18n.t("configCommandUsage") });
         return;
       }

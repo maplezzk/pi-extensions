@@ -60,7 +60,7 @@ pi install npm:pi-auto-goal
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
 | `enabled` | `true` | 总开关；关闭后不产生任何判定调用。 |
-| `model` | `""` | 判定模型，格式 `provider/modelId`；留空则复用当前会话模型。 |
+| `model` | `""` | 判定模型，格式 `provider/modelId`；留空则复用当前会话模型。可直接在 `/config:auto-goal` 菜单里选，或用 `/config:auto-goal model <provider/modelId>` 指定。 |
 | `maxAutoContinues` | `2` | 同一条用户请求允许的自动干预次数；`0` 表示不限制。 |
 | `confidenceThreshold` | `0.6` | 触发干预所需的最低置信度。 |
 | `timeoutSeconds` | `30` | 判定请求超时；超时只报告，不当成可以停止。 |
@@ -117,8 +117,9 @@ pi install npm:pi-auto-goal
 
 ### 命令
 
-- `/config:auto-goal` — TUI 配置菜单（别名：`/auto-goal`、`/pi-auto-goal-config`）。
+- `/config:auto-goal` — TUI 配置菜单（别名：`/auto-goal`、`/pi-auto-goal-config`）；菜单里能开关、**选判定模型**、看状态。
 - `/config:auto-goal enable|disable|status|reset` — 非交互式写法；`status` 显示生效配置与本会话已干预次数。配置命令改完立即生效。
+- `/config:auto-goal model` 看当前判定模型；`/config:auto-goal model provider/modelId` 指定判定模型；`/config:auto-goal model default` 改回复用当前会话模型。
 
 ## 开发
 

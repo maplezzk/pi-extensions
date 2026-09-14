@@ -124,8 +124,8 @@
     "en-US": "Configure premature-stop judgement (pi-auto-goal)"
   },
   "configCommandUsage": {
-    "zh-CN": "用法：/config:auto-goal（打开配置菜单）、enable、disable、status 或 reset",
-    "en-US": "Usage: /config:auto-goal (open settings), enable, disable, status, or reset"
+    "zh-CN": "用法：/config:auto-goal（打开配置菜单，可直接选判定模型）、enable、disable、status、reset，或 model [provider/modelId|default]",
+    "en-US": "Usage: /config:auto-goal (open settings and pick the judge model), enable, disable, status, reset, or model [provider/modelId|default]"
   },
   "configMenuTitle": {
     "zh-CN": "自动催停配置",
@@ -182,6 +182,22 @@
   "configStatusModel": {
     "zh-CN": "判定模型：{value}",
     "en-US": "Judge model: {value}"
+  },
+  "configModelReuse": {
+    "zh-CN": "复用当前会话模型",
+    "en-US": "Use the current session model"
+  },
+  "configModelTitle": {
+    "zh-CN": "选择判定模型（当前：{value}）",
+    "en-US": "Select the judge model (current: {value})"
+  },
+  "configModelEmpty": {
+    "zh-CN": "当前没有可用模型，无法选择；可直接编辑 config.json 里的 model。",
+    "en-US": "No models are available to pick from; edit `model` in config.json instead."
+  },
+  "configModelInvalid": {
+    "zh-CN": "模型标识不合法：{value}（{error}）。请用 provider/modelId，或用 default 表示复用当前会话模型。",
+    "en-US": "Invalid model reference: {value} ({error}). Use provider/modelId, or `default` to reuse the current session model."
   },
   "configStatusLimit": {
     "zh-CN": "干预上限：{value}",
