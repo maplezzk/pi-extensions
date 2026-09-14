@@ -4,8 +4,9 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { dirname } from "node:path";
-import { configPath, loadConfig, loadConfigDocument, saveConfigDocument } from "./src/config.ts";
-import { DEFAULT_PRESETS, PRESETS } from "./src/presets.ts";
+import { configPath, loadConfig, loadConfigDocument, parseConfig, saveConfigDocument, type SafetyConfigDocument } from "./src/config.ts";
+import { DEFAULT_PRESETS, loadPresets, type PresetCatalog } from "./src/presets.ts";
+import { describeEffectiveRules } from "./src/inspect.ts";
 import { compileRules, evaluateRules, type ModuleLoader, type PathRuleEvidence } from "./src/engine.ts";
 import { addedDirectoryPathsFromSession } from "./src/bash-directory-scope-utils.ts";
 import { i18n } from "./src/i18n.ts";
@@ -28,23 +29,74 @@ const CONFIRM_ACTION = "confirm";
 const WARN_ACTION = "warn";
 const CONFIG_COMMAND_ALIASES = ["config:safety-guards", "safety-guards-config", "pi-safety-guards-config"] as const;
 const CONFIG_RESET_COMMAND = "reset";
-const CONFIG_PRESET_NAMES = Object.keys(PRESETS);
+const CONFIG_SHOW_COMMAND = "show";
 
 /** 统一提示出口：加来源标签后交给 Pi 的 notify，避免用户分不清消息来源。 */
 function notify(ctx: ExtensionContext | ExtensionCommandContext, message: string, level: "info" | "warning" | "error"): void {
   notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
 }
 
+/** 配置读取或预设加载失败时统一提示，保留原始错误文本。 */
+function notifyConfigError(ctx: ExtensionContext | ExtensionCommandContext, error: unknown): void {
+  notify(ctx, i18n.t("configCommandInvalid", {
+    error: error instanceof Error ? error.message : String(error),
+  }), ERROR_LEVEL);
+}
+
+/** 打印当前最终生效的规则；TUI 菜单项和 show 子命令共用。 */
+function showEffectiveRules(ctx: ExtensionContext | ExtensionCommandContext): void {
+  try {
+    const catalog = loadPresets();
+    const document = loadConfigDocument(configPath(), catalog);
+    const lines = describeEffectiveRules(document, catalog, parseConfig(document, catalog));
+    notify(ctx, lines.length ? lines.join("\n") : i18n.t("noRules"), INFO_LEVEL);
+  } catch (error) {
+    notifyConfigError(ctx, error);
+  }
+}
+
+/** TUI 菜单项：用带语义的条目代替数组下标偏移，避免下标魔法值。 */
+type MenuItem =
+  | { readonly kind: "preset"; readonly name: string }
+  | { readonly kind: "show" }
+  | { readonly kind: "custom" }
+  | { readonly kind: "done" };
+
+/** 菜单项对应的一行文案；只负责展示。 */
+function menuLabel(item: MenuItem, document: SafetyConfigDocument, catalog: PresetCatalog): string {
+  switch (item.kind) {
+    case "preset":
+      return i18n.t("configPreset", {
+        name: item.name,
+        value: document.presets.includes(item.name) ? i18n.t("configOn") : i18n.t("configOff"),
+        count: catalog[item.name]?.length ?? 0,
+      });
+    case "show":
+      return i18n.t("configMenuItemShow");
+    case "custom":
+      return i18n.t("configCustomRules", { count: document.rules.length });
+    case "done":
+      return i18n.t("configDone");
+  }
+}
+
 /** 注册配置命令，通过 TUI 菜单选择安全预设并保留自定义规则。 */
 function registerConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("configCommandDescription"),
-    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
+    getArgumentCompletions: () => [
+      { value: CONFIG_SHOW_COMMAND, label: CONFIG_SHOW_COMMAND },
+      { value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND },
+    ],
     /** Handles preset selection and persists each change immediately. */
     handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
       const argument = args.trim();
-      if (argument && argument !== CONFIG_RESET_COMMAND) {
+      if (argument && argument !== CONFIG_RESET_COMMAND && argument !== CONFIG_SHOW_COMMAND) {
         notify(ctx, i18n.t("configCommandUsage"), WARN_LEVEL);
+        return;
+      }
+      if (argument === CONFIG_SHOW_COMMAND) {
+        showEffectiveRules(ctx);
         return;
       }
       if (argument === CONFIG_RESET_COMMAND) {
@@ -52,9 +104,7 @@ function registerConfigCommand(pi: ExtensionAPI): void {
           const path = saveConfigDocument({ presets: [...DEFAULT_PRESETS], rules: [] });
           notify(ctx, i18n.t("configCommandSaved", { path }), INFO_LEVEL);
         } catch (error) {
-          notify(ctx, i18n.t("configCommandInvalid", {
-            error: error instanceof Error ? error.message : String(error),
-          }), ERROR_LEVEL);
+          notifyConfigError(ctx, error);
         }
         return;
       }
@@ -63,41 +113,51 @@ function registerConfigCommand(pi: ExtensionAPI): void {
         return;
       }
 
-      let document: { presets: string[]; rules: unknown[] };
+      let catalog: PresetCatalog;
+      let document: SafetyConfigDocument;
       try {
-        document = loadConfigDocument();
+        catalog = loadPresets();
+        document = loadConfigDocument(configPath(), catalog);
       } catch (error) {
-        notify(ctx, i18n.t("configCommandInvalid", {
-          error: error instanceof Error ? error.message : String(error),
-        }), ERROR_LEVEL);
+        notifyConfigError(ctx, error);
         return;
       }
+      const names = Object.keys(catalog);
       while (true) {
-        const choices = CONFIG_PRESET_NAMES.map((name) => i18n.t("configPreset", {
-          name,
-          value: document.presets.includes(name) ? i18n.t("configOn") : i18n.t("configOff"),
-        }));
-        choices.push(i18n.t("configCustomRules", { count: document.rules.length }), i18n.t("configDone"));
-        const selected = await ctx.ui.select(i18n.t("configMenuTitle"), choices);
-        if (selected === undefined || selected === choices[choices.length - 1]) return;
-        const selectedIndex = choices.indexOf(selected);
-        if (selectedIndex === CONFIG_PRESET_NAMES.length) {
+        const items: MenuItem[] = [
+          ...names.map((name) => ({ kind: "preset" as const, name })),
+          { kind: "show" },
+          { kind: "custom" },
+          { kind: "done" },
+        ];
+        const labels = items.map((item) => menuLabel(item, document, catalog));
+        // Pi 的 select 只回传被选中的文案，所以文案必须唯一才能唯一定位条目；冲突就报错而不猜。
+        if (new Set(labels).size !== labels.length) {
+          notifyConfigError(ctx, new Error(i18n.t("configMenuLabelsNotUnique")));
+          return;
+        }
+        const selected = await ctx.ui.select(i18n.t("configMenuTitle"), labels);
+        if (selected === undefined) return;
+        const item = items[labels.indexOf(selected)];
+        if (item === undefined || item.kind === "done") return;
+        if (item.kind === "custom") {
           notify(ctx, i18n.t("configCustomRulesHint"), INFO_LEVEL);
           continue;
         }
-        const preset = CONFIG_PRESET_NAMES[selectedIndex];
-        if (!preset) continue;
-        const presets = document.presets.includes(preset)
+        if (item.kind === "show") {
+          showEffectiveRules(ctx);
+          continue;
+        }
+        const preset = item.name;
+        const selectedPresets = document.presets.includes(preset)
           ? document.presets.filter((name) => name !== preset)
           : [...document.presets, preset];
         try {
-          const path = saveConfigDocument({ presets, rules: document.rules });
-          document = { ...document, presets };
+          const path = saveConfigDocument({ presets: selectedPresets, rules: document.rules }, configPath(), catalog);
+          document = { ...document, presets: selectedPresets };
           notify(ctx, i18n.t("configCommandSaved", { path }), INFO_LEVEL);
         } catch (error) {
-          notify(ctx, i18n.t("configCommandInvalid", {
-            error: error instanceof Error ? error.message : String(error),
-          }), ERROR_LEVEL);
+          notifyConfigError(ctx, error);
         }
       }
     },

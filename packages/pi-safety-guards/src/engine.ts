@@ -8,24 +8,26 @@ import {
   type BashPathViolation,
 } from "./bash-directory-scope-utils.ts";
 import { i18n } from "./i18n.ts";
-import type { Detector, RuleAction, RuleContext, RuleMatcher, RuleMatch, SafetyConfig, SafetyRule } from "./types.ts";
+import type { RuleAction, RuleContext, RuleMatcher, RuleMatch, SafetyConfig, SafetyRule } from "./types.ts";
 
 const MODULE_TIMEOUT_MS = 5_000;
 const ACTION_ORDER: readonly RuleAction[] = ["block", "confirm", "warn"];
-const FORK_BOMB_NAME = ":";
-const FORMAT_COMMAND = "mkfs";
-const FORMAT_PREFIX = "mkfs.";
-const FUNCTION_NODE = "Function";
-const EDIT_COMMAND = "sed";
-const SEARCH_COMMAND = "find";
-const IN_PLACE_OPTION = "--in-place";
-const HOME_ROOT = "~";
-const FILESYSTEM_ROOT = "/";
 
-export interface CompiledRule {
-  readonly rule: SafetyRule;
-  readonly matcher?: RuleMatcher;
-}
+/** 正则和模块在编译期已分流，声明式匹配器只剩这三种。 */
+type DeclarativeMatch = Extract<RuleMatch,
+  | { commands: readonly string[] }
+  | { commandPrefixes: readonly string[] }
+  | { outsideRoots: readonly string[] }>;
+
+/**
+ * 编译结果自带判定所需数据：声明式规则带 match，正则规则带 pattern，模块规则带 matcher。
+ * 不再引入额外判别字段，也不需要检查“缺正则 / 缺函数”这类内部状态。
+ */
+export type CompiledRule =
+  | { readonly rule: SafetyRule; readonly match: DeclarativeMatch }
+  | { readonly rule: SafetyRule; readonly pattern: RegExp }
+  | { readonly rule: SafetyRule; readonly matcher: RuleMatcher };
+
 export interface PathRuleEvidence {
   readonly cwd: string;
   readonly allowedRoots: readonly string[];
@@ -55,12 +57,18 @@ export async function compileRules(
 ): Promise<CompiledRule[]> {
   const compiled: CompiledRule[] = [];
   for (const rule of config.rules) {
-    if (!("module" in rule.match)) {
-      compiled.push({ rule });
+    const { match } = rule;
+    if ("commandPattern" in match) {
+      // 配置解析阶段已验证可编译，这里编译一次，避免每条命令重复编译。
+      compiled.push({ rule, pattern: new RegExp(match.commandPattern) });
+      continue;
+    }
+    if (!("module" in match)) {
+      compiled.push({ rule, match });
       continue;
     }
     try {
-      const modulePath = resolve(configDirectory, rule.match.module);
+      const modulePath = resolve(configDirectory, match.module);
       const module = await withDeadline(() => loader(modulePath));
       const matcher = module && typeof module === "object" ? (module as { default?: unknown }).default : undefined;
       if (typeof matcher !== "function") throw new Error(i18n.t("moduleMustExportMatcher"));
@@ -70,34 +78,6 @@ export async function compileRules(
     }
   }
   return compiled;
-}
-
-/** 检测器只返回匹配事实，动作和建议不属于检测器。 */
-function detect(detector: Detector, analysis: ShellCommandAnalysis, command: string): boolean {
-  switch (detector) {
-    case "disk-format":
-      return analysis.commands.some(({ name }) => name === FORMAT_COMMAND || name.startsWith(FORMAT_PREFIX));
-    case "fork-bomb":
-      return /:\(\)\s*\{/.test(command) && analysis.nodes.some(isForkBombFunction);
-    case "in-place-edit":
-      return analysis.commands.some(({ name, args }) => name === EDIT_COMMAND && args.some(({ value }) => isInPlaceOption(value)));
-    case "home-root":
-      return analysis.commands.some(({ args }) => args.some(({ text }) => text === HOME_ROOT));
-    case "root-search":
-      return analysis.commands.some(({ name, args }) => name === SEARCH_COMMAND && args.some(({ value }) => value === FILESYSTEM_ROOT));
-  }
-}
-
-/** 匹配已有 fork bomb 检测范围中的冒号函数节点。 */
-function isForkBombFunction(node: Record<string, unknown>): boolean {
-  if (node.type !== FUNCTION_NODE || !node.name || typeof node.name !== "object") return false;
-  return (node.name as { value?: unknown }).value === FORK_BOMB_NAME;
-}
-
-/** 识别 sed 组合短选项和带备份后缀的原地编辑选项。 */
-function isInPlaceOption(value: string): boolean {
-  if (value === IN_PLACE_OPTION || value.startsWith(`${IN_PLACE_OPTION}=`)) return true;
-  return /^-[^-]*i/.test(value);
 }
 
 /** 用户模块只拿到深度冻结的命令摘要，不能改写后续内置规则的分析结果。 */
@@ -123,43 +103,60 @@ function withDeadline<T>(operation: () => Promise<T> | T): Promise<T> {
   });
 }
 
-/** 命令名只建立一次索引；内置检测保持明确的分支。 */
+/** 命令名只建立一次索引；每种匹配器都只读自己那一个字段。 */
 interface BuiltinMatch {
   matched: boolean;
   pathEvidence?: PathRuleEvidence;
 }
 
-function matchesBuiltin(
-  match: RuleMatch,
-  context: RuleContext,
-  analysis: ShellCommandAnalysis,
-  commandNames: ReadonlySet<string>,
-  additionalRoots: readonly string[],
-): BuiltinMatch {
-  if ("commands" in match) return { matched: match.commands.some((name) => commandNames.has(name)) };
-  if ("detector" in match) return { matched: detect(match.detector, analysis, context.command) };
-  if ("outsideRoots" in match) {
-    const roots = [...match.outsideRoots, ...additionalRoots];
-    const violations = findOutOfScopeBashPaths(context.command, context.cwd, roots);
-    if (violations.length === 0) return { matched: false };
-    const suggestedDirectories = [...new Set(violations.map(({ resolvedPath }) => {
-      try {
-        return statSync(resolvedPath).isDirectory() ? resolvedPath : dirname(resolvedPath);
-      } catch {
-        return dirname(resolvedPath);
-      }
-    }))];
-    return {
-      matched: true,
-      pathEvidence: {
-        cwd: context.cwd,
-        allowedRoots: resolveBashDirectoryRoots(context.cwd, roots),
-        violations,
-        suggestedDirectories,
-      },
-    };
+/** 一次评估要用的命令上下文与目录根，避免每个函数再摊开一串参数。 */
+interface EvaluationInput {
+  readonly context: RuleContext;
+  readonly commandNames: ReadonlySet<string>;
+  readonly additionalRoots: readonly string[];
+}
+
+/** 前缀匹配不构造中间集合，逐个命令名比对。 */
+function matchesAnyPrefix(commandNames: ReadonlySet<string>, prefixes: readonly string[]): boolean {
+  for (const name of commandNames) {
+    if (prefixes.some((prefix) => name.startsWith(prefix))) return true;
   }
-  throw new Error(i18n.t("moduleMustExportMatcher"));
+  return false;
+}
+
+/** 声明式匹配器只看执行到的命令和显式路径，不做任何名字到逻辑的映射。 */
+function matchesDeclarative(match: DeclarativeMatch, input: EvaluationInput): BuiltinMatch {
+  if ("commands" in match) return { matched: match.commands.some((name) => input.commandNames.has(name)) };
+  if ("commandPrefixes" in match) return { matched: matchesAnyPrefix(input.commandNames, match.commandPrefixes) };
+  const roots = [...match.outsideRoots, ...input.additionalRoots];
+  const violations = findOutOfScopeBashPaths(input.context.command, input.context.cwd, roots);
+  if (violations.length === 0) return { matched: false };
+  const suggestedDirectories = [...new Set(violations.map(({ resolvedPath }) => {
+    try {
+      return statSync(resolvedPath).isDirectory() ? resolvedPath : dirname(resolvedPath);
+    } catch {
+      return dirname(resolvedPath);
+    }
+  }))];
+  return {
+    matched: true,
+    pathEvidence: {
+      cwd: input.context.cwd,
+      allowedRoots: resolveBashDirectoryRoots(input.context.cwd, roots),
+      violations,
+      suggestedDirectories,
+    },
+  };
+}
+
+/** 按编译结果自带的判定数据分流；正则只做一次 test，模块调用带超时。 */
+async function evaluateCompiled(compiled: CompiledRule, input: EvaluationInput): Promise<BuiltinMatch> {
+  if ("pattern" in compiled) {
+    // JSON 只给正则源文本、没有 flags，test 不依赖 lastIndex，跨命令匹配互不影响。
+    return { matched: compiled.pattern.test(input.context.command) };
+  }
+  if ("matcher" in compiled) return { matched: await withDeadline(() => compiled.matcher(input.context)) };
+  return matchesDeclarative(compiled.match, input);
 }
 
 /** 错误保留规则 ID，绝不按未命中继续执行。 */
@@ -181,21 +178,23 @@ export async function evaluateRules(
   const analysis = analyzeShellCommand(command);
   if (analysis.errors.length) throw new Error(i18n.t("shellParseBlocked"));
   const context = moduleContext(command, cwd, analysis);
-  const commandNames = new Set(analysis.commands.map(({ name }) => name));
+  const input: EvaluationInput = {
+    context,
+    commandNames: new Set(analysis.commands.map(({ name }) => name)),
+    additionalRoots,
+  };
   const matches: SafetyRule[] = [];
   const pathEvidence = new Map<string, PathRuleEvidence>();
-  for (const { rule, matcher } of rules) {
+  for (const compiled of rules) {
     try {
-      const result = matcher
-        ? { matched: await withDeadline(() => matcher(context)) }
-        : matchesBuiltin(rule.match, context, analysis, commandNames, additionalRoots);
+      const result = await evaluateCompiled(compiled, input);
       if (typeof result.matched !== "boolean") throw new Error(i18n.t("matcherMustReturnBoolean"));
       if (result.matched) {
-        matches.push(rule);
-        if (result.pathEvidence) pathEvidence.set(rule.id, result.pathEvidence);
+        matches.push(compiled.rule);
+        if (result.pathEvidence) pathEvidence.set(compiled.rule.id, result.pathEvidence);
       }
     } catch (error) {
-      throw ruleFailure(rule.id, error);
+      throw ruleFailure(compiled.rule.id, error);
     }
   }
   const action = ACTION_ORDER.find((action) => matches.some((rule) => rule.action === action));

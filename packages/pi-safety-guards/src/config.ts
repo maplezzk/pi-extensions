@@ -1,16 +1,18 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_PRESETS, PRESETS } from "./presets.ts";
-import { i18n } from "./i18n.ts";
-import type { Detector, RuleAction, RuleMatch, RuleMessage, SafetyConfig, SafetyRule } from "./types.ts";
+import { DEFAULT_PRESETS, loadPresets, type PresetCatalog } from "./presets.ts";
+import { checkKeys, fieldPath, invalid, object, parseAction, parseMatch, parseMessage, strings } from "./rules.ts";
+import type { SafetyConfig, SafetyRule } from "./types.ts";
 
 const EXTENSIONS_DIR = "extensions";
 const PACKAGE_NAME = "pi-safety-guards";
 const CONFIG_FILENAME = "config.json";
 const FILE_NOT_FOUND_CODE = "ENOENT";
-const ACTIONS = new Set<unknown>(["warn", "confirm", "block"]);
-const DETECTORS = new Set<unknown>(["disk-format", "fork-bomb", "in-place-edit", "home-root", "root-search"]);
+/** 顶层允许的字段；写错字段直接报错，不猜测意图。 */
+const CONFIG_KEYS = ["presets", "rules"] as const;
+/** 覆盖条目的允许字段。 */
+const OVERRIDE_KEYS = ["id", "enabled", "action", "match", "message"] as const;
 
 /** 返回 agent 目录下的显式用户配置位置。 */
 export function configPath(): string {
@@ -22,15 +24,29 @@ export interface SafetyConfigDocument {
   rules: unknown[];
 }
 
+/** 把已校验的配置原文还原成文档；缺失字段回落到默认预设和空规则。 */
+function documentFrom(raw: Record<string, unknown>): SafetyConfigDocument {
+  return {
+    presets: raw.presets === undefined ? [...DEFAULT_PRESETS] : strings(raw.presets, "presets", true),
+    rules: raw.rules === undefined ? [] : entries(raw.rules, "rules"),
+  };
+}
+
+/** 复制覆盖条目原文（浅拷贝数组，条目对象保持原引用），写回文件时不丢字段。 */
+function entries(value: unknown, field: string): unknown[] {
+  if (!Array.isArray(value)) return invalid(field);
+  return [...value];
+}
+
 /** 读取配置文件的用户文档，保留预设选择和自定义规则原文。 */
-export function loadConfigDocument(path = configPath()): SafetyConfigDocument {
+export function loadConfigDocument(
+  path = configPath(),
+  presets: PresetCatalog = loadPresets(),
+): SafetyConfigDocument {
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    parseConfig(raw);
-    return {
-      presets: raw.presets === undefined ? [...DEFAULT_PRESETS] : [...(raw.presets as string[])],
-      rules: raw.rules === undefined ? [] : [...(raw.rules as unknown[])],
-    };
+    const raw = object(JSON.parse(readFileSync(path, "utf8")), "config");
+    parseConfig(raw, presets);
+    return documentFrom(raw);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === FILE_NOT_FOUND_CODE) {
       return { presets: [...DEFAULT_PRESETS], rules: [] };
@@ -40,8 +56,12 @@ export function loadConfigDocument(path = configPath()): SafetyConfigDocument {
 }
 
 /** 将完整的用户配置文档校验后写入文件。 */
-export function saveConfigDocument(document: SafetyConfigDocument, path = configPath()): string {
-  parseConfig(document);
+export function saveConfigDocument(
+  document: SafetyConfigDocument,
+  path = configPath(),
+  presets: PresetCatalog = loadPresets(),
+): string {
+  parseConfig(document, presets);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(document, null, 2)}\n`, "utf8");
   return path;
@@ -54,61 +74,15 @@ export function saveConfig(config: SafetyConfig, path = configPath()): string {
   return path;
 }
 
-/** 将配置错误转换成双语诊断，不悄悄忽略未知配置。 */
-function invalid(field: string): never {
-  throw new Error(i18n.t("configInvalidField", { field }));
-}
-
-/** 收窄普通 JSON 对象。 */
-function object(value: unknown, field: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return invalid(field);
-  return value as Record<string, unknown>;
-}
-
-/** 拒绝字段拼写错误和旧技术专属配置，避免误启用默认策略。 */
-function checkKeys(raw: Record<string, unknown>, keys: readonly string[], field: string): void {
-  for (const key of Object.keys(raw)) {
-    if (!keys.includes(key)) invalid(`${field}.${key}`);
-  }
-}
-
-/** 验证非空文本数组，目录允许空列表以表达不信任任何根。 */
-function strings(value: unknown, field: string, allowEmpty = false): string[] {
-  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) return invalid(field);
-  if (value.some((item) => typeof item !== "string" || !item.trim())) return invalid(field);
-  return value.map((item: string) => item.trim());
-}
-
-/** 匹配器只允许一种类型，不组合成规则表达式语言。 */
-function parseMatch(value: unknown, field: string): RuleMatch {
-  const raw = object(value, field);
-  if (Object.keys(raw).length !== 1) return invalid(field);
-  if (Object.hasOwn(raw, "commands")) return { commands: strings(raw.commands, field) };
-  if (Object.hasOwn(raw, "outsideRoots")) return { outsideRoots: strings(raw.outsideRoots, field, true) };
-  if (Object.hasOwn(raw, "detector") && DETECTORS.has(raw.detector)) return { detector: raw.detector as Detector };
-  if (typeof raw.module === "string" && raw.module.trim()) return { module: raw.module.trim() };
-  return invalid(field);
-}
-
-/** 用户本地文案可用单一语言，公共示例提供中英文。 */
-function parseMessage(value: unknown, field: string): RuleMessage {
-  if (typeof value === "string" && value.trim()) return value;
-  const raw = object(value, field);
-  checkKeys(raw, ["zh-CN", "en-US"], field);
-  if (typeof raw["zh-CN"] !== "string" || !raw["zh-CN"].trim() ||
-      typeof raw["en-US"] !== "string" || !raw["en-US"].trim()) return invalid(field);
-  return { "zh-CN": raw["zh-CN"], "en-US": raw["en-US"] };
-}
-
 /** 选择预设后按稳定 ID 覆盖，不继承任何维护者的技术栈策略。 */
-export function parseConfig(value: unknown): SafetyConfig {
+export function parseConfig(value: unknown, presets: PresetCatalog = loadPresets()): SafetyConfig {
   const raw = object(value, "config");
-  checkKeys(raw, ["presets", "rules"], "config");
-  const presets = raw.presets === undefined ? DEFAULT_PRESETS : strings(raw.presets, "presets", true);
+  checkKeys(raw, CONFIG_KEYS, "config");
+  const selected = raw.presets === undefined ? [...DEFAULT_PRESETS] : strings(raw.presets, "presets", true);
   const rules = new Map<string, SafetyRule>();
-  for (const preset of presets) {
-    if (!Object.hasOwn(PRESETS, preset)) invalid(`presets.${preset}`);
-    for (const rule of PRESETS[preset]) {
+  for (const preset of selected) {
+    if (!Object.hasOwn(presets, preset)) invalid(fieldPath("presets", preset));
+    for (const rule of presets[preset]) {
       // 不共享可变预设对象，用户模块也不会收到规则配置引用。
       rules.set(rule.id, structuredClone(rule));
     }
@@ -118,34 +92,34 @@ export function parseConfig(value: unknown): SafetyConfig {
   const seen = new Set<string>();
   for (const value of overrides) {
     const override = object(value, "rules");
-    checkKeys(override, ["id", "enabled", "action", "match", "message"], "rules");
-    if (typeof override.id !== "string" || !override.id.trim()) invalid("rules.id");
-    const id = (override.id as string).trim();
-    if (seen.has(id)) invalid(`rules.${id}`);
+    checkKeys(override, OVERRIDE_KEYS, "rules");
+    const rawId = override.id;
+    if (typeof rawId !== "string" || !rawId.trim()) invalid(fieldPath("rules", "id"));
+    const id = rawId.trim();
+    if (seen.has(id)) invalid(fieldPath("rules", id));
     seen.add(id);
-    if (override.enabled !== undefined && typeof override.enabled !== "boolean") invalid(`${id}.enabled`);
+    if (override.enabled !== undefined && typeof override.enabled !== "boolean") invalid(fieldPath(id, "enabled"));
     const previous = rules.get(id);
-    const action = override.action ?? previous?.action;
-    if (override.action !== undefined && !ACTIONS.has(override.action)) invalid(`${id}.action`);
-    const match = override.match === undefined ? previous?.match : parseMatch(override.match, `${id}.match`);
-    const message = override.message === undefined ? previous?.message : parseMessage(override.message, `${id}.message`);
+    const action = override.action === undefined ? previous?.action : parseAction(override.action, fieldPath(id, "action"));
+    const match = override.match === undefined ? previous?.match : parseMatch(override.match, fieldPath(id, "match"));
+    const message = override.message === undefined ? previous?.message : parseMessage(override.message, fieldPath(id, "message"));
     if (override.enabled === false) {
-      if (!previous && !match) invalid(`${id}.match`);
+      if (!previous && !match) invalid(fieldPath(id, "match"));
       rules.delete(id);
       continue;
     }
-    if (!ACTIONS.has(action) || !match) invalid(id);
-    rules.set(id, { id, action: action as RuleAction, match: match!, ...(message === undefined ? {} : { message }) });
+    if (action === undefined || !match) invalid(id);
+    rules.set(id, { id, action, match, ...(message === undefined ? {} : { message }) });
   }
   return { rules: [...rules.values()] };
 }
 
 /** 仅文件不存在时使用默认预设；配置损坏会阻止受保护工具执行。 */
-export function loadConfig(path = configPath()): SafetyConfig {
+export function loadConfig(path = configPath(), presets: PresetCatalog = loadPresets()): SafetyConfig {
   try {
-    return parseConfig(JSON.parse(readFileSync(path, "utf8")));
+    return parseConfig(JSON.parse(readFileSync(path, "utf8")), presets);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === FILE_NOT_FOUND_CODE) return parseConfig({});
+    if ((error as NodeJS.ErrnoException).code === FILE_NOT_FOUND_CODE) return parseConfig({}, presets);
     throw error;
   }
 }

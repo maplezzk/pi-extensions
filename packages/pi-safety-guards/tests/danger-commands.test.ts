@@ -4,18 +4,27 @@ import { tmpdir } from "node:os";
 import { parseConfig } from "../src/config.ts";
 import { compileRules, evaluateRules } from "../src/engine.ts";
 
-const configured = compileRules(parseConfig({ rules: [
-  { id: "shell.in-place", action: "block", match: { detector: "in-place-edit" } },
-  { id: "paths.home", action: "block", match: { detector: "home-root" } },
-  { id: "paths.root-search", action: "block", match: { detector: "root-search" } },
-] }), tmpdir());
+/** 断言用的规则 ID；避免同一串 ID 在用例里散落。 */
+const LABEL = {
+  delete: "filesystem.delete",
+  format: "filesystem.format",
+  ownership: "filesystem.ownership",
+  forkBomb: "shell.fork-bomb",
+} as const;
 
-/** 从显式选择的规则中读取首个命中 ID。 */
+/** fork bomb 的典型写法；分段拼接，避免手抄时多写或少写括号。 */
+const FORK_BOMB = ":(){ :|:& };:";
+/** 把 fork bomb 放进单引号后的命令文本，用于验证引号内文本也会命中。 */
+const QUOTED_FORK_BOMB = `echo '${FORK_BOMB}'`;
+
+const configured = compileRules(parseConfig({}), tmpdir());
+
+/** 读取首个命中规则的 ID；命中顺序取决于预设里的规则顺序。 */
 async function matchedLabel(command: string): Promise<string | undefined> {
   return (await evaluateRules(await configured, command, tmpdir()))?.matches[0]?.id;
 }
 
-/** 断言既有 AST 检测范围未因策略分离而丢失。 */
+/** 断言命令命中预期规则，失败信息带上命令原文。 */
 async function assertMatches(command: string, expectedLabel: string): Promise<void> {
   assert.equal(await matchedLabel(command), expectedLabel, command);
 }
@@ -37,9 +46,9 @@ test("按真实命令节点识别 rm/rmdir，放行普通参数和子命令", as
     "env -S 'rm /tmp/example'",
     "command -- rm /tmp/example",
   ]) {
-    await assertMatches(command, "filesystem.delete");
+    await assertMatches(command, LABEL.delete);
   }
-  await assertMatches("rmdir /tmp/empty", "filesystem.delete");
+  await assertMatches("rmdir /tmp/empty", LABEL.delete);
 
   for (const command of [
     "git rm tracked.txt",
@@ -59,70 +68,22 @@ test("按真实命令节点识别 rm/rmdir，放行普通参数和子命令", as
   }
 });
 
-test("识别 chown、mkfs 和 fork bomb，不宣称覆盖 chmod/dd", async () => {
-  await assertMatches("chown root:root file", "filesystem.ownership");
-  await assertMatches("env OWNER=root chown root file", "filesystem.ownership");
-  await assertMatches("mkfs.ext4 /dev/sdb1", "filesystem.format");
-  await assertMatches("/sbin/mkfs.xfs /dev/sdb1", "filesystem.format");
-  await assertMatches(":(){ :|:& };:", "shell.fork-bomb");
+test("识别 chown、mkfs 前缀和 fork bomb，不宣称覆盖 chmod/dd", async () => {
+  await assertMatches("chown root:root file", LABEL.ownership);
+  await assertMatches("env OWNER=root chown root file", LABEL.ownership);
+  await assertMatches("mkfs", LABEL.format);
+  await assertMatches("mkfs.ext4 /dev/sdb1", LABEL.format);
+  await assertMatches("/sbin/mkfs.xfs /dev/sdb1", LABEL.format);
+  await assertMatches(FORK_BOMB, LABEL.forkBomb);
 
-  await assertAllowed("echo ':(){ :|:& };:'");
   await assertAllowed("chmod 755 script.sh");
   await assertAllowed("dd if=/dev/zero of=/tmp/out");
+  await assertAllowed("git mkfs-helper /dev/sdb1");
 });
 
-test("显式选择的检测器匹配 sed 原地修改", async () => {
-  for (const command of [
-    "sed -i 's/a/b/' file.txt",
-    "sed -i.bak 's/a/b/' file.txt",
-    "sed -ni 's/a/b/' file.txt",
-    "sed --in-place 's/a/b/' file.txt",
-    "sudo sed --in-place=.bak 's/a/b/' file.txt",
-    "bash -c \"sed -i 's/a/b/' file.txt\"",
-  ]) {
-    await assertMatches(command, "shell.in-place");
-  }
-
-  for (const command of [
-    "sed -n '1,10p' file.txt",
-    "printf '%s\\n' 'sed -i is an example'",
-    "git commit -m 'document sed -i usage'",
-  ]) {
-    await assertAllowed(command);
-  }
-});
-
-test("区分未引用的 HOME 根目录与引号中的字面量", async () => {
-  for (const command of ["ls ~", "find ~ -name '*.ts'", "cd ~", "tree ~"]) {
-    await assertMatches(command, "paths.home");
-  }
-
-  for (const command of [
-    "ls ~/project",
-    "find ~/Documents -name '*.ts'",
-    "echo '~'",
-    "echo \"~\"",
-  ]) {
-    await assertAllowed(command);
-  }
-});
-
-test("显式选择的检测器只匹配 find 的根目录参数", async () => {
-  for (const command of [
-    "find /",
-    "sudo find / -maxdepth 1",
-    "bash -c \"find / -name '*.ts'\"",
-    "find '/' -type f",
-  ]) {
-    await assertMatches(command, "paths.root-search");
-  }
-
-  for (const command of [
-    "find /tmp -name '*.ts'",
-    "find . -name '*.ts'",
-    "grep 'find /' README.md",
-    "printf '%s\\n' 'find / is too broad'",
-  ]) {
-    await assertAllowed(command);
-  }
+test("引号内的 fork bomb 字面量同样会命中（正则看原始命令文本的取舍）", async () => {
+  // detector 移除后不再用 AST 节点区分引号内容，这两条也会要求确认。
+  await assertMatches(QUOTED_FORK_BOMB, LABEL.forkBomb);
+  await assertMatches(`bash -c '${FORK_BOMB}'`, LABEL.forkBomb);
+  await assertAllowed("echo fork bomb");
 });
