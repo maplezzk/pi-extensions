@@ -136,14 +136,28 @@ function installPatches(runtime: Runtime): void {
 		getState: () => runtime.state,
 		getConfig: () => runtime.config,
 		styleHeader: (text) => runtime.styleHeader(text),
+		onToggle: () => {
+			toggleRuntime(runtime);
+		},
 	});
+}
+
+/**
+ * 切换折叠状态并触发重绘，返回切换后的状态。
+ *
+ * 快捷键、命令与鼠标点击折叠头都走这里；提示文案由各入口自行决定，
+ * 鼠标点击靠画面变化即时反馈，不再重复弹提示。
+ */
+function toggleRuntime(runtime: Runtime): boolean {
+	const next = !runtime.state.collapsed;
+	runtime.state = applyCollapsed(runtime.state, next, true);
+	requestRender(runtime);
+	return next;
 }
 
 /** 切换折叠状态并提示用户。 */
 function toggleCollapsed(runtime: Runtime, ctx: ExtensionContext | ExtensionCommandContext): void {
-	const next = !runtime.state.collapsed;
-	runtime.state = applyCollapsed(runtime.state, next, true);
-	requestRender(runtime);
+	const next = toggleRuntime(runtime);
 
 	notifyWithSource({
 		ctx,

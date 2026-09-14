@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-	resolveAssistantMessageRender,
+	resolveAssistantMessageHidden,
+	resolveRunHeader,
 	resolveToolMessageRender,
 } from "../src/render-policy.ts";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeState } from "../src/types.ts";
 
-/** 造一个折叠态、已结束、耗时已知的状态。 */
-function collapsedSettledState(): CleanModeState {
+/** 造一个折叠、已结束、耗时已知的状态。 */
+function collapsedState(): CleanModeState {
 	return {
 		collapsed: true,
 		runSettled: true,
@@ -16,76 +17,66 @@ function collapsedSettledState(): CleanModeState {
 	};
 }
 
-test("展开时 assistant 消息与工具行都原样渲染", () => {
+test("展开时工作过程与工具行都原样渲染", () => {
 	const state: CleanModeState = { collapsed: false, runSettled: true, userOverrodeThisRun: false };
 	const config = { ...DEFAULT_CLEAN_MODE_CONFIG };
 
-	assert.deepEqual(
-		resolveAssistantMessageRender({ state, config, kind: "work" }),
-		{ hidden: false, showHeader: false },
+	assert.equal(
+		resolveAssistantMessageHidden({ state, config, kind: "work" }),
+		false,
 	);
-	assert.deepEqual(resolveAssistantMessageRender({ state, config, kind: "final" }), {
-		hidden: false,
-		showHeader: false,
-	});
+	assert.equal(
+		resolveAssistantMessageHidden({ state, config, kind: "final" }),
+		false,
+	);
 	assert.deepEqual(resolveToolMessageRender(state, config), { hidden: false });
 });
 
 test("折叠时工作过程整条隐藏，最终答案保留", () => {
-	const state = collapsedSettledState();
+	const state = collapsedState();
 	const config = { ...DEFAULT_CLEAN_MODE_CONFIG };
 
-	assert.deepEqual(
-		resolveAssistantMessageRender({ state, config, kind: "work" }),
-		{ hidden: true, showHeader: false },
-	);
-	assert.deepEqual(resolveAssistantMessageRender({ state, config, kind: "final" }), {
-		hidden: false,
-		showHeader: true,
-	});
+	assert.equal(resolveAssistantMessageHidden({ state, config, kind: "work" }), true);
+	assert.equal(resolveAssistantMessageHidden({ state, config, kind: "final" }), false);
 });
 
 test("折叠时工具行整行隐藏", () => {
-	const state = collapsedSettledState();
+	const state = collapsedState();
 	assert.deepEqual(resolveToolMessageRender(state, { ...DEFAULT_CLEAN_MODE_CONFIG }), {
 		hidden: true,
 	});
 });
 
-test("本次运行尚未结束时最终答案也不加折叠头", () => {
-	const state = { ...collapsedSettledState(), runSettled: false };
-	const decision = resolveAssistantMessageRender({
-		state,
-		config: { ...DEFAULT_CLEAN_MODE_CONFIG },
-		kind: "final",
-	});
-	assert.deepEqual(decision, { hidden: false, showHeader: false });
-});
-
-test("关闭 showRunHeader 后最终答案只显示正文", () => {
-	const state = collapsedSettledState();
-	const config = { ...DEFAULT_CLEAN_MODE_CONFIG, showRunHeader: false };
-	const decision = resolveAssistantMessageRender({ state, config, kind: "final" });
-	assert.deepEqual(decision, { hidden: false, showHeader: false });
-});
-
-test("耗时未知时不加折叠头", () => {
-	const state = { ...collapsedSettledState(), runDurationMs: undefined };
-	const decision = resolveAssistantMessageRender({
-		state,
-		config: { ...DEFAULT_CLEAN_MODE_CONFIG },
-		kind: "final",
-	});
-	assert.deepEqual(decision, { hidden: false, showHeader: false });
-});
-
 test("总开关关闭时一律原样渲染", () => {
-	const state = collapsedSettledState();
+	const state = collapsedState();
 	const config = { ...DEFAULT_CLEAN_MODE_CONFIG, enabled: false };
 
-	assert.deepEqual(
-		resolveAssistantMessageRender({ state, config, kind: "work" }),
-		{ hidden: false, showHeader: false },
-	);
+	assert.equal(resolveAssistantMessageHidden({ state, config, kind: "work" }), false);
 	assert.deepEqual(resolveToolMessageRender(state, config), { hidden: false });
+	assert.equal(resolveRunHeader(state, config).visible, false);
+});
+
+test("折叠与展开两个方向都显示折叠头", () => {
+	const state = collapsedState();
+	const config = { ...DEFAULT_CLEAN_MODE_CONFIG };
+
+	const collapsed = resolveRunHeader(state, config);
+	assert.equal(collapsed.visible, true);
+	assert.equal(collapsed.collapsed, true);
+
+	const expanded = resolveRunHeader({ ...state, collapsed: false }, config);
+	assert.equal(expanded.visible, true, "展开态也要显示，否则没有点击收起的目标");
+	assert.equal(expanded.collapsed, false);
+});
+
+test("耗时未知时不显示折叠头", () => {
+	const state = { ...collapsedState(), runDurationMs: undefined };
+	const decision = resolveRunHeader(state, { ...DEFAULT_CLEAN_MODE_CONFIG });
+	assert.equal(decision.visible, false);
+});
+
+test("关闭 showRunHeader 后不显示折叠头", () => {
+	const config = { ...DEFAULT_CLEAN_MODE_CONFIG, showRunHeader: false };
+	const decision = resolveRunHeader(collapsedState(), config);
+	assert.equal(decision.visible, false);
 });

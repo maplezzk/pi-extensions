@@ -20,41 +20,49 @@ export interface AssistantRenderInput {
 	kind: AssistantMessageKind;
 }
 
-/** assistant 消息的渲染结果：是否整条隐藏、是否追加折叠头。 */
-export interface AssistantRenderDecision {
-	/** 整条消息不渲染（工作过程解说被隐藏）。 */
-	hidden: boolean;
-	/** 是否在原始输出上方追加折叠头。 */
-	showHeader: boolean;
-}
-
 /** 工具行的渲染结果。 */
 export interface ToolRowRenderDecision {
 	/** 整行不渲染（连前置空行一起消失）。 */
 	hidden: boolean;
 }
 
+/** 折叠头的可见性与当前方向；不可见时不占任何行。 */
+export interface RunHeaderDecision {
+	/** 是否渲染折叠头。 */
+	visible: boolean;
+	/** 当前是否处于折叠态，决定折叠头用哪个箭头。 */
+	collapsed: boolean;
+}
+
 /**
- * 判定一条 assistant 消息在当前位置该如何渲染。
+ * 判定一条 assistant 消息是否整条隐藏。
  *
- * 折叠时工作过程整条隐藏；最终答案保留，并按状态决定是否加折叠头。
+ * 折叠时只有工作过程隐藏；最终答案始终保留。
  */
-export function resolveAssistantMessageRender(
-	input: AssistantRenderInput,
-): AssistantRenderDecision {
+export function resolveAssistantMessageHidden(input: AssistantRenderInput): boolean {
 	const { state, config, kind } = input;
 
 	if (!config.enabled || !state.collapsed) {
-		return { hidden: false, showHeader: false };
+		return false;
 	}
 
-	if (kind === "work") {
-		return { hidden: true, showHeader: false };
-	}
+	return kind === "work";
+}
 
-	const showHeader = config.showRunHeader && state.runSettled && state.runDurationMs !== undefined;
+/**
+ * 判定折叠头是否可见。
+ *
+ * 耗时未知时不显示，因此执行中的运行没有折叠头，运行结束后才出现。
+ * 折叠头在折叠态与展开态都显示，这样两个方向都有可点击的鼠标目标。
+ */
+export function resolveRunHeader(
+	state: CleanModeState,
+	config: CleanModeConfig,
+): RunHeaderDecision {
+	const visible =
+		config.enabled && config.showRunHeader && state.runDurationMs !== undefined;
 
-	return { hidden: false, showHeader };
+	return { visible, collapsed: state.collapsed };
 }
 
 /** 判定工具行在当前位置该如何渲染；折叠时整行隐藏。 */

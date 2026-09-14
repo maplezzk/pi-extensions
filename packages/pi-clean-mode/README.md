@@ -13,7 +13,21 @@ Took 4m 26s ›
 The cause was that today's restock used stock-sales from two days ago, so demand was underestimated.
 ```
 
-Expanded, the transcript looks exactly like Pi's normal output.
+Expanded, the work rows come back and the header shows `⌄` instead of `›`.
+
+## Interaction
+
+| Trigger | Effect |
+|---|---|
+| `f2` | Collapse or expand the current run's work |
+| Mouse click on the header | Same as `f2`, **fullscreen TUI mode only** |
+| `/clean` | Same as the shortcut |
+| `/config:clean-mode` | Print the current configuration |
+| `/config:clean-mode <key>=on\|off` | Change one boolean setting and save it |
+
+Mouse support needs `pi --tui-mode fullscreen`; in regular mode the terminal owns mouse input and scrolling, so Pi never receives the click. The clickable area is the header line plus the blank line above it. Clicking the answer body does nothing.
+
+If you toggle the state yourself during a run, that run is not collapsed automatically at the end — your choice is respected until the next run starts.
 
 ## How the work/final split is decided
 
@@ -22,26 +36,18 @@ Pi exports its transcript components, so this package replaces `AssistantMessage
 | Component | Collapsed behaviour |
 |---|---|
 | Assistant message **with** tool calls | hidden entirely (narration belongs to the work) |
-| Assistant message **without** tool calls | kept, with the duration header prepended |
+| Assistant message **without** tool calls | kept, with the duration header attached |
 | Tool row | hidden entirely |
 
 A message without tool calls is the final answer because the agent loop only ends once a response has no tool calls left, so there is exactly one such message per run.
 
-Hidden rows render zero lines, so the duration header lands directly above the final answer.
+Hidden rows render zero lines, so the duration header lands directly above the final answer. The header itself is a real child component wrapped in `MouseRegion` — not a string prepended during render — because Pi's `Container` computes mouse hit offsets from child heights.
 
 ## Live behaviour
 
 The transcript stays expanded while the agent is running — otherwise a collapsed run would show nothing until the answer arrives. When the run settles (`agent_settled`) the work collapses automatically. Automatic collapsing is suppressed for the rest of the run if you toggled the state yourself.
 
-## Commands and shortcuts
-
-| Trigger | Effect |
-|---|---|
-| `f2` | Collapse or expand the current run's work |
-| `/clean` | Same as the shortcut |
-| `/config:clean-mode` | Print the current configuration |
-| `/config:clean-mode <key>=on\|off` | Change one boolean setting and save it |
-
+The header only appears once the run duration is known, so it does not show during streaming.
 ## Configuration
 
 Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.example.json`.

@@ -1,9 +1,9 @@
 /**
- * 用 Pi 真实导出的组件跑一次补丁冒烟测试。
+ * 用 Pi 真实导出的组件跑补丁冒烟测试。
  *
  * 前面的 prototype-patch 单测用的是假原型，只能证明补丁骨架正确；
  * 这里直接实例化 Pi 的 AssistantMessageComponent 与 ToolExecutionComponent，
- * 证明折叠、保留最终答案、加折叠头、还原四种行为在真实组件上都成立。
+ * 证明折叠、保留最终答案、折叠头、鼠标点击与还原在真实组件上都成立。
  */
 
 import assert from "node:assert/strict";
@@ -13,6 +13,7 @@ import {
 	ToolExecutionComponent,
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
+import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import { installComponentPatches } from "../src/component-patches.ts";
 import { formatDuration } from "../src/duration.ts";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "../src/types.ts";
@@ -31,9 +32,10 @@ const FINAL_TEXT = "final answer body";
 const WORK_TEXT = "intermediate narration";
 /** 工具行构造用的工作目录。 */
 const TOOL_CWD = "/tmp";
-
-// 工具行组件在构造阶段就会取主题色；先初始化主题，测试进程里不开 watcher。
-initTheme("dark", false);
+/** 折叠头的行号；折叠头子组件输出「空行 + 折叠头」，所以落在第 1 行。 */
+const HEADER_ROW = 1;
+/** 折叠头上方空行的行号；它与折叠头属于同一个点击块。 */
+const HEADER_BLANK_ROW = 0;
 /** 折叠且已结束的运行状态。 */
 const COLLAPSED_STATE: CleanModeState = {
 	collapsed: true,
@@ -43,6 +45,9 @@ const COLLAPSED_STATE: CleanModeState = {
 };
 /** 展开状态。 */
 const EXPANDED_STATE: CleanModeState = { ...COLLAPSED_STATE, collapsed: false };
+
+// 工具行组件在构造阶段就会取主题色；先初始化主题，测试进程里不开 watcher。
+initTheme("dark", false);
 
 /** 造一条带 tool call 的 assistant 消息，即工作过程解说。 */
 function workMessage(): Record<string, unknown> {
@@ -81,15 +86,41 @@ function toolComponent(): ToolExecutionComponent {
 	);
 }
 
+/** 造一个落在指定行号的左键 click 事件。 */
+function clickAt(row: number, height: number): TuiMouseEvent {
+	return {
+		type: "click",
+		button: "left",
+		x: 1,
+		y: row,
+		screenX: 1,
+		screenY: row + 1,
+		width: WIDTH,
+		height,
+		shift: false,
+		alt: false,
+		ctrl: false,
+	};
+}
+
 /** 装一次补丁、跑断言、无论成败都还原，避免测试间互相污染。 */
-function withPatches(state: CleanModeState, config: CleanModeConfig, run: () => void): void {
+function withPatches(
+	state: CleanModeState,
+	config: CleanModeConfig,
+	run: (toggles: () => number) => void,
+): void {
+	let toggleCount = 0;
 	const restore = installComponentPatches({
 		getState: () => state,
 		getConfig: () => config,
 		styleHeader: (text) => text,
+		onToggle: () => {
+			// 只计数，用于断言鼠标点击是否真的触发了切换。
+			toggleCount += 1;
+		},
 	});
 	try {
-		run();
+		run(() => toggleCount);
 	} finally {
 		restore();
 	}
@@ -123,13 +154,50 @@ test("展开时带 tool call 的消息照常渲染正文", () => {
 		const rendered = linesOf(component).join("\n");
 
 		assert.ok(rendered.includes(WORK_TEXT), `展开后解说丢失：${rendered}`);
-		assert.ok(!rendered.includes(HEADER_FRAGMENT), "展开时不应出现折叠头");
+		assert.ok(!rendered.includes(HEADER_FRAGMENT), "工作过程消息不应有折叠头");
+	});
+});
+
+test("展开态的最终答案仍然显示折叠头以便点击收起", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, () => {
+		const component = new AssistantMessageComponent(finalMessage());
+		const rendered = linesOf(component).join("\n");
+
+		assert.ok(rendered.includes(HEADER_FRAGMENT), `展开态缺少折叠头：${rendered}`);
+		assert.ok(rendered.includes(FINAL_TEXT), `最终答案正文丢失：${rendered}`);
 	});
 });
 
 test("折叠时工具行渲染为 0 行", () => {
 	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, () => {
 		assert.deepEqual(linesOf(toolComponent()), []);
+	});
+});
+
+test("鼠标点击折叠头块会触发切换，点击正文不会", () => {
+	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (toggles) => {
+		const component = new AssistantMessageComponent(finalMessage());
+		const height = linesOf(component).length;
+
+		component.handleMouse(clickAt(HEADER_ROW, height));
+		assert.equal(toggles(), 1, "点击折叠头应触发一次切换");
+
+		component.handleMouse(clickAt(HEADER_BLANK_ROW, height));
+		assert.equal(toggles(), 2, "折叠头上方的空行属于同一点击块，也应切换");
+
+		component.handleMouse(clickAt(height - 1, height));
+		assert.equal(toggles(), 2, "点击正文不应触发切换");
+	});
+});
+
+test("折叠头不可见时不占用行也就不响应点击", () => {
+	const config = { ...DEFAULT_CLEAN_MODE_CONFIG, showRunHeader: false };
+	withPatches(COLLAPSED_STATE, config, (toggles) => {
+		const component = new AssistantMessageComponent(finalMessage());
+		const height = linesOf(component).length;
+
+		component.handleMouse(clickAt(HEADER_ROW, height));
+		assert.equal(toggles(), 0, "没有折叠头时点击第 1 行不应切换");
 	});
 });
 
