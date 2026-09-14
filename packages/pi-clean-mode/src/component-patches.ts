@@ -30,7 +30,7 @@ import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import { i18n } from "./i18n.js";
 import {
-	resolveAssistantMessageHidden,
+	resolveAssistantMessageRender,
 	resolveRunHeader,
 	resolveToolRowMode,
 	type AssistantMessageKind,
@@ -50,17 +50,27 @@ const EXPANDED_GROUP_CHEVRON = "▾";
 const HEADER_LEADING_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
 const HEADER_CHILD_KEY: unique symbol = Symbol("piCleanModeHeaderChild");
+/** 标记该实例是否已判定过本轮折叠头归属。 */
+const RUN_HEADER_OWNERSHIP_RESOLVED_KEY: unique symbol = Symbol("piCleanModeRunHeaderResolved");
+/** 标记该实例是否为本轮折叠头的承载者。 */
+const RUN_HEADER_OWNER_KEY: unique symbol = Symbol("piCleanModeRunHeaderOwner");
 
 /** assistant 组件对外可见的最小结构。 */
 interface AssistantMessageHost {
 	/** Pi 在 updateContent 里写入：该消息是否包含 tool call。 */
 	hasToolCalls?: boolean;
+	/** Pi 保存的最近一条消息对象，折叠头靠它查回所属那一轮的耗时。 */
+	lastMessage?: unknown;
 	/** 内容容器；折叠头插在它的 children 首位。 */
 	contentContainer?: { children: Component[] };
 	render(width: number): string[];
 	updateContent(message: unknown, isStreaming?: boolean): void;
 	/** 折叠头子组件的实例级缓存。 */
 	[HEADER_CHILD_KEY]?: Component;
+	/** 归属是否已判定。 */
+	[RUN_HEADER_OWNERSHIP_RESOLVED_KEY]?: boolean;
+	/** 是否为本轮折叠头的承载者。 */
+	[RUN_HEADER_OWNER_KEY]?: boolean;
 }
 
 /** 工具行组件对外可见的最小结构。 */
@@ -108,6 +118,10 @@ export interface ComponentPatchDeps {
 	getToolRowGroup: (toolCallId: string) => ToolRowGroupInfo | undefined;
 	/** 切换某个动作组的展开状态。 */
 	onToggleActionGroup: (groupId: number) => void;
+	/** 认领本轮折叠头归属；只有第一条 assistant 消息会得到 true。 */
+	claimRunHeaderHost: (host: object) => boolean;
+	/** 查询某个承载者所属那一轮的耗时。 */
+	getRunDuration: (host: object) => number | undefined;
 }
 
 /** 把 Pi 的 hasToolCalls 映射成业务分类；映射规则见本文件顶部说明。 */
@@ -115,11 +129,15 @@ function classifyAssistantMessage(hasToolCalls: boolean): AssistantMessageKind {
 	return hasToolCalls ? "work" : "final";
 }
 
-/** 组装折叠头那一行，例如 `用时 4m 26s ›`。 */
-function buildRunHeaderLine(state: CleanModeState, deps: ComponentPatchDeps): string {
-	const durationMs = state.runDurationMs ?? 0;
-	const label = i18n.t("runHeader", { duration: formatDuration(durationMs) });
-	const chevron = state.collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
+/**
+ * 组装折叠头那一行，例如 `用时 4m 26s ›`。
+ *
+ * 耗时按承载者（本轮第一条 assistant 组件）查，因此历史轮次不会被最新一轮覆盖。
+ */
+function buildRunHeaderLine(host: AssistantMessageHost, deps: ComponentPatchDeps): string {
+	const durationMs = deps.getRunDuration(host);
+	const label = i18n.t("runHeader", { duration: formatDuration(durationMs ?? 0) });
+	const chevron = deps.getState().collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
 	const hint = deps.getConfig().showExpandHint ? ` ${chevron}` : "";
 	return deps.styleHeader(`${label}${hint}`);
 }
@@ -130,15 +148,22 @@ function buildRunHeaderLine(state: CleanModeState, deps: ComponentPatchDeps): st
  * 可见时输出「空行 + 折叠头」两行：空行与上方消息拉开距离，折叠头下方则接
  * 内容容器原有的 Spacer。不可见时渲染 0 行，因此不占空间也不可点击。
  */
-function createRunHeaderComponent(deps: ComponentPatchDeps): Component {
+function createRunHeaderComponent(
+	host: AssistantMessageHost,
+	deps: ComponentPatchDeps,
+): Component {
 	const content: Component = {
 		/** 可见时输出「空行 + 折叠头」，否则输出空行集。 */
 		render: (width: number): string[] => {
-			const decision = resolveRunHeader(deps.getState(), deps.getConfig());
+			const decision = resolveRunHeader({
+				config: deps.getConfig(),
+				durationMs: deps.getRunDuration(host),
+				collapsed: deps.getState().collapsed,
+			});
 			if (!decision.visible) {
 				return [];
 			}
-			return [HEADER_LEADING_BLANK, buildRunHeaderLine(deps.getState(), deps)];
+			return [HEADER_LEADING_BLANK, buildRunHeaderLine(host, deps)];
 		},
 		/** 无缓存状态，渲染时实时读取当前折叠状态。 */
 		invalidate: () => {},
@@ -156,41 +181,48 @@ function createRunHeaderComponent(deps: ComponentPatchDeps): Component {
 
 /** 取出或创建该实例的折叠头子组件。 */
 function getOrCreateRunHeader(host: AssistantMessageHost, deps: ComponentPatchDeps): Component {
-	host[HEADER_CHILD_KEY] ??= createRunHeaderComponent(deps);
+	host[HEADER_CHILD_KEY] ??= createRunHeaderComponent(host, deps);
 	return host[HEADER_CHILD_KEY];
 }
 
 /**
- * 包装 assistant 消息的 render：折叠时工作过程返回空数组。
+ * 包装 assistant 消息的 render。
  *
- * 折叠头不在这里拼接——它以子组件形式存在于内容容器里，由 Container 正常渲染。
+ * 折叠头在展开态由内容容器里的子组件渲染；折叠态下如果本体内容被隐藏，就只
+ * 直接输出子组件的行，保证折叠头不会随内容一起消失。
  */
 function buildAssistantMessageRender(
 	deps: ComponentPatchDeps,
 	originalRender: (this: AssistantMessageHost, width: number) => string[],
 ): (this: AssistantMessageHost, width: number) => string[] {
 	return function patchedAssistantMessageRender(this: AssistantMessageHost, width: number) {
-		const kind = classifyAssistantMessage(this.hasToolCalls === true);
-		const hidden = resolveAssistantMessageHidden({
+		const decision = resolveAssistantMessageRender({
 			state: deps.getState(),
 			config: deps.getConfig(),
-			kind,
+			kind: classifyAssistantMessage(this.hasToolCalls === true),
+			isRunHeaderHost: this[RUN_HEADER_OWNER_KEY] === true,
+			durationMs: deps.getRunDuration(this),
 		});
 
-		if (hidden) {
+		if (!decision.hideContent) {
+			return originalRender.call(this, width);
+		}
+
+		if (!decision.showHeader) {
 			return [];
 		}
 
-		return originalRender.call(this, width);
+		return getOrCreateRunHeader(this, deps).render(width);
 	};
 }
 
 /**
  * 包装 assistant 消息的 updateContent。
  *
- * 原始实现会清空并重建内容容器，因此这里在它之后把折叠头插到 children 首位：
- * 最终答案消息始终带折叠头子组件，是否真的显示由子组件按当前状态决定。
- * 工作过程消息不插折叠头。
+ * 原始实现会清空并重建内容容器，因此这里在它之后：
+ * 1. 首次遇到本实例时问一次「本轮折叠头归谁」，第一条 assistant 消息成为承载者；
+ * 2. 承载者把折叠头子组件插到 children 首位，使它在展开态也排在最前面。
+ * 非承载者不插折叠头。
  */
 function buildAssistantMessageUpdateContent(
 	deps: ComponentPatchDeps,
@@ -207,8 +239,17 @@ function buildAssistantMessageUpdateContent(
 	) {
 		originalUpdateContent.call(this, message, isStreaming);
 
+		if (this[RUN_HEADER_OWNERSHIP_RESOLVED_KEY] !== true) {
+			this[RUN_HEADER_OWNERSHIP_RESOLVED_KEY] = true;
+			this[RUN_HEADER_OWNER_KEY] = deps.claimRunHeaderHost(this);
+		}
+
+		if (this[RUN_HEADER_OWNER_KEY] !== true) {
+			return;
+		}
+
 		const container = this.contentContainer;
-		if (!container || this.hasToolCalls === true) {
+		if (!container) {
 			return;
 		}
 

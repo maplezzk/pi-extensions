@@ -112,11 +112,64 @@ interface Runtime {
 	activity: ActivitySnapshot;
 	/** 实时活动区的运行时（定时器与签名缓存）。 */
 	activityArea: ActivityAreaRuntime;
+	/** 每轮耗时账本，把耗时绑定到具体的最终答案消息上。 */
+	runDurations: RunDurationLedger;
 }
 
 /** 主题不可用时的默认着色：原样返回文本。 */
 function defaultHeaderStyle(text: string): string {
 	return text;
+}
+
+/**
+ * 每轮耗时账本。
+ *
+ * 耗时按「折叠头承载者组件」存，因此历史轮次的折叠头不会跟着最新一轮变化；
+ * 承载者是每轮第一条 assistant 消息，保证耗时头永远在整轮最前面。
+ * 内部维护归属标记与两张弱表，调用方只需按轮次调用这四个操作。
+ */
+interface RunDurationLedger {
+	/** 开始新一轮：重开归属认领。 */
+	beginRun(): void;
+	/** 认领本轮折叠头归属；本轮已被认领时返回 false。 */
+	claimOwner(host: object): boolean;
+	/** 把本轮耗时绑定到当前承载者上；耗时未知或还没人认领时不做任何事。 */
+	bindDuration(durationMs: number | undefined): void;
+	/** 查询某个承载者所属那一轮的耗时。 */
+	getDuration(host: object): number | undefined;
+}
+
+/** 创建耗时账本。 */
+function createRunDurationLedger(): RunDurationLedger {
+	const durations = new WeakMap<object, number>();
+	let owner: object | undefined;
+	let claimed = false;
+
+	return {
+		/** 重开归属认领，让下一条 assistant 消息成为本轮承载者。 */
+		beginRun: () => {
+			owner = undefined;
+			claimed = false;
+		},
+		/** 本轮第一个来认领的实例得到 true，其余得到 false。 */
+		claimOwner: (host) => {
+			if (claimed) {
+				return false;
+			}
+			claimed = true;
+			owner = host;
+			return true;
+		},
+		/** 耗时未知或尚无承载者时直接跳过。 */
+		bindDuration: (durationMs) => {
+			if (durationMs === undefined || !owner) {
+				return;
+			}
+			durations.set(owner, durationMs);
+		},
+		/** 未登记过的承载者返回 undefined，调用方据此不显示折叠头。 */
+		getDuration: (host) => durations.get(host),
+	};
 }
 
 /** 创建初始运行期状态。 */
@@ -128,6 +181,7 @@ function createRuntime(): Runtime {
 		actionGroups: createActionGroupState(),
 		activity: createActivitySnapshot(),
 		activityArea: createActivityAreaRuntime(),
+		runDurations: createRunDurationLedger(),
 	};
 }
 
@@ -273,6 +327,8 @@ function installPatches(runtime: Runtime): void {
 			toggleActionGroup(runtime.actionGroups, groupId);
 			requestRender(runtime);
 		},
+		claimRunHeaderHost: (host) => runtime.runDurations.claimOwner(host),
+		getRunDuration: (host) => runtime.runDurations.getDuration(host),
 	});
 }
 
@@ -408,6 +464,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		runtime.runStartedAtMs = Date.now();
 		runtime.state = startRun({ state: runtime.state, config: runtime.config });
 		beginActionGroupStep(runtime.actionGroups);
+		runtime.runDurations.beginRun();
 
 		runtime.activity = { ...createActivitySnapshot(), active: true, startedAtMs: runtime.runStartedAtMs };
 		if (isActivityEnabled(runtime)) {
@@ -461,6 +518,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		});
 		runtime.runStartedAtMs = undefined;
 		runtime.activity = { ...runtime.activity, active: false };
+		runtime.runDurations.bindDuration(runtime.state.runDurationMs);
 		clearActivityArea(runtime.activityArea, ctx);
 		requestRender(runtime);
 	});

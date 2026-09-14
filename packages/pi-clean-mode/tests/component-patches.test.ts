@@ -133,6 +133,8 @@ function withPatches(
 	run: (harness: PatchHarness) => void,
 ): void {
 	const actionGroups = createActionGroupState();
+	const durations = new WeakMap<object, number>();
+	let runHeaderAssigned = false;
 	let runToggleCount = 0;
 	let groupToggleCount = 0;
 	const restore = installComponentPatches({
@@ -158,6 +160,16 @@ function withPatches(
 			toggleActionGroup(actionGroups, groupId);
 			groupToggleCount += 1;
 		},
+		claimRunHeaderHost: (host) => {
+			// 每轮只让第一个来认领的实例成为承载者，并直接给它已知耗时。
+			if (runHeaderAssigned) {
+				return false;
+			}
+			runHeaderAssigned = true;
+			durations.set(host, RUN_DURATION_MS);
+			return true;
+		},
+		getRunDuration: (host) => durations.get(host),
 	});
 	try {
 		run({
@@ -175,10 +187,29 @@ function linesOf(component: { render(width: number): string[] }): string[] {
 	return component.render(WIDTH);
 }
 
-test("折叠时带 tool call 的 assistant 消息渲染为 0 行", () => {
+test("折叠时承载折叠头的工作过程消息只输出折叠头", () => {
 	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, () => {
 		const component = new AssistantMessageComponent(workMessage());
-		assert.deepEqual(linesOf(component), []);
+		const rendered = linesOf(component).join("\n");
+
+		assert.ok(rendered.includes(HEADER_FRAGMENT), `折叠头应在整轮最前面：${rendered}`);
+		assert.ok(!rendered.includes(WORK_TEXT), `工作过程正文应隐藏：${rendered}`);
+	});
+});
+
+test("折叠时非承载者的工作过程消息渲染为 0 行", () => {
+	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, () => {
+		// 折叠头归属归本轮第一个实例；先把它占掉，再验证第二个实例什么都不输出。
+		// 第一个实例：应成为本轮折叠头承载者。
+		const owner = new AssistantMessageComponent(workMessage());
+		assert.ok(
+			linesOf(owner).join("\n").includes(HEADER_FRAGMENT),
+			"前置条件：第一个实例应当成为折叠头承载者",
+		);
+
+		// 第二个实例：非承载者，应渲染 0 行。
+		const nonOwner = new AssistantMessageComponent(workMessage());
+		assert.deepEqual(linesOf(nonOwner), []);
 	});
 });
 
@@ -192,13 +223,17 @@ test("折叠时不带 tool call 的消息保留正文并带上耗时头", () => 
 	});
 });
 
-test("展开时带 tool call 的消息照常渲染正文", () => {
+test("展开时带 tool call 的消息照常渲染正文，折叠头仍在最前面", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, () => {
 		const component = new AssistantMessageComponent(workMessage());
 		const rendered = linesOf(component).join("\n");
 
 		assert.ok(rendered.includes(WORK_TEXT), `展开后解说丢失：${rendered}`);
-		assert.ok(!rendered.includes(HEADER_FRAGMENT), "工作过程消息不应有折叠头");
+		assert.ok(rendered.includes(HEADER_FRAGMENT), `折叠头应保持在整轮最前面：${rendered}`);
+		assert.ok(
+			rendered.indexOf(HEADER_FRAGMENT) < rendered.indexOf(WORK_TEXT),
+			"折叠头必须排在正文之前，形成耗时 → 过程 → 答案的树形结构",
+		);
 	});
 });
 
