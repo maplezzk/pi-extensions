@@ -29,8 +29,10 @@ test("配置读取仅允许文件不存在使用默认值", () => {
 });
 
 test("标题偏好可配置，未知字段与非法值明确拒绝", () => {
-  const title = { maxLength: 60, preferredLength: 40, language: "en", instructions: "Use sentence case", timeoutMs: 20000 };
+  const title = { maxLength: 60, preferredLength: 40, language: "en", instructions: "Use sentence case", timeoutMs: 20000, maxTokens: 4096, effort: "high" };
   assert.deepEqual(parseConfig({ title }).title, title);
+  assert.equal(parseConfig({}).title.maxTokens, 2048);
+  assert.equal(parseConfig({}).title.effort, "low");
   for (const value of [null, [],
     { unknown: true }, { allowWorkspaceRename: false }, { targets: null }, { targets: { unknown: true } }, { targets: { session: "false" } },
     { title: null }, { title: { typo: 1 } }, { title: { maxLength: 0 } },
@@ -38,5 +40,7 @@ test("标题偏好可配置，未知字段与非法值明确拒绝", () => {
     { title: { timeoutMs: -1 } }, { title: { timeoutMs: 2147483648 } },
     { title: { language: " " } }, { title: { language: 1 } },
     { title: { instructions: false } }, { title: { maxLength: Infinity } },
+    { title: { maxTokens: 0 } }, { title: { maxTokens: 1.5 } }, { title: { maxTokens: "2048" } },
+    { title: { effort: "none" } }, { title: { effort: "LOW" } }, { title: { effort: 1 } },
   ]) assert.throws(() => parseConfig(value), /field|字段/);
 });

@@ -37,7 +37,9 @@ pi install npm:pi-naming
     "preferredLength": 10,
     "language": "auto",
     "instructions": "",
-    "timeoutMs": 10000
+    "timeoutMs": 10000,
+    "maxTokens": 2048,
+    "effort": "low"
   }
 }
 ```
@@ -51,8 +53,12 @@ pi install npm:pi-naming
 | `language` | `"auto"` | 跟随消息主要语言，或指定 `English`、`日本語` 等 |
 | `instructions` | `""` | 追加的命名风格要求，不是模板或可执行代码 |
 | `timeoutMs` | `10000` | 标题请求超时（毫秒） |
+| `maxTokens` | `2048` | 标题请求的输出预算，受模型输出上限封顶 |
+| `effort` | `"low"` | 思考档位：`minimal`、`low`、`medium`、`high`、`xhigh`、`max` |
 
-长度和超时必须是正安全整数，超时不超过 `2147483647` 毫秒。未知字段和非法配置会明确报错，不注册功能。缺少配置文件时使用默认值。显式输入的名称不受生成标题长度限制；补充提示不会绕过生成结果的单行清理和长度限制。
+长度、超时和输出预算必须是正安全整数，超时不超过 `2147483647` 毫秒。未知字段和非法配置会明确报错，不注册功能。缺少配置文件时使用默认值。显式输入的名称不受生成标题长度限制；补充提示不会绕过生成结果的单行清理和长度限制。
+
+`maxLength` 与 `maxTokens` 相互独立：`maxLength` 只负责截断生成的标题，`maxTokens` 只负责模型响应的预算，两者不会互相推导。推理模型的思考和标题共用这份预算，所以在推理模型上命名失败就调大 `maxTokens`，想限制成本就调小；`effort` 决定思考大概会占用多少。
 
 例如较长英文标题：`maxLength: 60`、`preferredLength: 40`、`language: "English"`。模型和鉴权直接复用 Pi 当前选择；UI 语言与标题语言独立。
 

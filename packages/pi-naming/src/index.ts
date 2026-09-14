@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TerminalRenameOutcome, TerminalRenameTarget, ResolveRenameOptions } from "pi-terminal-mux";
-import { configPath, loadConfig, parseConfig, saveConfig, type NamingConfig } from "./config.ts";
+import { configPath, isTitleEffort, loadConfig, parseConfig, saveConfig, TITLE_EFFORT_LEVELS, type NamingConfig } from "./config.ts";
 import { i18n } from "./i18n.ts";
 import { installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
@@ -26,11 +26,14 @@ const CONFIG_OPTION = {
   language: 7,
   instructions: 8,
   timeout: 9,
+  maxTokens: 10,
+  effort: 11,
 } as const;
 const MAX_LENGTH_PRESETS = ["15", "30", "60"] as const;
 const PREFERRED_LENGTH_PRESETS = ["10", "20", "40"] as const;
 const LANGUAGE_PRESETS = ["auto", "中文", "English", "日本語"] as const;
 const TIMEOUT_PRESETS = ["5000", "10000", "30000"] as const;
+const MAX_TOKENS_PRESETS = ["1024", "2048", "4096"] as const;
 const MESSAGE_TYPE = "pi-naming";
 
 export interface TerminalNamingAdapter {
@@ -152,6 +155,8 @@ export function registerNamingConfigCommand(
           i18n.t("configLanguage", { value: config.title.language }),
           i18n.t("configInstructions", { value: config.title.instructions || i18n.t("configEmpty") }),
           i18n.t("configTimeout", { value: config.title.timeoutMs }),
+          i18n.t("configMaxTokens", { value: config.title.maxTokens }),
+          i18n.t("configEffort", { value: config.title.effort }),
           doneChoice,
         ];
         const selected = await ctx.ui.select(i18n.t("configMenuTitle"), choices);
@@ -188,6 +193,14 @@ export function registerNamingConfigCommand(
             inputTitle = i18n.t("configInstructionsInput");
             inputValue = config.title.instructions;
             options = [];
+          } else if (selectedIndex === CONFIG_OPTION.maxTokens) {
+            inputTitle = i18n.t("configMaxTokensInput");
+            inputValue = String(config.title.maxTokens);
+            options = MAX_TOKENS_PRESETS;
+          } else if (selectedIndex === CONFIG_OPTION.effort) {
+            inputTitle = i18n.t("configEffortInput");
+            inputValue = config.title.effort;
+            options = TITLE_EFFORT_LEVELS;
           }
           const input = selectedIndex === CONFIG_OPTION.instructions
             ? await ctx.ui.input(inputTitle, inputValue)
@@ -198,7 +211,18 @@ export function registerNamingConfigCommand(
           else if (selectedIndex === CONFIG_OPTION.preferredLength) title.preferredLength = Number(input.trim());
           else if (selectedIndex === CONFIG_OPTION.language) title.language = input;
           else if (selectedIndex === CONFIG_OPTION.instructions) title.instructions = input;
-          else title.timeoutMs = Number(input.trim());
+          else if (selectedIndex === CONFIG_OPTION.maxTokens) title.maxTokens = Number(input.trim());
+          else if (selectedIndex === CONFIG_OPTION.effort) {
+            // 自定义输入可能不是受支持的档位；明确报错并重开菜单，不静默丢弃也不落到其它字段。
+            if (!isTitleEffort(input)) {
+              report(pi, ctx, {
+                message: i18n.t("configEffortInvalid", { value: input, options: TITLE_EFFORT_LEVELS.join(", ") }),
+                level: "error",
+              });
+              continue;
+            }
+            title.effort = input;
+          } else title.timeoutMs = Number(input.trim());
           try { next = parseConfig({ ...config, title }); }
           catch (error) {
             report(pi, ctx, { message: i18n.t("configCommandInvalid", { error: errorMessage(error) }), level: "error" });
