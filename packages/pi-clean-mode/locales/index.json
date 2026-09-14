@@ -3,6 +3,22 @@
     "zh-CN": "用时 {duration}",
     "en-US": "Took {duration}"
   },
+  "actionGroupHeader": {
+    "zh-CN": "探索 · {count} 步",
+    "en-US": "Explored · {count} steps"
+  },
+  "toggleGroupsDescription": {
+    "zh-CN": "清爽模式：展开或收起全部动作组",
+    "en-US": "Clean mode: expand or collapse all action groups"
+  },
+  "groupsExpandedNotice": {
+    "zh-CN": "清爽模式：已展开全部动作组，按 {key} 收起",
+    "en-US": "Clean mode: all action groups expanded, press {key} to collapse"
+  },
+  "groupsCollapsedNotice": {
+    "zh-CN": "清爽模式：已收起全部动作组，按 {key} 展开",
+    "en-US": "Clean mode: all action groups collapsed, press {key} to expand"
+  },
   "toggleDescription": {
     "zh-CN": "清爽模式：收起或展开本轮工作过程",
     "en-US": "Clean mode: collapse or expand this run's work"

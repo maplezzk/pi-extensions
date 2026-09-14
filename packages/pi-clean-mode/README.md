@@ -15,12 +15,42 @@ The cause was that today's restock used stock-sales from two days ago, so demand
 
 Expanded, the work rows come back and the header shows `⌄` instead of `›`.
 
+## Three levels of collapsing
+
+| Level | Row | Behaviour |
+|---|---|---|
+| Run | `Took 4m 26s ›` | Hides the whole run's work; only the final answer stays |
+| Action group | `▸ Explored · 3 steps` | Hides a turn's tool calls behind one summary row |
+| Tool row | `$ find . -name '*.ts'` | Pi's own per-row output expansion (`ctrl+o`, or click the result) |
+
+Group boundaries follow **narration**: an assistant message with text starts a new group, and consecutive tool-only turns merge into the current one. So a burst of work reads as one row even when the model emits one tool call per turn — which is the common case.
+
+Groups with a single member are never collapsed — the tool row itself is shown, so a lone command still reads as itself.
+
+```
+Took 11s ⌄
+I'll check the restock data first.
+
+▸ Explored · 3 steps          ← collapsed group
+
+Took 11s ⌄
+I'll check the restock data first.
+
+  $ find . -name '*.ts'       ← expanded group
+  $ wc -l src/*.ts
+  $ git status
+```
+
+Group state and run state are independent: expanding the run shows groups in whatever state you left them.
+
 ## Interaction
 
 | Trigger | Effect |
 |---|---|
 | `f2` | Collapse or expand the current run's work |
-| Mouse click on the header | Same as `f2`, **fullscreen TUI mode only** |
+| `shift+f2` | Expand or collapse every action group |
+| Mouse click on the run header | Same as `f2`, **fullscreen TUI mode only** |
+| Mouse click on a group header | Expand or collapse that one action group, **fullscreen TUI mode only** |
 | `/clean` | Same as the shortcut |
 | `/config:clean-mode` | Print the current configuration |
 | `/config:clean-mode <key>=on\|off` | Change one boolean setting and save it |
@@ -37,7 +67,7 @@ Pi exports its transcript components, so this package replaces `AssistantMessage
 |---|---|
 | Assistant message **with** tool calls | hidden entirely (narration belongs to the work) |
 | Assistant message **without** tool calls | kept, with the duration header attached |
-| Tool row | hidden entirely |
+| Tool row | hidden entirely, or reduced to one action-group header row |
 
 A message without tool calls is the final answer because the agent loop only ends once a response has no tool calls left, so there is exactly one such message per run.
 
@@ -67,6 +97,11 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 | `autoExpandWhileRunning` | Expand while running, then collapse when the run settles. |
 | `showRunHeader` | Show the `Took …` header above the final answer. |
 | `showExpandHint` | Append the expand hint to the header. |
+| `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
+
+## Debugging
+
+Set `PI_CLEAN_MODE_DEBUG=1` to append event and render decisions to `<pi agent dir>/pi-clean-mode-debug.log`. It is off by default and the flag is read once at process start, so it costs nothing on the render path when disabled.
 
 ## Compatibility
 

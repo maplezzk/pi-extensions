@@ -7,6 +7,13 @@
  * 命名与 types.ts 保持一致：折叠单位是「一次 agent 运行」，统一用 run。
  */
 
+import {
+	TOOL_ROW_GROUP_HEADER,
+	TOOL_ROW_HIDDEN,
+	TOOL_ROW_NORMAL,
+	type ActionGroupMembership,
+	type ToolRowMode,
+} from "./action-groups.js";
 import type { CleanModeConfig, CleanModeState } from "./types.js";
 
 /** assistant 消息的业务分类：工作过程，或本次运行的最终答案。 */
@@ -20,10 +27,16 @@ export interface AssistantRenderInput {
 	kind: AssistantMessageKind;
 }
 
-/** 工具行的渲染结果。 */
-export interface ToolRowRenderDecision {
-	/** 整行不渲染（连前置空行一起消失）。 */
-	hidden: boolean;
+/** 判定工具行渲染方式所需的输入。 */
+export interface ToolRowModeInput {
+	state: CleanModeState;
+	config: CleanModeConfig;
+	/** 该工具调用所属的动作组；未登记时为 undefined。 */
+	membership?: ActionGroupMembership;
+	/** 所属动作组的成员总数。 */
+	groupSize: number;
+	/** 所属动作组是否已展开。 */
+	groupExpanded: boolean;
 }
 
 /** 折叠头的可见性与当前方向；不可见时不占任何行。 */
@@ -65,10 +78,30 @@ export function resolveRunHeader(
 	return { visible, collapsed: state.collapsed };
 }
 
-/** 判定工具行在当前位置该如何渲染；折叠时整行隐藏。 */
-export function resolveToolMessageRender(
-	state: CleanModeState,
-	config: CleanModeConfig,
-): ToolRowRenderDecision {
-	return { hidden: config.enabled && state.collapsed };
+/**
+ * 判定一条工具行在当前位置该怎么渲染。
+ *
+ * 优先级：总开关关闭时一律原样；运行级折叠先隐藏一切；否则只有「多条成员且
+ * 组收起」的组才需要收成组头，组内只有一条时不做任何改动，直接显示工具行本身。
+ */
+export function resolveToolRowMode(input: ToolRowModeInput): ToolRowMode {
+	const { state, config, membership, groupSize, groupExpanded } = input;
+
+	if (!config.enabled) {
+		return TOOL_ROW_NORMAL;
+	}
+
+	if (state.collapsed) {
+		return TOOL_ROW_HIDDEN;
+	}
+
+	if (!config.enableActionGroups || !membership || groupSize <= 1) {
+		return TOOL_ROW_NORMAL;
+	}
+
+	if (groupExpanded) {
+		return TOOL_ROW_NORMAL;
+	}
+
+	return membership.index === 0 ? TOOL_ROW_GROUP_HEADER : TOOL_ROW_HIDDEN;
 }

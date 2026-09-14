@@ -20,13 +20,19 @@ import {
 	AssistantMessageComponent,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { MouseRegion, type Component } from "@earendil-works/pi-tui";
+import { MouseRegion, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import {
+	TOOL_ROW_GROUP_HEADER,
+	TOOL_ROW_HIDDEN,
+	type ActionGroupMembership,
+} from "./action-groups.js";
 import { formatDuration } from "./duration.js";
+import { debugLog } from "./debug-logger.js";
 import { i18n } from "./i18n.js";
 import {
 	resolveAssistantMessageHidden,
 	resolveRunHeader,
-	resolveToolMessageRender,
+	resolveToolRowMode,
 	type AssistantMessageKind,
 } from "./render-policy.js";
 import { installMethodPatch, type PatchablePrototype } from "./prototype-patch.js";
@@ -36,6 +42,8 @@ import type { CleanModeConfig, CleanModeState } from "./types.js";
 const COLLAPSED_CHEVRON = "›";
 /** 展开态的箭头，提示点击后收起。 */
 const EXPANDED_CHEVRON = "⌄";
+/** 收起的动作组前面的箭头，提示点击后展开。 */
+const COLLAPSED_GROUP_CHEVRON = "▸";
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
@@ -55,7 +63,20 @@ interface AssistantMessageHost {
 
 /** 工具行组件对外可见的最小结构。 */
 interface ToolMessageHost {
+	/** Pi 在构造时写入的工具调用 id。 */
+	toolCallId?: string;
 	render(width: number): string[];
+	handleMouse(event: TuiMouseEvent): unknown;
+}
+
+/** 一个工具行所属动作组的快照，供补丁层做渲染决策。 */
+export interface ToolRowGroupInfo {
+	/** 该工具调用在组内的归属。 */
+	membership: ActionGroupMembership;
+	/** 组内成员总数。 */
+	groupSize: number;
+	/** 组是否已展开。 */
+	groupExpanded: boolean;
 }
 
 /** assistant 组件的 render 方法签名。 */
@@ -68,6 +89,8 @@ type AssistantUpdateMethod = (
 ) => void;
 /** 工具行组件的 render 方法签名。 */
 type ToolRenderMethod = (this: ToolMessageHost, width: number) => string[];
+/** 工具行组件的 handleMouse 方法签名。 */
+type ToolMouseHandler = (this: ToolMessageHost, event: TuiMouseEvent) => unknown;
 
 /** 补丁层从扩展入口注入的依赖。 */
 export interface ComponentPatchDeps {
@@ -79,6 +102,10 @@ export interface ComponentPatchDeps {
 	styleHeader: (text: string) => string;
 	/** 鼠标点击折叠头时切换折叠状态。 */
 	onToggle: () => void;
+	/** 查询某个工具调用所属的动作组；未登记时返回 undefined。 */
+	getToolRowGroup: (toolCallId: string) => ToolRowGroupInfo | undefined;
+	/** 切换某个动作组的展开状态。 */
+	onToggleActionGroup: (groupId: number) => void;
 }
 
 /** 把 Pi 的 hasToolCalls 映射成业务分类；映射规则见本文件顶部说明。 */
@@ -187,17 +214,110 @@ function buildAssistantMessageUpdateContent(
 	};
 }
 
-/** 包装工具行的 render；折叠时整行隐藏。 */
+/** 取一个工具行的动作组快照；未登记或无 toolCallId 时返回 undefined。 */
+function getGroupInfo(
+	host: ToolMessageHost,
+	deps: ComponentPatchDeps,
+): ToolRowGroupInfo | undefined {
+	if (typeof host.toolCallId !== "string") {
+		return undefined;
+	}
+	return deps.getToolRowGroup(host.toolCallId);
+}
+
+/** 判断该工具行当前是否正在充当动作组组头。 */
+function isGroupHeaderRow(host: ToolMessageHost, deps: ComponentPatchDeps): boolean {
+	const group = getGroupInfo(host, deps);
+	return resolveToolRowMode({
+		state: deps.getState(),
+		config: deps.getConfig(),
+		membership: group?.membership,
+		groupSize: group?.groupSize ?? 0,
+		groupExpanded: group?.groupExpanded ?? false,
+	}) === TOOL_ROW_GROUP_HEADER;
+}
+
+/** 组头前的空行，与普通工具行前面的 Spacer 保持一致。 */
+const ACTION_GROUP_HEADER_BLANK = "";
+
+/** 组装收起的动作组组头，例如 `▸ 探索 · 4 步`。 */
+function buildActionGroupHeaderLines(
+	group: ToolRowGroupInfo,
+	deps: ComponentPatchDeps,
+): string[] {
+	const label = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
+	const header = deps.styleHeader(`${COLLAPSED_GROUP_CHEVRON} ${label}`);
+	return [ACTION_GROUP_HEADER_BLANK, header];
+}
+
+/** 调试日志作用域：工具行渲染决策。 */
+const DEBUG_SCOPE_TOOL_RENDER = "tool render";
+/** 未知工具调用 id 与未知组号的占位符。 */
+const DEBUG_UNKNOWN = "-";
+
+/** 描述一条工具行的渲染决策，供调试日志使用。 */
+function describeToolRow(
+	host: ToolMessageHost,
+	group: ToolRowGroupInfo | undefined,
+	mode: string,
+): string {
+	const toolCallId = host.toolCallId ?? DEBUG_UNKNOWN;
+	const groupId = group?.membership.groupId ?? DEBUG_UNKNOWN;
+	return `${toolCallId} ${mode} group=${groupId} size=${group?.groupSize ?? 0}`;
+}
+
+/**
+ * 包装工具行的 render。
+ *
+ * 三种去向：运行级折叠时整行隐藏；多条成员的组在收起时只留首行充当组头；
+ * 其余情况（含组内只有一条）直接交给 Pi 原本的渲染。
+ */
 function buildToolMessageRender(
 	deps: ComponentPatchDeps,
 	originalRender: (this: ToolMessageHost, width: number) => string[],
 ): (this: ToolMessageHost, width: number) => string[] {
 	return function patchedToolMessageRender(this: ToolMessageHost, width: number) {
-		const decision = resolveToolMessageRender(deps.getState(), deps.getConfig());
-		if (decision.hidden) {
+		const group = getGroupInfo(this, deps);
+		const mode = resolveToolRowMode({
+			state: deps.getState(),
+			config: deps.getConfig(),
+			membership: group?.membership,
+			groupSize: group?.groupSize ?? 0,
+			groupExpanded: group?.groupExpanded ?? false,
+		});
+
+		debugLog(DEBUG_SCOPE_TOOL_RENDER, describeToolRow(this, group, mode));
+
+		if (mode === TOOL_ROW_HIDDEN) {
 			return [];
 		}
+		if (mode === TOOL_ROW_GROUP_HEADER && group) {
+			return buildActionGroupHeaderLines(group, deps);
+		}
 		return originalRender.call(this, width);
+	};
+}
+
+/**
+ * 包装工具行的 handleMouse。
+ *
+ * 组头行上的左键点击用来展开/收起该动作组，不再交给 Pi 的单行输出展开。
+ * 非组头行一律透传，保留 Pi 原有的点击展开行为。
+ */
+function buildToolMessageHandleMouse(
+	deps: ComponentPatchDeps,
+	originalHandleMouse: (this: ToolMessageHost, event: TuiMouseEvent) => unknown,
+): (this: ToolMessageHost, event: TuiMouseEvent) => unknown {
+	return function patchedToolMessageHandleMouse(this: ToolMessageHost, event: TuiMouseEvent) {
+		const group = getGroupInfo(this, deps);
+		if (group && isGroupHeaderRow(this, deps)) {
+			if (event.type === "click" && event.button === "left") {
+				deps.onToggleActionGroup(group.membership.groupId);
+				return { handled: true };
+			}
+			return undefined;
+		}
+		return originalHandleMouse.call(this, event);
 	};
 }
 
@@ -228,8 +348,15 @@ export function installComponentPatches(deps: ComponentPatchDeps): () => void {
 		currentMethod: ToolExecutionComponent.prototype.render,
 		buildMethod: (originalRender) => buildToolMessageRender(deps, originalRender),
 	});
+	const restoreToolMouse = installMethodPatch<ToolMouseHandler>({
+		prototype: ToolExecutionComponent.prototype,
+		methodName: "handleMouse",
+		currentMethod: ToolExecutionComponent.prototype.handleMouse,
+		buildMethod: (originalHandleMouse) => buildToolMessageHandleMouse(deps, originalHandleMouse),
+	});
 
 	return () => {
+		restoreToolMouse();
 		restoreTool();
 		restoreAssistantUpdate();
 		restoreAssistantRender();

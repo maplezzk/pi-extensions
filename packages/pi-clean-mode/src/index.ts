@@ -23,13 +23,30 @@ import {
 	type NoticeSource,
 } from "pi-extensions-i18n";
 import { loadConfig, saveConfig } from "./config-store.js";
-import { installComponentPatches } from "./component-patches.js";
+import { debugLog, debugLogPath } from "./debug-logger.js";
+import { installComponentPatches, type ToolRowGroupInfo } from "./component-patches.js";
+import {
+	areAllActionGroupsExpanded,
+	beginActionGroupStep,
+	createActionGroupState,
+	findActionGroupMembership,
+	getActionGroupSize,
+	hasNarrationText,
+	isActionGroupExpanded,
+	isAssistantMessage,
+	registerActionToolCall,
+	setAllActionGroupsExpanded,
+	toggleActionGroup,
+	type ActionGroupState,
+} from "./action-groups.js";
 import { i18n } from "./i18n.js";
 import { applyCollapsed, createInitialState, settleRun, startRun } from "./run-state.js";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "./types.js";
 
 /** 折叠/展开快捷键；f2 未被 Pi 内置键位占用。 */
 const TOGGLE_SHORTCUT = "f2";
+/** 批量展开/收起全部动作组的快捷键。 */
+const TOGGLE_GROUPS_SHORTCUT = "shift+f2";
 /** 用于取得 TUI 句柄的空 widget key；该 widget 不渲染任何内容。 */
 const PROBE_WIDGET_KEY = "pi-clean-mode-probe";
 /** 切换折叠状态的命令名。 */
@@ -69,6 +86,8 @@ interface Runtime {
 	tui?: TUI;
 	/** 渲染折叠头用的着色函数。 */
 	styleHeader: HeaderStyle;
+	/** 动作组状态：一个 turn 一个组，用于把多条工具调用收成一行组头。 */
+	actionGroups: ActionGroupState;
 	/** 安装补丁后的还原函数。 */
 	restorePatches?: () => void;
 }
@@ -84,6 +103,21 @@ function createRuntime(): Runtime {
 		state: createInitialState(),
 		config: { ...DEFAULT_CLEAN_MODE_CONFIG },
 		styleHeader: defaultHeaderStyle,
+		actionGroups: createActionGroupState(),
+	};
+}
+
+/** 取一个工具行的动作组快照，供渲染决策使用。 */
+function lookupToolRowGroup(runtime: Runtime, toolCallId: string): ToolRowGroupInfo | undefined {
+	const membership = findActionGroupMembership(runtime.actionGroups, toolCallId);
+	if (!membership) {
+		return undefined;
+	}
+
+	return {
+		membership,
+		groupSize: getActionGroupSize(runtime.actionGroups, membership.groupId),
+		groupExpanded: isActionGroupExpanded(runtime.actionGroups, membership.groupId),
 	};
 }
 
@@ -138,6 +172,11 @@ function installPatches(runtime: Runtime): void {
 		styleHeader: (text) => runtime.styleHeader(text),
 		onToggle: () => {
 			toggleRuntime(runtime);
+		},
+		getToolRowGroup: (toolCallId) => lookupToolRowGroup(runtime, toolCallId),
+		onToggleActionGroup: (groupId) => {
+			toggleActionGroup(runtime.actionGroups, groupId);
+			requestRender(runtime);
 		},
 	});
 }
@@ -206,6 +245,25 @@ function applyConfigAssignment(
 	return true;
 }
 
+/** 批量展开或收起全部动作组，并按当前状态提示用户。 */
+function toggleAllActionGroups(
+	runtime: Runtime,
+	ctx: ExtensionContext | ExtensionCommandContext,
+): void {
+	const expand = !areAllActionGroupsExpanded(runtime.actionGroups);
+	setAllActionGroupsExpanded(runtime.actionGroups, expand);
+	requestRender(runtime);
+
+	notifyWithSource({
+		ctx,
+		source: NOTICE_SOURCE,
+		level: "info",
+		message: i18n.t(expand ? "groupsExpandedNotice" : "groupsCollapsedNotice", {
+			key: TOGGLE_GROUPS_SHORTCUT,
+		}),
+	});
+}
+
 /** 处理 `/config:clean-mode key=value`；无参数或无法解析时只回显当前配置。 */
 function handleConfigCommand(runtime: Runtime, args: string, ctx: ExtensionCommandContext): void {
 	if (applyConfigAssignment(runtime, args, ctx)) {
@@ -238,6 +296,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 
 		installPatches(runtime);
 		requestRender(runtime);
+		debugLog("session_start", `debug file=${debugLogPath()} actionGroups=${runtime.config.enableActionGroups}`);
 
 		if (loaded.diagnostic) {
 			notifyWithSource({
@@ -249,12 +308,15 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		}
 	});
 
+	// 一次运行开始：重置折叠状态、开始计时、并开一个动作组。
 	pi.on("agent_start", async () => {
 		runtime.runStartedAtMs = Date.now();
 		runtime.state = startRun({ state: runtime.state, config: runtime.config });
+		beginActionGroupStep(runtime.actionGroups);
 		requestRender(runtime);
 	});
 
+	// 一次运行结束：记录耗时、按配置自动收起，并清掉本次的开始时间。
 	pi.on("agent_settled", async () => {
 		runtime.state = settleRun({
 			state: runtime.state,
@@ -264,6 +326,25 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		});
 		runtime.runStartedAtMs = undefined;
 		requestRender(runtime);
+	});
+
+	// 组边界跟着「解说」走：带正文解说的 assistant 消息开新组，
+	// 连续的纯工具 turn 合并进同一组，这样才能真正收成一行组头。
+	pi.on("message_end", async (event) => {
+		const isAssistant = isAssistantMessage(event.message);
+		const hasText = hasNarrationText(event.message);
+		debugLog("message_end", `assistant=${isAssistant} text=${hasText}`);
+		if (!isAssistant || !hasText) {
+			return;
+		}
+		beginActionGroupStep(runtime.actionGroups);
+		debugLog("message_end", `new group=${runtime.actionGroups.currentGroupId}`);
+	});
+
+	// 把每个工具调用登记进当前动作组，供渲染时判断是否收成组头。
+	pi.on("tool_call", async (event) => {
+		registerActionToolCall(runtime.actionGroups, event.toolCallId);
+		debugLog("tool_call", `${event.toolCallId} -> group=${runtime.actionGroups.currentGroupId}`);
 	});
 
 	pi.on("session_shutdown", async () => {
@@ -280,6 +361,11 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	pi.registerCommand(TOGGLE_COMMAND, {
 		description: i18n.t("toggleDescription"),
 		handler: async (_args, ctx) => toggleCollapsed(runtime, ctx),
+	});
+
+	pi.registerShortcut(TOGGLE_GROUPS_SHORTCUT, {
+		description: i18n.t("toggleGroupsDescription"),
+		handler: (ctx) => toggleAllActionGroups(runtime, ctx),
 	});
 
 	pi.registerCommand(CONFIG_COMMAND, {

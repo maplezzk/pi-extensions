@@ -21,6 +21,8 @@ export interface CleanModeConfig {
 	showRunHeader: boolean;
 	/** 折叠头文案里是否附带展开提示。 */
 	showExpandHint: boolean;
+	/** 是否把同一个 turn 里的多条工具调用收成一行组头。 */
+	enableActionGroups: boolean;
 }
 
 export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
@@ -28,6 +30,7 @@ export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
 	autoExpandWhileRunning: true,
 	showRunHeader: true,
 	showExpandHint: true,
+	enableActionGroups: true,
 };
 
 export interface ConfigLoadResult {
