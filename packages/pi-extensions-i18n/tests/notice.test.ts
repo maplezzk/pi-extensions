@@ -88,8 +88,16 @@ function createFakeCtx(mode: string): { ctx: NoticeContext; notices: Array<{ mes
 }
 
 /** 渲染一个提示条目并拼成单行文本，便于断言。 */
-function renderNoticeLines(data: unknown): string {
-  return renderNoticeEntry({ data }, ENTRY_THEME).render(RENDER_WIDTH).join("\n");
+function renderNoticeLines(data: unknown, expanded = false): string {
+  return renderNoticeEntry({ data }, ENTRY_THEME, expanded).render(RENDER_WIDTH).join("\n");
+}
+
+/** 去掉底色包装后的非空内容行：用来核对提示块没有多余留白行。 */
+function noticeContentLines(data: unknown, expanded = false): string[] {
+  return renderNoticeEntry({ data }, ENTRY_THEME, expanded)
+    .render(RENDER_WIDTH)
+    .map((line) => line.replace(/\[bg:[^\]]*\]/g, "").replace(/\[\/bg\]/g, "").trim())
+    .filter((line) => line !== "");
 }
 
 test("TUI 下给来源标签上色，消息正文保持原样", () => {
@@ -108,12 +116,25 @@ test("非 TUI 模式与缺少主题时输出纯文本，避免 ANSI 乱码", () 
 test("TUI 下提示写进会话条目，不再是一行纯文本", () => {
   withFakeApi((handle) => {
     const { ctx, notices } = createFakeCtx("tui");
-    notifyWithSource({ ctx, source: SOURCE, level: "warning", message: "重命名失败" });
+    notifyWithSource({
+      ctx,
+      source: SOURCE,
+      level: "warning",
+      message: "重命名失败",
+      details: ["理由：文件名非法"],
+    });
 
     assert.deepEqual(handle.entries(), [
       {
         customType: "pi-extensions-notice",
-        data: { tag: "naming", color: "accent", level: "warning", message: "重命名失败", textColor: undefined },
+        data: {
+          tag: "naming",
+          color: "accent",
+          level: "warning",
+          message: "重命名失败",
+          textColor: undefined,
+          details: ["理由：文件名非法"],
+        },
       },
     ]);
     assert.deepEqual(notices, []);
@@ -144,6 +165,38 @@ test("warning/error 级别用黄色/红色正文，语义色覆盖优先", () =>
   assert.match(warning, /<warning>被拦截<\/>/);
   assert.match(failed, /<error>被拦截<\/>/);
   assert.match(overridden, /<dim>已打断，未判定<\/>/);
+});
+
+test("提示块不留上下空白，细节行只在展开时显示", () => {
+  /** 一次判定结论的细节行：收起时不应出现，展开时应逐行追加。 */
+  const details = ["理由：用户只是打招呼", "判定模型：llm-proxy/LOW"];
+  const entry = { tag: "auto-goal", color: "accent", level: "info", message: "⚖ 停止合理 1.0", details };
+  const collapsed = renderNoticeLines(entry);
+  const expanded = renderNoticeLines(entry, true);
+
+  // 收起时只有正文，细节行不占屏。
+  assert.doesNotMatch(collapsed, /理由/);
+  // 展开时追加 dim 细节行。
+  assert.match(expanded, /<dim>理由：用户只是打招呼<\/>/);
+  assert.match(expanded, /<dim>判定模型：llm-proxy\/LOW<\/>/);
+  // 每一行渲染行都有内容：提示块没有上下留白行。
+  assert.equal(renderNoticeEntry({ data: entry }, ENTRY_THEME, false).render(RENDER_WIDTH).length, noticeContentLines(entry).length);
+});
+
+test("空细节行被丢弃，展开也不会出现空气泡", () => {
+  const lines = renderNoticeLines(
+    { tag: "distill", color: "muted", level: "info", message: "正文", details: ["", "   "] },
+    true,
+  );
+  assert.doesNotMatch(lines, /<dim>/);
+  assert.equal(
+    renderNoticeEntry(
+      { data: { tag: "distill", color: "muted", level: "info", message: "正文", details: ["", "   "] } },
+      ENTRY_THEME,
+      true,
+    ).render(RENDER_WIDTH).length,
+    1,
+  );
 });
 
 test("条目数据缺字段或类型不符时给可读兜底，不抛出异常", () => {
