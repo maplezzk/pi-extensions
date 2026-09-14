@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-auto-goal-v0.3.0...pi-auto-goal-v0.4.0) (2026-09-13)
+
+
+### Features
+
+* 所有扩展提示统一加来源标签与颜色 ([21ad9d9](https://github.com/maplezzk/pi-extensions/commit/21ad9d97347118a9817ae445bc03544b7c1c66da))
+* 所有扩展提示统一加来源标签与颜色 ([a06c6f8](https://github.com/maplezzk/pi-extensions/commit/a06c6f86367fc7b43f14b34f754bddc4b6dd340a))
+
+
+### Bug Fixes
+
+* **pi-auto-goal:** 用户按 Esc 打断后不再判定，避免把 agent 自动复活 ([48bbe9a](https://github.com/maplezzk/pi-extensions/commit/48bbe9ace192c123146cef78966aeaf551e23145))
+* **pi-auto-goal:** 用户按 Esc 打断后不再判定，避免把 agent 自动复活 ([2b527f8](https://github.com/maplezzk/pi-extensions/commit/2b527f8de52ad1125d0794db768421f69dcb54f8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.1 to ^0.5.0
+
 ## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-auto-goal-v0.2.0...pi-auto-goal-v0.3.0) (2026-09-13)
 
 

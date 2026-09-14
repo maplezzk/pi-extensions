@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.4.1...pi-extensions-i18n-v0.5.0) (2026-09-13)
+
+
+### Features
+
+* 所有扩展提示统一加来源标签与颜色 ([21ad9d9](https://github.com/maplezzk/pi-extensions/commit/21ad9d97347118a9817ae445bc03544b7c1c66da))
+* 所有扩展提示统一加来源标签与颜色 ([a06c6f8](https://github.com/maplezzk/pi-extensions/commit/a06c6f86367fc7b43f14b34f754bddc4b6dd340a))
+
 ## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.4.0...pi-extensions-i18n-v0.4.1) (2026-09-13)
 
 
