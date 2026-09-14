@@ -1,11 +1,14 @@
 /**
- * 判定结论的展示文本：文案与语义色在这里决定，便于稳定测试。
+ * 判定结论的单条提示：文案、语义色和细节行都在这里决定，便于稳定测试。
  *
- * 这里只产出一行「文本 + 颜色」，真正画到会话区（带底色的消息块、落在消息下方）
- * 由共享提示出口 pi-extensions-i18n 完成，所以本模块不接触 Pi 的 UI 对象。
+ * 一个有判定的轮次只产生一条提示：正文一行（如「⚖ 停止合理 1.0」），
+ * 理由、失败原因、发送出去的催促等细节放在 details 里，默认收起、Ctrl+O 展开，
+ * 避免每轮往会话区里堆好几条提示。
+ *
+ * 这里不接触 Pi 的 UI 对象：真正画到会话区由共享提示出口 pi-extensions-i18n 完成。
  */
-import { i18n } from "./i18n.ts";
 import type { NoticeLevel } from "pi-extensions-i18n";
+import { i18n } from "./i18n.ts";
 import { STOP_SKIP_BUDGET, type StopOutcome } from "./evaluate.ts";
 
 /**
@@ -14,12 +17,16 @@ import { STOP_SKIP_BUDGET, type StopOutcome } from "./evaluate.ts";
  */
 export type VerdictColor = "success" | "warning" | "error" | "dim";
 
-/** 一行待展示的判定结论。 */
-export interface VerdictLine {
-  /** 展示文本，含用于快速识别的前缀符号。 */
+/** 一条待展示的判定结论：一行正文 + 展开才显示的细节行。 */
+export interface VerdictNotice {
+  /** 正文，含用于快速识别的前缀符号。 */
   text: string;
-  /** 主题色名，由共享提示出口套到正文上。 */
+  /** 正文语义色。 */
   color: VerdictColor;
+  /** 提示级别，用于归纳严重程度。 */
+  level: NoticeLevel;
+  /** 展开（Ctrl+O）时才显示的细节行。 */
+  details: string[];
 }
 
 /** 置信度展示精度：一位小数足够区分把握程度。 */
@@ -35,44 +42,66 @@ export function verdictNoticeLevel(color: VerdictColor): NoticeLevel {
   return "info";
 }
 
+/** 拼一条结论：颜色决定级别，调用方只需给正文和细节。 */
+function notice(
+  color: VerdictColor,
+  text: string,
+  details: string[],
+): VerdictNotice {
+  return { text, color, level: verdictNoticeLevel(color), details };
+}
+
 /**
- * 把一次判定结果渲染成结论行。
- * 产生结论的轮次（含「取消」「失败」）都会给出结论行；
- * 「用户主动打断」这类不判定的轮次由调用方改用 buildInterruptedLine。
+ * 把一次判定结果渲染成结论提示。
+ * 「提前停止已干预」时调用方把真正发出去的催促文本传进来，放进细节供回看。
  */
-export function buildVerdictLine(outcome: StopOutcome): VerdictLine {
+export function buildVerdictNotice(outcome: StopOutcome, sentMessage?: string): VerdictNotice {
   switch (outcome.kind) {
-    case "continue":
-      return { text: i18n.t("statusContinue", { budget: outcome.budget }), color: "warning" };
+    case "continue": {
+      const details = [i18n.t("detailReason", { reason: outcome.reason })];
+      if (sentMessage !== undefined) {
+        details.push(i18n.t("detailSent", { message: sentMessage.trim() }));
+      }
+      return notice("warning", i18n.t("statusContinue", { budget: outcome.budget }), details);
+    }
     case "stop":
-      return {
-        text: i18n.t("statusStop", { confidence: outcome.confidence.toFixed(CONFIDENCE_DECIMALS) }),
-        color: "success",
-      };
+      return notice("success", i18n.t("statusStop", {
+        confidence: outcome.confidence.toFixed(CONFIDENCE_DECIMALS),
+      }), [i18n.t("detailReason", { reason: outcome.reason })]);
     case "skipped":
-      return {
-        text: outcome.code === STOP_SKIP_BUDGET
-          ? i18n.t("statusBudget", { budget: outcome.budget })
-          : i18n.t("statusCanceled"),
-        color: "dim",
-      };
+      return outcome.code === STOP_SKIP_BUDGET
+        ? notice("dim", i18n.t("statusBudget", { budget: outcome.budget }), [
+          i18n.t("detailBudget", { budget: outcome.budget }),
+        ])
+        : notice("dim", i18n.t("statusCanceled"), [i18n.t("detailCanceled")]);
     case "failed":
-      return { text: i18n.t("statusFailed"), color: "error" };
+      return notice("error", i18n.t("statusFailed"), [
+        i18n.t("detailError", { error: outcome.error }),
+      ]);
   }
 }
 
 /**
- * 用户主动打断（按 Esc）时的结论行。
- * 这一轮不会产生判定结论，明确写出原因，避免被误读成「判定为可停止」。
+ * 用户主动打断（按 Esc）时的结论提示。
+ * 这一轮没有调用判定模型，细节里写明原因，避免被误读成「判定为可停止」。
  */
-export function buildInterruptedLine(): VerdictLine {
-  return { text: i18n.t("statusCanceled"), color: "dim" };
+export function buildInterruptedNotice(): VerdictNotice {
+  return notice("dim", i18n.t("statusCanceled"), [i18n.t("detailInterrupted")]);
 }
 
 /**
- * 本轮以异常或中断结束时的结论行。
- * 结束原因是 error 或缺失时，无法断定是用户取消，所以不使用「已打断」这个很具体的说法。
+ * 本轮以异常或缺失结束时的结论提示。
+ * 结束原因无法断定是用户取消，所以不使用「已打断」这个很具体的说法。
  */
-export function buildNotCompletedLine(): VerdictLine {
-  return { text: i18n.t("statusNotCompleted"), color: "dim" };
+export function buildNotCompletedNotice(stopReason: string | undefined): VerdictNotice {
+  return notice("dim", i18n.t("statusNotCompleted"), [
+    i18n.t("detailNotCompleted", { stopReason: stopReason ?? i18n.t("detailStopReasonMissing") }),
+  ]);
+}
+
+/** 催促消息发送失败时的结论提示；失败必须显式报出，不静默吞掉。 */
+export function buildSendFailedNotice(error: string): VerdictNotice {
+  return notice("error", i18n.t("verdictSendFailed"), [
+    i18n.t("detailError", { error }),
+  ]);
 }

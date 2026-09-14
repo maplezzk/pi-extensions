@@ -68,8 +68,8 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | `maxUserRequestChars` | `2000` | Truncation limit for the user request. |
 | `maxFinalOutputChars` | `4000` | Truncation limit for the agent's final output. |
 | `maxToolTraceEntries` | `20` | Maximum tool-trace lines. |
-| `notifyOnStopDecision` | `false` | Also notify when the judge accepts the stop. |
-| `showVerdictNotice` | `true` | Show the latest verdict as a filled notice block in the transcript, below the message. |
+| `notifyOnStopDecision` | `false` | Deprecated: one verdict block is emitted per turn, so this switch no longer has any effect (the field stays accepted so old configs keep working). |
+| `showVerdictNotice` | `true` | Show the latest verdict as a filled notice block in the transcript, below the message (details expand with Ctrl+O). |
 | `judgeMaxTokens` | `2000` | Output-token ceiling for one judge call, clamped to the model's own output limit. |
 | `continueMessageTemplate` | `""` | Overrides the built-in message; supports `{reason}`. |
 | `forcedDecision` | `"auto"` | Override verdict for controlled experiments: `auto` (normal), `continue` (always treat as premature stop), `stop` (always treat as acceptable stop). |
@@ -78,7 +78,7 @@ Unknown fields and invalid values are rejected with an explicit error instead of
 
 ### How to tell whether it fired
 
-After each turn the transcript shows a filled `[auto-goal]` block below the message with the verdict (`showVerdictNotice`, on by default):
+After each turn the transcript shows **one** filled `[auto-goal]` block below the message with the verdict (`showVerdictNotice`, on by default):
 
 | Verdict line | Colour | Meaning |
 | --- | --- | --- |
@@ -87,7 +87,9 @@ After each turn the transcript shows a filled `[auto-goal]` block below the mess
 | `⚖ budget exhausted 2/2` | grey | Intervention budget for this request is used up. |
 | `⚖ interrupted, not judged` | grey | You pressed Esc; the judgement stood down. |
 | `⚖ turn did not finish normally, not judged` | grey | The turn ended with a failure or a truncated record. |
-| `⚖ judge failed` | red | The judge call failed (details in the notification). |
+| `⚖ judge failed` | red | The judge call failed. |
+
+The body is a single line; the reason, the continuation that was sent, the failure, and the stop reason are kept in the expandable details: press **`Ctrl+O`** (the tool-output toggle) to read them. They take no space while collapsed.
 
 The verdict never enters the LLM context and is not written to the footer status bar; it is a local session entry, so it still renders the same way when you reopen the session.
 
@@ -95,11 +97,13 @@ The verdict never enters the LLM context and is not written to the footer status
 
 Only turns that finished normally: the last assistant message ends with `stop` (the agent finished its turn) or `length` (output hit the length cap).
 
-When you press Esc, the turn ends with `aborted` or `error` and empty content — that is your decision, not the agent's stop decision. Such turns used to be judged as "premature stop" and continued automatically, so pressing Esc looked like it did nothing; now they are never judged and only get a footer line saying "not judged".
+When you press Esc, the turn ends with `aborted` or `error` and empty content — that is your decision, not the agent's stop decision. Such turns used to be judged as "premature stop" and continued automatically, so pressing Esc looked like it did nothing; now they are never judged and only get a "interrupted, not judged" line.
+
+> If you still see the old behaviour (a continuation right after Esc), check that the running session started after the fix: extensions are not hot-reloaded in a live process, so run `/reload` or start a new session.
 
 Two things have to hold for "this turn was not judged": the status line still shows the previous verdict, and no new notification appeared. Typical reasons are a non-tui/rpc mode, you already started typing, or one of those two non-judged endings.
 
-The same verdict also produces one coloured notification (yellow for intervention, green for an accepted stop, red for failure); `notifyOnStopDecision` controls whether the accepted-stop one is shown. Colours are only added in TUI mode, so other modes never see raw ANSI.
+The same verdict now produces one single block (a one-line body plus `Ctrl+O` details) and no extra notification; `notifyOnStopDecision` is deprecated (the field is still accepted so old configs keep working, but it no longer has any effect). Colours are only added in TUI mode, so other modes never see raw ANSI.
 
 ### Why the judge no longer answers with an empty response
 

@@ -31,7 +31,11 @@ export interface AutoGoalConfig {
   maxFinalOutputChars: number;
   /** 工具轨迹最多保留的调用条数。 */
   maxToolTraceEntries: number;
-  /** 判定为「可以停止」时是否也弹出提示。 */
+  /**
+   * 已弃用：以前用来在「判定为可停止」时额外发一条提示。
+   * 现在每个有判定的轮次只发一条结论提示（理由等在 Ctrl+O 展开里），这个开关不再起作用；
+   * 保留字段是为了旧配置不报“未知字段”错。
+   */
   notifyOnStopDecision: boolean;
   /** 是否把最近一次判定结论写进会话区（消息下方，带底色的消息块）。 */
   showVerdictNotice: boolean;

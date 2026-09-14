@@ -12,7 +12,10 @@ Read `<pi-agent-dir>/extensions/pi-auto-goal/config.json` and respect `PI_CODING
 - `enabled` 关闭整个判定，不产生任何模型调用。`enabled` turns off all judgement and model calls.
 - `model` 为 `provider/modelId` 时用专用模型判定，留空则复用当前会话模型；模型不存在会明确报错。A non-empty `model` (`provider/modelId`) uses a dedicated judge model; empty reuses the current session model, and a missing model is reported as an error.
 - `maxAutoContinues` 限制同一条用户请求的自动干预次数，`0` 表示不限制；用户发出新输入后重置。`maxAutoContinues` caps interventions per user request; `0` means unlimited, and new user input resets it.
-- `confidenceThreshold` 是触发干预所需的最低置信度，`notifyOnStopDecision` 决定「可以停止」的判定是否也提示。`confidenceThreshold` is the minimum confidence required to intervene; `notifyOnStopDecision` also reports acceptable stops.
+- `confidenceThreshold` 是触发干预所需的最低置信度。`notifyOnStopDecision` 已废弃（每轮只发一条结论块，字段保留但不再起作用）。
+  `confidenceThreshold` is the minimum confidence required to intervene. `notifyOnStopDecision` is deprecated (one verdict block per turn; the field is still accepted but has no effect).
+- 每个有判定的轮次只发**一条**提示块：正文一行（如「⚖ 停止合理 1.0」），判定理由/已发送的催促/失败原因/结束原因都在 `Ctrl+O` 展开的细节里，平时不占地方。调这个时不要退回多条提示。
+  Each judged turn emits exactly **one** notice block: a one-line body (`⚖ stop accepted 1.0`) with the reason, the sent continuation, the failure, or the stop reason in the `Ctrl+O` details. Do not go back to multiple notices per turn.
 - `includeToolTrace`、`maxUserRequestChars`、`maxFinalOutputChars`、`maxToolTraceEntries` 控制交给判定模型的上下文规模。`includeToolTrace`, `maxUserRequestChars`, `maxFinalOutputChars`, and `maxToolTraceEntries` size the judge context.
 - `timeoutSeconds` 超时后中止判定并报告，不视为「可以停止」。`timeoutSeconds` aborts and reports a timed-out judgement instead of treating it as an acceptable stop.
 - `judgeMaxTokens` 是单次判定调用的输出上限（默认 2000，会被收敛到模型上限）。判定固定使用最低思考强度；若响应被截断且没有文本，会自动翻倍预算重试一次，仍失败则报出 `stopReason` 与内容块摘要。`judgeMaxTokens` is the output ceiling for one judge call (default 2000, clamped to the model limit). The judge always runs at the lowest thinking strength; a truncated response without text is retried once with a doubled budget, and a remaining failure reports `stopReason` plus a part summary.

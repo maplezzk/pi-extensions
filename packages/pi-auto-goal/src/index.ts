@@ -21,16 +21,16 @@ import {
   type AutoGoalConfig,
 } from "./config.ts";
 import { collectTurnSnapshot, readLastAssistantStopReason, STOP_REASON_ABORTED } from "./session-context.ts";
-import { evaluateStop, STOP_SKIP_BUDGET, type StopOutcome } from "./evaluate.ts";
+import { evaluateStop, type StopOutcome } from "./evaluate.ts";
 import { createJudgeModelInvoker, createJudgeModelSource } from "./judge-model.ts";
 import { createStopVerdictRequester } from "./verdict.ts";
 import { formatBudget, isJudgeableStopReason } from "./guard.ts";
 import {
-  buildInterruptedLine,
-  buildNotCompletedLine,
-  buildVerdictLine,
-  verdictNoticeLevel,
-  type VerdictLine,
+  buildInterruptedNotice,
+  buildNotCompletedNotice,
+  buildSendFailedNotice,
+  buildVerdictNotice,
+  type VerdictNotice,
 } from "./verdict-notice.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
@@ -69,8 +69,6 @@ interface AutoGoalRuntime {
   used: number;
   /** 是否有一次判定正在进行，避免并发触发。 */
   inFlight: boolean;
-  /** 预算用尽的提示是否已经发过。 */
-  budgetNoticeSent: boolean;
 }
 
 /** 创建运行期状态。 */
@@ -81,7 +79,6 @@ function createRuntime(config: AutoGoalConfig): AutoGoalRuntime {
     sessionId: undefined,
     used: 0,
     inFlight: false,
-    budgetNoticeSent: false,
   };
 }
 
@@ -108,7 +105,6 @@ function syncSession(
   if (runtime.sessionId === sessionId) return;
   runtime.sessionId = sessionId;
   runtime.used = 0;
-  runtime.budgetNoticeSent = false;
 }
 
 /** 判定异步返回后确认会话没有被用户接管：仍然空闲，且叶节点没有变化。 */
@@ -226,21 +222,22 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
 /**
  * 把判定结论写进会话区（消息下方，带底色的消息块）。
  *
- * 走和所有扩展共用的 notifyWithSource，标签固定为 auto-goal；
- * 结论行自带语义色（绿/黄/红/灰），用 textColor 覆盖正文颜色。
+ * 一个有判定的轮次只发一条：正文一行，细节（理由/失败原因/已发送的催促）默认收起、
+ * Ctrl+O 展开，避免每轮往会话区里堆好几条提示。
  */
 function writeVerdictNotice(
   ctx: Pick<ExtensionContext, "mode" | "ui">,
   runtime: AutoGoalRuntime,
-  line: VerdictLine,
+  notice: VerdictNotice,
 ): void {
   if (!runtime.config.showVerdictNotice) return;
   notifyWithSource({
     ctx,
     source: NOTICE_SOURCE,
-    level: verdictNoticeLevel(line.color),
-    message: line.text,
-    textColor: line.color,
+    level: notice.level,
+    message: notice.text,
+    textColor: notice.color,
+    details: notice.details,
   });
 }
 
@@ -251,54 +248,25 @@ function applyOutcome(
   runtime: AutoGoalRuntime,
   outcome: StopOutcome,
 ): void {
-  writeVerdictNotice(ctx, runtime, buildVerdictLine(outcome));
   switch (outcome.kind) {
     case "continue": {
       // 先发送再记账：发送失败不应该消耗干预预算。
       try {
         pi.sendUserMessage(outcome.message);
       } catch (error) {
-        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_ERROR, message: i18n.t("continueSendFailed", { error: errorText(error) }) });
+        writeVerdictNotice(ctx, runtime, buildSendFailedNotice(errorText(error)));
         return;
       }
       runtime.used += 1;
       runtime.injectedUserTexts.add(outcome.message.trim());
-      // 干预和错误用 warning 级别，呈现为黄色，从正常输出里一眼能认出来。
-      notifyWithSource({
-        ctx,
-        source: NOTICE_SOURCE,
-        level: NOTICE_WARNING,
-        message: i18n.t("autoContinueSent", { reason: outcome.reason, budget: outcome.budget }),
-      });
+      writeVerdictNotice(ctx, runtime, buildVerdictNotice(outcome, outcome.message));
       return;
     }
-    case "stop": {
-      if (runtime.config.notifyOnStopDecision) {
-        notifyWithSource({
-          ctx,
-          source: NOTICE_SOURCE,
-          level: NOTICE_INFO,
-          message: i18n.t("stopDecisionNotified", { reason: outcome.reason }),
-        });
-      }
-      return;
-    }
-    case "skipped": {
-      if (outcome.code === STOP_SKIP_BUDGET && !runtime.budgetNoticeSent) {
-        runtime.budgetNoticeSent = true;
-        notifyWithSource({
-          ctx,
-          source: NOTICE_SOURCE,
-          level: NOTICE_WARNING,
-          message: i18n.t("budgetExhausted", { budget: outcome.budget }),
-        });
-      }
-      return;
-    }
-    case "failed": {
-      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_ERROR, message: outcome.error });
-      return;
-    }
+    // 其余三种结果都是「一行结论 + 展开细节」，没有额外副作用。
+    case "stop":
+    case "skipped":
+    case "failed":
+      writeVerdictNotice(ctx, runtime, buildVerdictNotice(outcome));
   }
 }
 
@@ -310,7 +278,6 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
     if (event.source === "extension") return;
     syncSession(runtime, ctx);
     runtime.used = 0;
-    runtime.budgetNoticeSent = false;
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
@@ -331,7 +298,9 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
       writeVerdictNotice(
         ctx,
         runtime,
-        stopReason === STOP_REASON_ABORTED ? buildInterruptedLine() : buildNotCompletedLine(),
+        stopReason === STOP_REASON_ABORTED
+          ? buildInterruptedNotice()
+          : buildNotCompletedNotice(stopReason),
       );
       return;
     }

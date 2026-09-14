@@ -7,8 +7,8 @@
 ## 功能
 
 - 工作期间 spinner 显示**从发出消息起的全程耗时**（如 `⏱ 47s`），跨轮次持续累加，不再每轮回零。
-- 每个轮次结束时插入一条灰色文本，显示该轮精确耗时（`⏱ 本轮耗时 8.2s`）。
-- AI 完全停止时（`agent_settled`，覆盖自动重试、compaction 续跑以及 Esc 中断）追加一行**从发出消息到停止的总耗时**（`⏱ 总耗时 18.9s`）。
+- 每个轮次结束时显示 TPS、TTFT、token 数、生成耗时、stall 和可用的综合成本（一行指标里已包含本轮耗时，不再单独发一条）。
+- 整段运行超过一轮时，AI 完全停止（`agent_settled`，覆盖自动重试、compaction 续跑以及 Esc 中断）再补一行**从发出消息到停止的总耗时**（`⏱ 总耗时 18.9s`）；单轮运行不重复报。
 - 每轮 LLM 调用结束后显示 TPS、TTFT、token 数、生成耗时、stall 和可用的综合成本。
 - Telemetry 以 `tps` custom session entry 持久化，并在恢复 session 或 `/tree` 后恢复显示。
 - Metrics 通过 session entry 和通知提供。使用 `/config:metrics` 打开 TUI 配置菜单，也可以使用 `/config:metrics enable|disable` 直接切换。

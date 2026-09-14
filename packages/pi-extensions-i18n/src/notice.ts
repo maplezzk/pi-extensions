@@ -78,6 +78,8 @@ export interface NoticeSendOptions {
   message: string;
   /** 正文颜色覆盖；例如判定结论行自带语义色（dim/success）时用它。 */
   textColor?: NoticeColor;
+  /** 展开时才显示的细节行，平时只占一行，避免刷屏。 */
+  details?: string[];
 }
 
 /** 只有 TUI 模式能安全地看到 ANSI 颜色。 */
@@ -104,6 +106,8 @@ export interface NoticeEntryData {
   message: string;
   /** 正文颜色覆盖。 */
   textColor?: NoticeColor;
+  /** 展开时才显示的细节行（Ctrl+O 展开工具输出时一起展开）。 */
+  details?: string[];
 }
 
 /** 渲染器拿到的主题：只需要前景色与底色。 */
@@ -118,10 +122,14 @@ export interface NoticeEntryTheme {
 export interface NoticeApi {
   /** 追加一条不进 LLM 上下文的自定义条目。 */
   appendEntry(customType: string, data?: unknown): void;
-  /** 注册自定义条目的 TUI 渲染器。 */
+  /** 注册自定义条目的 TUI 渲染器；Pi 会把展开状态一起传进来。 */
   registerEntryRenderer(
     customType: string,
-    renderer: (entry: { data?: unknown }, options: unknown, theme: NoticeEntryTheme) => Component,
+    renderer: (
+      entry: { data?: unknown },
+      options: { expanded?: boolean },
+      theme: NoticeEntryTheme,
+    ) => Component,
   ): void;
 }
 
@@ -155,12 +163,22 @@ let noticeApi: NoticeApi | undefined;
  * 由 pi-extensions-i18n 的扩展入口调用；依赖它的扩展会自动带上这个入口。
  * 老版本 Pi 没有这两个能力时直接不注入，提示会退回 ui.notify（仍然可见，只是没有底色）。
  */
+/** 提示块的水平内边距：让文字不贴边。 */
+const NOTICE_PADDING_X = 1;
+/** 提示块的垂直内边距：0 表示只占一行，避免提示刷屏。 */
+const NOTICE_PADDING_Y = 0;
+
+/**
+ * 注册提示条目渲染器，并记下用于写入条目的 Pi 实例。
+ * 由 pi-extensions-i18n 的扩展入口调用；依赖它的扩展会自动带上这个入口。
+ * 老版本 Pi 没有这两个能力时直接不注入，提示会退回 ui.notify（仍然可见，只是没有底色）。
+ */
 export function installNoticeRenderer(api: NoticeApi): void {
   if (typeof api.appendEntry !== "function" || typeof api.registerEntryRenderer !== "function") {
     return;
   }
-  api.registerEntryRenderer(NOTICE_ENTRY_TYPE, (entry, _options, theme) =>
-    renderNoticeEntry(entry, theme));
+  api.registerEntryRenderer(NOTICE_ENTRY_TYPE, (entry, options, theme) =>
+    renderNoticeEntry(entry, theme, isExpanded(options)));
   noticeApi = api;
 }
 
@@ -196,24 +214,44 @@ function readNoticeEntryData(input: unknown): NoticeEntryData {
     level: isNoticeLevel(raw.level) ? raw.level : "info",
     message,
     textColor: isNoticeColor(raw.textColor) ? raw.textColor : undefined,
+    details: readDetails(raw.details),
   };
+}
+
+/** 只保留非空字符串细节行，避免渲染出空气泡。 */
+function readDetails(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const lines = value.filter((line): line is string => typeof line === "string" && line.trim() !== "");
+  return lines.length > 0 ? lines : undefined;
+}
+
+/** 判断渲染器是否处于展开状态（Ctrl+O）；缺省视为收起。 */
+function isExpanded(options: unknown): boolean {
+  return isRecord(options) && options.expanded === true;
 }
 
 /**
  * 把一个提示条目渲染成带底色的消息块。
  *
+ * 默认只占一行（上下不加空白），避免提示刷屏；细节行只在展开（Ctrl+O）时追加。
  * 这里直接构造 pi-tui 的 Box/Text：带底色消息块的排版（整块铺底色、按宽度换行）
  * 由 pi-tui 提供，Pi 自带的扩展消息渲染也是同样写法，属于有意为之的绑定。
  */
 export function renderNoticeEntry(
   input: unknown,
   theme: NoticeEntryTheme,
+  expanded = false,
 ): Component {
   const data = readNoticeEntryData(input);
   const label = theme.fg(data.color, `[${data.tag}]`);
   const body = theme.fg(noticeBodyColor(data.level, data.textColor), data.message);
-  const box = new Box(1, 1, (text) => theme.bg(NOTICE_BACKGROUND_COLOR, text));
+  const box = new Box(NOTICE_PADDING_X, NOTICE_PADDING_Y, (text) => theme.bg(NOTICE_BACKGROUND_COLOR, text));
   box.addChild(new Text(`${label}${TAG_SEPARATOR}${body}`, 0, 0));
+  if (expanded && data.details !== undefined) {
+    for (const line of data.details) {
+      box.addChild(new Text(theme.fg("dim", line), 0, 0));
+    }
+  }
   return box;
 }
 
@@ -236,7 +274,7 @@ export function formatNotice(options: NoticeRenderOptions): string {
  * 条目写入失败时退回 ui.notify，保证提示不会因为渲染方式而丢失。
  */
 export function notifyWithSource(options: NoticeSendOptions): void {
-  const { ctx, source, level, message, textColor } = options;
+  const { ctx, source, level, message, textColor, details } = options;
   if (ctx.mode === NOTICE_COLOR_MODE && noticeApi !== undefined) {
     const data: NoticeEntryData = {
       tag: source.tag,
@@ -244,6 +282,7 @@ export function notifyWithSource(options: NoticeSendOptions): void {
       level,
       message,
       textColor,
+      details,
     };
     try {
       noticeApi.appendEntry(NOTICE_ENTRY_TYPE, data);

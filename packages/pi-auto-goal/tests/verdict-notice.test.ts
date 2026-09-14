@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  buildInterruptedLine,
-  buildNotCompletedLine,
-  buildVerdictLine,
+  buildInterruptedNotice,
+  buildNotCompletedNotice,
+  buildSendFailedNotice,
+  buildVerdictNotice,
   verdictNoticeLevel,
 } from "../src/verdict-notice.ts";
 import type { StopOutcome } from "../src/evaluate.ts";
@@ -17,52 +18,72 @@ const CONTINUE: StopOutcome = {
   budget: "1/2",
 };
 
-test("判定为早停催停时用 warning 色并带上干预进度", () => {
-  const line = buildVerdictLine(CONTINUE);
-  assert.equal(line.color, "warning");
-  assert.match(line.text, /催促|continued/);
-  assert.match(line.text, /1\/2/);
+test("早停干预：一行结论带进度，理由与已发送内容收进展开细节", () => {
+  const notice = buildVerdictNotice(CONTINUE, "继续干");
+  assert.equal(notice.color, "warning");
+  assert.equal(notice.level, "warning");
+  assert.match(notice.text, /催促|continued/);
+  assert.match(notice.text, /1\/2/);
+  // 一行里不放理由，避免提示块变厚。
+  assert.doesNotMatch(notice.text, /只改了/);
+  assert.match(notice.details.join("\n"), /只改了 1\/5 个文件/);
+  assert.match(notice.details.join("\n"), /继续干/);
 });
 
-test("判定为可以停止时用 success 色并带上置信度", () => {
-  const line = buildVerdictLine({ kind: "stop", reason: "已完成", confidence: 0.923 });
-  assert.equal(line.color, "success");
-  assert.match(line.text, /停止合理|stop accepted/);
-  // 置信度只保留一位小数：结论行是会话区里的一行字，不需要无意义精度。
-  assert.match(line.text, /0\.9/);
-  assert.doesNotMatch(line.text, /0\.923/);
+test("判定为可以停止：一行结论带置信度，理由在细节里", () => {
+  const notice = buildVerdictNotice({ kind: "stop", reason: "已完成", confidence: 0.923 });
+  assert.equal(notice.color, "success");
+  assert.equal(notice.level, "info");
+  assert.match(notice.text, /停止合理|stop accepted/);
+  // 置信度只保留一位小数。
+  assert.match(notice.text, /0\.9/);
+  assert.doesNotMatch(notice.text, /0\.923/);
+  assert.match(notice.details.join("\n"), /已完成/);
 });
 
-test("预算用尽时用 dim 色，判定失败时用 error 色", () => {
-  const budget = buildVerdictLine({ kind: "skipped", code: "budget", used: 2, limit: 2, budget: "2/2" });
+test("预算用尽与判定失败：结论色不同，细节各自说明原因", () => {
+  const budget = buildVerdictNotice({ kind: "skipped", code: "budget", used: 2, limit: 2, budget: "2/2" });
   assert.equal(budget.color, "dim");
+  assert.equal(budget.level, "info");
   assert.match(budget.text, /2\/2/);
+  assert.match(budget.details.join("\n"), /上限|exhausted/);
 
-  const failed = buildVerdictLine({ kind: "failed", error: "判定模型请求失败：boom" });
+  const failed = buildVerdictNotice({ kind: "failed", error: "判定模型请求失败：boom" });
   assert.equal(failed.color, "error");
+  assert.equal(failed.level, "error");
   assert.match(failed.text, /判定失败|judge failed/);
+  // 失败详情放在展开细节里，不占正文。
+  assert.match(failed.details.join("\n"), /boom/);
 });
 
 test("用户打断时明确写成「未判定」，与「判定为可停止」区分开", () => {
-  const interrupted = buildInterruptedLine();
+  const interrupted = buildInterruptedNotice();
   assert.equal(interrupted.color, "dim");
   assert.match(interrupted.text, /已打断|interrupted/);
   assert.match(interrupted.text, /未判定|not judged/);
+  assert.match(interrupted.details.join("\n"), /没有调用判定模型|not called/);
 
-  const skipped = buildVerdictLine({ kind: "skipped", code: "canceled", used: 0, limit: 2, budget: "0/2" });
+  const skipped = buildVerdictNotice({ kind: "skipped", code: "canceled", used: 0, limit: 2, budget: "0/2" });
   assert.equal(skipped.text, interrupted.text);
 });
 
 test("非正常结束（失败或残缺）用另一条文案，不冒充「已打断」", () => {
-  const notCompleted = buildNotCompletedLine();
+  const notCompleted = buildNotCompletedNotice("error");
   assert.equal(notCompleted.color, "dim");
   assert.match(notCompleted.text, /未正常结束|did not finish/);
   assert.doesNotMatch(notCompleted.text, /已打断|interrupted/);
+  assert.match(notCompleted.details.join("\n"), /error/);
+
+  const missing = buildNotCompletedNotice(undefined);
+  assert.match(missing.details.join("\n"), /缺失|missing/);
 });
 
-test("结论行只放结论，不把失败详情塞进去", () => {
-  const line = buildVerdictLine({ kind: "failed", error: "判定模型返回无法解析的响应：xxx" });
-  assert.doesNotMatch(line.text, /xxx/);
+test("催促发送失败必须显式报错，并带出原始错误", () => {
+  const failed = buildSendFailedNotice("session is gone");
+  assert.equal(failed.color, "error");
+  assert.equal(failed.level, "error");
+  assert.match(failed.text, /发送失败|send failed/);
+  assert.match(failed.details.join("\n"), /session is gone/);
 });
 
 test("结论色映射到提示级别：红→error、黄→warning、其余→info", () => {
@@ -70,4 +91,22 @@ test("结论色映射到提示级别：红→error、黄→warning、其余→in
   assert.equal(verdictNoticeLevel("warning"), "warning");
   assert.equal(verdictNoticeLevel("success"), "info");
   assert.equal(verdictNoticeLevel("dim"), "info");
+});
+
+test("每个结论都只给一条提示：正文一行 + 细节若干行", () => {
+  const notices = [
+    buildVerdictNotice(CONTINUE, "继续干"),
+    buildVerdictNotice({ kind: "stop", reason: "已完成", confidence: 0.9 }),
+    buildVerdictNotice({ kind: "skipped", code: "budget", used: 1, limit: 1, budget: "1/1" }),
+    buildVerdictNotice({ kind: "failed", error: "boom" }),
+    buildInterruptedNotice(),
+    buildNotCompletedNotice("aborted"),
+    buildSendFailedNotice("boom"),
+  ];
+  for (const notice of notices) {
+    assert.equal(typeof notice.text, "string");
+    assert.ok(notice.text.length > 0);
+    assert.ok(notice.details.length > 0, `细节行缺失：${notice.text}`);
+    assert.ok(notice.details.every((line) => line.trim() !== ""));
+  }
 });

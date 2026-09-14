@@ -15,4 +15,4 @@ description: "启用与排查 pi-metrics 的耗时、TPS、TTFT、token 和成�
 
 ## 验证
 
-在 TUI 中完成一次真实模型回合，观察 working spinner、轮次耗时、总耗时和可用的 TPS/TTFT/token/cost。RPC/print 模式不会启动 UI 定时器或通知；provider 未返回 usage 时部分指标不可用。真实模型回合属于 E2E，执行前遵守当前任务授权边界；未运行时明确报告 `NOT_RUN`。
+在 TUI 中完成一次真实模型回合，观察 working spinner、每轮的 TPS/TTFT/token 指标行（含本轮耗时）和可用的 cost；如果一次运行跑了多轮，停下时还应看到一条 `⏱ 总耗时`。RPC/print 模式不会启动 UI 定时器或通知；provider 未返回 usage 时部分指标不可用。真实模型回合属于 E2E，执行前遵守当前任务授权边界；未运行时明确报告 `NOT_RUN`。

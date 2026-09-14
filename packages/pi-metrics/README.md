@@ -7,8 +7,8 @@ Session metrics for the [Pi coding agent](https://github.com/earendil-works/pi):
 ## Features
 
 - While the agent is working, the spinner shows the **total elapsed time since you sent the message** (for example `⏱ 47s`). It keeps counting across turns instead of resetting per turn.
-- When each turn ends, a dim line shows that turn's precise duration (`⏱ Turn elapsed 8.2s`).
-- When the agent fully settles (`agent_settled` — including auto-retries, compaction continuations, or Esc interruption), a final line shows the **total elapsed time from message send to stop** (`⏱ Total elapsed 18.9s`).
+- When each turn ends, one line reports TPS, TTFT, token counts, generation time, stalls, and blended cost (the line already carries the turn duration, so no separate elapsed notice is emitted).
+- When a run spans more than one turn and the agent fully settles (`agent_settled` — including auto-retries, compaction continuations, or Esc interruption), a final line adds the **total elapsed time from message send to stop** (`⏱ Total elapsed 18.9s`). Single-turn runs do not repeat it.
 - After each LLM turn, a notification reports TPS, TTFT, token counts, generation time, stalls, and blended cost when available.
 - Telemetry is persisted as `tps` custom session entries and restored after session resume or `/tree` navigation.
 - Metrics are exposed through session entries and notifications. Use `/config:metrics` to open the TUI settings menu, or use `/config:metrics enable|disable` to change the setting directly.

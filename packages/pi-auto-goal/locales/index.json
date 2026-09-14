@@ -71,10 +71,6 @@
     "zh-CN": "你停在任务中途，剩余步骤还没有完成。",
     "en-US": "You stopped in the middle of the task with steps still unfinished."
   },
-  "continueSendFailed": {
-    "zh-CN": "自动催停消息发送失败：{error}",
-    "en-US": "Failed to send the automatic continuation message: {error}"
-  },
   "forcedDecisionContinueReason": {
     "zh-CN": "受控实验：强制判定为提前停止",
     "en-US": "Controlled experiment: forced premature-stop decision"
@@ -83,17 +79,41 @@
     "zh-CN": "受控实验：强制判定为可停止",
     "en-US": "Controlled experiment: forced acceptable-stop decision"
   },
-  "autoContinueSent": {
-    "zh-CN": "判定为提前停止，已自动要求继续：{reason}（本次干预 {budget}）",
-    "en-US": "Premature stop detected; continuation requested automatically: {reason} (intervention {budget})"
+  "verdictSendFailed": {
+    "zh-CN": "⚖ 催促发送失败",
+    "en-US": "⚖ continuation send failed"
   },
-  "stopDecisionNotified": {
-    "zh-CN": "判定停止合理，未干预：{reason}",
-    "en-US": "Stop judged acceptable; no intervention: {reason}"
+  "detailReason": {
+    "zh-CN": "理由：{reason}",
+    "en-US": "Reason: {reason}"
   },
-  "budgetExhausted": {
-    "zh-CN": "本轮已自动催停 {budget} 次，到达上限，不再干预。",
+  "detailSent": {
+    "zh-CN": "已发送的催促：{message}",
+    "en-US": "Continuation sent: {message}"
+  },
+  "detailError": {
+    "zh-CN": "失败原因：{error}",
+    "en-US": "Failure: {error}"
+  },
+  "detailBudget": {
+    "zh-CN": "本请求已自动催停 {budget} 次，到达上限，不再干预。",
     "en-US": "Automatic continuation budget exhausted for this request ({budget}); no further intervention."
+  },
+  "detailCanceled": {
+    "zh-CN": "判定被取消，没有调用判定模型。",
+    "en-US": "The judgement was cancelled; the judge model was not called."
+  },
+  "detailInterrupted": {
+    "zh-CN": "本轮由你打断，没有调用判定模型。",
+    "en-US": "You interrupted this turn, so the judge model was not called."
+  },
+  "detailNotCompleted": {
+    "zh-CN": "本轮没有正常跑完（结束原因：{stopReason}），没有调用判定模型。",
+    "en-US": "This turn did not finish normally (stop reason: {stopReason}), so the judge model was not called."
+  },
+  "detailStopReasonMissing": {
+    "zh-CN": "缺失",
+    "en-US": "missing"
   },
   "noUserRequest": {
     "zh-CN": "找不到本轮的原始用户请求，跳过判定。",
