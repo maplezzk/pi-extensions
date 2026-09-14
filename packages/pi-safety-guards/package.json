@@ -1,6 +1,6 @@
 {
   "name": "pi-safety-guards",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Configurable Bash safety rules with selectable presets and custom matchers for Pi",
   "type": "module",
   "main": "./index.ts",
@@ -63,7 +63,7 @@
     "@earendil-works/pi-coding-agent": ">=0.80.0"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.5.0",
+    "pi-extensions-i18n": "^0.6.0",
     "unbash": "^4.0.10"
   },
   "devDependencies": {

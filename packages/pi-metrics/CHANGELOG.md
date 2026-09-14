@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.5.0...pi-metrics-v0.6.0) (2026-09-14)
+
+
+### Features
+
+* show notices as filled transcript blocks under the message ([eb00293](https://github.com/maplezzk/pi-extensions/commit/eb002934f273df12cb109e54817dd16fdb09d52a))
+* 提示改成会话区的带底色消息块，判定结论落在消息下方 ([f42992d](https://github.com/maplezzk/pi-extensions/commit/f42992d39af35e3fda33f681f833d89408cb4a3a))
+* 每轮只发一条判定提示，指标提示不再重复 ([ef8398c](https://github.com/maplezzk/pi-extensions/commit/ef8398cd19808215f85a7ef771c0deb238a6f61f))
+* 每轮只发一条判定提示，指标提示也不再重复 ([d123f51](https://github.com/maplezzk/pi-extensions/commit/d123f519c6d6e21f49d6786809eab7e34c8fd1f8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.5.0 to ^0.6.0
+
 ## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.4.2...pi-metrics-v0.5.0) (2026-09-13)
 
 
