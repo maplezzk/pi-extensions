@@ -11,6 +11,13 @@
  * Pi 可能各自加载一份 pi-tui / pi-coding-agent，跨副本的模块实例未必相同。
  */
 
+import { debugLog } from "./debug-logger.js";
+
+/** 调试日志作用域：transcript 末尾补丁。 */
+const DEBUG_SCOPE = "transcript tail";
+/** 连续多少次找不到 transcript 容器后才写一条日志。 */
+const MISSING_REPORT_THRESHOLD = 8;
+
 /** 组件树遍历只需要用到的两个成员。 */
 export interface TranscriptNode {
 	/** 组件渲染入口。 */
@@ -100,6 +107,8 @@ interface RenderPatch {
 /** 创建 transcript 末尾补丁。 */
 export function createTranscriptTail(deps: TranscriptTailDeps): TranscriptTail {
 	let patch: RenderPatch | undefined;
+	/** 连续找不到 transcript 容器的次数，用于区分「刚启动还没消息」与「结构变了」。 */
+	let missingStreak = 0;
 
 	const restore = (): void => {
 		if (!patch) {
@@ -127,8 +136,15 @@ export function createTranscriptTail(deps: TranscriptTailDeps): TranscriptTail {
 
 			const container = findTranscriptContainer(deps.getRoot());
 			if (!container) {
+				// 运行刚开始时 assistant 消息还没出现，找不到几次是正常的；连续多次
+				// 才说明组件结构与预期不符，这时活动行会一直不显示，必须能查出来。
+				missingStreak += 1;
+				if (missingStreak === MISSING_REPORT_THRESHOLD) {
+					debugLog(DEBUG_SCOPE, "transcript container not found; activity lines stay hidden");
+				}
 				return false;
 			}
+			missingStreak = 0;
 
 			const original = container.render;
 			const hadOwnRender = Object.hasOwn(container, "render");
