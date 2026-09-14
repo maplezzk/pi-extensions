@@ -44,6 +44,8 @@ const COLLAPSED_CHEVRON = "›";
 const EXPANDED_CHEVRON = "⌄";
 /** 收起的动作组前面的箭头，提示点击后展开。 */
 const COLLAPSED_GROUP_CHEVRON = "▸";
+/** 展开的动作组前面的箭头，提示点击后收起。 */
+const EXPANDED_GROUP_CHEVRON = "▾";
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
@@ -246,7 +248,8 @@ function buildActionGroupHeaderLines(
 	deps: ComponentPatchDeps,
 ): string[] {
 	const label = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
-	const header = deps.styleHeader(`${COLLAPSED_GROUP_CHEVRON} ${label}`);
+	const chevron = group.groupExpanded ? EXPANDED_GROUP_CHEVRON : COLLAPSED_GROUP_CHEVRON;
+	const header = deps.styleHeader(`${chevron} ${label}`);
 	return [ACTION_GROUP_HEADER_BLANK, header];
 }
 
@@ -292,7 +295,11 @@ function buildToolMessageRender(
 			return [];
 		}
 		if (mode === TOOL_ROW_GROUP_HEADER && group) {
-			return buildActionGroupHeaderLines(group, deps);
+			const headerLines = buildActionGroupHeaderLines(group, deps);
+			if (!group.groupExpanded) {
+				return headerLines;
+			}
+			return [...headerLines, ...originalRender.call(this, width)];
 		}
 		return originalRender.call(this, width);
 	};

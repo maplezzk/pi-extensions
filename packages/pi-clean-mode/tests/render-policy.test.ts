@@ -125,10 +125,15 @@ test("多条成员的组收起时只留首行当组头", () => {
 	assert.equal(resolveToolRowMode(toolRowInput({ membership: { groupId: 1, index: 2 } })), TOOL_ROW_HIDDEN);
 });
 
-test("组展开后逐条正常渲染", () => {
+test("组展开后首行仍是组头，其余成员正常渲染", () => {
 	const base = { groupExpanded: true };
 	assert.equal(
 		resolveToolRowMode(toolRowInput({ ...base, membership: { groupId: 1, index: 0 } })),
+		TOOL_ROW_GROUP_HEADER,
+		"组头行必须保留，否则展开后没有点击收回的目标",
+	);
+	assert.equal(
+		resolveToolRowMode(toolRowInput({ ...base, membership: { groupId: 1, index: 1 } })),
 		TOOL_ROW_NORMAL,
 	);
 	assert.equal(

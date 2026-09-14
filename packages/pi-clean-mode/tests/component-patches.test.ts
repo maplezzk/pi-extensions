@@ -319,16 +319,35 @@ test("多条成员的组收起时只渲染一条组头", () => {
 	});
 });
 
-test("组展开后成员逐条渲染且不再有组头", () => {
+test("组展开后成员逐条渲染，组头行依然保留", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
 		toggleActionGroup(harness.actionGroups, 1);
 
-		for (const id of ids) {
+		const headRendered = linesOf(toolComponent(ids[0])).join("\n");
+		assert.ok(
+			headRendered.includes(GROUP_HEADER_FRAGMENT),
+			`展开后组头行应保留，否则无法点击收回：${headRendered}`,
+		);
+		assert.ok(headRendered.includes("read"), `组头行应同时带上自己的内容：${headRendered}`);
+
+		for (const id of ids.slice(1)) {
 			const rendered = linesOf(toolComponent(id)).join("\n");
-			assert.ok(!rendered.includes(GROUP_HEADER_FRAGMENT), `展开后不应有组头：${rendered}`);
+			assert.ok(!rendered.includes(GROUP_HEADER_FRAGMENT), `非首行不应有组头：${rendered}`);
 			assert.ok(rendered.length > 0, "展开后每个成员都应有内容");
 		}
+	});
+});
+
+test("组展开后点击组头仍能收起该组", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+		toggleActionGroup(harness.actionGroups, 1);
+
+		const head = toolComponent(ids[0]);
+		linesOf(head);
+		head.handleMouse(clickAt(0, HEADER_ROW + 1));
+		assert.equal(harness.groupToggles(), 1, "展开态点击组头也应触发切换");
 	});
 });
 

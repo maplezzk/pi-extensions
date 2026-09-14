@@ -81,8 +81,10 @@ export function resolveRunHeader(
 /**
  * 判定一条工具行在当前位置该怎么渲染。
  *
- * 优先级：总开关关闭时一律原样；运行级折叠先隐藏一切；否则只有「多条成员且
- * 组收起」的组才需要收成组头，组内只有一条时不做任何改动，直接显示工具行本身。
+ * 优先级：总开关关闭时一律原样；运行级折叠先隐藏一切；否则组内只有一条时不折叠。
+ *
+ * 组内首行（index 0）**始终**充当组头，展开态也不例外——否则展开后组头行消失，
+ * 就没有可以点击收回的目标了。展开时它额外把自己的内容接在组头后面。
  */
 export function resolveToolRowMode(input: ToolRowModeInput): ToolRowMode {
 	const { state, config, membership, groupSize, groupExpanded } = input;
@@ -99,9 +101,9 @@ export function resolveToolRowMode(input: ToolRowModeInput): ToolRowMode {
 		return TOOL_ROW_NORMAL;
 	}
 
-	if (groupExpanded) {
-		return TOOL_ROW_NORMAL;
+	if (membership.index === 0) {
+		return TOOL_ROW_GROUP_HEADER;
 	}
 
-	return membership.index === 0 ? TOOL_ROW_GROUP_HEADER : TOOL_ROW_HIDDEN;
+	return groupExpanded ? TOOL_ROW_NORMAL : TOOL_ROW_HIDDEN;
 }
