@@ -60,7 +60,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `true` | Master switch; when false no judge call is made. |
-| `model` | `""` | Judge model as `provider/modelId`; empty reuses the current session model. |
+| `model` | `""` | Judge model as `provider/modelId`; empty reuses the current session model. Pick it from the `/config:auto-goal` menu, or set it with `/config:auto-goal model <provider/modelId>`. |
 | `maxAutoContinues` | `2` | Interventions per user request; `0` means unlimited. |
 | `confidenceThreshold` | `0.6` | Minimum confidence required to intervene. |
 | `timeoutSeconds` | `30` | Judge request timeout; a timeout is reported, not treated as a stop. |
@@ -116,8 +116,9 @@ The judge only needs one JSON verdict, but reasoning models spend output budget 
 
 ### Commands
 
-- `/config:auto-goal` — TUI menu (aliases: `/auto-goal`, `/pi-auto-goal-config`).
+- `/config:auto-goal` — TUI menu (aliases: `/auto-goal`, `/pi-auto-goal-config`); the menu toggles the extension, **picks the judge model**, and prints the status.
 - `/config:auto-goal enable|disable|status|reset` — non-interactive variants; `status` prints the effective configuration and the interventions used in this session.
+- `/config:auto-goal model` prints the current judge model; `/config:auto-goal model provider/modelId` sets it; `/config:auto-goal model default` switches back to the current session model.
 
 ## Development
 
