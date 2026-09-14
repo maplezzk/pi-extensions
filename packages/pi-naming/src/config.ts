@@ -8,6 +8,16 @@ const PACKAGE_NAME = "pi-naming";
 const CONFIG_FILENAME = "config.json";
 const FILE_NOT_FOUND_CODE = "ENOENT";
 const MAX_TIMER_MS = 2_147_483_647;
+
+/** 思考档位：与 pi-ai 的 ThinkingLevel 一致，优先级由低到高。 */
+export const TITLE_EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+export type TitleEffort = typeof TITLE_EFFORT_LEVELS[number];
+
+/** 标题请求的默认输出预算；推理模型的思考与标题共享该额度。 */
+const DEFAULT_TITLE_MAX_TOKENS = 2048;
+/** 标题请求的默认思考档位；命名不需要高强度推理。 */
+const DEFAULT_TITLE_EFFORT: TitleEffort = "low";
 const NAMING_SWITCHES = ["automaticNaming", "manualNaming"] as const;
 const TARGET_KEYS = ["session", "workspace", "tab"] as const;
 
@@ -17,6 +27,8 @@ export interface TitleConfig {
   language: string;
   instructions: string;
   timeoutMs: number;
+  maxTokens: number;
+  effort: TitleEffort;
 }
 
 export const DEFAULT_TITLE_CONFIG: Readonly<TitleConfig> = Object.freeze({
@@ -25,6 +37,8 @@ export const DEFAULT_TITLE_CONFIG: Readonly<TitleConfig> = Object.freeze({
   language: "auto",
   instructions: "",
   timeoutMs: 10_000,
+  maxTokens: DEFAULT_TITLE_MAX_TOKENS,
+  effort: DEFAULT_TITLE_EFFORT,
 });
 
 export interface NamingConfig {
@@ -51,6 +65,11 @@ function positiveInteger(value: unknown, field: string): number {
   return value;
 }
 
+/** 判断配置值是否为受支持的思考档位。 */
+export function isTitleEffort(value: unknown): value is TitleEffort {
+  return TITLE_EFFORT_LEVELS.some((level) => level === value);
+}
+
 /** 校验配置字段与取值，为省略的字段补齐默认值。 */
 export function parseConfig(value: unknown): NamingConfig {
   const raw = object(value, "config");
@@ -68,7 +87,7 @@ export function parseConfig(value: unknown): NamingConfig {
     if (!Object.hasOwn(DEFAULT_TITLE_CONFIG, key)) invalid(`title.${key}`);
   }
   const title: TitleConfig = { ...DEFAULT_TITLE_CONFIG };
-  for (const key of ["maxLength", "preferredLength", "timeoutMs"] as const) {
+  for (const key of ["maxLength", "preferredLength", "timeoutMs", "maxTokens"] as const) {
     if (titleRaw[key] !== undefined) title[key] = positiveInteger(titleRaw[key], `title.${key}`);
   }
   if (title.preferredLength > title.maxLength) invalid("title.preferredLength");
@@ -79,6 +98,10 @@ export function parseConfig(value: unknown): NamingConfig {
     title[key] = titleRaw[key].trim();
   }
   if (!title.language) invalid("title.language");
+  if (titleRaw.effort !== undefined) {
+    if (!isTitleEffort(titleRaw.effort)) invalid("title.effort");
+    title.effort = titleRaw.effort;
+  }
   return {
     automaticNaming: (raw.automaticNaming as boolean | undefined) ?? true,
     manualNaming: (raw.manualNaming as boolean | undefined) ?? true,
