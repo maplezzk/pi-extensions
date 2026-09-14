@@ -82,12 +82,12 @@ After each turn the transcript shows **one** filled `[auto-goal]` block below th
 
 | Verdict line | Colour | Meaning |
 | --- | --- | --- |
-| `⚖ stop accepted 0.92` | green | Judged as a normal stop; no intervention. |
-| `⚖ continued 1/2` | yellow | Judged as a premature stop; the continuation was sent. |
-| `⚖ budget exhausted 2/2` | grey | Intervention budget for this request is used up. |
-| `⚖ interrupted, not judged` | grey | You pressed Esc; the judgement stood down. |
-| `⚖ turn did not finish normally, not judged` | grey | The turn ended with a failure or a truncated record. |
-| `⚖ judge failed` | red | The judge call failed. |
+| `⚖️ stop accepted · confidence 92%` | green | Judged as a normal stop; no intervention. The percentage is the judge model's certainty. |
+| `⚖️ judged premature · continuation 1/2` | yellow | Judged as a premature stop; the continuation was sent (1/2 = 1 sent, limit 2). |
+| `⚖️ continuation limit reached (2/2) · no further intervention` | grey | Intervention budget for this request is used up. |
+| `⚖️ interrupted · not judged` | grey | You pressed Esc; the judgement stood down. |
+| `⚖️ turn did not finish normally · not judged` | grey | The turn ended with a failure or a truncated record. |
+| `⚖️ judge failed` | red | The judge call failed. |
 
 The body is a single line; the reason, the continuation that was sent, the failure, and the stop reason are kept in the expandable details: press **`Ctrl+O`** (the tool-output toggle) to read them. They take no space while collapsed.
 
@@ -97,7 +97,7 @@ The verdict never enters the LLM context and is not written to the footer status
 
 Only turns that finished normally: the last assistant message ends with `stop` (the agent finished its turn) or `length` (output hit the length cap).
 
-When you press Esc, the turn ends with `aborted` or `error` and empty content — that is your decision, not the agent's stop decision. Such turns used to be judged as "premature stop" and continued automatically, so pressing Esc looked like it did nothing; now they are never judged and only get a "interrupted, not judged" line.
+When you press Esc, the turn ends with `aborted` or `error` and empty content — that is your decision, not the agent's stop decision. Such turns used to be judged as "premature stop" and continued automatically, so pressing Esc looked like it did nothing; now they are never judged and only get an "interrupted · not judged" line.
 
 > If you still see the old behaviour (a continuation right after Esc), check that the running session started after the fix: extensions are not hot-reloaded in a live process, so run `/reload` or start a new session.
 

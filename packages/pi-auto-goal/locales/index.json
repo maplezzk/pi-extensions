@@ -80,8 +80,8 @@
     "en-US": "Controlled experiment: forced acceptable-stop decision"
   },
   "verdictSendFailed": {
-    "zh-CN": "⚖ 催促发送失败",
-    "en-US": "⚖ continuation send failed"
+    "zh-CN": "⚖️ 催促发送失败",
+    "en-US": "⚖️ continuation send failed"
   },
   "detailReason": {
     "zh-CN": "理由：{reason}",
@@ -200,28 +200,28 @@
     "en-US": "Verdict notice below the message: {value}"
   },
   "statusStop": {
-    "zh-CN": "⚖ 停止合理 {confidence}",
-    "en-US": "⚖ stop accepted {confidence}"
+    "zh-CN": "⚖️ 判定可停止 · 置信度 {confidence}",
+    "en-US": "⚖️ stop accepted · confidence {confidence}"
   },
   "statusContinue": {
-    "zh-CN": "⚖ 已催促 {budget}",
-    "en-US": "⚖ continued {budget}"
+    "zh-CN": "⚖️ 判定该继续 · 已催促 {budget}",
+    "en-US": "⚖️ judged premature · continuation {budget}"
   },
   "statusBudget": {
-    "zh-CN": "⚖ 已达上限 {budget}",
-    "en-US": "⚖ budget exhausted {budget}"
+    "zh-CN": "⚖️ 催促次数用尽（{budget}）· 不再干预",
+    "en-US": "⚖️ continuation limit reached ({budget}) · no further intervention"
   },
   "statusFailed": {
-    "zh-CN": "⚖ 判定失败",
-    "en-US": "⚖ judge failed"
+    "zh-CN": "⚖️ 判定失败",
+    "en-US": "⚖️ judge failed"
   },
   "statusCanceled": {
-    "zh-CN": "⚖ 已打断，未判定",
-    "en-US": "⚖ interrupted, not judged"
+    "zh-CN": "⚖️ 已打断 · 未判定",
+    "en-US": "⚖️ interrupted · not judged"
   },
   "statusNotCompleted": {
-    "zh-CN": "⚖ 本轮未正常结束，未判定",
-    "en-US": "⚖ turn did not finish normally, not judged"
+    "zh-CN": "⚖️ 本轮未正常结束 · 未判定",
+    "en-US": "⚖️ turn did not finish normally · not judged"
   },
   "configStatusUsed": {
     "zh-CN": "本会话已干预：{value}",
