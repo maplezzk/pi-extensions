@@ -63,6 +63,8 @@ interface AssistantMessageHost {
 	lastMessage?: unknown;
 	/** 内容容器；折叠头插在它的 children 首位。 */
 	contentContainer?: { children: Component[] };
+	/** Pi 的 Container 用它做鼠标命中：每个子组件占几行。由本文件的收起态接管。 */
+	mouseLayout?: { width: number; children: Array<{ component: Component; height: number }> };
 	render(width: number): string[];
 	updateContent(message: unknown, isStreaming?: boolean): void;
 	/** 折叠头子组件的实例级缓存。 */
@@ -89,6 +91,8 @@ export interface ToolRowGroupInfo {
 	groupSize: number;
 	/** 组是否已展开。 */
 	groupExpanded: boolean;
+	/** 组内只有一条时用来当组头文案的动作摘要（例如「运行命令 ls -la」）。 */
+	summary?: string;
 }
 
 /** assistant 组件的 render 方法签名。 */
@@ -186,19 +190,26 @@ function getOrCreateRunHeader(host: AssistantMessageHost, deps: ComponentPatchDe
 }
 
 /**
- * 刷新容器的鼠标高度表。
+ * 收起态下的折叠头渲染。
  *
- * `Container.render` 的副作用是登记「每个子组件占几行」，鼠标命中靠这份表把屏幕
- * 坐标换算到具体子组件。收起态下正文行会被丢掉，但仍必须先跑一次容器渲染，否则
- * 折叠头会沿用上一帧的旧表——那一帧折叠头还没出现（耗时要等运行结束才有），
- * 点击就被派发到正文子容器上，表现为「点了没反应」。返回值是正文行，这里刻意丢掉。
+ * 除了输出两行折叠头，还负责把鼠标高度表写成「只有折叠头」：Container 在 render 里
+ * 登记每个子组件的高度，鼠标命中靠这份表把屏幕坐标换算到子组件。收起态只输出折叠头，
+ * 高度表也就只能有折叠头 —— 否则会沿用上一帧的旧表（那一帧折叠头还没出现，高度记的
+ * 是 0），点击被派发到正文子容器上，表现为「点了没反应」。
+ *
+ * 这里刻意不跑一遍容器渲染去刷新高度表：那会把每条已收起消息的正文（markdown）每帧
+ * 重渲一次再丢掉，长会话下明显卡顿。收起态实际只输出折叠头，直接写这份表等价且是
+ * 常数开销。
  */
-function refreshContainerMouseLayout(
+function renderCollapsedHeader(
 	host: AssistantMessageHost,
 	width: number,
-	originalRender: AssistantRenderMethod,
-): void {
-	originalRender.call(host, width);
+	deps: ComponentPatchDeps,
+): string[] {
+	const header = getOrCreateRunHeader(host, deps);
+	const headerLines = header.render(width);
+	host.mouseLayout = { width, children: [{ component: header, height: headerLines.length }] };
+	return headerLines;
 }
 
 /**
@@ -228,10 +239,7 @@ function buildAssistantMessageRender(
 			return [];
 		}
 
-		const headerLines = getOrCreateRunHeader(this, deps).render(width);
-		refreshContainerMouseLayout(this, width, originalRender);
-
-		return headerLines;
+		return renderCollapsedHeader(this, width, deps);
 	};
 }
 
@@ -302,12 +310,18 @@ function isGroupHeaderRow(host: ToolMessageHost, deps: ComponentPatchDeps): bool
 /** 组头前的空行，与普通工具行前面的 Spacer 保持一致。 */
 const ACTION_GROUP_HEADER_BLANK = "";
 
-/** 组装收起的动作组组头，例如 `▸ 探索 · 4 步`。 */
+/**
+ * 组装收起的动作组组头。
+ *
+ * 组内只有一条时直接用这条动作的摘要（「▸ 运行命令 ls -la」），这样才能既收起
+ * 原始输出又不丢失「刚才做了什么」；两条以上才汇总成「▸ 探索 · N 步」。
+ */
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
 	deps: ComponentPatchDeps,
 ): string[] {
-	const label = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
+	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
+	const label = group.groupSize > 1 ? countLabel : (group.summary ?? countLabel);
 	const chevron = group.groupExpanded ? EXPANDED_GROUP_CHEVRON : COLLAPSED_GROUP_CHEVRON;
 	const header = deps.styleHeader(`${chevron} ${label}`);
 	return [ACTION_GROUP_HEADER_BLANK, header];

@@ -300,6 +300,18 @@ function requireActivityHost(runtime: Runtime): ActivityUiHost {
 	return host;
 }
 
+/**
+ * 把一次工具调用压成一行摘要，例如「运行命令 ls -la」。
+ *
+ * 参数里没有可读字段时只留动作标签，避免把工具名重复说一遍
+ * （toolActivityDetail 找不到已知字段时会退回工具名）。
+ */
+function summarizeToolCall(toolName: string, args: unknown): string {
+	const label = toolActivityLabel(toolName);
+	const detail = toolActivityDetail(toolName, args);
+	return detail && detail !== toolName ? `${label} ${detail}` : label;
+}
+
 /** 取一个工具行的动作组快照，供渲染决策使用。 */
 function lookupToolRowGroup(runtime: Runtime, toolCallId: string): ToolRowGroupInfo | undefined {
 	const membership = findActionGroupMembership(runtime.actionGroups, toolCallId);
@@ -311,6 +323,7 @@ function lookupToolRowGroup(runtime: Runtime, toolCallId: string): ToolRowGroupI
 		membership,
 		groupSize: getActionGroupSize(runtime.actionGroups, membership.groupId),
 		groupExpanded: isActionGroupExpanded(runtime.actionGroups, membership.groupId),
+		...(membership.summary === undefined ? {} : { summary: membership.summary }),
 	};
 }
 
@@ -530,7 +543,17 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	});
 
 	// 工具开始执行：登记到活动区，让用户看到「现在在做什么」。
+	//
+	// 这里必须同时登记动作组：`tool_call` 会被先注册的扩展截断——pi-safety-guards
+	// 拦下命令时 runner 立刻停止分发，后面的扩展就收不到那次调用，那一行会掉出分组
+	// 而以原始形式显示。tool_execution_start 在每次调用前都会发出（被拦下的也发），
+	// 登记又是幂等的，所以两处都登记。
 	pi.on("tool_execution_start", async (event, ctx) => {
+		registerActionToolCall(
+			runtime.actionGroups,
+			event.toolCallId,
+			summarizeToolCall(event.toolName, event.args),
+		);
 		if (!isActivityEnabled(runtime)) {
 			return;
 		}
@@ -592,8 +615,13 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	});
 
 	// 把每个工具调用登记进当前动作组，供渲染时判断是否收成组头。
+	// tool_call 比 tool_execution_start 早，能更早拿到归属；两者互为兑底。
 	pi.on("tool_call", async (event) => {
-		registerActionToolCall(runtime.actionGroups, event.toolCallId);
+		registerActionToolCall(
+			runtime.actionGroups,
+			event.toolCallId,
+			summarizeToolCall(event.toolName, event.input),
+		);
 		debugLog("tool_call", `${event.toolCallId} -> group=${runtime.actionGroups.currentGroupId}`);
 	});
 

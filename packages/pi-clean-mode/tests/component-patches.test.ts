@@ -37,6 +37,8 @@ const RUN_DURATION_MS = 266_000;
 const HEADER_FRAGMENT = formatDuration(RUN_DURATION_MS);
 /** 三条成员的组头文案；由 i18n 推导，避免与实现里的文案漂移。 */
 const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
+/** 单条动作的组头摘要；组内只有一条时直接用它当组头文案。 */
+const SINGLE_ACTION_SUMMARY = "运行命令 ls -la";
 /** 工具调用 id。 */
 const TOOL_CALL_ID = "call-1";
 /** 最终答案的正文。 */
@@ -154,6 +156,7 @@ function withPatches(
 				membership,
 				groupSize: getActionGroupSize(actionGroups, membership.groupId),
 				groupExpanded: isActionGroupExpanded(actionGroups, membership.groupId),
+				...(membership.summary === undefined ? {} : { summary: membership.summary }),
 			};
 		},
 		onToggleActionGroup: (groupId) => {
@@ -316,24 +319,41 @@ test("还原后真实组件恢复原始渲染", () => {
 });
 
 /** 造一个已登记 n 条工具调用的动作组，并返回这些工具调用 id。 */
-function seedActionGroup(actionGroups: ActionGroupState, count: number): string[] {
+function seedActionGroup(
+	actionGroups: ActionGroupState,
+	count: number,
+	summaries: Array<string | undefined> = [],
+): string[] {
 	beginActionGroupStep(actionGroups);
 	const ids: string[] = [];
 	for (let index = 0; index < count; index += 1) {
 		const id = `group-${actionGroups.currentGroupId}-${index}`;
-		registerActionToolCall(actionGroups, id);
+		registerActionToolCall(actionGroups, id, summaries[index]);
 		ids.push(id);
 	}
 	return ids;
 }
 
-test("组内只有一条时直接显示该工具行本身", () => {
+test("组内只有一条时也收成一行，用动作摘要当组头", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const [onlyId] = seedActionGroup(harness.actionGroups, 1);
+		const [onlyId] = seedActionGroup(harness.actionGroups, 1, [SINGLE_ACTION_SUMMARY]);
+		const headLines = linesOf(toolComponent(onlyId));
+
+		assert.equal(headLines.length, 2, "单条动作也是「空行 + 组头」两行");
+		const rendered = headLines.join("\n");
+		assert.ok(rendered.includes(SINGLE_ACTION_SUMMARY), `组头应带动作摘要：${rendered}`);
+		assert.ok(!rendered.includes("a.ts"), `收起态不应露出原始工具输出：${rendered}`);
+	});
+});
+
+test("组内只有一条时展开仍能看到原始工具行", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const [onlyId] = seedActionGroup(harness.actionGroups, 1, [SINGLE_ACTION_SUMMARY]);
+		toggleActionGroup(harness.actionGroups, 1);
 		const rendered = linesOf(toolComponent(onlyId)).join("\n");
 
-		assert.ok(!rendered.includes(GROUP_HEADER_FRAGMENT), `单条组不应出现组头：${rendered}`);
-		assert.ok(rendered.includes("read"), `应显示工具行本身：${rendered}`);
+		assert.ok(rendered.includes(SINGLE_ACTION_SUMMARY), `展开态应保留组头：${rendered}`);
+		assert.ok(rendered.includes("a.ts"), `展开态应能看到原始工具行：${rendered}`);
 	});
 });
 

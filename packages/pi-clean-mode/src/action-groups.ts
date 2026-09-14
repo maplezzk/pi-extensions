@@ -4,10 +4,16 @@
  * 分组依据是 Pi 自己的 `turn` 语义——一个 turn 等于一次 assistant 回复加它触发的
  * 工具调用，因此 turn_start 开一个新组，该组的工具调用在 tool_call 事件里登记。
  *
+ * 登记不能只靠 `tool_call`：前面的扩展（例如 pi-safety-guards 拦下命令时）一旦返回
+ * block，Pi 的 runner 会立刻停止分发，后面的扩展就看不到这次调用。看不到就登记不上，
+ * 那一行会掉出分组、以原始形式显示。所以 `tool_execution_start` 也要登记一次——
+ * 它在每次工具调用前都会发出（连被拦下的也会），且登记是幂等的。
+ *
  * 渲染策略（与 L1 运行级折叠叠加）：
  * - L1 折叠时整轮工作过程都隐藏，动作组不参与；
- * - 组内只有 1 条时不做任何事，直接显示该工具行本身（对应用户选的「命令原文优先」）；
- * - 组内有 2 条及以上时收起成一行组头，展开后逐条显示。
+ * - 组内只有 1 条时也收成一行，文案直接用这条动作自己的摘要
+ *   （例如「运行命令 ls -la」）——收起态不显示原始工具输出；
+ * - 组内有 2 条及以上时收成「探索 · N 步」，展开后逐条显示。
  */
 
 /** 某个工具调用在动作组里的归属。 */
@@ -16,6 +22,8 @@ export interface ActionGroupMembership {
 	groupId: number;
 	/** 组内序号，0 表示这一条渲染组头。 */
 	index: number;
+	/** 该动作的一行摘要（例如「运行命令 ls -la」）；组内只有它一条时当组头文案。 */
+	summary?: string;
 }
 
 /** 动作组的累计状态；组号只增不减，历史组的归属与展开状态得以保留。 */
@@ -107,16 +115,25 @@ export function beginActionGroupStep(state: ActionGroupState): void {
 /**
  * 把一个工具调用登记到当前组。原地修改 state，无返回值。
  *
- * 重复登记同一个 toolCallId 时保持原归属，避免 Pi 重发事件导致序号错乱。
+ * 重复登记同一个 toolCallId 时保持原归属，避免 Pi 重发事件导致序号错乱；
+ * 后一次带上了摘要而先前没带上时，只补摘要。
  */
-export function registerActionToolCall(state: ActionGroupState, toolCallId: string): void {
-	if (state.membershipByToolCallId.has(toolCallId)) {
+export function registerActionToolCall(
+	state: ActionGroupState,
+	toolCallId: string,
+	summary?: string,
+): void {
+	const existing = state.membershipByToolCallId.get(toolCallId);
+	if (existing) {
+		if (summary !== undefined && existing.summary === undefined) {
+			existing.summary = summary;
+		}
 		return;
 	}
 
 	const groupId = state.currentGroupId;
 	const index = state.memberCountByGroupId.get(groupId) ?? 0;
-	state.membershipByToolCallId.set(toolCallId, { groupId, index });
+	state.membershipByToolCallId.set(toolCallId, { groupId, index, ...(summary === undefined ? {} : { summary }) });
 	state.memberCountByGroupId.set(groupId, index + 1);
 }
 

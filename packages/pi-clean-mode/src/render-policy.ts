@@ -107,11 +107,13 @@ export function resolveRunHeader(input: RunHeaderInput): RunHeaderDecision {
 /**
  * 判定一条工具行在当前位置该怎么渲染。
  *
- * 优先级：总开关关闭时一律原样；运行级折叠先隐藏一切；否则组内只有一条时不折叠。
- * 聚合在运行期间就生效（工具聚合模式），停止后再由运行级折叠收成完全聚合。
+ * 优先级：总开关关闭时一律原样；运行级折叠先隐藏一切；未登记的工具行也原样
+ * （不知道它属于哪组，不能自作主张收起来）。
  *
+ * 聚合在运行期间就生效（工具聚合模式），停止后再由运行级折叠收成完全聚合。
  * 组内首行（index 0）**始终**充当组头，展开态也不例外——否则展开后组头行消失，
- * 就没有可以点击收回的目标了。展开时它额外把自己的内容接在组头后面。
+ * 就没有可以点击收回的目标了。**一条也算一组**：只有一条时组头直接用这条动作的
+ * 摘要，所以收起态不会把原始工具输出露出来。
  */
 export function resolveToolRowMode(input: ToolRowModeInput): ToolRowMode {
 	const { state, config, membership, groupSize, groupExpanded } = input;
@@ -124,7 +126,7 @@ export function resolveToolRowMode(input: ToolRowModeInput): ToolRowMode {
 		return TOOL_ROW_HIDDEN;
 	}
 
-	if (!config.enableActionGroups || !membership || groupSize <= 1) {
+	if (!config.enableActionGroups || !membership || groupSize <= 0) {
 		return TOOL_ROW_NORMAL;
 	}
 

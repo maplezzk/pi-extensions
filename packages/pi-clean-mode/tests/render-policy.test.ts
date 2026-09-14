@@ -169,8 +169,11 @@ test("关闭 showRunHeader 后不显示折叠头", () => {
 	assert.equal(resolveRunHeader({ config, durationMs: KNOWN_DURATION_MS, collapsed: true }).visible, false);
 });
 
-test("组内只有一条时不做折叠，直接显示该工具行", () => {
-	assert.equal(resolveToolRowMode(toolRowInput({ groupSize: 1 })), TOOL_ROW_NORMAL);
+test("组内只有一条时也收成一行，不露原始工具输出", () => {
+	assert.equal(
+		resolveToolRowMode(toolRowInput({ groupSize: 1 })),
+		TOOL_ROW_GROUP_HEADER,
+	);
 });
 
 test("未登记进动作组的工具行照常渲染", () => {

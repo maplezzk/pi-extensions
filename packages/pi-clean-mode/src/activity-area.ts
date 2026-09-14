@@ -61,6 +61,13 @@ export interface ActivityAreaRuntime {
 	 * `getLines` 交给 transcript-tail 在渲染时读取。
 	 */
 	lines: string[];
+	/**
+	 * 本轮活动块见过的最大行数。
+	 *
+	 * 块内行数增减会改变对话内容高度，底部锚定就会被反复拉动，看起来就是「卡/跳」。
+	 * 所以运行期间行数只增不减（不足的行用空行补齐），新行出现时就地长高，不会先长后缩。
+	 */
+	paddedRows: number;
 	/** 动画帧序号。 */
 	frame: number;
 	/** 刷新定时器；只在运行期间存在。 */
@@ -97,7 +104,7 @@ export interface ActivityLinesInput {
 
 /** 创建活动区运行时状态。 */
 export function createActivityAreaRuntime(): ActivityAreaRuntime {
-	return { frame: 0, workingSuppressed: false, lines: [] };
+	return { frame: 0, workingSuppressed: false, lines: [], paddedRows: 0 };
 }
 
 /** 安全调用 ui 上的可选方法；老版本或极简上下文可能不提供。 */
@@ -107,6 +114,28 @@ function safeUiCall(action: () => void): void {
 	} catch {
 		// 显示层失败不影响主流程。
 	}
+}
+
+/** 补位用的空行：活动块只长高不缩短，多出来的行用空行占位。 */
+const PADDING_ROW = "";
+
+/**
+ * 把活动行补齐到本轮见过的最大行数。
+ *
+ * 行数来回变化会让对话内容高度抖动，底部锚定被反复拉动；补齐后运行期间只会「长高」，
+ * 不会先长后缩。传入空行集（未运行）时原样返回，并把补位高度归零交给下一轮重算。
+ */
+function padActivityLines(runtime: ActivityAreaRuntime, lines: string[]): string[] {
+	if (lines.length === 0) {
+		runtime.paddedRows = 0;
+		return lines;
+	}
+
+	runtime.paddedRows = Math.max(runtime.paddedRows, lines.length);
+	if (runtime.paddedRows === lines.length) {
+		return lines;
+	}
+	return [...lines, ...new Array<string>(runtime.paddedRows - lines.length).fill(PADDING_ROW)];
 }
 
 /** 按当前主题与快照渲染活动行；未运行时返回空行集。 */
@@ -139,7 +168,8 @@ export function refreshActivityArea(
 ): void {
 	runtime.lastHost = host;
 
-	const lines = renderActivityLines(runtime, host, deps);
+	const rendered = renderActivityLines(runtime, host, deps);
+	const lines = padActivityLines(runtime, rendered);
 	const signature = lines.join("\n");
 
 	// transcript 容器要等第一条 assistant 消息出现才存在，所以只要还在运行就每次
@@ -187,6 +217,7 @@ export function clearActivityArea(runtime: ActivityAreaRuntime, host: ActivityUi
 	stopActivityTimer(runtime);
 	runtime.linesSignature = undefined;
 	runtime.lines = [];
+	runtime.paddedRows = 0;
 	host.requestRender();
 	restorePiWorkingIndicator(runtime, host);
 }
@@ -203,6 +234,7 @@ export function startActivityTimer(
 
 	runtime.lastHost = host;
 	runtime.frame = 0;
+	runtime.paddedRows = 0;
 	refreshActivityArea(runtime, host, deps);
 
 	const intervalMs = deps.isAnimated() ? ANIMATED_INTERVAL_MS : STILL_INTERVAL_MS;

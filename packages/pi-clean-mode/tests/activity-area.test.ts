@@ -197,6 +197,40 @@ test("清理活动区会停掉定时器、清空行并请求重绘", () => {
 	assert.equal(fake.calls.renders, rendersAfterStart + 1, "清理后应重绘一次把行摘掉");
 });
 
+test("运行期间活动块行数只增不减，避免内容高度抖动", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	let lines = ["│ 处理中"];
+	const deps: ActivityAreaDeps = {
+		getSnapshot: () => activeSnapshot(),
+		// 本用例只关心补位行为，动画固定为开。
+		isAnimated: () => true,
+		getMaxRows: () => MAX_ROWS,
+		renderLines: () => lines,
+	};
+
+	refreshActivityArea(runtime, fake.host, deps);
+	assert.deepEqual(runtime.lines, ["│ 处理中"]);
+
+	lines = ["│ 处理中", "│ 思考 正在定位 token 失效路径"];
+	refreshActivityArea(runtime, fake.host, deps);
+	assert.deepEqual(runtime.lines, lines, "新行出现时就地长高");
+
+	lines = ["│ 处理中"];
+	refreshActivityArea(runtime, fake.host, deps);
+	assert.deepEqual(runtime.lines, ["│ 处理中", ""], "行变少时用空行补齐，不缩回去");
+});
+
+test("清理活动区后补位高度归零，下一轮重新计算", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	const deps = createDeps(activeSnapshot(), ["│ 处理中", "│ 思考"]);
+
+	refreshActivityArea(runtime, fake.host, deps);
+	clearActivityArea(runtime, fake.host);
+	assert.equal(runtime.paddedRows, 0);
+});
+
 test("重复启动定时器不会叠加", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
