@@ -43,7 +43,7 @@ import { getTextContent, hasNonTextContent, limitReturnedToolResult } from "./ou
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createTranslator, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 import {
   buildSummaryPrompt,
   buildSummarySystemPrompt,
@@ -1567,6 +1567,8 @@ function registerDistillStatsCommand(
 }
 
 export default function piDistillExtension(pi: ExtensionAPI) {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   const pendingCalls = new Map<string, PendingDistillCall>();
   const reportedWarnings = new Set<string>();
   let sessionStats = createDistillSessionStats();

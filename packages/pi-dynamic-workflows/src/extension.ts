@@ -1,6 +1,6 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
-import { createTranslator, loadCatalog, notifyWithSource } from "pi-extensions-i18n";
+import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource } from "pi-extensions-i18n";
 import { Type } from "typebox";
 import { loadConfig, saveConfig } from "./config.ts";
 import { cancelRunningWorkflow, createWorkflowTool, renderWorkflowThemed } from "./index.ts";
@@ -9,6 +9,8 @@ import { NOTICE_SOURCE } from "./notice.ts";
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
 export default function extension(pi: ExtensionAPI) {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   // Subagent session 不注册 workflow 工具：subagent 是 workflow 的执行节点，
   // 不应再拥有启动 workflow 的能力（防止递归调用、误激活、误取消等）。
   // pi-interactive-subagents 启动子 pi session 时会设置 PI_SUBAGENT_NAME。

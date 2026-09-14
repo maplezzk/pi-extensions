@@ -23,6 +23,7 @@ import {
   type ToolDisplayConfig,
 } from "./types.js";
 import {
+  installNoticeRenderer,
   notifyWithSource,
   type NoticeColor,
   type NoticeSource,
@@ -180,5 +181,7 @@ export default function toolDisplayExtension(
   pi: ExtensionAPI,
   initial: ConfigLoadResult = loadToolDisplayConfig(),
 ): void {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   ensureToolDisplayHost(pi, initial);
 }

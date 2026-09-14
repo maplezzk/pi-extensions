@@ -14,7 +14,8 @@ Pi 扩展公共国际化运行时。它提供基于 catalog 的小型 API，支�
 - 提供 `/config:language` 交互式命令，也支持 `/config:language en-US` 直接设置。
 - 加载并校验 catalog，要求每个消息 key 同时提供两种语言。
 - 为 UI、命令描述和 Agent prompt 提供用户文案插值。
-- 提供统一的用户提示出口 `notifyWithSource`：给提示加「来源标签 + 固定颜色」，解决 Pi 对 `info` 级提示只显示暗灰无前缀文本、用户分不清消息来自哪个扩展的问题。
+- 提供统一的用户提示出口 `notifyWithSource`：把提示画成会话区里的**带底色消息块**（用户消息同款底色，见下条），并配上「来源标签 + 固定颜色」，解决 Pi 对 `info` 级提示只显示暗灰无前缀文本、用户既分不清来源也不容易注意到的问题。
+- 提示落在消息下方、不进 LLM 上下文：通过 Pi 的自定义条目（`appendEntry` + `registerEntryRenderer`）实现，条目只在本地渲染，不消耗上下文窗口。
 
 ## 安装
 
@@ -39,7 +40,13 @@ const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("failed") });
 ```
 
-输出形如 `[distill] 提示正文`：标签按扩展固定色，正文保持原样，`level` 仍然决定 Pi 侧的黄色 `Warning:` / 红色 `Error:` 前缀。颜色只在 tui 模式添加，rpc/print/json 模式输出纯文本，不会出现 ANSI 乱码。
+输出是一个和用户消息同款的**实心底色块**，首行是 `[distill] 提示正文`：标签按扩展固定色，正文颜色由 `level` 决定（`warning` 黄、`error` 红、`info` 用扩展消息正文色），也可以用 `textColor` 覆盖成结论行自带的语义色（`dim`/`success` 等）。
+
+渲染细节：
+
+- 只有 TUI 会把提示画成底色块；rpc/print/json 仍走 `ctx.ui.notify`，输出纯文本 `[distill] 提示正文`，不会出现 ANSI 乱码。
+- 底色块由本包的扩展入口 `installNoticeRenderer(pi)` 注册一次，因此使用本包的功能包必须在自己的 `pi.extensions` 里加载 `../pi-extensions-i18n/index.ts`。
+- 老版本 Pi 没有这两个能力时不会注入，提示自动退回 `ctx.ui.notify`（仍然可见，只是没有底色）。
 
 需要更细粒度控制时用 `formatNotice({ source, message, mode, theme })` 只取文本。
 

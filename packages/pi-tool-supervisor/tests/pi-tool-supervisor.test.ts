@@ -1304,19 +1304,21 @@ test("用户可见提示统一带 [supervisor] 来源标签", async () => {
   assert.doesNotMatch(notifications[0]?.message ?? "", /\u001b\[/);
 });
 
-test("TUI 模式下只给 [supervisor] 标签上色，正文保持纯文本", async () => {
+test("TUI 模式下提示写进会话条目，由带底色的消息块渲染", async () => {
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const commands = new Map<string, ConfigCommand>();
+  /** 记录提示条目：TUI 走带底色消息块，而不是一行纯文本 notify。 */
+  const entries: Array<{ customType: string; data: Record<string, unknown> }> = [];
   const pi = {
     getAllTools: () => [],
     registerEntryRenderer: () => undefined,
-    appendEntry: () => undefined,
+    appendEntry: (customType: string, data: Record<string, unknown>) => entries.push({ customType, data }),
     registerCommand: (name: string, command: ConfigCommand) => commands.set(name, command),
     on: () => undefined,
   } as unknown as Parameters<typeof piSupervisorExtension>[0];
   piSupervisorExtension(pi);
   const notifications: Array<{ message: string; type?: string }> = [];
-  /** 记录 TUI 提示，断言只有标签带上颜色。 */
+  /** 记录回退用的纯文本提示；TUI 下不应被调用。 */
   const recordNotification = (message: string, type?: string) => notifications.push({ message, type });
   const ctx = {
     hasUI: false,
@@ -1329,9 +1331,14 @@ test("TUI 模式下只给 [supervisor] 标签上色，正文保持纯文本", as
 
   await commands.get("config:tool-supervisor")?.handler("", ctx);
 
-  assert.equal(notifications.length, 1);
-  assert.match(notifications[0]?.message ?? "", /^<success>\[supervisor\]<\/success> /);
-  assert.equal((notifications[0]?.message ?? "").match(/<success>/g)?.length, 1);
+  assert.deepEqual(notifications, []);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.customType, "pi-extensions-notice");
+  assert.equal(entries[0]?.data.tag, "supervisor");
+  assert.equal(entries[0]?.data.color, "success");
+  assert.equal(entries[0]?.data.level, "warning");
+  // 标签由渲染器画在最前面，条目正文里不再重复带标签。
+  assert.doesNotMatch(String(entries[0]?.data.message), /\[supervisor\]/);
 });
 
 test("新配置不存在时读取 pi-file-edit-review 旧配置", async () => {

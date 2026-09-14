@@ -57,7 +57,7 @@ Keep packages composable and independently installable. Avoid coupling one exten
 
 User-visible messages, command descriptions, tool descriptions, and agent-facing prompts must be backed by a catalog containing both `zh-CN` and `en-US` entries. Use `pi-extensions-i18n`'s `createTranslator` and `loadCatalog` helpers.
 
-User-visible notices must go through `pi-extensions-i18n`'s `notifyWithSource`, not `ctx.ui.notify` directly. Pi renders `info` notices as dim, unprefixed text, so every package carries a short source tag and a fixed label color to stay distinguishable in one session:
+User-visible notices must go through `pi-extensions-i18n`'s `notifyWithSource`, not `ctx.ui.notify` directly. Pi renders `info` notices as one line of dim, unprefixed text, so every package carries a short source tag and a fixed label color, and the notice is drawn as a filled background block in the transcript (the same `customMessageBg` block Pi uses for extension messages):
 
 ```ts
 const NOTICE_TAG = "distill";
@@ -67,7 +67,7 @@ const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("failed") });
 ```
 
-Keep the tag short and unique per package, keep the level accurate (`warning`/`error` keep Pi's yellow/red prefix), and do not add colors outside TUI mode — the helper already handles that. Footer status lines that carry semantic colors keep their own palette, but still go through the shared helper for formatting.
+Keep the tag short and unique per package, keep the level accurate, and do not add colors outside TUI mode — the helper already handles that. The transcript block is registered once by `pi-extensions-i18n`'s own extension entry, so a package that uses the helper must load `../pi-extensions-i18n/index.ts` in its `pi.extensions` list. Verdict-style notices with their own semantic color pass `textColor` instead of building a footer status line.
 
 Keep developer comments and implementation notes concise. Keep the English and Chinese README files separate so each language has a complete, readable entrypoint.
 

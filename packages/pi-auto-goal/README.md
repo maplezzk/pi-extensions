@@ -50,7 +50,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
   "notifyOnStopDecision": false,
-  "showStatusLine": true,
+  "showVerdictNotice": true,
   "judgeMaxTokens": 2000,
   "continueMessageTemplate": "",
   "forcedDecision": "auto"
@@ -69,7 +69,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | `maxFinalOutputChars` | `4000` | Truncation limit for the agent's final output. |
 | `maxToolTraceEntries` | `20` | Maximum tool-trace lines. |
 | `notifyOnStopDecision` | `false` | Also notify when the judge accepts the stop. |
-| `showStatusLine` | `true` | Keep the latest verdict as one coloured line in the footer. |
+| `showVerdictNotice` | `true` | Show the latest verdict as a filled notice block in the transcript, below the message. |
 | `judgeMaxTokens` | `2000` | Output-token ceiling for one judge call, clamped to the model's own output limit. |
 | `continueMessageTemplate` | `""` | Overrides the built-in message; supports `{reason}`. |
 | `forcedDecision` | `"auto"` | Override verdict for controlled experiments: `auto` (normal), `continue` (always treat as premature stop), `stop` (always treat as acceptable stop). |
@@ -78,9 +78,9 @@ Unknown fields and invalid values are rejected with an explicit error instead of
 
 ### How to tell whether it fired
 
-The footer always carries one coloured line with the latest verdict (`showStatusLine`, on by default):
+After each turn the transcript shows a filled `[auto-goal]` block below the message with the verdict (`showVerdictNotice`, on by default):
 
-| Status line | Colour | Meaning |
+| Verdict line | Colour | Meaning |
 | --- | --- | --- |
 | `⚖ stop accepted 0.92` | green | Judged as a normal stop; no intervention. |
 | `⚖ continued 1/2` | yellow | Judged as a premature stop; the continuation was sent. |
@@ -88,6 +88,8 @@ The footer always carries one coloured line with the latest verdict (`showStatus
 | `⚖ interrupted, not judged` | grey | You pressed Esc; the judgement stood down. |
 | `⚖ turn did not finish normally, not judged` | grey | The turn ended with a failure or a truncated record. |
 | `⚖ judge failed` | red | The judge call failed (details in the notification). |
+
+The verdict never enters the LLM context and is not written to the footer status bar; it is a local session entry, so it still renders the same way when you reopen the session.
 
 ### Which turns get judged
 

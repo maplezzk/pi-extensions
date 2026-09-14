@@ -48,7 +48,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { createTranslator, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -677,6 +677,8 @@ async function manageProviderFlow(
 }
 
 export default async function (pi: ExtensionAPI) {
+	// 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+	installNoticeRenderer(pi);
 	// 加载期没有 ctx，消息统一收集，session_start 时 flush（运行期后续追加的也会在下个 session 补发）
 	const pendingNotices: Notice[] = [];
 	// 有 UI 时走统一来源包装；无 UI 时退到日志前缀，不静默丢掉提示

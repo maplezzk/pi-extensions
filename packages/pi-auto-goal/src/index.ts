@@ -9,7 +9,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { notifyWithSource, type NoticeLevel } from "pi-extensions-i18n";
+import { installNoticeRenderer, notifyWithSource, type NoticeLevel } from "pi-extensions-i18n";
 import { i18n } from "./i18n.ts";
 import { NOTICE_SOURCE } from "./notice.ts";
 import {
@@ -26,19 +26,17 @@ import { createJudgeModelInvoker, createJudgeModelSource } from "./judge-model.t
 import { createStopVerdictRequester } from "./verdict.ts";
 import { formatBudget, isJudgeableStopReason } from "./guard.ts";
 import {
-  buildCanceledStatusLine,
-  buildNotCompletedStatusLine,
-  buildStatusLine,
-  colorizeText,
-  type ColoredLine,
-} from "./status-line.ts";
+  buildInterruptedLine,
+  buildNotCompletedLine,
+  buildVerdictLine,
+  verdictNoticeLevel,
+  type VerdictLine,
+} from "./verdict-notice.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
 const NOTICE_INFO: NoticeLevel = "info";
 const NOTICE_WARNING: NoticeLevel = "warning";
 const NOTICE_ERROR: NoticeLevel = "error";
-/** 页脚状态行占用的键：一个扩展只占一行。 */
-const STATUS_KEY = "pi-auto-goal";
 
 /** 允许自动判定的运行模式。 */
 type JudgeMode = "tui" | "rpc";
@@ -135,8 +133,8 @@ function buildStatusText(runtime: AutoGoalRuntime): string {
     i18n.t("configStatusLimit", { value: limit }),
     i18n.t("configStatusThreshold", { value: String(config.confidenceThreshold) }),
     i18n.t("configStatusJudgeTokens", { value: String(config.judgeMaxTokens) }),
-    i18n.t("configStatusStatusLine", {
-      value: i18n.t(config.showStatusLine ? "configOn" : "configOff"),
+    i18n.t("configStatusVerdictNotice", {
+      value: i18n.t(config.showVerdictNotice ? "configOn" : "configOff"),
     }),
     i18n.t("configStatusUsed", { value: String(runtime.used) }),
   ].join("\n");
@@ -162,8 +160,6 @@ function persistConfig(next: AutoGoalConfig, ctx: ExtensionCommandContext): bool
 function applyConfig(next: AutoGoalConfig, runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): void {
   if (!persistConfig(next, ctx)) return;
   runtime.config = next;
-  // 已关闭或已隐藏状态行时撤下它，避免残留上一轮的结论。
-  if (!next.enabled || !next.showStatusLine) ctx.ui.setStatus(STATUS_KEY, undefined);
 }
 
 /** 处理交互式菜单选择。 */
@@ -228,19 +224,24 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
 }
 
 /**
- * 把一行状态写进页脚；关闭状态行时保持原状。
+ * 把判定结论写进会话区（消息下方，带底色的消息块）。
  *
- * 页脚状态行不能改走共享的 notifyWithSource：它会给消息加「来源标签」前缀，
- * 而页脚这里显示的是一条结论（如「已催促 1/2」），宽度有限且已有语义色（status-line 决定），
- * 再加扩展标签既挤占宽度，也会和其它扩展的提示混淆。
+ * 走和所有扩展共用的 notifyWithSource，标签固定为 auto-goal；
+ * 结论行自带语义色（绿/黄/红/灰），用 textColor 覆盖正文颜色。
  */
-function writeStatusLine(
+function writeVerdictNotice(
   ctx: Pick<ExtensionContext, "mode" | "ui">,
   runtime: AutoGoalRuntime,
-  line: ColoredLine,
+  line: VerdictLine,
 ): void {
-  if (!runtime.config.showStatusLine) return;
-  ctx.ui.setStatus(STATUS_KEY, colorizeText(line, ctx.mode, ctx.ui.theme));
+  if (!runtime.config.showVerdictNotice) return;
+  notifyWithSource({
+    ctx,
+    source: NOTICE_SOURCE,
+    level: verdictNoticeLevel(line.color),
+    message: line.text,
+    textColor: line.color,
+  });
 }
 
 /** 把判定结果落到 UI 与会话：只有 continue 才会真的发消息。 */
@@ -250,7 +251,7 @@ function applyOutcome(
   runtime: AutoGoalRuntime,
   outcome: StopOutcome,
 ): void {
-  writeStatusLine(ctx, runtime, buildStatusLine(outcome));
+  writeVerdictNotice(ctx, runtime, buildVerdictLine(outcome));
   switch (outcome.kind) {
     case "continue": {
       // 先发送再记账：发送失败不应该消耗干预预算。
@@ -327,10 +328,10 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
     // 把这种轮次当成提前停止去催，会立刻把 agent 复活，让人以为 Esc 没生效。
     const stopReason = readLastAssistantStopReason(branch);
     if (!isJudgeableStopReason(stopReason)) {
-      writeStatusLine(
+      writeVerdictNotice(
         ctx,
         runtime,
-        stopReason === STOP_REASON_ABORTED ? buildCanceledStatusLine() : buildNotCompletedStatusLine(),
+        stopReason === STOP_REASON_ABORTED ? buildInterruptedLine() : buildNotCompletedLine(),
       );
       return;
     }
@@ -371,6 +372,8 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
 
 /** 扩展入口。 */
 export default function piAutoGoal(pi: ExtensionAPI): void {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   const { config, error } = loadInitialConfig();
   const runtime = createRuntime(config);
   registerConfigCommand(pi, runtime);

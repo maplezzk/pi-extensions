@@ -50,7 +50,7 @@ pi install npm:pi-auto-goal
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
   "notifyOnStopDecision": false,
-  "showStatusLine": true,
+  "showVerdictNotice": true,
   "judgeMaxTokens": 2000,
   "continueMessageTemplate": "",
   "forcedDecision": "auto"
@@ -69,7 +69,7 @@ pi install npm:pi-auto-goal
 | `maxFinalOutputChars` | `4000` | agent 最后输出截断长度。 |
 | `maxToolTraceEntries` | `20` | 工具轨迹最大条数。 |
 | `notifyOnStopDecision` | `false` | 判定为「可以停止」时是否也提示。 |
-| `showStatusLine` | `true` | 把最近一次判定结论写成页脚的一行状态（带颜色，一直留在那里）。 |
+| `showVerdictNotice` | `true` | 把最近一次判定结论写进会话区（落在消息下方，带底色的消息块）。 |
 | `judgeMaxTokens` | `2000` | 单次判定调用的输出 token 上限，同时会被收敛到模型自身的输出上限。 |
 | `continueMessageTemplate` | `""` | 覆盖内置催促文案，支持 `{reason}` 占位。 |
 | `forcedDecision` | `"auto"` | 受控实验开关：`auto`（正常判定）、`continue`（强制判定为提前停止）、`stop`（强制判定为可停止）。 |
@@ -78,9 +78,9 @@ pi install npm:pi-auto-goal
 
 ### 怎么知道它到底有没有触发
 
-页脚会常驻一行带颜色的判定结论（由 `showStatusLine` 控制，默认开）：
+每轮结束后，会话区里（消息下方）会出现一个带底色的 `[auto-goal]` 消息块，内容是判定结论（由 `showVerdictNotice` 控制，默认开）：
 
-| 状态行 | 颜色 | 含义 |
+| 结论行 | 颜色 | 含义 |
 | --- | --- | --- |
 | `⚖ 停止合理 0.92` | 绿 | 判定为正常结束，没有干预。 |
 | `⚖ 已催促 1/2` | 黄 | 判定为提前停止，已自动发催促。 |
@@ -88,6 +88,8 @@ pi install npm:pi-auto-goal
 | `⚖ 已打断，未判定` | 灰 | 你按 Esc 打断了这一轮，判定主动让路。 |
 | `⚖ 本轮未正常结束，未判定` | 灰 | 这一轮以失败或残缺结束（不是 agent 自己停下）。 |
 | `⚖ 判定失败` | 红 | 判定调用失败（详情在同时弹出的提示里）。 |
+
+判定结论不进 LLM 上下文，也不会写到页脚状态栏；它是本包写进会话的一条本地条目，重新打开会话时仍会照原样显示。
 
 ### 什么轮次会被判定
 

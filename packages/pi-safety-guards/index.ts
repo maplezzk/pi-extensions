@@ -10,7 +10,7 @@ import { compileRules, evaluateRules, type ModuleLoader, type PathRuleEvidence }
 import { addedDirectoryPathsFromSession } from "./src/bash-directory-scope-utils.ts";
 import { i18n } from "./src/i18n.ts";
 import type { SafetyConfig, SafetyRule } from "./src/types.ts";
-import { notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
 const NOTICE_TAG = "safety";
@@ -176,6 +176,8 @@ export async function registerSafetyGuards(
 
 /** 配置或启用规则加载失败时阻断 Bash，避免把失败当作关闭保护。 */
 export default async function piSafetyGuards(pi: ExtensionAPI): Promise<void> {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   registerConfigCommand(pi);
   try {
     await registerSafetyGuards(pi, loadConfig());

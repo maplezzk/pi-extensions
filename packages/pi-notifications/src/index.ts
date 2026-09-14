@@ -12,7 +12,7 @@ import {
 } from "./adapter.ts";
 import { loadConfigWithDiagnostics, parseConfig, saveConfig, type NotificationConfig } from "./config.ts";
 import { i18n } from "./i18n.ts";
-import { notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
+import { installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
 
 export type { NotificationConfig } from "./config.ts";
 export type {
@@ -209,6 +209,8 @@ export function notify(title: string, subtitle: string, message: string): void {
 }
 
 export default function piNotifications(pi: ExtensionAPI): void {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   registerConfigCommand(pi);
   const runtime = createRuntime();
   let turnCount = 0;

@@ -175,9 +175,9 @@
     "zh-CN": "判定输出上限：{value} tokens",
     "en-US": "Judge output limit: {value} tokens"
   },
-  "configStatusStatusLine": {
-    "zh-CN": "页脚状态行：{value}",
-    "en-US": "Footer status line: {value}"
+  "configStatusVerdictNotice": {
+    "zh-CN": "判定结论写到会话区（消息下方）：{value}",
+    "en-US": "Verdict notice below the message: {value}"
   },
   "statusStop": {
     "zh-CN": "⚖ 停止合理 {confidence}",
