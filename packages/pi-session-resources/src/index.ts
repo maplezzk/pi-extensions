@@ -8,7 +8,7 @@ import { collectSessionResources, collectToolResources, ResourceIndex } from "./
 import { i18n } from "./i18n.ts";
 import { SessionResourceEditor } from "./picker.ts";
 import { configPath, loadConfig, saveConfig } from "./config.ts";
-import { notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
 const NOTICE_TAG = "resources";
@@ -34,6 +34,8 @@ type CommandAction = (typeof COMMAND_ACTION)[keyof typeof COMMAND_ACTION];
 
 /** Registers passive collection and the tabbed # resource picker. */
 export default function sessionResourcesExtension(pi: ExtensionAPI): void {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   const resources = new ResourceIndex();
   let pickerEnabled = true;
   let configError: unknown;

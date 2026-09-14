@@ -33,8 +33,8 @@ export interface AutoGoalConfig {
   maxToolTraceEntries: number;
   /** 判定为「可以停止」时是否也弹出提示。 */
   notifyOnStopDecision: boolean;
-  /** 是否把最近一次判定结论写成页脚的一行状态。 */
-  showStatusLine: boolean;
+  /** 是否把最近一次判定结论写进会话区（消息下方，带底色的消息块）。 */
+  showVerdictNotice: boolean;
   /** 单次判定调用的输出 token 上限；调试时可适当调高以避免推理占满预算。 */
   judgeMaxTokens: number;
   /** 自动催促消息模板；空字符串表示使用内置模板。支持 {reason} 占位。 */
@@ -89,14 +89,14 @@ export const DEFAULT_AUTO_GOAL_CONFIG: AutoGoalConfig = {
   maxFinalOutputChars: DEFAULT_MAX_FINAL_OUTPUT_CHARS,
   maxToolTraceEntries: DEFAULT_MAX_TOOL_TRACE_ENTRIES,
   notifyOnStopDecision: false,
-  showStatusLine: true,
+  showVerdictNotice: true,
   judgeMaxTokens: DEFAULT_JUDGE_MAX_TOKENS,
   continueMessageTemplate: "",
   forcedDecision: "auto",
 };
 
 /** 布尔字段清单。 */
-const BOOLEAN_FIELDS = ["enabled", "includeToolTrace", "notifyOnStopDecision", "showStatusLine"] as const;
+const BOOLEAN_FIELDS = ["enabled", "includeToolTrace", "notifyOnStopDecision", "showVerdictNotice"] as const;
 /** 必须为正整数的字段清单。 */
 const POSITIVE_INTEGER_FIELDS = ["maxUserRequestChars", "maxFinalOutputChars"] as const;
 /** 允许为 0（表示不限制）的整数字段清单。 */
@@ -120,6 +120,27 @@ const KNOWN_FIELDS = new Set([
   "timeoutSeconds",
   "judgeMaxTokens",
 ]);
+
+/**
+ * 旧配置字段到当前字段的映射。
+ * 0.3.0 及以前把判定结论写在页脚，字段名是 showStatusLine；
+ * 现在结论落在会话区（消息下方）且走共享提示出口，字段改名为 showVerdictNotice。
+ */
+const LEGACY_FIELD_NAMES: ReadonlyArray<{ legacy: string; current: string }> = [
+  { legacy: "showStatusLine", current: "showVerdictNotice" },
+];
+
+/**
+ * 就地把旧字段名改写成当前字段名，让旧配置文件继续可用。
+ * 两个字段同时存在时以当前字段名为准，只丢弃旧名避免被当成未知字段报错。
+ */
+function applyLegacyFieldNames(raw: Record<string, unknown>): void {
+  for (const { legacy, current } of LEGACY_FIELD_NAMES) {
+    if (raw[legacy] === undefined) continue;
+    if (raw[current] === undefined) raw[current] = raw[legacy];
+    delete raw[legacy];
+  }
+}
 
 /** 返回 pi-auto-goal 配置文件路径。 */
 export function configPath(agentDir = getAgentDir()): string {
@@ -166,6 +187,7 @@ export function parseConfig(value: unknown): AutoGoalConfig {
     throw new Error("configuration must be an object");
   }
   const raw = value as Record<string, unknown>;
+  applyLegacyFieldNames(raw);
   for (const key of Object.keys(raw)) {
     if (!KNOWN_FIELDS.has(key)) throw new Error(`unknown configuration field: ${key}`);
   }

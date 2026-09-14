@@ -8,6 +8,7 @@ import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-
 import {
   createTranslator,
   loadCatalog,
+  installNoticeRenderer,
   notifyWithSource,
   type NoticeColor,
   type NoticeLevel,
@@ -303,6 +304,8 @@ function notifyDiagnostics(ctx: ExtensionContext, loaded: LoadedNestedSkillsConf
 
 /** 注册递归技能别名，同时把实际技能正文交给 Pi 原生技能加载和展开流程。 */
 export default function nestedSkillsExtension(pi: ExtensionAPI): void {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   const loaded = loadConfig();
   const scan = scanSkillRoots(loaded.config.skillRoots);
   const index = buildSkillIndex(scan);

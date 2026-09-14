@@ -11,9 +11,19 @@ test("空配置回落默认值，且默认允许自动催停两次", () => {
   assert.equal(DEFAULT_AUTO_GOAL_CONFIG.maxAutoContinues, 2);
 });
 
-test("默认开启页脚状态行，默认不提示「可以停止」", () => {
-  assert.equal(DEFAULT_AUTO_GOAL_CONFIG.showStatusLine, true);
+test("默认把判定结论写进会话区，默认不提示「可以停止」", () => {
+  assert.equal(DEFAULT_AUTO_GOAL_CONFIG.showVerdictNotice, true);
   assert.equal(DEFAULT_AUTO_GOAL_CONFIG.notifyOnStopDecision, false);
+});
+
+test("旧字段名 showStatusLine 仍然可用，值会被当成 showVerdictNotice", () => {
+  assert.equal(parseConfig({ showStatusLine: false }).showVerdictNotice, false);
+  // 两个字段同时出现时以新字段名为准。
+  assert.equal(
+    parseConfig({ showStatusLine: false, showVerdictNotice: true }).showVerdictNotice,
+    true,
+  );
+  assert.throws(() => parseConfig({ showStatusLine: "yes" }), /showVerdictNotice must be a boolean/);
 });
 
 test("默认判定输出上限给推理型模型留出余量", () => {
@@ -25,7 +35,7 @@ test("布尔、字符串与数值字段按类型校验", () => {
   assert.equal(parseConfig({ enabled: false }).enabled, false);
   assert.equal(parseConfig({ includeToolTrace: false }).includeToolTrace, false);
   assert.equal(parseConfig({ notifyOnStopDecision: true }).notifyOnStopDecision, true);
-  assert.equal(parseConfig({ showStatusLine: false }).showStatusLine, false);
+  assert.equal(parseConfig({ showVerdictNotice: false }).showVerdictNotice, false);
   assert.equal(parseConfig({ maxAutoContinues: 0 }).maxAutoContinues, 0);
   assert.equal(parseConfig({ maxAutoContinues: 5 }).maxAutoContinues, 5);
   assert.equal(parseConfig({ confidenceThreshold: 1 }).confidenceThreshold, 1);
@@ -39,7 +49,7 @@ test("布尔、字符串与数值字段按类型校验", () => {
   for (const value of [
     { enabled: "true" },
     { includeToolTrace: 1 },
-    { showStatusLine: "yes" },
+    { showVerdictNotice: "yes" },
     { maxAutoContinues: -1 },
     { maxAutoContinues: 1.5 },
     { maxToolTraceEntries: -1 },

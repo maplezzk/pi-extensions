@@ -8,7 +8,7 @@
  */
 
 import { complete } from "@earendil-works/pi-ai/compat";
-import { createTranslator, loadCatalog, notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
+import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -945,6 +945,8 @@ function registerReviewConfigCommand(pi: ExtensionAPI): void {
 }
 
 export default function piSupervisorExtension(pi: ExtensionAPI) {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   const pendingCalls = new Map<string, PendingFileReviewCall>();
   const disposeToolDisplayMiddleware = registerSupervisorToolDisplayMiddleware();
   registerSupervisorFallbackRenderer(pi);

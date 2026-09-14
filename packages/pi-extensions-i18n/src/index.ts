@@ -6,7 +6,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { notifyWithSource, type NoticeColor, type NoticeSource } from "./notice.ts";
+import {
+  installNoticeRenderer,
+  notifyWithSource,
+  type NoticeColor,
+  type NoticeSource,
+} from "./notice.ts";
 
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
@@ -273,15 +278,27 @@ function registerLocaleCommand(pi: ExtensionAPI): void {
 }
 
 export default function piI18n(pi: ExtensionAPI): void {
+  // 提示改走会话区的自定义条目（带底色消息块），渲染器在这里一次性注册。
+  installNoticeRenderer(pi);
   registerLocaleCommand(pi);
 }
 
 export {
   formatNotice,
   notifyWithSource,
+  installNoticeRenderer,
+  hasNoticeRenderer,
+  resetNoticeRenderer,
+  renderNoticeEntry,
+  noticeBodyColor,
+  NOTICE_BACKGROUND_COLOR,
   NOTICE_COLOR_MODE,
+  NOTICE_ENTRY_TYPE,
+  type NoticeApi,
   type NoticeColor,
   type NoticeContext,
+  type NoticeEntryData,
+  type NoticeEntryTheme,
   type NoticeLevel,
   type NoticeRenderOptions,
   type NoticeSendOptions,

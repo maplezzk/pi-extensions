@@ -14,7 +14,8 @@ Independent Pi extensions still need the same operational pieces: a portable con
 - `/config:language` interactive command, plus `/config:language en-US` direct selection.
 - Catalog loading and validation requiring both language entries for every message key.
 - Translator interpolation for user-facing UI, command descriptions, and agent prompts.
-- A single notice outlet, `notifyWithSource`, that prefixes every user-visible notice with a short source tag in the package's own label colour. Pi renders `info` notices as dim, unprefixed text, so without a tag you cannot tell which extension spoke.
+- A single notice outlet, `notifyWithSource`, that draws every user-visible notice as a filled background block in the transcript (the same block Pi uses for extension messages) with a short source tag in the package's own label colour. Pi renders `info` notices as dim, unprefixed text, so without the block and tag you cannot tell which extension spoke.
+- Notices land below the message and stay out of the LLM context: they are written as Pi custom entries (`appendEntry` + `registerEntryRenderer`) and only affect the transcript.
 
 ## Install
 
@@ -66,7 +67,7 @@ const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("failed") });
 ```
 
-This renders as `[distill] message`: the tag carries the package colour, the message stays untouched, and `level` still decides Pi's yellow `Warning:` / red `Error:` prefix. Colours are only added in tui mode; rpc/print/json get plain text so no ANSI leaks into other frontends. Use `formatNotice({ source, message, mode, theme })` when you only need the rendered string.
+This renders as a filled background block with `[distill] message` on its first line: the tag carries the package colour, the body colour follows `level` (`warning` yellow, `error` red, `info` the extension message text colour), and `textColor` overrides the body colour for verdict-style lines that carry their own semantic colour. In tui mode the notice is written as a Pi custom entry below the message; rpc/print/json keep using `ctx.ui.notify` with plain `[distill] message` text so no ANSI leaks into other frontends. The block is registered once by this package's own extension entry, so a package that uses the helper must load `../pi-extensions-i18n/index.ts` in its `pi.extensions` list. Use `formatNotice({ source, message, mode, theme })` when you only need the rendered string.
 
 Other exports:
 

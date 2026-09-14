@@ -3,7 +3,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { createTranslator, loadCatalog, notifyWithSource } from "pi-extensions-i18n";
+import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource } from "pi-extensions-i18n";
 import { NOTICE_SOURCE } from "./notice.ts";
 import turnElapsed from "./turn-elapsed.ts";
 import tps from "./tps.ts";
@@ -98,6 +98,8 @@ function registerConfigCommand(pi: ExtensionAPI): void {
 
 /** 注册耗时和 TPS 指标事件；配置关闭时不注册指标处理器。 */
 export default function piHud(pi: ExtensionAPI): void {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   registerConfigCommand(pi);
   let config: MetricsConfig;
   let configError: unknown;

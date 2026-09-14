@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import type { TerminalRenameOutcome, TerminalRenameTarget, ResolveRenameOptions } from "pi-terminal-mux";
 import { configPath, loadConfig, parseConfig, saveConfig, type NamingConfig } from "./config.ts";
 import { i18n } from "./i18n.ts";
-import { notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
 const NOTICE_TAG = "naming";
@@ -320,6 +320,8 @@ export async function registerNaming(
 
 /** 配置错误在 session_start 报告，不注册不完整的命名功能。 */
 export default async function namingExtension(pi: ExtensionAPI): Promise<void> {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   registerNamingConfigCommand(pi);
   let config: NamingConfig;
   try { config = loadConfig(); }
