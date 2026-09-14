@@ -170,7 +170,7 @@ test("warning/error 级别用黄色/红色正文，语义色覆盖优先", () =>
 test("提示块不留上下空白，细节行只在展开时显示", () => {
   /** 一次判定结论的细节行：收起时不应出现，展开时应逐行追加。 */
   const details = ["理由：用户只是打招呼", "判定模型：llm-proxy/LOW"];
-  const entry = { tag: "auto-goal", color: "accent", level: "info", message: "⚖ 停止合理 1.0", details };
+  const entry = { tag: "auto-goal", color: "accent", level: "info", message: "⚖️ 判定可停止 · 置信度 92%", details };
   const collapsed = renderNoticeLines(entry);
   const expanded = renderNoticeLines(entry, true);
 

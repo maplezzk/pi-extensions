@@ -1,7 +1,7 @@
 /**
  * 判定结论的单条提示：文案、语义色和细节行都在这里决定，便于稳定测试。
  *
- * 一个有判定的轮次只产生一条提示：正文一行（如「⚖ 停止合理 1.0」），
+ * 一个有判定的轮次只产生一条提示：正文一行（如「⚖️ 判定可停止 · 置信度 92%」），
  * 理由、失败原因、发送出去的催促等细节放在 details 里，默认收起、Ctrl+O 展开，
  * 避免每轮往会话区里堆好几条提示。
  *
@@ -29,8 +29,21 @@ export interface VerdictNotice {
   details: string[];
 }
 
-/** 置信度展示精度：一位小数足够区分把握程度。 */
-const CONFIDENCE_DECIMALS = 1;
+/** 判定模型给出的置信度区间：0 到 1。 */
+const CONFIDENCE_MIN = 0;
+const CONFIDENCE_MAX = 1;
+/** 小数转百分比的换算系数。 */
+const PERCENT_SCALE = 100;
+
+/**
+ * 置信度展示：换算成整数百分比（如 0.923 → "92%"），让「0.9」这种小数不再需要用户猜。
+ * 越界值与非法值收敛到 0-100，避免渲染出 120% 或 NaN%。
+ */
+export function formatConfidence(confidence: number): string {
+  if (!Number.isFinite(confidence)) return `${CONFIDENCE_MIN}%`;
+  const bounded = Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, confidence));
+  return `${Math.round(bounded * PERCENT_SCALE)}%`;
+}
 
 /**
  * 结论色对应的提示级别：红→error、黄→warning、其余→info。
@@ -66,7 +79,7 @@ export function buildVerdictNotice(outcome: StopOutcome, sentMessage?: string): 
     }
     case "stop":
       return notice("success", i18n.t("statusStop", {
-        confidence: outcome.confidence.toFixed(CONFIDENCE_DECIMALS),
+        confidence: formatConfidence(outcome.confidence),
       }), [i18n.t("detailReason", { reason: outcome.reason })]);
     case "skipped":
       return outcome.code === STOP_SKIP_BUDGET

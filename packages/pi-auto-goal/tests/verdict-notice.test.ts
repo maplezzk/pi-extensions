@@ -5,6 +5,7 @@ import {
   buildNotCompletedNotice,
   buildSendFailedNotice,
   buildVerdictNotice,
+  formatConfidence,
   verdictNoticeLevel,
 } from "../src/verdict-notice.ts";
 import type { StopOutcome } from "../src/evaluate.ts";
@@ -22,7 +23,7 @@ test("早停干预：一行结论带进度，理由与已发送内容收进展�
   const notice = buildVerdictNotice(CONTINUE, "继续干");
   assert.equal(notice.color, "warning");
   assert.equal(notice.level, "warning");
-  assert.match(notice.text, /催促|continued/);
+  assert.match(notice.text, /催促|continuation/);
   assert.match(notice.text, /1\/2/);
   // 一行里不放理由，避免提示块变厚。
   assert.doesNotMatch(notice.text, /只改了/);
@@ -30,15 +31,25 @@ test("早停干预：一行结论带进度，理由与已发送内容收进展�
   assert.match(notice.details.join("\n"), /继续干/);
 });
 
-test("判定为可以停止：一行结论带置信度，理由在细节里", () => {
+test("判定为可以停止：一行结论带百分比置信度，理由在细节里", () => {
   const notice = buildVerdictNotice({ kind: "stop", reason: "已完成", confidence: 0.923 });
   assert.equal(notice.color, "success");
   assert.equal(notice.level, "info");
-  assert.match(notice.text, /停止合理|stop accepted/);
-  // 置信度只保留一位小数。
-  assert.match(notice.text, /0\.9/);
-  assert.doesNotMatch(notice.text, /0\.923/);
+  assert.match(notice.text, /判定可停止|stop accepted/);
+  // 置信度写成整数百分比，用户不用猜 0.9 是秒数还是把握程度。
+  assert.match(notice.text, /置信度 92%|confidence 92%/);
+  assert.doesNotMatch(notice.text, /0\.9/);
   assert.match(notice.details.join("\n"), /已完成/);
+});
+
+test("置信度换算成整数百分比，越界与非法值收敛到 0-100", () => {
+  assert.equal(formatConfidence(0.923), "92%");
+  assert.equal(formatConfidence(0.9), "90%");
+  assert.equal(formatConfidence(1), "100%");
+  assert.equal(formatConfidence(0), "0%");
+  assert.equal(formatConfidence(1.4), "100%");
+  assert.equal(formatConfidence(-0.2), "0%");
+  assert.equal(formatConfidence(Number.NaN), "0%");
 });
 
 test("预算用尽与判定失败：结论色不同，细节各自说明原因", () => {
