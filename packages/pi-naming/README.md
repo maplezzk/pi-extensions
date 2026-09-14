@@ -37,7 +37,9 @@ File: `<pi-agent-dir>/extensions/pi-naming/config.json`; respects `PI_CODING_AGE
     "preferredLength": 10,
     "language": "auto",
     "instructions": "",
-    "timeoutMs": 10000
+    "timeoutMs": 10000,
+    "maxTokens": 2048,
+    "effort": "low"
   }
 }
 ```
@@ -51,8 +53,12 @@ File: `<pi-agent-dir>/extensions/pi-naming/config.json`; respects `PI_CODING_AGE
 | `language` | `"auto"` | Dominant message language, or a language such as `English` or `日本語` |
 | `instructions` | `""` | Additional naming style instructions, not a template or executable code |
 | `timeoutMs` | `10000` | Title request timeout in milliseconds |
+| `maxTokens` | `2048` | Output budget for the title request, capped by the model output limit |
+| `effort` | `"low"` | Thinking effort: `minimal`, `low`, `medium`, `high`, `xhigh` or `max` |
 
-Lengths and timeout must be positive safe integers; timeout must not exceed `2147483647` milliseconds. Unknown fields and invalid values are reported and disable registration. A missing file uses defaults. Explicit names are not truncated by generation settings; additional instructions cannot bypass generated title normalization or length limits.
+Lengths, timeout and output budget must be positive safe integers; timeout must not exceed `2147483647` milliseconds. Unknown fields and invalid values are reported and disable registration. A missing file uses defaults. Explicit names are not truncated by generation settings; additional instructions cannot bypass generated title normalization or length limits.
+
+`maxLength` and `maxTokens` are independent. `maxLength` only truncates the generated title; `maxTokens` only budgets the model response. Reasoning models spend that same budget on thinking and on the title, so on a reasoning model raise `maxTokens` when titles come back empty and lower it to bound cost; `effort` controls how much of the budget thinking is likely to take. No field is derived from another.
 
 For longer English titles use `maxLength: 60`, `preferredLength: 40`, `language: "English"`. Model and authentication come from Pi's current selection; title language is independent of UI language.
 

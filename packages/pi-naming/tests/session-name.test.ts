@@ -75,9 +75,11 @@ test("requestSessionName 使用当前模型和鉴权信息单独请求标题", a
   let receivedApiKey = "";
   let receivedSystem = "";
   let receivedMaxTokens: number | undefined;
+  let receivedEffort: string | undefined;
   /** 返回固定标题并记录请求参数的 completion 测试替身。 */
   const completion: SessionNameCompletion = async (_model, context, options) => {
     receivedMaxTokens = options?.maxTokens;
+    receivedEffort = options?.reasoning;
     receivedSystem = context.systemPrompt ?? "";
     receivedPrompt = context.messages[0]?.content instanceof Array
       ? context.messages[0].content
@@ -125,20 +127,22 @@ test("requestSessionName 使用当前模型和鉴权信息单独请求标题", a
   assert.equal(name, "修复登录超时");
   assert.match(receivedPrompt, /修复登录超时/);
   assert.equal(receivedApiKey, "test-key");
-  assert.equal(receivedMaxTokens, 64);
+  assert.equal(receivedMaxTokens, 2048);
+  assert.equal(receivedEffort, "low");
   assert.match(receivedSystem, /15/);
-  const title = parseConfig({ title: { maxLength: 4, preferredLength: 3, language: "Japanese", instructions: "Keep API names" } }).title;
+  const title = parseConfig({ title: { maxLength: 4, preferredLength: 3, language: "Japanese", instructions: "Keep API names", effort: "high" } }).title;
   const custom = await requestSessionName({ userMessages: ["任务"], ctx, completion, title });
+  assert.equal(receivedEffort, "high");
   assert.equal(custom, "修复登录");
   assert.match(receivedSystem, /Japanese/);
   assert.match(receivedSystem, /Keep API names/);
   assert.match(receivedSystem, /4/);
   assert.match(receivedSystem, /3/);
   await requestSessionName({ userMessages: ["任务"], ctx, completion,
-    title: parseConfig({ title: { maxLength: 60 } }).title });
-  assert.equal(receivedMaxTokens, 240);
+    title: parseConfig({ title: { maxTokens: 600 } }).title });
+  assert.equal(receivedMaxTokens, 600);
   await requestSessionName({ userMessages: ["任务"], ctx, completion,
-    title: parseConfig({ title: { maxLength: 2000 } }).title });
+    title: parseConfig({ title: { maxTokens: 99999 } }).title });
   assert.equal(receivedMaxTokens, 4096);
 });
 
