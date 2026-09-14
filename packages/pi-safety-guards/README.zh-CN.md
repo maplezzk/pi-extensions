@@ -26,6 +26,8 @@ pi install npm:pi-safety-guards
 
 匹配基于解析后的命令，覆盖支持的 wrapper、字面量嵌套 shell、命令替换和重定向。`echo 'rm file'` 和 `git rm` 不视为实际执行 rm。
 
+每个预设就是包内 `presets/` 目录里的一个普通 JSON 文件：文件名就是预设名，文件内容就是规则数组，所以上表可以直接对着 `presets/destructive-operations.json` 和 `presets/workspace-boundary.json` 看。插件只加载自带文件，`config.json` 只能按名字选择预设，不能新增或替换预设文件。预设文件缺失、为空或格式错误时，会带上文件路径直接阻断 Bash，而不是默默关掉保护。
+
 ## 配置
 
 文件：`<pi-agent-dir>/extensions/pi-safety-guards/config.json`。agent 目录遵守 `PI_CODING_AGENT_DIR`。
@@ -50,7 +52,21 @@ pi install npm:pi-safety-guards
 - `message`：可选的非空文本，或包含 `zh-CN`、`en-US` 的对象。不填写时反馈规则 ID 和动作。
 - 预设和规则都为空时关闭检查，并提示当前没有启用保护。
 
-使用 `/config:safety-guards` 打开常规 TUI 预设菜单，输入 `reset` 恢复默认预设；保存后执行 `/reload`。
+使用 `/config:safety-guards` 打开常规 TUI 预设菜单，每项都会显示开/关和规则条数，菜单里的“查看生效规则明细”会打印合并后的规则；`/config:safety-guards show` 不打开菜单直接打印同一份列表，`reset` 恢复默认预设。
+
+```text
+预设 destructive-operations（4 条规则）
+  filesystem.delete → warn · commands: rm, rmdir（被 rules 覆盖）
+  filesystem.format → 已停用
+  filesystem.ownership → confirm · commands: chown
+  shell.fork-bomb → confirm · detector: fork-bomb
+预设 workspace-boundary（1 条规则）
+  paths.workspace → block · outsideRoots: [.]
+自定义规则 rules（1 条）
+  local.maven → block · commands: mvn, mvnw
+```
+
+列表按预设分组，并标注被 `rules` 覆盖或停用的规则。修改配置或预设文件后执行 `/reload`。
 
 ### 动作
 

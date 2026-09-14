@@ -9,6 +9,7 @@ import { parseConfig } from "../src/config.ts";
 import { i18n } from "../src/i18n.ts";
 
 type Handler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown;
+type CommandHandler = { handler: (args: string, ctx: ExtensionContext) => Promise<void> };
 
 /** 最小事件宿主；不提供 shell 执行接口，防止自动执行替代工具。 */
 function host(
@@ -18,12 +19,13 @@ function host(
   branch: readonly unknown[] = [],
 ) {
   const handlers = new Map<string, Handler>();
+  const commands = new Map<string, CommandHandler>();
   const prompts: string[] = [];
   const notices: { message: string; level?: "info" | "warning" | "error" }[] = [];
   const pi = {
     on: (name: string, handler: Handler) => handlers.set(name, handler),
-    // 配置命令仅需在真实宿主中注册，安全规则测试使用空实现。
-    registerCommand: () => undefined,
+    // 记录注册的命令，方便直接调用 show 子命令验证输出。
+    registerCommand: (name: string, command: CommandHandler) => commands.set(name, command),
   } as unknown as ExtensionAPI;
   const ctx = {
     cwd: tmpdir(), hasUI,
@@ -35,7 +37,7 @@ function host(
       notify: (message: string, level?: "info" | "warning" | "error") => notices.push({ message, level }),
     },
   } as unknown as ExtensionContext;
-  return { pi, handlers, prompts, notices, ctx,
+  return { pi, handlers, commands, prompts, notices, ctx,
     emit: async (name: string, event: Record<string, unknown> = {}) => handlers.get(name)?.(event, ctx),
   };
 }
@@ -195,4 +197,36 @@ test("未填写说明时仅反馈规则 ID 和动作，不附加替代方案", a
     block: true,
     reason: i18n.t("blocked", { details: i18n.t("ruleMatched", { id: "filesystem.delete" }) }),
   });
+});
+
+test("show 子命令按预设分组列出生效规则，无 UI 也可用", async (t) => {
+  const before = process.env.PI_CODING_AGENT_DIR;
+  const dir = mkdtempSync(join(tmpdir(), "safety-show-"));
+  process.env.PI_CODING_AGENT_DIR = dir;
+  t.after(() => {
+    if (before === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = before;
+  });
+  const configDir = join(dir, "extensions", "pi-safety-guards");
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, "config.json"), JSON.stringify({
+    presets: ["destructive-operations", "workspace-boundary"],
+    rules: [
+      { id: "filesystem.delete", action: "warn" },
+      { id: "local.maven", enabled: false, action: "block", match: { commands: ["mvn"] } },
+    ],
+  }));
+  const fake = host(false);
+  await extension(fake.pi);
+  const command = fake.commands.get("config:safety-guards");
+  assert.ok(command);
+  await command.handler("show", fake.ctx);
+  assert.equal(fake.notices.length, 1);
+  const message = fake.notices[0]?.message ?? "";
+  assert.equal(fake.notices[0]?.level, "info");
+  assert.match(message, /destructive-operations/);
+  assert.match(message, /workspace-boundary/);
+  assert.match(message, /filesystem\.delete/);
+  assert.match(message, /paths\.workspace/);
+  assert.match(message, /local\.maven/);
 });

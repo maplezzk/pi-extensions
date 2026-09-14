@@ -26,6 +26,8 @@ By default, `destructive-operations` asks for confirmation before these operatio
 
 Matching uses parsed commands, including supported wrappers, literal nested shells, substitutions and redirects. `echo 'rm file'` and `git rm` do not count as executing `rm`.
 
+Each preset is one plain JSON file in the package's `presets/` directory: the file name is the preset name and the file content is an array of rules, so the table above can be read directly from `presets/destructive-operations.json` and `presets/workspace-boundary.json`. Only the bundled files are loaded; `config.json` selects them by name and cannot add or replace preset files. A missing, empty or malformed preset file blocks Bash with the file path instead of silently disabling protection.
+
 ## Configuration
 
 File: `<pi-agent-dir>/extensions/pi-safety-guards/config.json`. The agent directory respects `PI_CODING_AGENT_DIR`.
@@ -50,7 +52,21 @@ Replace `example-command` with the command to match. See also [config.example.js
 - `message`: optional non-empty text or an object containing `zh-CN` and `en-US`. If omitted, feedback shows the rule ID and action.
 - Empty presets and rules disable checking and report that no protection is active.
 
-Use `/config:safety-guards` to open the normal TUI preset menu, and use `reset` to restore the default preset. Run `/reload` after saving.
+Use `/config:safety-guards` to open the normal TUI preset menu; every entry shows the preset state and how many rules it contains, and the `Show effective rules` entry prints the merged rules. `/config:safety-guards show` prints the same list without the menu, and `reset` restores the default preset.
+
+```text
+Preset destructive-operations · rules: 4
+  filesystem.delete → warn · commands: rm, rmdir (overridden by rules)
+  filesystem.format → disabled
+  filesystem.ownership → confirm · commands: chown
+  shell.fork-bomb → confirm · detector: fork-bomb
+Preset workspace-boundary · rules: 1
+  paths.workspace → block · outsideRoots: [.]
+Custom rules (rules) · 1
+  local.maven → block · commands: mvn, mvnw
+```
+
+The list is grouped by preset and marks rules that `rules` overrides or disables. Run `/reload` after saving configuration or preset files.
 
 ### Actions
 

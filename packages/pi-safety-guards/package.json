@@ -11,6 +11,7 @@
     "index.ts",
     "src",
     "locales",
+    "presets",
     "config.example.json",
     "README.md",
     "README.zh-CN.md",

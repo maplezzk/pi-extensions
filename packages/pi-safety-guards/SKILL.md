@@ -9,8 +9,8 @@ description: "配置安全预设、规则动作和自定义匹配器。Use when 
 
 `<pi-agent-dir>/extensions/pi-safety-guards/config.json`
 
-遵守 `PI_CODING_AGENT_DIR`，可以使用 `/config:safety-guards` 打开 TUI 预设菜单，输入 `reset` 恢复默认预设，保存后执行 `/reload`。
-Respect `PI_CODING_AGENT_DIR`; use `/config:safety-guards` to open the TUI preset menu, use `reset` for the default preset, and reload after saving.
+遵守 `PI_CODING_AGENT_DIR`，可以使用 `/config:safety-guards` 打开 TUI 预设菜单（每项显示开/关和规则条数，菜单里有“查看生效规则明细”）；`/config:safety-guards show` 直接打印当前生效规则，`reset` 恢复默认预设，保存后执行 `/reload`。
+Respect `PI_CODING_AGENT_DIR`; use `/config:safety-guards` to open the TUI preset menu (each entry shows state and rule count, with a `Show effective rules` entry), use `/config:safety-guards show` to print effective rules, use `reset` for the default preset, and reload after saving.
 
 ## 选择规则 / Select rules
 
@@ -19,6 +19,7 @@ Respect `PI_CODING_AGENT_DIR`; use `/config:safety-guards` to open the TUI prese
 The default `destructive-operations` preset asks for confirmation for supported deletion, formatting, ownership and fork-bomb operations. Select `workspace-boundary` for directory restrictions.
 
 - `presets`：选择预设；`[]` 不选择预设。Select presets; `[]` selects none.
+- 内置预设在包内 `presets/<预设名>.json`，文件内容就是规则数组，文件名就是预设名；只读自带目录，配置只能按名字选择。Bundled presets live in `presets/<name>.json` as plain rule arrays named after the preset; only bundled files are loaded and configuration selects them by name.
 - `rules`：按 ID 覆盖或添加；`enabled: false` 禁用已有规则。Override or add by ID; use `enabled: false` to disable a rule.
 - `action`：`warn`、`confirm`、`block`，优先级递增。Actions in increasing priority.
 - `match`：`commands`、`detector`、`outsideRoots`、`module`，选择一种。Choose one matcher.
