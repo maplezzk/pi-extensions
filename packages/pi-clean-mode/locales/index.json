@@ -1,0 +1,38 @@
+{
+  "runHeader": {
+    "zh-CN": "用时 {duration}",
+    "en-US": "Took {duration}"
+  },
+  "toggleDescription": {
+    "zh-CN": "清爽模式：收起或展开本轮工作过程",
+    "en-US": "Clean mode: collapse or expand this run's work"
+  },
+  "configDescription": {
+    "zh-CN": "清爽模式：查看或修改配置（key=on/off）",
+    "en-US": "Clean mode: view or change configuration (key=on/off)"
+  },
+  "collapsedNotice": {
+    "zh-CN": "清爽模式：已收起工作过程，按 {key} 展开",
+    "en-US": "Clean mode: work collapsed, press {key} to expand"
+  },
+  "expandedNotice": {
+    "zh-CN": "清爽模式：已展开工作过程，按 {key} 收起",
+    "en-US": "Clean mode: work expanded, press {key} to collapse"
+  },
+  "configSaved": {
+    "zh-CN": "清爽模式配置已保存",
+    "en-US": "Clean mode configuration saved"
+  },
+  "configSaveFailed": {
+    "zh-CN": "清爽模式配置保存失败：{error}",
+    "en-US": "Failed to save clean mode configuration: {error}"
+  },
+  "loadFailed": {
+    "zh-CN": "清爽模式配置读取失败，已使用默认值：{error}",
+    "en-US": "Failed to read clean mode configuration, using defaults: {error}"
+  },
+  "notTuiMode": {
+    "zh-CN": "清爽模式仅在交互式 TUI 下生效",
+    "en-US": "Clean mode only applies in interactive TUI mode"
+  }
+}

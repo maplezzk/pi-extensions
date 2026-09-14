@@ -61,6 +61,7 @@ jobs:
           - dir: packages/pi-nested-skills
           - dir: packages/pi-notifications
           - dir: packages/pi-auto-goal
+          - dir: packages/pi-clean-mode
     steps:
       - uses: actions/checkout@v4
 
