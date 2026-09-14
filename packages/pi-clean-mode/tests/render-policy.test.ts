@@ -147,3 +147,23 @@ test("关闭动作组后不再生成组头", () => {
 	const input = toolRowInput({ config, membership: { groupId: 1, index: 1 } });
 	assert.equal(resolveToolRowMode(input), TOOL_ROW_NORMAL);
 });
+
+test("运行尚未结束时不做动作组聚合，行只增不减", () => {
+	const running = { ...expandedState(), runSettled: false };
+	assert.equal(
+		resolveToolRowMode(toolRowInput({ state: running, membership: { groupId: 1, index: 1 } })),
+		TOOL_ROW_NORMAL,
+	);
+	assert.equal(
+		resolveToolRowMode(toolRowInput({ state: running, membership: { groupId: 1, index: 0 } })),
+		TOOL_ROW_NORMAL,
+	);
+});
+
+test("运行结束且展开后才把多条成员收成组头", () => {
+	const settled = { ...expandedState(), runSettled: true };
+	assert.equal(
+		resolveToolRowMode(toolRowInput({ state: settled, membership: { groupId: 1, index: 0 } })),
+		TOOL_ROW_GROUP_HEADER,
+	);
+});
