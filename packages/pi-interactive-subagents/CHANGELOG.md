@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.16.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.15.0...pi-interactive-subagents-v3.16.0) (2026-09-14)
+
+
+### Features
+
+* show notices as filled transcript blocks under the message ([eb00293](https://github.com/maplezzk/pi-extensions/commit/eb002934f273df12cb109e54817dd16fdb09d52a))
+* 提示改成会话区的带底色消息块，判定结论落在消息下方 ([f42992d](https://github.com/maplezzk/pi-extensions/commit/f42992d39af35e3fda33f681f833d89408cb4a3a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.5.0 to ^0.6.0
+    * pi-terminal-mux bumped from ^0.6.2 to ^0.6.3
+
 ## [3.15.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.14.1...pi-interactive-subagents-v3.15.0) (2026-09-13)
 
 
