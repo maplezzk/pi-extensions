@@ -26,6 +26,7 @@ import {
 } from "../src/action-groups.ts";
 import { installComponentPatches } from "../src/component-patches.ts";
 import { formatDuration } from "../src/duration.ts";
+import { createHeaderStyler, type ThemePainter } from "../src/header-style.ts";
 import { i18n } from "../src/i18n.ts";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "../src/types.ts";
 
@@ -33,6 +34,16 @@ import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } 
 const WIDTH = 80;
 /** 本次运行的耗时；折叠头文案由它推导，避免两处取值漂移。 */
 const RUN_DURATION_MS = 266_000;
+/** 本次运行的工具调用数；折叠头文案由它推导。 */
+const RUN_STEPS = 5;
+/** 折叠头右侧展示的展开快捷键；由扩展入口注入，测试里固定为一个值。 */
+const EXPAND_HINT = "f2";
+/** 透明主题：测试断言明文，不关心颜色，但保留横条的截断与补齐行为。 */
+const PLAIN_THEME: ThemePainter = {
+	fg: (_color, text) => text,
+	bg: (_color, text) => text,
+	bold: (text) => text,
+};
 /** 折叠头里应当出现的耗时文案。 */
 const HEADER_FRAGMENT = formatDuration(RUN_DURATION_MS);
 /** 三条成员的组头文案；由 i18n 推导，避免与实现里的文案漂移。 */
@@ -142,7 +153,8 @@ function withPatches(
 	const restore = installComponentPatches({
 		getState: () => state,
 		getConfig: () => config,
-		styleHeader: (text) => text,
+		styler: createHeaderStyler(PLAIN_THEME),
+		expandHint: EXPAND_HINT,
 		onToggle: () => {
 			// 只计数，用于断言鼠标点击是否真的触发了运行级切换。
 			runToggleCount += 1;
@@ -173,6 +185,7 @@ function withPatches(
 			return true;
 		},
 		getRunDuration: (host) => durations.get(host),
+		getRunSteps: () => RUN_STEPS,
 	});
 	try {
 		run({

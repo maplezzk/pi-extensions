@@ -46,6 +46,18 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 | 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 并请求一次重绘） |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
 
+## 折叠后的视觉层次
+
+三级用不同视觉，不能和正文混在一起（`src/header-style.ts` 负责）：
+
+| 层级 | 视觉 |
+|---|---|
+| 运行级折叠头 | 整行铺满底色的横条（`customMessageBg`）+ 左侧强调色箭头 + 右侧弱化色快捷键提示 |
+| 动作组头 | 缩进一级 + 强调色箭头 + 只包住文字的底色标签（`toolPendingBg`） |
+| 正文 / 工具行 | 不铺底色 |
+
+组内只有一条时标签直接用该动作的摘要（`toolActivityLabel` + `toolActivityDetail`），多条才用 `actionGroupHeader` 计数文案。主题缺色时 `createHeaderStyler` 在构造时探测并逐项退化成纯文本，渲染路径上没有 try/catch；横条的截断/补齐仍由 `truncateToWidth(..., pad)` 保证。
+
 ## 实时活动区的三条约束
 
 改动 activity.ts / activity-area.ts / transcript-tail.ts 时必须遵守：

@@ -44,6 +44,7 @@ import {
 	type ActivityUiHost,
 } from "./activity-area.js";
 import { installComponentPatches, type ToolRowGroupInfo } from "./component-patches.js";
+import { createHeaderStyler, type HeaderStyler, type ThemePainter } from "./header-style.js";
 import {
 	areAllActionGroupsExpanded,
 	beginActionGroupStep,
@@ -73,6 +74,8 @@ const PROBE_WIDGET_KEY = "pi-clean-mode-probe";
 const TOGGLE_COMMAND = "clean";
 /** 查看与修改配置的命令名。 */
 const CONFIG_COMMAND = "config:clean-mode";
+/** 一轮开始时本轮工具调用计数的初值。 */
+const INITIAL_RUN_TOOL_COUNT = 0;
 /** 配置命令里表示「打开」的取值。 */
 const CONFIG_ON_VALUES = new Set(["on", "true", "1", "yes"]);
 /** 配置命令里表示「关闭」的取值。 */
@@ -93,8 +96,16 @@ const NO_CONTENT_COMPONENT: Component = {
 const NOTICE_TAG = "clean";
 const NOTICE_COLOR: NoticeColor = "muted";
 const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
-/** 渲染折叠头时用的弱化色函数。 */
-type HeaderStyle = (text: string) => string;
+/**
+ * 主题还没拿到时的占位画笔。
+ *
+ * 只做排版（横条仍旧截断补齐），不上色；session_start 拿到主题后换成真的着色器。
+ */
+const PLAIN_PAINTER: ThemePainter = {
+	fg: (_color, text) => text,
+	bg: (_color, text) => text,
+	bold: (text) => text,
+};
 
 /** 本扩展的运行期状态。 */
 interface Runtime {
@@ -104,8 +115,8 @@ interface Runtime {
 	runStartedAtMs?: number;
 	/** 取得 TUI 句柄后用于触发重绘。 */
 	tui?: TUI;
-	/** 渲染折叠头用的着色函数。 */
-	styleHeader: HeaderStyle;
+	/** 折叠头着色器：横条、标签与强调色都从它取。 */
+	styler: HeaderStyler;
 	/** 动作组状态：一个 turn 一个组，用于把多条工具调用收成一行组头。 */
 	actionGroups: ActionGroupState;
 	/** 安装补丁后的还原函数。 */
@@ -118,36 +129,46 @@ interface Runtime {
 	activityHost?: ActivityUiHost;
 	/** transcript 末尾补丁；活动行靠它内联进对话流。 */
 	transcriptTail?: TranscriptTail;
+	/** 本轮登记过的工具调用数，运行结束写进折叠头。 */
+	runToolCount: number;
 	/** 每轮耗时账本，把耗时绑定到具体的最终答案消息上。 */
 	runDurations: RunDurationLedger;
-}
-
-/** 主题不可用时的默认着色：原样返回文本。 */
-function defaultHeaderStyle(text: string): string {
-	return text;
 }
 
 /**
  * 每轮耗时账本。
  *
- * 耗时按「折叠头承载者组件」存，因此历史轮次的折叠头不会跟着最新一轮变化；
- * 承载者是每轮第一条 assistant 消息，保证耗时头永远在整轮最前面。
- * 内部维护归属标记与两张弱表，调用方只需按轮次调用这四个操作。
+ * 耗时与动作步数按「折叠头承载者组件」存，因此历史轮次的折叠头不会跟着最新一轮变化；
+ * 承载者是每轮第一条 assistant 消息，保证折叠头永远在整轮最前面。
  */
 interface RunDurationLedger {
 	/** 开始新一轮：重开归属认领。 */
 	beginRun(): void;
 	/** 认领本轮折叠头归属；本轮已被认领时返回 false。 */
 	claimOwner(host: object): boolean;
-	/** 把本轮耗时绑定到当前承载者上；耗时未知或还没人认领时不做任何事。 */
-	bindDuration(durationMs: number | undefined): void;
+	/**
+	 * 把本轮结果绑定到当前承载者上；耗时未知或还没人认领时不做任何事。
+	 *
+	 * `steps` 是本轮登记过的工具调用数，由调用方统计（含被其它扩展拦下的调用）。
+	 */
+	bindRun(durationMs: number | undefined, steps: number): void;
 	/** 查询某个承载者所属那一轮的耗时。 */
 	getDuration(host: object): number | undefined;
+	/** 查询某个承载者所属那一轮的工具调用数。 */
+	getSteps(host: object): number | undefined;
+}
+
+/** 一轮结束后记在承载者上的结果。 */
+interface RunSummary {
+	/** 本轮耗时（毫秒）。 */
+	durationMs: number;
+	/** 本轮登记过的工具调用数（含被其它扩展拦下的，它们也会发 tool_execution_start）。 */
+	steps: number;
 }
 
 /** 创建耗时账本。 */
 function createRunDurationLedger(): RunDurationLedger {
-	const durations = new WeakMap<object, number>();
+	const summaries = new WeakMap<object, RunSummary>();
 	let owner: object | undefined;
 	let claimed = false;
 
@@ -167,14 +188,16 @@ function createRunDurationLedger(): RunDurationLedger {
 			return true;
 		},
 		/** 耗时未知或尚无承载者时直接跳过。 */
-		bindDuration: (durationMs) => {
+		bindRun: (durationMs, steps) => {
 			if (durationMs === undefined || !owner) {
 				return;
 			}
-			durations.set(owner, durationMs);
+			summaries.set(owner, { durationMs, steps });
 		},
 		/** 未登记过的承载者返回 undefined，调用方据此不显示折叠头。 */
-		getDuration: (host) => durations.get(host),
+		getDuration: (host) => summaries.get(host)?.durationMs,
+		/** 同上：没有记录就不显示步数。 */
+		getSteps: (host) => summaries.get(host)?.steps,
 	};
 }
 
@@ -183,10 +206,11 @@ function createRuntime(): Runtime {
 	return {
 		state: createInitialState(),
 		config: { ...DEFAULT_CLEAN_MODE_CONFIG },
-		styleHeader: defaultHeaderStyle,
+		styler: createHeaderStyler(PLAIN_PAINTER),
 		actionGroups: createActionGroupState(),
 		activity: createActivitySnapshot(),
 		activityArea: createActivityAreaRuntime(),
+		runToolCount: INITIAL_RUN_TOOL_COUNT,
 		runDurations: createRunDurationLedger(),
 	};
 }
@@ -312,6 +336,35 @@ function summarizeToolCall(toolName: string, args: unknown): string {
 	return detail && detail !== toolName ? `${label} ${detail}` : label;
 }
 
+/** 一次工具调用的登记输入；两个事件用不同字段名传参数，所以调用方先归一化。 */
+interface ToolActionInput {
+	/** 工具调用 id。 */
+	toolCallId: string;
+	/** 工具名。 */
+	toolName: string;
+	/** 工具参数。 */
+	args: unknown;
+}
+
+/**
+ * 把一个工具调用登记进当前动作组，并计入本轮步数。
+ *
+ * `tool_call` 与 `tool_execution_start` 都会调它，靠现有归属判重，所以同一次调用
+ * 只会让步数加一；被其它扩展拦下的调用拿不到 tool_call，但拿得到
+ * tool_execution_start，同样会被计入。
+ */
+function registerToolAction(runtime: Runtime, action: ToolActionInput): void {
+	if (findActionGroupMembership(runtime.actionGroups, action.toolCallId)) {
+		return;
+	}
+	registerActionToolCall(
+		runtime.actionGroups,
+		action.toolCallId,
+		summarizeToolCall(action.toolName, action.args),
+	);
+	runtime.runToolCount += 1;
+}
+
 /** 取一个工具行的动作组快照，供渲染决策使用。 */
 function lookupToolRowGroup(runtime: Runtime, toolCallId: string): ToolRowGroupInfo | undefined {
 	const membership = findActionGroupMembership(runtime.actionGroups, toolCallId);
@@ -375,7 +428,7 @@ function installPatches(runtime: Runtime): void {
 	runtime.restorePatches = installComponentPatches({
 		getState: () => runtime.state,
 		getConfig: () => runtime.config,
-		styleHeader: (text) => runtime.styleHeader(text),
+		styler: runtime.styler,
 		onToggle: () => {
 			toggleRuntime(runtime);
 		},
@@ -386,6 +439,8 @@ function installPatches(runtime: Runtime): void {
 		},
 		claimRunHeaderHost: (host) => runtime.runDurations.claimOwner(host),
 		getRunDuration: (host) => runtime.runDurations.getDuration(host),
+		getRunSteps: (host) => runtime.runDurations.getSteps(host),
+		expandHint: TOGGLE_SHORTCUT,
 	});
 }
 
@@ -494,7 +549,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
 		const loaded = loadConfig();
 		runtime.config = loaded.config;
-		runtime.styleHeader = (text) => ctx.ui.theme.fg("dim", text);
+		runtime.styler = createHeaderStyler(ctx.ui.theme);
 
 		// 通过一个不渲染内容的 widget 工厂取得 TUI 句柄，用于后续触发重绘。
 		ctx.ui.setWidget(PROBE_WIDGET_KEY, (tui: TUI): Component => {
@@ -526,6 +581,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	// 一次运行开始：重置折叠状态、开始计时、并开一个动作组。
 	pi.on("agent_start", async (_event, ctx) => {
 		runtime.runStartedAtMs = Date.now();
+		runtime.runToolCount = INITIAL_RUN_TOOL_COUNT;
 		runtime.state = startRun({ state: runtime.state, config: runtime.config });
 		beginActionGroupStep(runtime.actionGroups);
 		runtime.runDurations.beginRun();
@@ -549,11 +605,11 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	// 而以原始形式显示。tool_execution_start 在每次调用前都会发出（被拦下的也发），
 	// 登记又是幂等的，所以两处都登记。
 	pi.on("tool_execution_start", async (event, ctx) => {
-		registerActionToolCall(
-			runtime.actionGroups,
-			event.toolCallId,
-			summarizeToolCall(event.toolName, event.args),
-		);
+		registerToolAction(runtime, {
+			toolCallId: event.toolCallId,
+			toolName: event.toolName,
+			args: event.args,
+		});
 		if (!isActivityEnabled(runtime)) {
 			return;
 		}
@@ -596,7 +652,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		});
 		runtime.runStartedAtMs = undefined;
 		runtime.activity = { ...runtime.activity, active: false };
-		runtime.runDurations.bindDuration(runtime.state.runDurationMs);
+		runtime.runDurations.bindRun(runtime.state.runDurationMs, runtime.runToolCount);
 		clearActivityArea(runtime.activityArea, requireActivityHost(runtime));
 		requestRender(runtime);
 	});
@@ -617,11 +673,11 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	// 把每个工具调用登记进当前动作组，供渲染时判断是否收成组头。
 	// tool_call 比 tool_execution_start 早，能更早拿到归属；两者互为兑底。
 	pi.on("tool_call", async (event) => {
-		registerActionToolCall(
-			runtime.actionGroups,
-			event.toolCallId,
-			summarizeToolCall(event.toolName, event.input),
-		);
+		registerToolAction(runtime, {
+			toolCallId: event.toolCallId,
+			toolName: event.toolName,
+			args: event.input,
+		});
 		debugLog("tool_call", `${event.toolCallId} -> group=${runtime.actionGroups.currentGroupId}`);
 	});
 

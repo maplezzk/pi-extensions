@@ -59,6 +59,27 @@ Mouse support needs `pi --tui-mode fullscreen`; in regular mode the terminal own
 
 If you toggle the state yourself during a run, that run is not collapsed automatically at the end — your choice is respected until the next run starts.
 
+## What a collapsed run looks like
+
+Each level gets its own treatment so the hierarchy reads at a glance and never blends into the prose:
+
+```
+  ▸  用时 21s · 5 步                                              f2
+   ▸  探索 · 3 步
+   ▸  运行命令 ls -la
+  按类别：目录、视频、Excel、其他。
+```
+
+| Level | Treatment | Meaning |
+|---|---|---|
+| Run header | full-width **band** with a background + leading chevron + right-aligned shortcut hint | a whole run is folded here |
+| Action group header | one level of indentation + chevron + a **chip** (background only behind the label) | one action, or a group of them, is folded here |
+| Prose and tool rows | no background, Pi's own look | content that is not folded |
+
+A single action uses its own summary as the label (`Run Command ls -la`); two or more are summarised as `Explored · N steps`. The `▸` / `▾` chevron carries both the state and the "clickable" affordance.
+
+Backgrounds come from Pi's own theme keys (`customMessageBg` for the run band, `toolPendingBg` for the action chip), so this reads as the same visual language as extension message blocks and tool rows. If a theme is missing a colour key, only that layer of decoration is dropped — the layout is unaffected.
+
 ## How the work/final split is decided
 
 Pi exports its transcript components, so this package replaces `AssistantMessageComponent.render` and `ToolExecutionComponent.render` on the prototype:
