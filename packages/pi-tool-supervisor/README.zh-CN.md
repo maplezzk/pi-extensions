@@ -16,6 +16,7 @@
 - 支持多个 reviewer 并行执行，每个 reviewer 可以使用自己的模型和一个或多个规则文件。
 - 读取规则文件可选的 front matter：`enabled`、`filePatterns`、`complexity` 和 `consumers`。
 - 返回 `passed`、`rejected`、`failed` 或 `skipped` 状态，以及结论、发现、规则组和耗时。
+- 只在审查结论自洽时才采纳拒绝：`passed: false` 但没有任何可执行的 `error` 级 finding 时会降级为通过并附上说明，避免自相矛盾的审查阻断没有可修项的编辑。
 - 原样透传工具结果，不截断，也不把工具输出写入临时文件；输出控制由 Pi 或其他扩展负责。
 - 每次工具调用都重新读取配置，因此配置修改会在下一次匹配操作立即生效。
 - 当前 Pi 展示中间件可用时显示审计卡片，否则使用 fallback renderer。展示协议由公共运行库 `pi-extensions-tool-display` 提供。

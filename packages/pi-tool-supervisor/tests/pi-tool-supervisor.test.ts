@@ -330,6 +330,53 @@ test("生成实际文件 diff 并解析结构化审查结果", () => {
   assert.equal(parsed.findings[0]?.ruleGroup, "coding-taste");
 });
 
+test("审查模型结论与 findings 冲突时以可执行问题为准", () => {
+  // 模型自称不通过，却只给了豁免项：不阻断，并补一条说明。
+  const downgraded = parseReviewResponse(JSON.stringify({
+    passed: false,
+    summary: "测试里存在魔法值",
+    findings: [{ ruleGroup: "禁止魔法值", severity: "warning", message: "测试数据按规则可豁免" }],
+  }));
+  assert.equal(downgraded.passed, true);
+  assert.equal(downgraded.findings.length, 2);
+  assert.equal(downgraded.findings[1]?.severity, "info");
+  assert.equal(downgraded.findings[1]?.ruleGroup, "supervisor");
+  assert.match(downgraded.findings[1]?.message ?? "", /passed=false/);
+
+  // 模型自称不通过，却没给任何 finding：同样不阻断。
+  const emptyFindings = parseReviewResponse(JSON.stringify({ passed: false, summary: "不通过", findings: [] }));
+  assert.equal(emptyFindings.passed, true);
+  assert.equal(emptyFindings.findings.length, 1);
+
+  // 省略 severity 的 finding 仍按可执行问题处理，保持旧行为。
+  const severityMissing = parseReviewResponse(JSON.stringify({
+    passed: false,
+    summary: "不通过",
+    findings: [{ message: "禁止调用该工具" }],
+  }));
+  assert.equal(severityMissing.passed, false);
+  assert.equal(severityMissing.findings.length, 1);
+
+  // error 级 finding 与 passed=false 一致时不追加说明。
+  const consistent = parseReviewResponse(JSON.stringify({
+    passed: false,
+    summary: "不通过",
+    findings: [{ severity: "error", message: "必须提取常量" }],
+  }));
+  assert.equal(consistent.passed, false);
+  assert.equal(consistent.findings.length, 1);
+
+  // 反向冲突：模型说通过但列了 error，仍按模型结论通过，只补说明。
+  const conflictingPass = parseReviewResponse(JSON.stringify({
+    passed: true,
+    summary: "通过",
+    findings: [{ severity: "error", message: "仍有问题" }],
+  }));
+  assert.equal(conflictingPass.passed, true);
+  assert.equal(conflictingPass.findings.length, 2);
+  assert.equal(conflictingPass.findings[1]?.ruleGroup, "supervisor");
+});
+
 test("修改后文件上下文携带真实行号，并围绕大文件变更位置有界截取", () => {
   const full = buildCurrentFileContext("first\nsecond\n", "first\nchanged\n", 50000);
   assert.deepEqual(full, { content: "1 | first\n2 | changed", truncated: false });
