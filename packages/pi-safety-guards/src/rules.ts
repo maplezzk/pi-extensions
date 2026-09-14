@@ -1,8 +1,7 @@
 import { i18n } from "./i18n.ts";
-import type { Detector, RuleAction, RuleMatch, RuleMessage, SafetyRule } from "./types.ts";
+import type { RuleAction, RuleMatch, RuleMessage, SafetyRule } from "./types.ts";
 
 const ACTIONS = new Set<unknown>(["warn", "confirm", "block"]);
-const DETECTORS = new Set<unknown>(["disk-format", "fork-bomb", "in-place-edit", "home-root", "root-search"]);
 /** 文案对象支持的语言键；新增语言时只改这里。 */
 const MESSAGE_LOCALES = ["zh-CN", "en-US"] as const;
 /** 内置预设文件里的规则条目；预设是随包发布的固定规则，不接受 enabled 开关。 */
@@ -43,13 +42,31 @@ export function strings(value: unknown, field: string, allowEmpty = false): stri
   return value.map((item: string) => item.trim());
 }
 
-/** 匹配器只允许一种类型，不组合成规则表达式语言。 */
+/** 正则里必须是非空字符串，且在写配置时就编译得开。 */
+function parsePattern(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) return invalid(field);
+  const pattern = value.trim();
+  try {
+    new RegExp(pattern);
+  } catch {
+    return invalid(field);
+  }
+  return pattern;
+}
+
+/**
+ * 匹配器只能选一种，每种都直接写明匹配内容：
+ * commands 命令名、commandPrefixes 命令名前缀、commandPattern 原始命令文本正则。
+ */
 export function parseMatch(value: unknown, field: string): RuleMatch {
   const raw = object(value, field);
+  // detector 曾把匹配逻辑藏在代码里，现在统一改成显式匹配；报错时直接告诉用户怎么改。
+  if (Object.hasOwn(raw, "detector")) throw new Error(i18n.t("detectorRemoved"));
   if (Object.keys(raw).length !== 1) return invalid(field);
   if (Object.hasOwn(raw, "commands")) return { commands: strings(raw.commands, field) };
+  if (Object.hasOwn(raw, "commandPrefixes")) return { commandPrefixes: strings(raw.commandPrefixes, field) };
+  if (Object.hasOwn(raw, "commandPattern")) return { commandPattern: parsePattern(raw.commandPattern, field) };
   if (Object.hasOwn(raw, "outsideRoots")) return { outsideRoots: strings(raw.outsideRoots, field, true) };
-  if (Object.hasOwn(raw, "detector") && DETECTORS.has(raw.detector)) return { detector: raw.detector as Detector };
   if (typeof raw.module === "string" && raw.module.trim()) return { module: raw.module.trim() };
   return invalid(field);
 }

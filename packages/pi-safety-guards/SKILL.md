@@ -22,7 +22,7 @@ The default `destructive-operations` preset asks for confirmation for supported 
 - 内置预设在包内 `presets/<预设名>.json`，文件内容就是规则数组，文件名就是预设名；只读自带目录，配置只能按名字选择。Bundled presets live in `presets/<name>.json` as plain rule arrays named after the preset; only bundled files are loaded and configuration selects them by name.
 - `rules`：按 ID 覆盖或添加；`enabled: false` 禁用已有规则。Override or add by ID; use `enabled: false` to disable a rule.
 - `action`：`warn`、`confirm`、`block`，优先级递增。Actions in increasing priority.
-- `match`：`commands`、`detector`、`outsideRoots`、`module`，选择一种。Choose one matcher.
+- `match`：`commands`、`commandPrefixes`、`commandPattern`、`outsideRoots`、`module`，选择一种，匹配内容都写在 JSON 里。Choose one explicit matcher; the matching content lives in the JSON.
 - `message`：可选说明，支持文本或中英文对象。Optional text or bilingual message object.
 
 字段说明和示例见 [README](./README.zh-CN.md) 与 [配置示例](./config.example.json)。

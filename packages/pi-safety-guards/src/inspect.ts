@@ -6,15 +6,17 @@ import type { RuleMatch, SafetyConfig, SafetyRule } from "./types.ts";
 /** 匹配器标签保持配置文件里的字段名，方便对着 JSON 文件读。 */
 const MATCH_LABEL = {
   commands: "commands",
-  detector: "detector",
+  commandPrefixes: "commandPrefixes",
+  commandPattern: "commandPattern",
   outsideRoots: "outsideRoots",
   module: "module",
 } as const;
 
-/** 把匹配器压成一行；只做展示，不翻译字段名。 */
+/** 把匹配器压成一行；值按 JSON 里的原样展示，不翻译字段名。 */
 export function describeMatch(match: RuleMatch): string {
   if ("commands" in match) return `${MATCH_LABEL.commands}: ${match.commands.join(", ")}`;
-  if ("detector" in match) return `${MATCH_LABEL.detector}: ${match.detector}`;
+  if ("commandPrefixes" in match) return `${MATCH_LABEL.commandPrefixes}: ${match.commandPrefixes.join(", ")}`;
+  if ("commandPattern" in match) return `${MATCH_LABEL.commandPattern}: ${match.commandPattern}`;
   if ("outsideRoots" in match) return `${MATCH_LABEL.outsideRoots}: [${match.outsideRoots.join(", ")}]`;
   return `${MATCH_LABEL.module}: ${match.module}`;
 }

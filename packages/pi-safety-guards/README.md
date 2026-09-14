@@ -18,13 +18,13 @@ By default, `destructive-operations` asks for confirmation before these operatio
 
 | Preset | Rule ID | Match | Action |
 | --- | --- | --- | --- |
-| `destructive-operations` | `filesystem.delete` | Executed `rm` or `rmdir` | confirm |
-| `destructive-operations` | `filesystem.format` | Executed `mkfs` or `mkfs.*` | confirm |
-| `destructive-operations` | `filesystem.ownership` | Executed `chown` | confirm |
-| `destructive-operations` | `shell.fork-bomb` | Supported colon-function fork-bomb syntax | confirm |
-| `workspace-boundary` (opt-in) | `paths.workspace` | Explicit Bash paths outside `.` | block |
+| `destructive-operations` | `filesystem.delete` | `commands: rm, rmdir` | confirm |
+| `destructive-operations` | `filesystem.format` | `commandPrefixes: mkfs` | confirm |
+| `destructive-operations` | `filesystem.ownership` | `commands: chown` | confirm |
+| `destructive-operations` | `shell.fork-bomb` | `commandPattern: :\(\)\s*\{` | confirm |
+| `workspace-boundary` (opt-in) | `paths.workspace` | `outsideRoots: .` | block |
 
-Matching uses parsed commands, including supported wrappers, literal nested shells, substitutions and redirects. `echo 'rm file'` and `git rm` do not count as executing `rm`.
+Matching uses parsed commands, including supported wrappers, literal nested shells, substitutions and redirects. `echo 'rm file'` and `git rm` do not count as executing `rm`; `commandPattern` is the exception and sees the raw command text.
 
 Each preset is one plain JSON file in the package's `presets/` directory: the file name is the preset name and the file content is an array of rules, so the table above can be read directly from `presets/destructive-operations.json` and `presets/workspace-boundary.json`. Only the bundled files are loaded; `config.json` selects them by name and cannot add or replace preset files. A missing, empty or malformed preset file blocks Bash with the file path instead of silently disabling protection.
 
@@ -59,7 +59,7 @@ Preset destructive-operations · rules: 4
   filesystem.delete → warn · commands: rm, rmdir (overridden by rules)
   filesystem.format → disabled
   filesystem.ownership → confirm · commands: chown
-  shell.fork-bomb → confirm · detector: fork-bomb
+  shell.fork-bomb → confirm · commandPattern: :\(\)\s*\{
 Preset workspace-boundary · rules: 1
   paths.workspace → block · outsideRoots: [.]
 Custom rules (rules) · 1
@@ -85,13 +85,22 @@ Use exactly one matcher per rule:
 | `match` | Meaning |
 | --- | --- |
 | `{ "commands": ["example-command"] }` | Exact executed command basenames |
-| `{ "detector": "disk-format" }` | `mkfs` or `mkfs.*` |
-| `{ "detector": "fork-bomb" }` | Supported colon-function fork-bomb syntax |
-| `{ "detector": "in-place-edit" }` | `sed` in-place flags |
-| `{ "detector": "home-root" }` | An unquoted standalone `~` argument |
-| `{ "detector": "root-search" }` | A `find` argument equal to `/` |
+| `{ "commandPrefixes": ["mkfs"] }` | Executed command basenames starting with one of the prefixes |
+| `{ "commandPattern": ":\\(\\)\\s*\\{" }` | Regular expression over the raw command text; no flags, and quoted text is included |
 | `{ "outsideRoots": [".", "../shared"] }` | Explicit paths outside the configured roots |
 | `{ "module": "./rules/deploy.mjs" }` | A trusted local matcher module |
+
+`commandPattern` is the escape hatch for command syntax that cannot be expressed with command names. It sees the raw command text, so `echo ':(){ :|:& };:'` matches too; use `module` when a matcher must look at parsed commands and arguments precisely.
+
+The former `detector` matcher was removed because its logic lived in code instead of the configuration. Migration:
+
+| Removed | Replacement |
+| --- | --- |
+| `{ "detector": "disk-format" }` | `{ "commandPrefixes": ["mkfs"] }` |
+| `{ "detector": "fork-bomb" }` | `{ "commandPattern": ":\\(\\)\\s*\\{" }` |
+| `{ "detector": "in-place-edit" }` | a `module` matcher that inspects parsed commands and arguments |
+| `{ "detector": "home-root" }` | a `module` matcher that inspects parsed commands and arguments |
+| `{ "detector": "root-search" }` | a `module` matcher that inspects parsed commands and arguments |
 
 ### Directory rules
 

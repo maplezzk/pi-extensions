@@ -3,6 +3,10 @@
     "zh-CN": "安全规则配置字段无效：{field}",
     "en-US": "Invalid safety rule configuration field: {field}"
   },
+  "detectorRemoved": {
+    "zh-CN": "detector 匹配器已移除：它把匹配逻辑藏在代码里。请改用显式匹配：commands（命令名）、commandPrefixes（命令名前缀）、commandPattern（原始命令文本正则），需要命令加参数组合判断时用 module。旧名字到新写法的对照见 README。",
+    "en-US": "The detector matcher was removed because it hid matching logic in code. Use explicit matchers instead: commands (exact names), commandPrefixes (name prefixes), commandPattern (regex over the raw command text), or module when a matcher needs command-plus-argument logic. See the README for old-name to new-syntax mappings."
+  },
   "configLoadFailed": {
     "zh-CN": "安全规则加载失败，Bash 已阻断。请修复配置并 /reload：{error}",
     "en-US": "Safety rules failed to load; Bash is blocked. Fix the configuration and /reload: {error}"

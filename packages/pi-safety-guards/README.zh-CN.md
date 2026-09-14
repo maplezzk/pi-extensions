@@ -24,7 +24,7 @@ pi install npm:pi-safety-guards
 | `destructive-operations` | `shell.fork-bomb` | 支持的冒号函数 fork bomb 形式 | confirm |
 | `workspace-boundary`（可选） | `paths.workspace` | Bash 显式路径超出 `.` | block |
 
-匹配基于解析后的命令，覆盖支持的 wrapper、字面量嵌套 shell、命令替换和重定向。`echo 'rm file'` 和 `git rm` 不视为实际执行 rm。
+匹配基于解析后的命令，覆盖支持的 wrapper、字面量嵌套 shell、命令替换和重定向。`echo 'rm file'` 和 `git rm` 不视为实际执行 rm；`commandPattern` 是例外，它看原始命令文本。
 
 每个预设就是包内 `presets/` 目录里的一个普通 JSON 文件：文件名就是预设名，文件内容就是规则数组，所以上表可以直接对着 `presets/destructive-operations.json` 和 `presets/workspace-boundary.json` 看。插件只加载自带文件，`config.json` 只能按名字选择预设，不能新增或替换预设文件。预设文件缺失、为空或格式错误时，会带上文件路径直接阻断 Bash，而不是默默关掉保护。
 
@@ -59,7 +59,7 @@ pi install npm:pi-safety-guards
   filesystem.delete → warn · commands: rm, rmdir（被 rules 覆盖）
   filesystem.format → 已停用
   filesystem.ownership → confirm · commands: chown
-  shell.fork-bomb → confirm · detector: fork-bomb
+  shell.fork-bomb → confirm · commandPattern: :\(\)\s*\{
 预设 workspace-boundary（1 条规则）
   paths.workspace → block · outsideRoots: [.]
 自定义规则 rules（1 条）
@@ -85,13 +85,22 @@ pi install npm:pi-safety-guards
 | `match` | 含义 |
 | --- | --- |
 | `{ "commands": ["example-command"] }` | 实际执行程序的 basename 精确匹配 |
-| `{ "detector": "disk-format" }` | mkfs 或 mkfs.* |
-| `{ "detector": "fork-bomb" }` | 支持的冒号函数 fork bomb 形式 |
-| `{ "detector": "in-place-edit" }` | sed 原地编辑选项 |
-| `{ "detector": "home-root" }` | 未加引号的独立 `~` 参数 |
-| `{ "detector": "root-search" }` | find 参数为 `/` |
+| `{ "commandPrefixes": ["mkfs"] }` | 实际执行程序的 basename 以某个前缀开头 |
+| `{ "commandPattern": ":\\(\\)\\s*\\{" }` | 对原始命令文本做正则匹配；不带 flags，引号内文本也算 |
 | `{ "outsideRoots": [".", "../shared"] }` | 显式路径超出配置的允许根 |
 | `{ "module": "./rules/deploy.mjs" }` | 可信的本地匹配器模块 |
+
+`commandPattern` 是命令语法无法用命令名表达时的退路。它看的是原始命令文本，所以 `echo ':(){ :|:& };:'` 也会命中；需要精确到“命令加参数”的判断时用 `module`。
+
+旧的 `detector` 匹配器已删除，因为它的逻辑藏在代码里而不在配置里。迁移对照：
+
+| 已删除 | 替代写法 |
+| --- | --- |
+| `{ "detector": "disk-format" }` | `{ "commandPrefixes": ["mkfs"] }` |
+| `{ "detector": "fork-bomb" }` | `{ "commandPattern": ":\\(\\)\\s*\\{" }` |
+| `{ "detector": "in-place-edit" }` | 用 `module` 匹配器自己判断命令和参数 |
+| `{ "detector": "home-root" }` | 用 `module` 匹配器自己判断命令和参数 |
+| `{ "detector": "root-search" }` | 用 `module` 匹配器自己判断命令和参数 |
 
 ### 目录规则
 

@@ -49,6 +49,9 @@ test("拒绝拼写错误、旧技术专属配置、重复 ID 和无效规则", (
     { rules: [{ id: "filesystem.delete", match: { commands: [] } }] },
     { rules: [{ id: "filesystem.delete", match: { commands: ["rm"], detector: "fork-bomb" } }] },
     { rules: [{ id: "filesystem.delete", match: { detector: "unknown" } }] },
+    { rules: [{ id: "new", action: "block", match: { commandPrefixes: [] } }] },
+    { rules: [{ id: "new", action: "block", match: { commandPattern: "[" } }] },
+    { rules: [{ id: "new", action: "block", match: { commandPattern: 5 } }] },
     { rules: [{ id: "filesystem.delete", message: { "en-US": "only one locale" } }] },
   ];
   for (const value of invalid) assert.throws(() => parseConfig(value), JSON.stringify(value));
@@ -61,6 +64,20 @@ test("缺文件使用默认预设，坏文件和读取错误不静默降级", ()
   writeFileSync(path, "{");
   assert.throws(() => loadConfig(path));
   assert.throws(() => loadConfig(dir));
+});
+
+test("detector 已移除，写老配置时直接给出替代写法", () => {
+  assert.throws(
+    () => parseConfig({ rules: [{ id: "custom", action: "block", match: { detector: "disk-format" } }] }),
+    /commandPrefixes/,
+  );
+});
+
+test("commandPattern 必须是写配置时就能编译的正则", () => {
+  const rules = parseConfig({ presets: [], rules: [
+    { id: "custom", action: "block", match: { commandPattern: "^mkfs\\." } },
+  ] }).rules;
+  assert.deepEqual(rules[0]?.match, { commandPattern: "^mkfs\\." });
 });
 
 test("公开示例可解析，自定义规则不会改变默认预设", () => {

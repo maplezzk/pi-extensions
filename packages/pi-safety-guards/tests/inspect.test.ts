@@ -8,7 +8,8 @@ const catalog = loadPresets();
 
 test("匹配器按配置文件里的字段名展示", () => {
   assert.equal(describeMatch({ commands: ["rm", "rmdir"] }), "commands: rm, rmdir");
-  assert.equal(describeMatch({ detector: "fork-bomb" }), "detector: fork-bomb");
+  assert.equal(describeMatch({ commandPrefixes: ["mkfs"] }), "commandPrefixes: mkfs");
+  assert.equal(describeMatch({ commandPattern: ":\\(\\)\\s*\\{" }), "commandPattern: :\\(\\)\\s*\\{");
   assert.equal(describeMatch({ outsideRoots: [] }), "outsideRoots: []");
   assert.equal(describeMatch({ module: "./rules/a.mjs" }), "module: ./rules/a.mjs");
 });
