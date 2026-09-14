@@ -7,6 +7,42 @@
     "zh-CN": "探索 · {count} 步",
     "en-US": "Explored · {count} steps"
   },
+  "activityThinking": {
+    "zh-CN": "思考",
+    "en-US": "Thinking"
+  },
+  "activityWorking": {
+    "zh-CN": "处理中",
+    "en-US": "Working"
+  },
+  "activityParallel": {
+    "zh-CN": "并行执行",
+    "en-US": "Parallel"
+  },
+  "activityRead": {
+    "zh-CN": "读取文件",
+    "en-US": "Read File"
+  },
+  "activitySearch": {
+    "zh-CN": "搜索",
+    "en-US": "Search"
+  },
+  "activityEdit": {
+    "zh-CN": "编辑文件",
+    "en-US": "Edit File"
+  },
+  "activityCommand": {
+    "zh-CN": "运行命令",
+    "en-US": "Run Command"
+  },
+  "activityTool": {
+    "zh-CN": "调用工具",
+    "en-US": "Tool"
+  },
+  "activityCounters": {
+    "zh-CN": "读取 {read} · 搜索 {search} · 命令 {command} · {duration}",
+    "en-US": "read {read} · search {search} · command {command} · {duration}"
+  },
   "toggleGroupsDescription": {
     "zh-CN": "清爽模式：展开或收起全部动作组",
     "en-US": "Clean mode: expand or collapse all action groups"

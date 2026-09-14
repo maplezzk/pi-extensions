@@ -98,10 +98,33 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 | `showRunHeader` | Show the `Took …` header above the final answer. |
 | `showExpandHint` | Append the expand hint to the header. |
 | `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
+| `showActivityArea` | Show the live activity area above the editor while the agent runs. |
+| `activityRows` | Activity area height, 1-6 (default 4). |
+| `animateActivity` | Animate the activity glyph; off keeps a still marker. |
 
 ## Debugging
 
 Set `PI_CLEAN_MODE_DEBUG=1` to append event and render decisions to `<pi agent dir>/pi-clean-mode-debug.log`. It is off by default and the flag is read once at process start, so it costs nothing on the render path when disabled.
+
+## Live activity area
+
+While the agent runs, a small area above the editor shows what is happening right now:
+
+```
+│ ◑ 思考  正在追踪 token 失效路径…
+│ ⠹ 运行命令 npm test
+│   ↳ 12 passing
+│ 读取 4 · 搜索 3 · 命令 1 · 42s
+```
+
+Contents come from real events only — the running tool, its latest output line, the thinking head, and counters. Parallel calls collapse into one summary line.
+
+Two implementation constraints matter, both taken from how `pi-desktop-transcript` handles the same problem:
+
+1. **`ctx.ui.setWidget` repaints the whole screen.** The lines are rendered into a string first and compared with the previous tick; if the content is identical, `setWidget` is not called at all.
+2. **Motion is capped at 2.5fps (400ms)**, the timer only exists while a run is active, and it is `unref()`-ed. With `animateActivity: false` it slows to 1s and shows still markers.
+
+While the area shows the current action, Pi's own `Working...` line and hidden-thinking placeholder are suppressed so the two do not say the same thing twice.
 
 ## Compatibility
 

@@ -1,3 +1,8 @@
+/** 活动区行数的合法区间。 */
+export const ACTIVITY_ROWS_RANGE = { min: 1, max: 6 } as const;
+/** 默认活动区行数；配置缺省与测试都复用它。 */
+export const ACTIVITY_ROWS_DEFAULT = 4;
+
 /**
  * 清爽模式的配置与运行状态类型。
  *
@@ -23,6 +28,12 @@ export interface CleanModeConfig {
 	showExpandHint: boolean;
 	/** 是否把同一个 turn 里的多条工具调用收成一行组头。 */
 	enableActionGroups: boolean;
+	/** 是否在编辑器上方显示实时活动区。 */
+	showActivityArea: boolean;
+	/** 活动区最多显示几行，取值落在 ACTIVITY_ROWS_RANGE 内。 */
+	activityRows: number;
+	/** 活动区是否播放动画；关闭后只保留静止标记。 */
+	animateActivity: boolean;
 }
 
 export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
@@ -31,6 +42,9 @@ export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
 	showRunHeader: true,
 	showExpandHint: true,
 	enableActionGroups: true,
+	showActivityArea: true,
+	activityRows: ACTIVITY_ROWS_DEFAULT,
+	animateActivity: true,
 };
 
 export interface ConfigLoadResult {

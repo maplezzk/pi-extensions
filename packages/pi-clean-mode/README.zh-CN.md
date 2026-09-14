@@ -99,10 +99,33 @@ agent 执行期间保持展开 —— 否则折叠状态下用户在答案出现
 | `showRunHeader` | 在最终答案上方显示 `用时 …` 折叠头。 |
 | `showExpandHint` | 在折叠头末尾附带展开提示。 |
 | `enableActionGroups` | 把一个 turn 的多条工具调用收成一行组头。 |
+| `showActivityArea` | 在编辑器上方显示实时活动区。 |
+| `activityRows` | 活动区高度，1-6，默认 4。 |
+| `animateActivity` | 是否播放动画；关闭后只保留静止标记。 |
 
 ## 调试
 
 设置 `PI_CLEAN_MODE_DEBUG=1` 后，事件与渲染决策会追加写入 `<pi agent 目录>/pi-clean-mode-debug.log`。默认关闭，且开关只在进程启动时读一次，关闭时对渲染路径没有开销。
+
+## 实时活动区
+
+agent 运行期间，编辑器上方会显示一小块「现在在做什么」：
+
+```
+│ ◑ 思考  正在追踪 token 失效路径…
+│ ⠹ 运行命令 npm test
+│   ↳ 12 passing
+│ 读取 4 · 搜索 3 · 命令 1 · 42s
+```
+
+内容全部来自真实事件 —— 正在跑的工具、它的最新输出行、思考头部、以及分类计数。并行调用会收成一行汇总。
+
+两条实现约束是从 `pi-desktop-transcript` 处理同一问题的方式里学的：
+
+1. **`ctx.ui.setWidget` 会重绘整屏。** 所以先把行渲染成字符串与上一 tick 比较，内容完全一致时**根本不调用** `setWidget`。
+2. **动画压到 2.5fps（400ms）**，定时器只在运行时存在，并且 `unref()`。`animateActivity: false` 时降到 1s 并显示静止标记。
+
+活动区在展示当前动作时会顺手隐藏 Pi 自己的 `Working...` 与隐藏思考块的占位文案，避免同一件事说两遍。
 
 ## 兼容性
 

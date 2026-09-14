@@ -24,6 +24,24 @@ import {
 } from "pi-extensions-i18n";
 import { loadConfig, saveConfig } from "./config-store.js";
 import { debugLog, debugLogPath } from "./debug-logger.js";
+import {
+	buildActivityLines,
+	classifyToolActivity,
+	createActivitySnapshot,
+	extractOutputTail,
+	extractThoughtHead,
+	toolActivityDetail,
+	toolActivityLabel,
+	type ActivityCounters,
+	type ActivitySnapshot,
+} from "./activity.js";
+import {
+	clearActivityArea,
+	createActivityAreaRuntime,
+	startActivityTimer,
+	type ActivityAreaDeps,
+	type ActivityAreaRuntime,
+} from "./activity-area.js";
 import { installComponentPatches, type ToolRowGroupInfo } from "./component-patches.js";
 import {
 	areAllActionGroupsExpanded,
@@ -90,6 +108,10 @@ interface Runtime {
 	actionGroups: ActionGroupState;
 	/** 安装补丁后的还原函数。 */
 	restorePatches?: () => void;
+	/** 实时活动区的快照。 */
+	activity: ActivitySnapshot;
+	/** 实时活动区的运行时（定时器与签名缓存）。 */
+	activityArea: ActivityAreaRuntime;
 }
 
 /** 主题不可用时的默认着色：原样返回文本。 */
@@ -104,6 +126,79 @@ function createRuntime(): Runtime {
 		config: { ...DEFAULT_CLEAN_MODE_CONFIG },
 		styleHeader: defaultHeaderStyle,
 		actionGroups: createActionGroupState(),
+		activity: createActivitySnapshot(),
+		activityArea: createActivityAreaRuntime(),
+	};
+}
+
+/** 活动区当前是否应当工作：总开关与活动区开关都打开才启用。 */
+function isActivityEnabled(runtime: Runtime): boolean {
+	return runtime.config.enabled && runtime.config.showActivityArea;
+}
+
+/** 累加一个分类计数，返回新的计数值。 */
+function bumpCounter(counters: ActivityCounters, bucket: keyof ActivityCounters): ActivityCounters {
+	return { ...counters, [bucket]: counters[bucket] + 1 };
+}
+
+/** 把刚启动的工具登记进正在执行列表。 */
+function noteToolStarted(
+	runtime: Runtime,
+	event: { toolCallId: string; toolName: string; args: unknown },
+): void {
+	const action = {
+		toolCallId: event.toolCallId,
+		label: toolActivityLabel(event.toolName),
+		detail: toolActivityDetail(event.toolName, event.args),
+	};
+	runtime.activity.running = [
+		...runtime.activity.running.filter((item) => item.toolCallId !== event.toolCallId),
+		action,
+	];
+}
+
+/** 记录正在执行工具的最新输出尾巴。 */
+function noteToolOutput(runtime: Runtime, toolCallId: string, result: unknown): void {
+	const tail = extractOutputTail(result);
+	if (!tail) {
+		return;
+	}
+	runtime.activity.running = runtime.activity.running.map((item) =>
+		item.toolCallId === toolCallId ? { ...item, outputTail: tail } : item,
+	);
+}
+
+/** 一个工具结束：移出正在执行列表并累加分类计数。 */
+function noteToolFinished(
+	runtime: Runtime,
+	event: { toolCallId: string; toolName: string },
+): void {
+	runtime.activity.running = runtime.activity.running.filter(
+		(item) => item.toolCallId !== event.toolCallId,
+	);
+	runtime.activity.counters = bumpCounter(
+		runtime.activity.counters,
+		classifyToolActivity(event.toolName),
+	);
+}
+
+/** 组装活动区渲染依赖；行数、动画与行内容都从当前配置与快照读取。 */
+function createActivityDeps(runtime: Runtime): ActivityAreaDeps {
+	return {
+		getSnapshot: () => runtime.activity,
+		isAnimated: () => runtime.config.animateActivity,
+		getMaxRows: () => runtime.config.activityRows,
+		renderLines: (input) => {
+			const { painter, frame, maxRows, animated } = input;
+			return buildActivityLines({
+				snapshot: runtime.activity,
+				nowMs: Date.now(),
+				frame,
+				animated,
+				maxRows,
+				paint: painter,
+			});
+		},
 	};
 }
 
@@ -309,15 +404,55 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	});
 
 	// 一次运行开始：重置折叠状态、开始计时、并开一个动作组。
-	pi.on("agent_start", async () => {
+	pi.on("agent_start", async (_event, ctx) => {
 		runtime.runStartedAtMs = Date.now();
 		runtime.state = startRun({ state: runtime.state, config: runtime.config });
 		beginActionGroupStep(runtime.actionGroups);
+
+		runtime.activity = { ...createActivitySnapshot(), active: true, startedAtMs: runtime.runStartedAtMs };
+		if (isActivityEnabled(runtime)) {
+			startActivityTimer(runtime.activityArea, ctx, createActivityDeps(runtime));
+		}
+
 		requestRender(runtime);
 	});
 
+	// 工具开始执行：登记到活动区，让用户看到「现在在做什么」。
+	pi.on("tool_execution_start", async (event, ctx) => {
+		if (!isActivityEnabled(runtime)) {
+			return;
+		}
+		noteToolStarted(runtime, event);
+		startActivityTimer(runtime.activityArea, ctx, createActivityDeps(runtime));
+	});
+
+	// 工具流式输出：只保留最后一行作为输出尾巴。
+	pi.on("tool_execution_update", async (event) => {
+		if (!isActivityEnabled(runtime)) {
+			return;
+		}
+		noteToolOutput(runtime, event.toolCallId, event.partialResult);
+	});
+
+	// 工具结束：移出正在执行列表，并把结果尾巴再抓一次。
+	pi.on("tool_execution_end", async (event) => {
+		if (!isActivityEnabled(runtime)) {
+			return;
+		}
+		noteToolOutput(runtime, event.toolCallId, event.result);
+		noteToolFinished(runtime, event);
+	});
+
+	// 模型思考流式更新：取第一行作为活动区的思考头部。
+	pi.on("message_update", async (event) => {
+		if (!isActivityEnabled(runtime)) {
+			return;
+		}
+		runtime.activity.thought = extractThoughtHead(event.message);
+	});
+
 	// 一次运行结束：记录耗时、按配置自动收起，并清掉本次的开始时间。
-	pi.on("agent_settled", async () => {
+	pi.on("agent_settled", async (_event, ctx) => {
 		runtime.state = settleRun({
 			state: runtime.state,
 			config: runtime.config,
@@ -325,6 +460,8 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 			startedAtMs: runtime.runStartedAtMs,
 		});
 		runtime.runStartedAtMs = undefined;
+		runtime.activity = { ...runtime.activity, active: false };
+		clearActivityArea(runtime.activityArea, ctx);
 		requestRender(runtime);
 	});
 
@@ -347,10 +484,11 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		debugLog("tool_call", `${event.toolCallId} -> group=${runtime.actionGroups.currentGroupId}`);
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (_event, ctx) => {
 		runtime.restorePatches?.();
 		runtime.restorePatches = undefined;
 		runtime.tui = undefined;
+		clearActivityArea(runtime.activityArea, ctx);
 	});
 
 	pi.registerShortcut(TOGGLE_SHORTCUT, {

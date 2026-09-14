@@ -18,6 +18,9 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 | `showRunHeader` | `true` | 折叠时在最终答案上方显示 `用时 …` |
 | `showExpandHint` | `true` | 折叠头末尾附带展开提示 |
 | `enableActionGroups` | `true` | 把一个 turn 的多条工具调用收成一行组头 |
+| `showActivityArea` | `true` | 编辑器上方的实时活动区 |
+| `activityRows` | `4` | 活动区高度，1-6 |
+| `animateActivity` | `true` | 活动区动画；关闭后只保留静止标记 |
 
 改配置：`/config:clean-mode showRunHeader=off`，或直接编辑文件后重启会话。
 
@@ -37,8 +40,18 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 | 组头文案里的步数不对 | 检查 `turn_start` 是否每轮都触发，以及 `tool_call` 是否带上了 toolCallId |
 | 折叠后最终答案不见了 | 该消息是否被判定成「带 tool call」。`stopReason === "length"` 的截断回复可能含未完成的 tool call，从而被当作工作过程隐藏 |
 | 耗时头不显示 | `showRunHeader` 是否为 on；`runDurationMs` 是否为空（缺少 `agent_start` 时无耗时） |
-| 快捷键无反应 | `f2` 是否被用户 keybindings 占用 |
+| 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示） |
+| 活动区闪或卡 | 检查是否绕过了内容签名去重而直接调 `setWidget`；`setWidget` 会重绘整屏，内容无变化必须跳过 |
+| 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea` |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
+
+## 实时活动区的三条约束
+
+改动 activity.ts / activity-area.ts 时必须遵守：
+
+1. `setWidget` 会重绘整屏 → 先把行拼成字符串比较签名，不变就完全跳过调用；
+2. 动画固定 400ms（关闭动画 1000ms），定时器 `unref()`；
+3. 定时器只在运行时存在，`agent_settled` 立即停掉并摘掉 widget。
 
 ## 边界
 

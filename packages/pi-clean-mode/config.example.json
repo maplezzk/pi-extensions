@@ -3,5 +3,8 @@
   "autoExpandWhileRunning": true,
   "showRunHeader": true,
   "showExpandHint": true,
-  "enableActionGroups": true
+  "enableActionGroups": true,
+  "showActivityArea": true,
+  "activityRows": 4,
+  "animateActivity": true
 }
