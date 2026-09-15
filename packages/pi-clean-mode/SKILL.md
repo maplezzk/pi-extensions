@@ -47,6 +47,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 折叠后最终答案不见了 | 该消息是否被判定成「带 tool call」。`stopReason === "length"` 的截断回复可能含未完成的 tool call，从而被当作工作过程隐藏 |
 | 耗时头不显示 | `showRunHeader` 是否为 on；`runDurationMs` 是否为空（缺少 `agent_start` 时无耗时） |
 | 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；该轮是否已认领整轮最上面那个槽位（承载者是本轮第一条 assistant 消息） |
+| 发送后一段时间没任何反餈，看着像卡住 | 活动行画在轮首槽位里，而那个槽位属于本轮第一条 assistant 消息（`message_start` 才创建）。这段窗口里绝对不能关 Pi 自带的 Working 提示，否则屏幕一片空白。判定在 `ActivityAreaDeps.hasRunHeaderHost`，它也参与去重签名 |
 | 活动区闪或卡 | 检查是否绕过了内容签名去重而每次 tick 都请求重绘；行内容不变时必须跳过 |
 | 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 并请求一次重绘） |
 | 活动区首行没有底色横条 | 首行的底色由 `component-patches.ts` 的 `bandActivityHead` 铺上（`styler.band`），检查轮首子组件是否绕过了它；主题缺 `customMessageBg` 时 `band` 会退化成纯文本补齐 |

@@ -71,6 +71,8 @@ function createDeps(snapshot: ActivitySnapshot, lines: string[] = DEFAULT_LINES)
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
 		renderLines: () => lines,
+		// 默认假定本轮已有承载折叠头的组件；需要验证「承载者未就绪」的用例自行覆盖它。
+		hasRunHeaderHost: () => true,
 	};
 }
 
@@ -112,6 +114,8 @@ test("内容变化时更新行并请求重绘", () => {
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
 		renderLines: () => lines,
+		// 本用例与本轮承载者无关，固定为已就绪。
+		hasRunHeaderHost: () => true,
 	};
 
 	refreshActivityArea(runtime, fake.host, deps);
@@ -144,6 +148,46 @@ test("活动区有内容时隐藏 Pi 内置 Working，清理时恢复", () => {
 
 	clearActivityArea(runtime, fake.host);
 	assert.equal(fake.workingVisible[fake.workingVisible.length - 1], true, "清理时应恢复显示");
+});
+
+test("承载者还没出现时保留 Pi 内置 Working 提示", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	const deps = createDeps(activeSnapshot());
+	// 模拟 agent_start 之后、第一条 assistant 消息（message_start）之前。
+	deps.hasRunHeaderHost = () => false;
+
+	refreshActivityArea(runtime, fake.host, deps);
+
+	assert.deepEqual(runtime.lines, DEFAULT_LINES, "活动行仍要准备好，承载者一出现就能画");
+	assert.ok(fake.calls.renders > 0, "承载者未就绪也要重绘一次，避免上轮残留");
+	assert.deepEqual(fake.workingVisible, [], "这段窗口里不能关掉 Pi 的 Working 提示");
+});
+
+test("承载者出现后接管并关掉 Pi 内置 Working 提示", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	const deps = createDeps(activeSnapshot());
+	// 内容一个字不变，只有承载者从无到有：签名必须因此变化，否则会被去重挡住。
+	let hostReady = false;
+	deps.hasRunHeaderHost = () => hostReady;
+
+	refreshActivityArea(runtime, fake.host, deps);
+	hostReady = true;
+	refreshActivityArea(runtime, fake.host, deps);
+
+	assert.deepEqual(fake.workingVisible, [false], "承载者就绪后才关掉内置提示");
+});
+
+test("活动行清空后恢复 Pi 内置 Working 提示", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+
+	refreshActivityArea(runtime, fake.host, createDeps(activeSnapshot()));
+	// 同一次 run 里活动行被清空（例如运行结束）：内置提示要接回来。
+	refreshActivityArea(runtime, fake.host, createDeps(createActivitySnapshot()));
+
+	assert.deepEqual(fake.workingVisible, [false, true], "清空后应恢复显示");
 });
 
 test("定时器启动后存在，停止后释放", () => {
@@ -183,6 +227,8 @@ test("运行期间活动块行数只增不减，避免内容高度抖动", () =>
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
 		renderLines: () => lines,
+		// 补位与承载者无关，固定为已就绪。
+		hasRunHeaderHost: () => true,
 	};
 
 	refreshActivityArea(runtime, fake.host, deps);
