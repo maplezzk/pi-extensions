@@ -23,12 +23,37 @@ export interface SettleRunInput {
 	startedAtMs?: number;
 }
 
+/** 从会话恢复（或重载）时重建历史所需的输入。 */
+export interface RestoreHistoryInput {
+	state: CleanModeState;
+	config: CleanModeConfig;
+}
+
 /** 创建初始状态：默认展开，等待第一次运行。 */
 export function createInitialState(): CleanModeState {
 	return {
 		collapsed: false,
 		runSettled: false,
 		userOverrodeThisRun: false,
+	};
+}
+
+/**
+ * 把恢复出来的历史轮次当成已经结束的一轮。
+ *
+ * 历史消息不会重放 `agent_start` / `agent_settled`：`/resume`、`/reload`、`/fork` 之后
+ * 状态还停在 `createInitialState()` 的展开态，于是整段历史原样铺开，看起来像根本
+ * 没开清爽模式（折叠只在 `state.collapsed` 为真时生效）。这里直接按「已结束」处理。
+ *
+ * 只改折叠态：耗时与步数不在会话里，历史轮次的耗时横条仍然不会出现。
+ * 下一轮真正开始运行时 `agent_start` 会重新展开，不受这里影响。
+ */
+export function restoreHistory(input: RestoreHistoryInput): CleanModeState {
+	const { state, config } = input;
+	return {
+		...state,
+		collapsed: config.enabled ? true : state.collapsed,
+		runSettled: true,
 	};
 }
 

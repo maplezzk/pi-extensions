@@ -62,11 +62,24 @@ import {
 	type ActionGroupState,
 } from "./action-groups.js";
 import { i18n } from "./i18n.js";
-import { applyCollapsed, createInitialState, settleRun, startRun } from "./run-state.js";
+import {
+	applyCollapsed,
+	createInitialState,
+	restoreHistory,
+	settleRun,
+	startRun,
+} from "./run-state.js";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "./types.js";
 
 /** 折叠/展开快捷键；f2 未被 Pi 内置键位占用。 */
 const TOGGLE_SHORTCUT = "f2";
+/**
+ * 调试日志里的缺失字段占位符，与 component-patches.ts 的 `DEBUG_UNKNOWN` 同一约定。
+ *
+ * `session_start` 的 reason 在旧版本 Pi 上可能不存在，日志里要能看出「没这个字段」
+ * 而不是打出 `undefined`。
+ */
+const DEBUG_UNKNOWN_REASON = "unknown";
 /** 批量展开/收起全部动作组的快捷键。 */
 const TOGGLE_GROUPS_SHORTCUT = "shift+f2";
 /** 用于取得 TUI 句柄的空 widget key；该 widget 不渲染任何内容。 */
@@ -557,10 +570,13 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 	const runtime = createRuntime();
 	installNoticeRenderer(pi);
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		const loaded = loadConfig();
 		runtime.config = loaded.config;
 		runtime.styler = createHeaderStyler(ctx.ui.theme);
+
+		// 历史消息不会重放 agent_start / agent_settled，不主动处理就会整段原样展开。
+		runtime.state = restoreHistory({ state: runtime.state, config: runtime.config });
 
 		// 通过一个不渲染内容的 widget 工厂取得 TUI 句柄，用于后续触发重绘。
 		ctx.ui.setWidget(PROBE_WIDGET_KEY, (tui: TUI): Component => {
@@ -573,7 +589,10 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 
 		installPatches(runtime);
 		requestRender(runtime);
-		debugLog("session_start", `debug file=${debugLogPath()} actionGroups=${runtime.config.enableActionGroups}`);
+		debugLog(
+			"session_start",
+			`reason=${event.reason ?? DEBUG_UNKNOWN_REASON} debug file=${debugLogPath()} actionGroups=${runtime.config.enableActionGroups} collapsed=${runtime.state.collapsed}`,
+		);
 
 		if (loaded.diagnostic) {
 			notifyWithSource({

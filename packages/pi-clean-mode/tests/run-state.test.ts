@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyCollapsed, createInitialState, settleRun, startRun } from "../src/run-state.ts";
+import { applyCollapsed, createInitialState, restoreHistory, settleRun, startRun } from "../src/run-state.ts";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeState } from "../src/types.ts";
 
 /** 基准配置。 */
@@ -119,6 +119,27 @@ function assertExpandAfterAutoCollapse(): void {
 	assert.equal(expanded.collapsed, false);
 }
 
+/** 校验恢复历史时收起：历史轮次没走过 agent_settled，不收起就整段原样铺开。 */
+function assertRestoreHistoryCollapses(): void {
+	const restored = restoreHistory({ state: createInitialState(), config: CONFIG });
+	assert.equal(restored.collapsed, true);
+	assert.equal(restored.runSettled, true);
+}
+
+/** 校验总开关关闭时恢复历史不动折叠态（反正渲染层也不会折叠）。 */
+function assertRestoreHistoryRespectsDisabled(): void {
+	const state = createInitialState();
+	const restored = restoreHistory({ state, config: { ...CONFIG, enabled: false } });
+	assert.equal(restored.collapsed, false);
+}
+
+/** 校验恢复历史后新的一轮仍会先展开。 */
+function assertRunAfterRestoreExpands(): void {
+	const restored = restoreHistory({ state: createInitialState(), config: CONFIG });
+	const started = startRun({ state: restored, config: CONFIG });
+	assert.equal(started.collapsed, false);
+}
+
 test("初始状态是展开且未结束", assertInitialState);
 test("开始运行会清掉上一轮耗时并保持展开", assertStartRunResets);
 test("关闭自动展开时不改变当前折叠态", assertStartRunKeepsCollapsed);
@@ -127,3 +148,6 @@ test("用户手动展开过则本次运行不再自动收起", assertManualOverr
 test("缺少开始时间时沿用已有耗时", assertSettleKeepsPreviousDuration);
 test("负耗时被夹到 0", assertNegativeDurationClampsToZero);
 test("自动收起后用户手动展开仍生效", assertExpandAfterAutoCollapse);
+test("恢复历史时收起并视为已结束", assertRestoreHistoryCollapses);
+test("总开关关闭时恢复历史不改折叠态", assertRestoreHistoryRespectsDisabled);
+test("恢复历史后新的一轮仍会先展开", assertRunAfterRestoreExpands);

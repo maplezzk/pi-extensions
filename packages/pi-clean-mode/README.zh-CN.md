@@ -110,6 +110,12 @@ agent 执行期间保持展开 —— 否则折叠状态下用户在答案出现
 
 耗时头只在耗时已知后才出现，所以流式期间不会显示。
 
+## 恢复会话后的历史
+
+`/resume`、`/reload`、`/fork` 之后，历史消息不会重放 `agent_start` / `agent_settled`，状态会停在初始的展开态，整段历史看起来像根本没开清爽模式。所以 `session_start` 会调一次 `restoreHistory`：开启总开关时直接按「已结束」处理（收起），下一轮真正开始运行时 `agent_start` 再重新展开。
+
+代价：历史轮次**没有耗时横条**。耗时与步数在内存里，不写进会话，所以恢复后 `getRunDuration` 拿不到值，折叠头就不显示。仅靠 `f2` 或命令展开全部。
+
 ## 配置
 
 配置文件路径：`<pi agent 目录>/extensions/pi-clean-mode/config.json`，示例见 `config.example.json`。
