@@ -72,13 +72,14 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 
 组内只有一条时标签直接用该动作的摘要（`toolActivityLabel` + `toolActivityDetail`），多条才用 `actionGroupHeader` 计数文案。主题缺色时 `createHeaderStyler` 在构造时探测并逐项退化成纯文本，渲染路径上没有 try/catch；横条的截断/补齐仍由 `truncateToWidth(..., pad)` 保证。
 
-## 实时活动区的三条约束
+## 实时活动区的四条约束
 
 改动 activity.ts / activity-area.ts / component-patches.ts 时必须遵守：
 
 1. 行内容不变就完全不请求重绘 → 先把行拼成字符串比较签名，不变就直接返回；
 2. 运行期间活动块行数只增不减（不足用空行补齐），否则内容高度会反复拖动下方内容；
-3. 动画固定 400ms（关闭动画 1000ms），定时器 `unref()`，且只在运行时存在；`agent_settled` 立即停掉并清空 `runtime.lines`。
+3. 动画 150ms 一帧（关闭动画 1000ms），定时器 `unref()`，且只在运行时存在；`agent_settled` 立即停掉并清空 `runtime.lines`。
+4. 思考动画帧只用「每帧点数完全相同」的字符：当前是 cli-spinners 的 `dots11`（`⠁⠂⠄⡀⢀⠠⠐⠈`，恒为 1 个点）。不要换回 `◌◔◑◕` 这类从空到满的填充式图形，点数一直在变，看上去就是忽大忽小（cli-spinners 里 16 个盲文 spinner 只有 6 个点数恒定）。
 
 活动行输出在整轮最上面：`createRunHeaderComponent` 一个组件兼管「运行中画活动块」与「结束后画 `用时` 横条」，两者共用同一个槽位（耗时在 `agent_settled` 才写入，写完活动行立即清空，不会同时出现）。只有当前轮的承载者输出活动行（`isCurrentRunHost`），否则每个历史轮次都会重复显示一遍。
 

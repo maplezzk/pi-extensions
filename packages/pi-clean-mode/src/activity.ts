@@ -16,16 +16,19 @@
 import { formatDuration } from "./duration.js";
 import { i18n } from "./i18n.js";
 
-/** 思考动画帧；刻意比 working 慢半速。 */
-const THINKING_FRAMES = ["◌", "◔", "◑", "◕"] as const;
+/**
+ * 思考动画帧：盲文单点沿格子绕行一圈。
+ *
+ * 每帧都只有一个点，墨量恒定，所以图标看上去不会忽大忽小；换成「◌ ◔ ◑ ◕」这类
+ * 从空到满的填充式图形时，视线会把填充量读成大小变化，正是要避免的。
+ */
+const THINKING_FRAMES = ["⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"] as const;
 /** 工作动画帧。 */
 const WORKING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"] as const;
-/** 静止时思考与工作的标记。 */
-const STILL_THINKING_GLYPH = "◌";
+/** 静止时思考的标记：一个点，不使用圆圈字形。 */
+const STILL_THINKING_GLYPH = "·";
 /** 静止时工作的标记。 */
 const STILL_WORKING_GLYPH = "›";
-/** 每几帧前进一次思考动画，使其慢于工作动画。 */
-const THINKING_FRAME_DIVISOR = 2;
 /** 活动区单行最大宽度。 */
 export const ACTIVITY_MAX_LINE = 110;
 /** 输出尾巴的最大宽度。 */
@@ -140,8 +143,7 @@ export function activityGlyph(kind: "thinking" | "working", frame: number, anima
 
 	const safeFrame = Math.max(0, Math.floor(frame));
 	if (kind === "thinking") {
-		const index = Math.floor(safeFrame / THINKING_FRAME_DIVISOR) % THINKING_FRAMES.length;
-		return THINKING_FRAMES[index] ?? STILL_THINKING_GLYPH;
+		return THINKING_FRAMES[safeFrame % THINKING_FRAMES.length] ?? STILL_THINKING_GLYPH;
 	}
 	return WORKING_FRAMES[safeFrame % WORKING_FRAMES.length] ?? STILL_WORKING_GLYPH;
 }

@@ -153,7 +153,7 @@ While the agent runs, a small block appears at the very top of the run:
 ```
 user: help me fix xxx
   ⠹ Working · 42s · read 4 · search 3 · command 1   ← the first row is a full-width band
-    ◌ Thinking  tracing the token expiry path…
+    ⠂ Thinking  tracing the token expiry path…
     › Run Command npm test
       ↳ 12 passing
  Explored · 5 steps ▼
@@ -167,7 +167,7 @@ The first row is always the status band (`Working` / `Parallel` plus the elapsed
 Two implementation constraints matter:
 
 1. **Unchanged content never repaints.** Each tick renders the lines into a string and compares it with the previous tick; when it matches, no repaint is requested at all.
-2. **The block only grows.** During a run it is padded with blank rows up to the largest height seen in that run, so the rows below it never get pushed around. Motion is capped at 2.5fps (400ms), the timer only exists while a run is active and is `unref()`-ed; with `animateActivity: false` it slows to 1s and shows still markers.
+2. **The block only grows.** During a run it is padded with blank rows up to the largest height seen in that run, so the rows below it never get pushed around. Animation advances one frame every 150ms (about 6.7fps), the timer only exists while a run is active and is `unref()`-ed; with `animateActivity: false` it slows to 1s and shows still markers.
 
 While the area shows the current action, Pi's own `Working...` line is suppressed so the two do not say the same thing twice.
 
