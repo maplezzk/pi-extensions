@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
 import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
-import type { EditorComponent } from "@earendil-works/pi-tui";
-import { setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
+import type { EditorComponent, TuiMouseEvent } from "@earendil-works/pi-tui";
+import { Container, setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
 import type { SessionResource } from "../src/collector.ts";
 import {
+  isFullscreenTui,
   renderResourcePicker,
+  resourceTabSegments,
   type ResourcePickerTheme,
   SessionResourceEditor,
 } from "../src/picker.ts";
@@ -57,6 +59,7 @@ class FakeEditor implements EditorComponent {
   onSubmit?: (text: string) => void;
   onChange?: (text: string) => void;
   readonly handledInputs: string[] = [];
+  readonly mouseEvents: TuiMouseEvent[] = [];
   private text = "";
   private cursor = 0;
 
@@ -105,6 +108,12 @@ class FakeEditor implements EditorComponent {
     }
     if (data.startsWith("\x1b") || data.charCodeAt(0) < 32) return;
     this.insertTextAtCursor(data);
+  }
+
+  /** Records forwarded mouse events; the wrapper passes them through unchanged. */
+  handleMouse(event: TuiMouseEvent): undefined {
+    this.mouseEvents.push(event);
+    return undefined;
   }
 
   /** Renders a stable marker after picker rows. */
@@ -243,6 +252,147 @@ test("picker follows narrow and wide terminal widths without a fixed cap", () =>
   }
 });
 
+/** Creates one wrapper with the given mouse-mode probe. */
+function createEditor(base: FakeEditor, isMouseEnabled: () => boolean): SessionResourceEditor {
+  return new SessionResourceEditor(base, {
+    theme,
+    keybindings,
+    getResources: resourceSet,
+    isEnabled: () => true,
+    isMouseEnabled,
+    requestRender: () => {},
+  });
+}
+
+/** Builds one normalized fullscreen mouse event for the wrapper under test. */
+function mouseEvent(overrides: Partial<TuiMouseEvent>): TuiMouseEvent {
+  return {
+    type: "press",
+    button: "left",
+    x: 4,
+    y: 0,
+    screenX: 4,
+    screenY: 0,
+    width: 72,
+    height: 2,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    ...overrides,
+  };
+}
+
+/** Returns the local x that lands inside one tab segment. */
+function tabColumn(kind: SessionResource["kind"]): number {
+  const segment = resourceTabSegments(resourceSet()).find((candidate) => candidate.kind === kind);
+  assert.ok(segment);
+  return segment.start + 1;
+}
+
+test("fullscreen resource button opens the picker and stays hidden in regular mode", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const base = new FakeEditor();
+  const editor = createEditor(base, () => true);
+
+  const collapsed = editor.render(72);
+  assert.equal(collapsed.length, 2);
+  assert.ok((collapsed[0] ?? "").includes("View resources"));
+  assert.match(collapsed[1] ?? "", /^EDITOR $/);
+  assert.ok((collapsed[0] ?? "").includes("FILE 1"));
+
+  editor.handleMouse(mouseEvent({ type: "move" }));
+  assert.ok((editor.render(72)[0] ?? "").includes(SELECTED_BACKGROUND_START));
+
+  assert.deepEqual(editor.handleMouse(mouseEvent({})), { handled: true, focus: true });
+  assert.deepEqual(
+    editor.handleMouse(mouseEvent({ type: "click" })),
+    { handled: true, focus: true, render: true },
+  );
+  assert.equal(editor.isPickerOpen(), true);
+  assert.ok((editor.render(72)[0] ?? "").includes("Session resources"));
+
+  const regular = createEditor(new FakeEditor(), () => false);
+  assert.deepEqual(regular.render(72), ["EDITOR "]);
+  assert.equal(isFullscreenTui({ mode: "fullscreen" }), true);
+  assert.equal(isFullscreenTui({ mode: "regular" }), false);
+  assert.equal(isFullscreenTui(undefined), false);
+});
+
+test("clicking a picker tab switches the resource type", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const editor = createEditor(new FakeEditor(), () => true);
+  editor.handleInput("#");
+  assert.equal(editor.getActiveKind(), "file");
+
+  const click = mouseEvent({ x: tabColumn("review"), y: 1 });
+  assert.deepEqual(editor.handleMouse(click), { handled: true, focus: true });
+  editor.handleMouse({ ...click, type: "click" });
+  assert.equal(editor.getActiveKind(), "review");
+});
+
+test("resource rows keep Pi's native OSC 8 click and Shift+click inserts the reference", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const base = new FakeEditor();
+  const editor = createEditor(base, () => true);
+  editor.handleInput("#");
+
+  // A plain press stays unhandled so Pi's fullscreen renderer can open the OSC 8 target.
+  assert.equal(editor.handleMouse(mouseEvent({ y: 3 })), undefined);
+  assert.equal(editor.getText(), "#");
+
+  assert.deepEqual(
+    editor.handleMouse(mouseEvent({ y: 3, shift: true })),
+    { handled: true, focus: true },
+  );
+  editor.handleMouse(mouseEvent({ type: "click", y: 3, shift: true }));
+  assert.equal(editor.isPickerOpen(), false);
+  assert.equal(editor.getText(), "#src/index.ts ");
+});
+
+test("mouse input below the header is forwarded to the editor with translated coordinates", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const base = new FakeEditor();
+  const editor = createEditor(base, () => true);
+  editor.handleInput("#");
+
+  const headerHeight = editor.render(72).length - 1;
+  editor.handleMouse(mouseEvent({
+    type: "click",
+    y: headerHeight,
+    height: headerHeight + 1,
+  }));
+
+  assert.equal(base.mouseEvents.length, 1);
+  assert.equal(base.mouseEvents[0]?.y, 0);
+  assert.equal(base.mouseEvents[0]?.height, 1);
+  assert.equal(editor.handleMouse(mouseEvent({ type: "wheel", y: 0 })), undefined);
+});
+
+test("Pi's component tree dispatches real mouse events to the resource header", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const base = new FakeEditor();
+  const editor = createEditor(base, () => true);
+  const container = new Container();
+  container.addChild(editor);
+
+  // Prime the container's mouse layout the same way the TUI does before dispatching.
+  assert.equal(container.render(72).length, 2);
+  assert.ok(
+    container.handleMouse(mouseEvent({ type: "click", height: 2 })) !== undefined,
+  );
+  assert.equal(editor.isPickerOpen(), true);
+
+  const headerHeight = editor.render(72).length - 1;
+  container.render(72);
+  container.handleMouse(mouseEvent({
+    type: "click",
+    y: headerHeight,
+    height: headerHeight + 1,
+  }));
+  assert.equal(base.mouseEvents.length, 1);
+  assert.equal(base.mouseEvents[0]?.y, 0);
+});
+
 test("# opens above the editor, type keys switch tabs, and Enter inserts the resource", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const base = new FakeEditor();
@@ -252,6 +402,7 @@ test("# opens above the editor, type keys switch tabs, and Enter inserts the res
     keybindings,
     getResources: resourceSet,
     isEnabled: () => true,
+    isMouseEnabled: () => false,
     requestRender: () => {
       renders += 1;
     },
@@ -286,6 +437,7 @@ test("picker respects token boundaries and Shift+Tab switches backward", () => {
     keybindings,
     getResources: resourceSet,
     isEnabled: () => true,
+    isMouseEnabled: () => false,
     requestRender: () => {},
   });
 

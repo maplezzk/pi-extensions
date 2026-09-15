@@ -2,6 +2,8 @@ import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent"
 import type {
   AutocompleteProvider,
   EditorComponent,
+  TuiMouseEvent,
+  TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import {
   decodeKittyPrintable,
@@ -13,7 +15,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { ResourceKind, SessionResource } from "./collector.ts";
 import { i18n } from "./i18n.ts";
-import { KIND_COLORS, kindColored, linkUri, resourceSuggestions } from "./autocomplete.ts";
+import { KIND_COLORS, RESOURCE_ACCENT, kindColored, linkUri, resourceSuggestions } from "./autocomplete.ts";
 
 export const RESOURCE_PICKER_VISIBLE_LIMIT = 6;
 const PANEL_BORDER_WIDTH = 2;
@@ -22,6 +24,18 @@ const DESCRIPTION_MINIMUM_WIDTH = 48;
 const DESCRIPTION_MAXIMUM_WIDTH = 22;
 const DESCRIPTION_WIDTH_RATIO = 0.28;
 const ITEM_COLUMN_GAP = 2;
+/** Joins the per-type counts in the collapsed resource button. */
+const BUTTON_SUMMARY_SEPARATOR = " · ";
+/** Panel rows above the resource list: top border, tab row, divider. */
+const PANEL_HEADER_ROWS = 3;
+/** Panel rows below the resource list: divider, hint row, bottom border. */
+const PANEL_FOOTER_ROWS = 3;
+/** Panel row index of the first resource row. */
+const PANEL_ITEM_START_ROW = PANEL_HEADER_ROWS;
+/** First column inside the panel frame, i.e. just after the left border. */
+const PANEL_CONTENT_START_COLUMN = 1;
+/** Mouse handling is only possible when Pi's fullscreen renderer owns the pointer. */
+const FULLSCREEN_TUI_MODE = "fullscreen";
 const CONTROL_CHARACTER_LIMIT = 32;
 const BACKSPACE_INPUT = "\x7f";
 const RESOURCE_TABS: readonly ResourceKind[] = ["file", "review", "web"];
@@ -63,8 +77,45 @@ export interface SessionResourceEditorOptions {
   keybindings: Pick<KeybindingsManager, "matches">;
   getResources: () => readonly SessionResource[];
   isEnabled: () => boolean;
+  /** Reports whether the host TUI routes mouse input to components (Pi fullscreen mode). */
+  isMouseEnabled: () => boolean;
   requestRender: () => void;
 }
+
+/** One tab cell of the picker header, shared by rendering and mouse hit testing. */
+export interface ResourceTabSegment {
+  kind: ResourceKind;
+  /** Plain tab text before styling; its width drives the segment layout. */
+  text: string;
+  /** Zero-based column where the segment starts inside the framed panel. */
+  start: number;
+  width: number;
+}
+
+/** Header cell under the pointer. */
+export type HeaderTarget =
+  | { kind: "button" }
+  | { kind: "tab"; segment: ResourceTabSegment }
+  | { kind: "item"; index: number }
+  | { kind: "empty" };
+
+/** Header layout while the full picker panel is open above the editor. */
+interface PanelHeaderLayout {
+  kind: "panel";
+  /** Lines the picker occupies above the wrapped editor. */
+  height: number;
+  segments: readonly ResourceTabSegment[];
+  itemCount: number;
+}
+
+/** Header layout while only the collapsed resource button is visible. */
+interface ButtonHeaderLayout {
+  kind: "button";
+  height: number;
+}
+
+/** Rows this editor renders above the wrapped editor, if any. */
+type HeaderLayout = PanelHeaderLayout | ButtonHeaderLayout;
 
 export interface RenderResourcePickerOptions {
   resources: readonly SessionResource[];
@@ -73,13 +124,22 @@ export interface RenderResourcePickerOptions {
   selectedIndex: number;
   width: number;
   theme: ResourcePickerTheme;
+  /** Pre-computed tab layout so hit testing and rendering cannot drift apart. */
+  segments?: readonly ResourceTabSegment[];
+  /** Header cell that currently renders its hover highlight. */
+  hoverTarget?: HeaderTarget;
+  /** Switches the hint row to the mouse-capable wording (Pi fullscreen mode). */
+  mouseEnabled?: boolean;
 }
 
+/** Options for rendering the picker tab row from a pre-computed segment layout. */
 interface RenderTabsOptions {
-  resources: readonly SessionResource[];
+  segments: readonly ResourceTabSegment[];
   activeKind: ResourceKind;
   innerWidth: number;
   theme: ResourcePickerTheme;
+  /** Inactive tab under the pointer; rendered with the accent color as a hover cue. */
+  hoveredKind?: ResourceKind;
 }
 
 interface RenderItemOptions {
@@ -91,6 +151,8 @@ interface RenderItemOptions {
   linkUri?: string;
   description?: string;
   selected: boolean;
+  /** Renders the hover background without changing row selection. */
+  hovered?: boolean;
   innerWidth: number;
   theme: ResourcePickerTheme;
 }
@@ -131,21 +193,79 @@ function renderBottomBorder(width: number, accentKind: ResourceKind): string {
   return kindAccent(accentKind, `╰${"─".repeat(Math.max(0, width - PANEL_BORDER_WIDTH))}╯`);
 }
 
-/** Renders per-type counts; the active type is inverted, inactive types stay muted. */
-function renderTabs(options: RenderTabsOptions): string {
-  const { resources, activeKind, innerWidth, theme } = options;
+/** Detects Pi's fullscreen renderer, the only mode that routes mouse input to components. */
+export function isFullscreenTui(tui: { mode?: string } | undefined): boolean {
+  return tui?.mode === FULLSCREEN_TUI_MODE;
+}
+
+/** Counts resources per type for tab and button labels. */
+export function resourceCounts(
+  resources: readonly SessionResource[],
+): Map<ResourceKind, number> {
   const counts = new Map<ResourceKind, number>();
   for (const resource of resources) {
     counts.set(resource.kind, (counts.get(resource.kind) ?? 0) + 1);
   }
+  return counts;
+}
 
-  const segments = RESOURCE_TABS.map((kind) => {
+/** Lays out tab segments once so rendering and mouse hit testing cannot drift apart. */
+export function resourceTabSegments(
+  resources: readonly SessionResource[],
+): ResourceTabSegment[] {
+  const counts = resourceCounts(resources);
+  const segments: ResourceTabSegment[] = [];
+  let start = PANEL_CONTENT_START_COLUMN;
+  for (const kind of RESOURCE_TABS) {
     const text = ` ${TAB_LABELS[kind]} ${counts.get(kind) ?? 0} `;
-    return kind === activeKind
-      ? theme.bg(THEME_BACKGROUND.selected, kindColored(kind, text))
-      : theme.fg(THEME_COLOR.muted, text);
+    const width = visibleWidth(text);
+    segments.push({ kind, text, start, width });
+    start += width + 1;
+  }
+  return segments;
+}
+
+/** Resolves the header cell at one header-local coordinate. */
+function hitHeaderTarget(layout: HeaderLayout, column: number, row: number): HeaderTarget {
+  if (layout.kind === "button") return row === 0 ? { kind: "button" } : { kind: "empty" };
+  if (row === 1) {
+    const segment = layout.segments.find(
+      (candidate) => column >= candidate.start && column < candidate.start + candidate.width,
+    );
+    return segment ? { kind: "tab", segment } : { kind: "empty" };
+  }
+  const index = row - PANEL_ITEM_START_ROW;
+  return index >= 0 && index < layout.itemCount ? { kind: "item", index } : { kind: "empty" };
+}
+
+/** Shift or Ctrl click inserts the reference instead of opening the target. */
+function isInsertClick(event: TuiMouseEvent): boolean {
+  return event.shift || event.ctrl;
+}
+
+/** Returns the visible suggestions for one resource type and query. */
+function visibleSuggestions(
+  resources: readonly SessionResource[],
+  kind: ResourceKind,
+  query: string,
+) {
+  return resourceSuggestions(
+    resources.filter((resource) => resource.kind === kind),
+    query,
+  ).slice(0, RESOURCE_PICKER_VISIBLE_LIMIT);
+}
+
+/** Renders per-type counts; the active type is inverted, inactive types stay muted. */
+function renderTabs(options: RenderTabsOptions): string {
+  const { segments, activeKind, innerWidth, theme, hoveredKind } = options;
+  const rendered = segments.map((segment) => {
+    if (segment.kind === activeKind) {
+      return theme.bg(THEME_BACKGROUND.selected, kindColored(segment.kind, segment.text));
+    }
+    if (segment.kind === hoveredKind) return kindColored(segment.kind, segment.text);
+    return theme.fg(THEME_COLOR.muted, segment.text);
   });
-  return truncateToWidth(` ${segments.join(" ")}`, innerWidth, "");
+  return truncateToWidth(rendered.join(" "), innerWidth, "");
 }
 
 /** Renders one width-safe resource row with optional dimmed action metadata. */
@@ -168,34 +288,65 @@ function renderItem(options: RenderItemOptions): string {
   const gap = " ".repeat(Math.max(1, labelWidth - (truncated ? labelWidth : plainLabelWidth) + gapWidth));
   const prefix = selected ? kindAccent(kind, rawPrefix) : rawPrefix;
   const styledLabel = selected ? kindAccent(kind, theme.bold(fittedLabel)) : fittedLabel;
-  const labelText = linkUri(styledLabel, options.linkUri);
-  const primary = `${prefix}${labelText}`;
+  const primary = `${prefix}${styledLabel}`;
   const secondary = showDescription
     ? theme.fg(THEME_COLOR.dim, `${gap}${fittedDescription}`)
     : "";
-  return padToWidth(`${primary}${secondary}`, innerWidth);
+  const row = padToWidth(`${primary}${secondary}`, innerWidth);
+  // The whole row is the OSC 8 target so the clickable area matches the visible row,
+  // which is what Pi's fullscreen renderer opens on a plain click.
+  return linkUri(options.hovered ? theme.bg(THEME_BACKGROUND.selected, row) : row, options.linkUri);
+}
+
+/** Options for the collapsed one-line resource browser button above the editor. */
+export interface RenderResourceButtonOptions {
+  resources: readonly SessionResource[];
+  width: number;
+  theme: ResourcePickerTheme;
+  hovered: boolean;
+}
+
+/**
+ * Renders the collapsed one-line resource button shown above the editor.
+ * Returns an empty array when the terminal is too narrow to draw anything, so the
+ * caller renders no header row instead of a zero-width line.
+ */
+export function renderResourceButton(options: RenderResourceButtonOptions): string[] {
+  const { resources, width, theme, hovered } = options;
+  if (width <= 0) return [];
+  const counts = resourceCounts(resources);
+  const summary = RESOURCE_TABS
+    .map((kind) => `${TAB_LABELS[kind]} ${counts.get(kind) ?? 0}`)
+    .join(BUTTON_SUMMARY_SEPARATOR);
+  // The button covers every resource type, so it uses the shared accent instead of a kind accent.
+  const label = `${RESOURCE_ACCENT}${theme.bold(` ${i18n.t("viewResources")} `)}${ANSI_RESET}`;
+  const row = padToWidth(
+    truncateToWidth(`${label}${theme.fg(THEME_COLOR.dim, ` ${summary}`)}`, width, ""),
+    width,
+  );
+  return [hovered ? theme.bg(THEME_BACKGROUND.selected, row) : row];
 }
 
 /** Renders the bordered, tabbed picker directly above the wrapped editor. */
 export function renderResourcePicker(options: RenderResourcePickerOptions): string[] {
-  const { resources, activeKind, query, theme } = options;
+  const { resources, activeKind, theme } = options;
   const panelWidth = Math.max(0, options.width);
   if (panelWidth < PANEL_MINIMUM_WIDTH) return [];
 
   const innerWidth = panelWidth - PANEL_BORDER_WIDTH;
-  const items = resourceSuggestions(
-    resources.filter((resource) => resource.kind === activeKind),
-    query,
-  ).slice(0, RESOURCE_PICKER_VISIBLE_LIMIT);
+  const segments = options.segments ?? resourceTabSegments(resources);
+  const items = visibleSuggestions(resources, activeKind, options.query);
   const selectedIndex = Math.max(0, Math.min(options.selectedIndex, Math.max(0, items.length - 1)));
+  const hover = options.hoverTarget;
   const lines = [
     renderTopBorder(panelWidth, activeKind),
     framedLine(
       renderTabs({
-        resources,
+        segments,
         activeKind,
         innerWidth,
         theme,
+        hoveredKind: hover?.kind === "tab" ? hover.segment.kind : undefined,
       }),
       innerWidth,
       activeKind,
@@ -222,6 +373,7 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
             linkUri: item.linkUri,
             description: item.description,
             selected: index === selectedIndex,
+            hovered: hover?.kind === "item" && hover.index === index,
             innerWidth,
             theme,
           }),
@@ -235,7 +387,10 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
   lines.push(renderDivider(panelWidth, activeKind));
   lines.push(
     framedLine(
-      theme.fg(THEME_COLOR.muted, ` ${i18n.t("pickerHint")}`),
+      theme.fg(
+        THEME_COLOR.muted,
+        ` ${i18n.t(options.mouseEnabled ? "pickerHintMouse" : "pickerHint")}`,
+      ),
       innerWidth,
       activeKind,
     ),
@@ -274,6 +429,10 @@ export class SessionResourceEditor implements EditorComponent {
   private query = "";
   private activeKind: ResourceKind = "file";
   private selectedIndex = 0;
+  /** Header cell under the pointer, used for the hover highlight. */
+  private hover: { column: number; row: number } | undefined;
+  /** True while the picker's own `#` prefix sits in the prompt and must be replaced on insert. */
+  private insertedPrefix = false;
 
   /** Captures the wrapped editor and live resource-picker dependencies. */
   constructor(
@@ -422,21 +581,53 @@ export class SessionResourceEditor implements EditorComponent {
     this.base.setAutocompleteMaxVisible?.(maxVisible);
   }
 
-  /** Prepends the transient resource picker above the base editor. */
+  /** Renders the resource header above the wrapped editor when one applies. */
   render(width: number): string[] {
+    const layout = this.computeHeaderLayout(width);
     const editorLines = this.base.render(width);
-    if (!this.pickerOpen || !this.options.isEnabled()) return editorLines;
-    return [
-      ...renderResourcePicker({
+    return layout ? [...this.renderHeaderLines(layout, width), ...editorLines] : editorLines;
+  }
+
+  /** Renders the button or panel rows for one already-computed header layout. */
+  private renderHeaderLines(layout: HeaderLayout, width: number): string[] {
+    const hoverTarget = this.hover
+      ? hitHeaderTarget(layout, this.hover.column, this.hover.row)
+      : undefined;
+    if (layout.kind === "button") {
+      return renderResourceButton({
         resources: this.options.getResources(),
-        activeKind: this.activeKind,
-        query: this.query,
-        selectedIndex: this.selectedIndex,
         width,
         theme: this.options.theme,
-      }),
-      ...editorLines,
-    ];
+        hovered: hoverTarget?.kind === "button",
+      });
+    }
+    return renderResourcePicker({
+      resources: this.options.getResources(),
+      activeKind: this.activeKind,
+      query: this.query,
+      selectedIndex: this.selectedIndex,
+      width,
+      theme: this.options.theme,
+      segments: layout.segments,
+      hoverTarget,
+      mouseEnabled: this.options.isMouseEnabled(),
+    });
+  }
+
+  /** Routes mouse input to the header rows, or forwards it to the wrapped editor. */
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    // Mouse coordinates are relative to this component, so they include the header
+    // rows; the base editor only understands coordinates below them.
+    const layout = this.computeHeaderLayout(event.width);
+    if (layout && event.y >= 0 && event.y < layout.height) {
+      return this.handleHeaderMouse(event, layout);
+    }
+    const offset = layout?.height ?? 0;
+    return this.base.handleMouse?.({
+      ...event,
+      y: Math.max(0, event.y - offset),
+      height: Math.max(0, event.height - offset),
+    });
   }
 
   /** Routes picker navigation while delegating ordinary editing to the base. */
@@ -477,6 +668,12 @@ export class SessionResourceEditor implements EditorComponent {
       return;
     }
     if (this.options.keybindings.matches(data, "tui.editor.deleteCharBackward")) {
+      if (!this.insertedPrefix) {
+        this.closePicker();
+        this.base.handleInput(data);
+        this.options.requestRender();
+        return;
+      }
       this.base.handleInput(data);
       if (this.query.length === 0) this.closePicker();
       else this.query = removeLastGrapheme(this.query);
@@ -487,6 +684,13 @@ export class SessionResourceEditor implements EditorComponent {
 
     const printable = decodePickerPrintable(data);
     if (printable !== undefined) {
+      // A picker opened from the button owns no prompt prefix, so typing returns to the editor.
+      if (!this.insertedPrefix) {
+        this.closePicker();
+        this.base.handleInput(data);
+        this.options.requestRender();
+        return;
+      }
       this.base.handleInput(data);
       if (/\s|#/.test(printable)) this.closePicker();
       else this.query += printable;
@@ -529,8 +733,64 @@ export class SessionResourceEditor implements EditorComponent {
     this.activeKind = RESOURCE_TABS.find((kind) => resources.some((resource) => resource.kind === kind)) ?? "file";
     this.query = "";
     this.selectedIndex = 0;
+    this.insertedPrefix = true;
     this.pickerOpen = true;
     this.options.requestRender();
+  }
+
+  /** Chooses between the open picker panel, the collapsed button, and no header at all. */
+  private computeHeaderLayout(width: number): HeaderLayout | undefined {
+    if (!this.options.isEnabled()) return undefined;
+    const resources = this.options.getResources();
+
+    if (this.pickerOpen) {
+      if (width < PANEL_MINIMUM_WIDTH) return undefined;
+      const itemCount = visibleSuggestions(resources, this.activeKind, this.query).length;
+      const itemRows = Math.max(1, itemCount);
+      return {
+        kind: "panel",
+        height: PANEL_HEADER_ROWS + itemRows + PANEL_FOOTER_ROWS,
+        segments: resourceTabSegments(resources),
+        itemCount,
+      };
+    }
+
+    if (!this.options.isMouseEnabled() || resources.length === 0 || width <= 0) return undefined;
+    return { kind: "button", height: 1 };
+  }
+
+  /** Handles hover, press, and click inside the header rows. */
+  private handleHeaderMouse(
+    event: TuiMouseEvent,
+    layout: HeaderLayout,
+  ): TuiMouseEventResult | undefined {
+    if (event.type === "wheel") return undefined;
+    const target = hitHeaderTarget(layout, event.x, event.y);
+
+    if (event.type === "move") {
+      const next = target.kind === "empty" ? undefined : { column: event.x, row: event.y };
+      const changed = this.hover?.column !== next?.column || this.hover?.row !== next?.row;
+      this.hover = next;
+      return changed ? { handled: true, render: true } : undefined;
+    }
+    if (target.kind === "empty" || event.button !== "left") return undefined;
+
+    if (event.type === "press" || event.type === "drag") {
+      // Resource rows keep Pi's native OSC 8 activation and text selection unless a
+      // modifier asks for insertion, which needs the synthetic click routed here.
+      if (target.kind === "item" && !isInsertClick(event)) return undefined;
+      return { handled: true, focus: true };
+    }
+    if (event.type !== "click") return undefined;
+
+    if (target.kind === "button") this.openPicker();
+    else if (target.kind === "tab") this.switchKindTo(target.segment.kind);
+    else {
+      this.selectedIndex = target.index;
+      if (isInsertClick(event)) this.confirmSelection();
+      else this.options.requestRender();
+    }
+    return { handled: true, focus: true, render: true };
   }
 
   /** Checks the actual cursor when available and otherwise assumes text-end input. */
@@ -550,10 +810,29 @@ export class SessionResourceEditor implements EditorComponent {
 
   /** Returns visible matches for the active resource type and query. */
   private currentItems() {
-    return resourceSuggestions(
-      this.options.getResources().filter((resource) => resource.kind === this.activeKind),
-      this.query,
-    ).slice(0, RESOURCE_PICKER_VISIBLE_LIMIT);
+    return visibleSuggestions(this.options.getResources(), this.activeKind, this.query);
+  }
+
+  /** Opens the picker from the header button without inserting a `#` prefix. */
+  private openPicker(): void {
+    const resources = this.options.getResources();
+    if (!this.options.isEnabled() || resources.length === 0) return;
+    const available = RESOURCE_TABS.filter((kind) =>
+      resources.some((resource) => resource.kind === kind));
+    this.activeKind = available.includes(this.activeKind) ? this.activeKind : available[0] ?? "file";
+    this.query = "";
+    this.selectedIndex = 0;
+    this.insertedPrefix = false;
+    this.pickerOpen = true;
+    this.options.requestRender();
+  }
+
+  /** Switches to one resource type and resets row selection. */
+  private switchKindTo(kind: ResourceKind): void {
+    if (!RESOURCE_TABS.includes(kind) || kind === this.activeKind) return;
+    this.activeKind = kind;
+    this.selectedIndex = 0;
+    this.options.requestRender();
   }
 
   /** Cycles resource types and resets row selection. */
@@ -582,7 +861,8 @@ export class SessionResourceEditor implements EditorComponent {
     if (!item) return;
 
     const suffix = this.needsTrailingSpace() ? " " : "";
-    for (let index = 0; index < graphemeCount(`#${this.query}`); index += 1) {
+    const pending = this.insertedPrefix ? `#${this.query}` : "";
+    for (let index = 0; index < graphemeCount(pending); index += 1) {
       this.base.handleInput(BACKSPACE_INPUT);
     }
     if (this.base.insertTextAtCursor) this.base.insertTextAtCursor(`${item.value}${suffix}`);
@@ -608,5 +888,7 @@ export class SessionResourceEditor implements EditorComponent {
     this.pickerOpen = false;
     this.query = "";
     this.selectedIndex = 0;
+    this.insertedPrefix = false;
+    this.hover = undefined;
   }
 }

@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { collectSessionResources, collectToolResources, ResourceIndex } from "./collector.ts";
 import { i18n } from "./i18n.ts";
-import { SessionResourceEditor } from "./picker.ts";
+import { isFullscreenTui, SessionResourceEditor } from "./picker.ts";
 import { configPath, loadConfig, saveConfig } from "./config.ts";
 import { installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
@@ -57,6 +57,7 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
         keybindings,
         getResources: () => resources.list(),
         isEnabled: () => pickerEnabled,
+        isMouseEnabled: () => isFullscreenTui(tui),
         requestRender: () => tui.requestRender(),
       });
     });

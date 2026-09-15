@@ -13,11 +13,12 @@ A passive session-resource reference extension for the [Pi coding agent](https:/
 - Shows a rounded, accent-bordered resource picker only after `#` is typed, with no persistent panel. It follows the editor width as the terminal resizes, while files, PR/MR links, and URLs stay in separate tabs.
 - Fuzzy-filters recent resources by label, target, kind, action, and source tool. The frame, selected arrow, and selected label use the subagent widget's fixed `#4DA3FF` accent; the selected label is bold, while actions stay dim.
 - Renders candidate labels as OSC 8 hyperlinks. File links use `file://`; web and review links keep their original URL.
+- Shows a one-line `查看资源` / `View resources` button above the editor in Pi fullscreen mode. Clicking it opens the picker panel, and the pointer can then switch tabs, highlight rows, and open resources without touching the keyboard.
 - Provides both `zh-CN` and `en-US` UI text through `pi-extensions-i18n`.
 
 ## Usage
 
-Type `#` at a token boundary in the editor:
+Type `#` at a token boundary in the editor, or click the fullscreen resource button:
 
 ```text
 ╭─ Session resources ────────────────────────────────────╮
@@ -39,7 +40,32 @@ Please inspect #ind
 
 File references use the session display path, such as `#src/index.ts`; paths containing whitespace are inserted as `#"docs/design notes.md"`. Web and PR/MR references insert the full URL. A reference is ordinary prompt text: it does not read a file again or add hidden model context.
 
-Candidate labels are OSC 8 hyperlinks. Pi fullscreen mode can open them with a click, while many terminals require Cmd/Ctrl-click in normal mode. Unsupported terminals still show readable labels. Pi does not currently expose mouse hit-selection for extension components, so clicking opens the target directly while keyboard confirmation inserts the candidate.
+Candidate labels are OSC 8 hyperlinks and the whole row is the link target. Unsupported terminals still show readable labels.
+
+## Mouse browsing (fullscreen)
+
+Pi only routes mouse input to components in fullscreen mode, so start Pi with `pi --tui-mode fullscreen` (or `"tuiMode": "fullscreen"` in settings). The button only appears when at least one resource was collected:
+
+```text
+ 查看资源 FILE 3 · PR/MR 1 · URL 2
+╭─ Session resources ────────────────────────────────────╮
+│  FILE 8   PR/MR 2   URL 3                              │
+├────────────────────────────────────────────────────────┤
+│ → src/index.ts                                write · read │
+│   tests/index.test.ts                                write │
+├────────────────────────────────────────────────────────┤
+│ ←/→ type · ↑/↓ select · Enter insert · click open      │
+╰────────────────────────────────────────────────────────╯
+```
+
+- Click the button to open the picker without typing `#`. The picker then opens with an empty query, so typing goes back to the editor instead of filtering.
+- Click a tab to switch resource type; the pointer highlights the tab, the rows, and the button while hovering.
+- Click a resource row to open it, which is the same result as Cmd+click on an OSC 8 link: Pi's fullscreen renderer runs its own URL opener for the clicked link.
+- Shift+click (or Ctrl+click) a resource row to insert the reference instead of opening it.
+- Drag inside the picker to select text, and scroll the transcript with the wheel; the header leaves wheel input to Pi.
+- Esc closes the picker, and the `#` flow keeps working unchanged.
+
+The button and mouse handling need a Pi build with the component mouse API (`@earendil-works/pi-tui` 0.85 or newer). Older builds keep the keyboard-only `#` picker and render no button.
 
 ## Commands
 
