@@ -66,8 +66,14 @@ const WORK_TEXT = "intermediate narration";
 const TOOL_CWD = "/tmp";
 /** 折叠头的行号；折叠头子组件输出「空行 + 折叠头」，所以落在第 1 行。 */
 const HEADER_ROW = 1;
-/** 两级折叠头共用的左缩进列数：组头不再比运行级多缩一级。 */
+/** 两级折叠头共用的左缩进列数：组头文案不再比运行级多缩一级。 */
 const HEADER_INDENT_COLUMNS = 2;
+/** 展开态箭头；运行级折叠头在 EXPANDED_STATE 下用它。 */
+const EXPANDED_CHEVRON = "▾";
+/** 收起态箭头；动作组默认就是收起态。 */
+const COLLAPSED_CHEVRON = "▸";
+/** 箭头与快捷键提示之间的固定间隔字符数。 */
+const CHEVRON_HINT_GAP_COLUMNS = 1;
 /** 折叠头上方空行的行号；它与折叠头属于同一个点击块。 */
 const HEADER_BLANK_ROW = 0;
 /** 折叠且已结束的运行状态。 */
@@ -481,7 +487,7 @@ test("多条成员的组收起时只渲染一条组头", () => {
 	});
 });
 
-test("动作组头与运行级折叠头左对齐", () => {
+test("动作组头与运行级折叠头文案同列，箭头都在右侧", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
 		const groupHeader = linesOf(toolComponent(ids[0])).find((line) =>
@@ -494,13 +500,27 @@ test("动作组头与运行级折叠头左对齐", () => {
 		);
 		assert.ok(runHeader, "前置条件：应渲染出运行级折叠头");
 
-		// 箭头同列，箭头后面的文案也要同列，否则视觉上仍是两级缩进。
-		assert.equal(leadingSpaces(groupHeader), HEADER_INDENT_COLUMNS, "组头缩进应为一级");
-		assert.equal(leadingSpaces(groupHeader), leadingSpaces(runHeader), "两级折叠头应左对齐");
+		// 箭头挪到右侧后，左侧只剩文案；两级文案必须同列，否则看起来仍是没对齐。
 		assert.equal(
 			groupHeader.indexOf(GROUP_HEADER_FRAGMENT),
 			runHeader.indexOf(RUN_HEADER_LABEL),
 			"两级折叠头的文案应同列",
+		);
+		assert.equal(
+			groupHeader.indexOf(GROUP_HEADER_FRAGMENT),
+			HEADER_INDENT_COLUMNS,
+			"组头文案应顶在折叠头缩进列上",
+		);
+
+		// 箭头在文案右侧；折叠头再把快捷键提示接在箭头后面。
+		const groupChevron = groupHeader.indexOf(COLLAPSED_CHEVRON);
+		const runChevron = runHeader.indexOf(EXPANDED_CHEVRON);
+		assert.ok(groupChevron > groupHeader.indexOf(GROUP_HEADER_FRAGMENT), "组头箭头应在标签右侧");
+		assert.ok(runChevron > runHeader.indexOf(RUN_HEADER_LABEL), "折叠头箭头应在文案右侧");
+		assert.equal(
+			runHeader.indexOf(EXPAND_HINT),
+			runChevron + EXPANDED_CHEVRON.length + CHEVRON_HINT_GAP_COLUMNS,
+			"快捷键提示应紧跟在右侧箭头之后",
 		);
 	});
 });

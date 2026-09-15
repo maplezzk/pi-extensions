@@ -43,12 +43,14 @@ import type { CleanModeConfig, CleanModeState } from "./types.js";
 const COLLAPSED_CHEVRON = "▸";
 /** 展开态的箭头，提示点击后收起。 */
 const EXPANDED_CHEVRON = "▾";
-/** 折叠头左缩进：运行级与动作组共用同一个值，两级箭头与标签对齐成一列。 */
+/** 折叠头左缩进：运行级与动作组的文案共用同一个起始列。 */
 const HEADER_INDENT = "  ";
-/** 折叠头里箭头与正文之间的间距。 */
-const RUN_HEADER_GAP = "  ";
-/** 右侧快捷提示与正文之间至少留的空格数。 */
-const HINT_MIN_GAP = 1;
+/** 组头缩进：标签自带一格左内边距，所以少缩进一格，标签文字才与折叠头文案同列。 */
+const ACTION_GROUP_INDENT = " ";
+/** 组头标签与右侧箭头之间的间距。 */
+const GROUP_CHEVRON_GAP = " ";
+/** 折叠头右侧内容与正文之间至少留的空格数。 */
+const RIGHT_SIDE_MIN_GAP = 1;
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
@@ -158,22 +160,23 @@ function buildRunHeaderLine(
 	const chevron = deps.getState().collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
 	const left = [
 		HEADER_INDENT,
-		deps.styler.accent(chevron),
-		RUN_HEADER_GAP,
 		deps.styler.primary(i18n.t("runHeader", { duration })),
 		" ",
 		deps.styler.muted(i18n.t("runHeaderSteps", { count: String(deps.getRunSteps(host) ?? 0) })),
 	].join("");
 
-	const hint = deps.getConfig().showExpandHint ? deps.styler.muted(deps.expandHint) : "";
-	const line = hint ? alignRightHint(left, hint, width) : left;
-	return deps.styler.band(line, width);
+	// 箭头靠右，与快捷键提示放在一起：左边留给文案，状态和「按哪个键」在同一处看。
+	const right = [deps.styler.accent(chevron)];
+	if (deps.getConfig().showExpandHint) {
+		right.push(deps.styler.muted(deps.expandHint));
+	}
+	return deps.styler.band(alignRight(left, right.join(" "), width), width);
 }
 
-/** 把右对齐的提示接在正文后面，至少留一格间距；超宽由横条自己截断。 */
-function alignRightHint(left: string, hint: string, width: number): string {
-	const gap = width - visibleWidth(left) - visibleWidth(hint);
-	return `${left}${" ".repeat(Math.max(HINT_MIN_GAP, gap))}${hint}`;
+/** 把右侧内容（箭头 + 快捷提示）接到正文后面，至少留一格间距；超宽由横条自己截断。 */
+function alignRight(left: string, right: string, width: number): string {
+	const gap = width - visibleWidth(left) - visibleWidth(right);
+	return `${left}${" ".repeat(Math.max(RIGHT_SIDE_MIN_GAP, gap))}${right}`;
 }
 
 /**
@@ -387,9 +390,9 @@ const ACTION_GROUP_HEADER_BLANK = "";
 /**
  * 组装收起的动作组头。
  *
- * 组内只有一条时直接用这条动作的摘要（「▸ 运行命令 ls -la」），这样才能既收起原始
- * 输出又不丢失「刚才做了什么」；两条以上才汇总成「▸ 探索 · N 步」。逐字包一层底色
- * 标签，让它比正文重、比运行级横条轻。
+ * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
+ * 输出又不丢失「刚才做了什么」；两条以上才汇总成「探索 · N 步」。逐字包一层底色
+ * 标签，让它比正文重、比运行级横条轻；箭头跟在标签右侧，与折叠头一样「箭头在右」。
  */
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
@@ -398,7 +401,12 @@ function buildActionGroupHeaderLines(
 	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
 	const label = group.groupSize > 1 ? countLabel : (group.summary ?? countLabel);
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
-	const header = `${HEADER_INDENT}${deps.styler.accent(chevron)} ${deps.styler.chip(label)}`;
+	const header = [
+		ACTION_GROUP_INDENT,
+		deps.styler.chip(label),
+		GROUP_CHEVRON_GAP,
+		deps.styler.accent(chevron),
+	].join("");
 	return [ACTION_GROUP_HEADER_BLANK, header];
 }
 

@@ -82,11 +82,11 @@ Each level gets its own treatment so the hierarchy reads at a glance and never b
 
 | Level | Treatment | Meaning |
 |---|---|---|
-| Run header | full-width **band** with a background + leading chevron + right-aligned shortcut hint | a whole run is folded here |
-| Action group header | same left indent as the run header + chevron + a **chip** (background only behind the label) | one action, or a group of them, is folded here |
+| Run header | full-width **band** with a background + trailing chevron and right-aligned shortcut hint | a whole run is folded here |
+| Action group header | same label column as the run header + a **chip** (background only behind the label) + trailing chevron | one action, or a group of them, is folded here |
 | Prose and tool rows | no background, Pi's own look | content that is not folded |
 
-A single action uses its own summary as the label (`Run Command ls -la`); two or more are summarised as `Explored · N steps`. The `▸` / `▾` chevron carries both the state and the "clickable" affordance.
+A single action uses its own summary as the label (`Run Command ls -la`); two or more are summarised as `Explored · N steps`. The `▸` / `▾` chevron sits to the right of the label and carries both the state and the "clickable" affordance.
 
 Backgrounds come from Pi's own theme keys (`customMessageBg` for the run band, `toolPendingBg` for the action chip), so this reads as the same visual language as extension message blocks and tool rows. If a theme is missing a colour key, only that layer of decoration is dropped — the layout is unaffected.
 
