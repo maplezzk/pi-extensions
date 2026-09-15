@@ -18,4 +18,4 @@ description: "启用与排查 pi-metrics 的耗时、TPS、TTFT、token 和成�
 
 ## 验证
 
-在 TUI 中完成一次真实模型回合：两种模式都应看到 working spinner 计时；`on-stop` 模式在停下后只出现一行汇总，`live` 模式每轮一行、多轮时另有一条 `⏱ 总耗时`。RPC/print 模式不会启动 UI 定时器或通知；provider 未返回 usage 时部分指标不可用。真实模型回合属于 E2E，执行前遵守当前任务授权边界；未运行时明确报告 `NOT_RUN`。
+在 TUI 中完成一次真实模型回合：两种模式都应看到 working spinner 计时；`on-stop` 模式在停下后只出现一行汇总，`live` 模式每轮一行、多轮时另有一条行首带 `⏱` 的耗时行。RPC/print 模式不会启动 UI 定时器或通知；provider 未返回 usage 时部分指标不可用。真实模型回合属于 E2E，执行前遵守当前任务授权边界；未运行时明确报告 `NOT_RUN`。

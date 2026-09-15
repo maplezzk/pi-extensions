@@ -97,6 +97,9 @@ test("汇总行包含总耗时和各项指标，缺少总耗时时不显示耗�
   const summary = accumulator.summarize();
   assert.ok(summary);
   const line = composeRunSummary(summary, 134_300);
+  // 行首只留 ⏱ 图标：不再出现「总耗时 / Total elapsed」这类文字。
+  assert.match(line, /^⏱ 2m 14\.3s/);
+  assert.doesNotMatch(line, /总耗时|Total elapsed/);
   assert.match(line, /TPS 62\.4 tok\/s/);
   assert.match(line, /TTFT 1\.2s/);
   assert.match(line, /in 26K/);
@@ -107,4 +110,5 @@ test("汇总行包含总耗时和各项指标，缺少总耗时时不显示耗�
 
   const withoutElapsed = composeRunSummary(summary, null);
   assert.doesNotMatch(withoutElapsed, /2m 14\.3s/);
+  assert.doesNotMatch(withoutElapsed, /^⏱/);
 });

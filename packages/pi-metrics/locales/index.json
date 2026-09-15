@@ -4,8 +4,8 @@
     "en-US": "⏱ {value}"
   },
   "elapsedTotal": {
-    "zh-CN": "⏱ 总耗时 {value}",
-    "en-US": "⏱ Total elapsed {value}"
+    "zh-CN": "⏱ {value}",
+    "en-US": "⏱ {value}"
   },
   "tpsValue": {
     "zh-CN": "TPS {value} tok/s",

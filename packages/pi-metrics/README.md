@@ -9,7 +9,7 @@ Session metrics for the [Pi coding agent](https://github.com/earendil-works/pi):
 - While the agent is working, the spinner shows the **total elapsed time since you sent the message** (for example `⏱ 47s`). It keeps counting across turns instead of resetting per turn.
 - **Display timing** decides when metric lines appear:
   - `on-stop` (default): the transcript stays quiet during the run. When the agent fully settles (`agent_settled` — including auto-retries, compaction continuations, or Esc interruption), one summary line reports the total elapsed time, blended TPS, TTFT, summed in/out tokens, stalls, and blended cost.
-  - `live`: one line per turn, right when the turn ends (the line already carries the turn duration, so no separate elapsed notice is emitted). A multi-turn run also gets a final `⏱ Total elapsed` line.
+  - `live`: one line per turn, right when the turn ends (the line already carries the turn duration, so no separate elapsed notice is emitted). A multi-turn run also gets a final `⏱` elapsed line.
 - Telemetry for every turn is persisted as `tps` custom session entries in both modes, and restored after session resume or `/tree` navigation.
 - Metrics are exposed through session entries and notifications. Use `/config:metrics` to open the TUI settings menu, or `/config:metrics enable|disable|live|on-stop|reset` to change a setting directly.
 
@@ -34,10 +34,10 @@ Use `/config:metrics` for the interactive menu (each selection is saved and the 
 ## How the summary line is computed
 
 ```
-⏱ Total elapsed 2m 14.3s · TPS 62.4 tok/s · TTFT 1.2s · in 48.2K · out 12.7K · $0.42/M
+⏱ 2m 14.3s · TPS 62.4 tok/s · TTFT 1.2s · in 48.2K · out 12.7K · $0.42/M
 ```
 
-- **Total elapsed** measures from the moment you submit the message to `agent_settled` — the same clock the spinner has been showing, so the number matches what you watched.
+- **Elapsed** (the `⏱` value opening the line) measures from the moment you submit the message to `agent_settled` — the same clock the spinner has been showing, so the number matches what you watched.
 - **TPS** is weighted by output tokens (total output ÷ summed generation time), so a short turn cannot skew the run average.
 - **TTFT** is the first measurable value in the run: how long until the first token appeared.
 - **in/out** are summed over all turns; **stall** appears only when a stall was detected.

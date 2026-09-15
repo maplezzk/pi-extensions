@@ -9,7 +9,7 @@
 - 工作期间 spinner 显示**从发出消息起的全程耗时**（如 `⏱ 47s`），跨轮次持续累加，不再每轮回零。
 - **显示时机**决定指标行什么时候出现：
   - `on-stop`（默认）：运行过程中对话区保持干净；AI 完全停止（`agent_settled`，覆盖自动重试、compaction 续跑以及 Esc 中断）后只出一行汇总：总耗时、混合 TPS、TTFT、in/out 合计、stall 和综合费率。
-  - `live`：每轮结束时立刻出一行（该行已包含本轮耗时，不再单独发耗时提示）；整段超过一轮时再补一行 `⏱ 总耗时`。
+  - `live`：每轮结束时立刻出一行（该行已包含本轮耗时，不再单独发耗时提示）；整段超过一轮时再补一行 `⏱` 耗时。
 - 两种模式都会把每轮遥测写进 `tps` custom session entry，恢复 session 或 `/tree` 后照常恢复显示。
 - Metrics 通过 session entry 和通知提供。使用 `/config:metrics` 打开 TUI 配置菜单，或用 `/config:metrics enable|disable|live|on-stop|reset` 直接改一项。
 
@@ -34,10 +34,10 @@
 ## 汇总行是怎么算的
 
 ```
-⏱ 总耗时 2m 14.3s · TPS 62.4 tok/s · TTFT 1.2s · in 48.2K · out 12.7K · $0.42/M
+⏱ 2m 14.3s · TPS 62.4 tok/s · TTFT 1.2s · in 48.2K · out 12.7K · $0.42/M
 ```
 
-- **总耗时**从你发出消息算到 `agent_settled`，与 spinner 一直在显示的是同一个时钟，数字对得上。
+- **耗时**（行首 `⏱` 后面那个值）从你发出消息算到 `agent_settled`，与 spinner 一直在显示的是同一个时钟，数字对得上。
 - **TPS** 按输出 token 加权（总输出量 ÷ 生成时间之和），单轮输出很少也不会把整段均值带偏。
 - **TTFT** 取本段第一个可测值，也就是「多久看到第一个字」。
 - **in/out** 是各轮求和；**stall** 只在检测到停顿且时长大于 0 时出现。
