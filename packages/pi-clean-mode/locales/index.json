@@ -1,0 +1,174 @@
+{
+  "runHeader": {
+    "zh-CN": "用时 {duration}",
+    "en-US": "Took {duration}"
+  },
+  "runHeaderSteps": {
+    "zh-CN": "· {count} 步",
+    "en-US": "· {count} steps"
+  },
+  "actionGroupHeader": {
+    "zh-CN": "探索 · {count} 步",
+    "en-US": "Explored · {count} steps"
+  },
+  "activityThinking": {
+    "zh-CN": "思考",
+    "en-US": "Thinking"
+  },
+  "activityWorking": {
+    "zh-CN": "处理中",
+    "en-US": "Working"
+  },
+  "activityParallel": {
+    "zh-CN": "并行执行",
+    "en-US": "Parallel"
+  },
+  "activityRead": {
+    "zh-CN": "读取文件",
+    "en-US": "Read File"
+  },
+  "activitySearch": {
+    "zh-CN": "搜索",
+    "en-US": "Search"
+  },
+  "activityEdit": {
+    "zh-CN": "编辑文件",
+    "en-US": "Edit File"
+  },
+  "activityCommand": {
+    "zh-CN": "运行命令",
+    "en-US": "Run Command"
+  },
+  "activityTool": {
+    "zh-CN": "调用工具",
+    "en-US": "Tool"
+  },
+  "activityCounters": {
+    "zh-CN": "读取 {read} · 搜索 {search} · 命令 {command} · {duration}",
+    "en-US": "read {read} · search {search} · command {command} · {duration}"
+  },
+  "toggleGroupsDescription": {
+    "zh-CN": "清爽模式：展开或收起全部动作组",
+    "en-US": "Clean mode: expand or collapse all action groups"
+  },
+  "groupsExpandedNotice": {
+    "zh-CN": "清爽模式：已展开全部动作组，按 {key} 收起",
+    "en-US": "Clean mode: all action groups expanded, press {key} to collapse"
+  },
+  "groupsCollapsedNotice": {
+    "zh-CN": "清爽模式：已收起全部动作组，按 {key} 展开",
+    "en-US": "Clean mode: all action groups collapsed, press {key} to expand"
+  },
+  "toggleDescription": {
+    "zh-CN": "清爽模式：收起或展开本轮工作过程",
+    "en-US": "Clean mode: collapse or expand this run's work"
+  },
+  "configDescription": {
+    "zh-CN": "清爽模式：打开配置面板，或直接写 key=on/off",
+    "en-US": "Clean mode: open the settings panel, or pass key=on/off"
+  },
+  "configPanelTitle": {
+    "zh-CN": "清爽模式配置",
+    "en-US": "Clean mode settings"
+  },
+  "configValueOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configValueOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configLabelEnabled": {
+    "zh-CN": "启用清爽模式",
+    "en-US": "Enable clean mode"
+  },
+  "configDescEnabled": {
+    "zh-CN": "关闭后完全按 Pi 的原始方式渲染，不再折叠任何内容",
+    "en-US": "When off, Pi renders tool output exactly as it does by default"
+  },
+  "configLabelShowRunHeader": {
+    "zh-CN": "显示用时横条",
+    "en-US": "Show duration header"
+  },
+  "configDescShowRunHeader": {
+    "zh-CN": "收起后在最终答案上方显示「用时 Ns · N 步」",
+    "en-US": "Show \"Took Ns · N steps\" above the final answer when collapsed"
+  },
+  "configLabelAutoExpand": {
+    "zh-CN": "运行中自动展开",
+    "en-US": "Auto-expand while running"
+  },
+  "configDescAutoExpand": {
+    "zh-CN": "运行过程中显示工作过程，运行结束后自动收起",
+    "en-US": "Show work while the run is active and collapse it when the run settles"
+  },
+  "configLabelActionGroups": {
+    "zh-CN": "合并工具调用",
+    "en-US": "Merge tool calls"
+  },
+  "configDescActionGroups": {
+    "zh-CN": "把同一轮的多条工具调用收成一行组头",
+    "en-US": "Collapse a turn's tool calls into a single group header"
+  },
+  "configLabelActivityArea": {
+    "zh-CN": "显示活动区",
+    "en-US": "Show activity area"
+  },
+  "configDescActivityArea": {
+    "zh-CN": "运行中在整轮最上方显示「现在在做什么」",
+    "en-US": "Show what is running at the top of the current run"
+  },
+  "configLabelActivityRows": {
+    "zh-CN": "活动区行数",
+    "en-US": "Activity rows"
+  },
+  "configDescActivityRows": {
+    "zh-CN": "活动区最多占用的行数；回车后选择具体数字",
+    "en-US": "Maximum rows used by the activity area; press enter to pick a number"
+  },
+  "configActivityRowsOption": {
+    "zh-CN": "{count} 行",
+    "en-US": "{count} rows"
+  },
+  "configLabelAnimateActivity": {
+    "zh-CN": "活动区动画",
+    "en-US": "Animate activity area"
+  },
+  "configDescAnimateActivity": {
+    "zh-CN": "关闭后活动区只显示静止标记",
+    "en-US": "When off, the activity area shows a static marker"
+  },
+  "configLabelHideThinking": {
+    "zh-CN": "隐藏思考块",
+    "en-US": "Hide thinking blocks"
+  },
+  "configDescHideThinking": {
+    "zh-CN": "收起模型的思考原文，只保留结论",
+    "en-US": "Strip the model's reasoning text and keep conclusions"
+  },
+  "collapsedNotice": {
+    "zh-CN": "清爽模式：已收起工作过程，按 {key} 展开",
+    "en-US": "Clean mode: work collapsed, press {key} to expand"
+  },
+  "expandedNotice": {
+    "zh-CN": "清爽模式：已展开工作过程，按 {key} 收起",
+    "en-US": "Clean mode: work expanded, press {key} to collapse"
+  },
+  "configSaved": {
+    "zh-CN": "清爽模式配置已保存",
+    "en-US": "Clean mode configuration saved"
+  },
+  "configSaveFailed": {
+    "zh-CN": "清爽模式配置保存失败：{error}",
+    "en-US": "Failed to save clean mode configuration: {error}"
+  },
+  "loadFailed": {
+    "zh-CN": "清爽模式配置读取失败，已使用默认值：{error}",
+    "en-US": "Failed to read clean mode configuration, using defaults: {error}"
+  },
+  "notTuiMode": {
+    "zh-CN": "清爽模式仅在交互式 TUI 下生效",
+    "en-US": "Clean mode only applies in interactive TUI mode"
+  }
+}
