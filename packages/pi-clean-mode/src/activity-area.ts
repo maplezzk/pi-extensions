@@ -12,6 +12,10 @@
  * 决定（轮首的活动区子组件）；这两个动作都是 ActivityUiHost 的必需成员，刻意不套
  * safeUiCall：它们抛错说明扩展入口的适配层坏了，应当暴露而不是吞掉；safeUiCall
  * 只用于老版本 Pi 可能缺失的可选 UI 方法。
+ *
+ * 另一个必须先想的点：活动行画在「本轮第一条 assistant 消息」的轮首槽位里，那条消息
+ * 要等 message_start 才创建。所以从 agent_start 到第一个 token 之间活动行根本画不出来，
+ * 这段时间必须留着 Pi 自带的 Working 提示，否则屏幕上什么都没有，看起来就是卡住。
  */
 
 import type { ActivityPainter, ActivitySnapshot } from "./activity.js";
@@ -76,6 +80,14 @@ export interface ActivityAreaDeps {
 	getMaxRows: () => number;
 	/** 用给定主题渲染活动区行。 */
 	renderLines: (input: ActivityLinesInput) => string[];
+	/**
+	 * 本轮是否已经有能承载活动行的组件。
+	 *
+	 * 活动行画在轮首槽位里，而那个槽位属于本轮第一条 assistant 消息，它要等
+	 * message_start 才存在；在那之前活动行画不出来，Pi 自带的 Working 提示就得继续
+	 * 顶着，否则从 agent_start 到第一个 token 之间屏幕上没有任何反餈。
+	 */
+	hasRunHeaderHost: () => boolean;
 }
 
 /** 渲染活动区行的输入。 */
@@ -106,6 +118,20 @@ function safeUiCall(action: () => void): void {
 
 /** 补位用的空行：活动块只长高不缩短，多出来的行用空行占位。 */
 const PADDING_ROW = "";
+/** 去重签名里的「承载者已就绪」标记。 */
+const SIGNATURE_HOST_READY = "host:ready";
+/** 去重签名里的「承载者还没出现」标记。 */
+const SIGNATURE_HOST_MISSING = "host:missing";
+
+/**
+ * 组装去重签名：行内容 + 承载者是否就绪。
+ *
+ * 承载者就绪与否必须参与签名：内容一个字都没变但承载者刚从无到有时，也要让签名
+ * 变化一次，下一个 tick 才能重新接管并关掉 Pi 的内置提示；否则会被去重挡住。
+ */
+function buildLinesSignature(lines: string[], hostReady: boolean): string {
+	return `${hostReady ? SIGNATURE_HOST_READY : SIGNATURE_HOST_MISSING}\n${lines.join("\n")}`;
+}
 
 /**
  * 把活动行补齐到本轮见过的最大行数。
@@ -158,7 +184,7 @@ export function refreshActivityArea(
 
 	const rendered = renderActivityLines(runtime, host, deps);
 	const lines = padActivityLines(runtime, rendered);
-	const signature = lines.join("\n");
+	const signature = buildLinesSignature(lines, deps.hasRunHeaderHost());
 
 	if (signature === runtime.linesSignature) {
 		return;
@@ -169,13 +195,20 @@ export function refreshActivityArea(
 	runtime.linesSignature = signature;
 	runtime.lines = lines;
 
-	if (!signature) {
+	if (lines.length === 0) {
 		host.requestRender();
 		restorePiWorkingIndicator(runtime, host);
 		return;
 	}
 
 	host.requestRender();
+
+	if (!deps.hasRunHeaderHost()) {
+		// 承载者还没出现，活动行画不出来；这时关掉 Pi 的 Working 提示会让屏幕彻底没有
+		// 反餈，看起来就是卡住。承载者出现后下一 tick 会因签名变化重新走到下面接管。
+		restorePiWorkingIndicator(runtime, host);
+		return;
+	}
 
 	// 活动区已经在展示当前动作，Pi 内置的 Working 提示就是重复信息。
 	safeUiCall(() => host.ui.setWorkingVisible(false));

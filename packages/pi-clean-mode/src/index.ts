@@ -156,6 +156,8 @@ interface RunDurationLedger {
 	beginRun(): void;
 	/** 认领本轮折叠头归属；本轮已被认领时返回 false。 */
 	claimOwner(host: object): boolean;
+	/** 本轮是否已经有承载折叠头的组件；没有则活动行还画不出来。 */
+	hasRunHeaderHost(): boolean;
 	/** 该承载者是否就是当前这一轮的承载者。 */
 	isOwner(host: object): boolean;
 	/**
@@ -201,6 +203,8 @@ function createRunDurationLedger(): RunDurationLedger {
 		},
 		/** 当前轮的承载者才返回 true；用于让轮首活动区只在当前轮出现。 */
 		isOwner: (host) => claimed && owner === host,
+		/** 本轮是否已经有组件承载折叠头（owner 非空）；为假时活动行还画不出来。 */
+		hasRunHeaderHost: () => owner !== undefined,
 		/** 耗时未知或尚无承载者时直接跳过。 */
 		bindRun: (durationMs, steps) => {
 			if (durationMs === undefined || !owner) {
@@ -286,6 +290,7 @@ function createActivityDeps(runtime: Runtime): ActivityAreaDeps {
 		getSnapshot: () => runtime.activity,
 		isAnimated: () => runtime.config.animateActivity,
 		getMaxRows: () => runtime.config.activityRows,
+		hasRunHeaderHost: () => runtime.runDurations.hasRunHeaderHost(),
 		renderLines: (input) => {
 			const { painter, frame, maxRows, animated } = input;
 			return buildActivityLines({
