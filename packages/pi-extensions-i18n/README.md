@@ -16,6 +16,7 @@ Independent Pi extensions still need the same operational pieces: a portable con
 - Translator interpolation for user-facing UI, command descriptions, and agent prompts.
 - A single notice outlet, `notifyWithSource`, that draws every user-visible notice as a filled background block in the transcript (the same block Pi uses for extension messages) with a short source tag in the package's own label colour. Pi renders `info` notices as dim, unprefixed text, so without the block and tag you cannot tell which extension spoke.
 - Notices land below the message and stay out of the LLM context: they are written as Pi custom entries (`appendEntry` + `registerEntryRenderer`) and only affect the transcript.
+- Notice details stay collapsed on a single line: expand them with `Ctrl+O`, or by clicking the block in fullscreen mode (with an older pi-tui that has no `MouseRegion`, keyboard expansion still works).
 
 ## Install
 

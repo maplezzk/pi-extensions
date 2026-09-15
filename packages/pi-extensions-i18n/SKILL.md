@@ -30,6 +30,7 @@ notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t
 ```
 
 - 呈现：TUI 下画成会话区里的带底色消息块（落在消息下方，不进 LLM 上下文）；rpc/print/json 仍走 `ctx.ui.notify` 的纯文本。
+- 细节：`details` 默认收起、只占一行；`Ctrl+O` 展开，全屏模式下也可以直接点这条提示块切换展开（`MouseRegion` 不可用时自动退化成只能键盘展开）。
 - 标签：每个包用短的唯一 tag 与固定颜色；颜色只在 tui 模式添加（自动处理，不要自己在调用点拼 ANSI）。
 - 依赖：底色块的渲染器由本包的扩展入口 `installNoticeRenderer(pi)` 注册一次，所以用它的包必须在 `pi.extensions` 里加载 `../pi-extensions-i18n/index.ts`，否则提示会退回纯文本（不报错、不丢提示）。
 - 自带语义色的结论行（如「已打断，未判定」）用 `textColor` 传色，不要再自己写页脚状态行。

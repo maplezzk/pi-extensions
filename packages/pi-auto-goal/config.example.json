@@ -4,7 +4,7 @@
   "maxAutoContinues": 2,
   "confidenceThreshold": 0.6,
   "timeoutSeconds": 30,
-  "includeToolTrace": true,
+  "includeToolTrace": false,
   "maxUserRequestChars": 2000,
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,

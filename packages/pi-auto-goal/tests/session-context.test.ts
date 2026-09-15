@@ -91,9 +91,12 @@ test("工具轨迹按开关关闭，并按上限只保留最后若干条", () =>
 
   const disabled = collectTurnSnapshot(entries, { ...OPTIONS, includeToolTrace: false });
   assert.deepEqual(disabled?.toolTrace, []);
+  // 关掉轨迹时明确标出来源为空，提示词不会把「没收集」说成「本轮没有工具调用」。
+  assert.equal(disabled?.toolTraceOmitted, true);
 
   const limited = collectTurnSnapshot(entries, { ...OPTIONS, maxToolTraceEntries: 2 });
   assert.equal(limited?.toolTrace.length, 2);
+  assert.equal(limited?.toolTraceOmitted, false);
   assert.match(limited?.toolTrace[0] ?? "", /edit/);
   assert.match(limited?.toolTrace[1] ?? "", /npm test/);
 

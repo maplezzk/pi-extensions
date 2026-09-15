@@ -22,7 +22,7 @@ Every fully settled turn is judged (unless `enabled` is false), so a single-line
 
 - **User request**: the last real user input on the current branch. Messages injected by this extension are skipped, so repeated interventions still judge against your original request.
 - **Final output**: the agent's last text output of this round.
-- **Tool trace**: tool calls made since that user input, condensed to one line each.
+- **Tool trace** (optional, off by default via `includeToolTrace`): tool calls made since that user input, condensed to one line each. It is not sent by default, so verdicts rest on the two text blocks above.
 
 The judge never sees your other session branches.
 
@@ -31,6 +31,7 @@ The judge never sees your other session branches.
 - **Bounded interventions**: `maxAutoContinues` (default `2`) caps automatic continuations per user request. Your own new input resets the counter. Reaching the cap produces a single warning and stops intervening.
 - **No interruption of your typing**: the verdict is discarded if you started a new turn, queued a message, or the branch moved while the judge was running.
 - **Conservative verdicts**: the built-in judge prompt treats thin evidence, polite closings, and analysis-only output as incomplete, and falls back to "stop" when the evidence is ambiguous.
+- **Waiting on background work counts as normal waiting**: when the agent's final output says it is waiting on background work (for example it just started `subagent`, `subagent_resume`, or `workflow` and said the result arrives automatically), the judge prompt requires a "stop" verdict. The background work wakes the session when it finishes, so a continuation would only add an extra round; this rule outranks the other verdict rules, and it reads the agent's final output rather than the tool trace.
 - **Explicit failures**: judge, authentication, timeout, and send errors are reported in the UI; a failed judgement is never treated as an acceptable stop.
 - **Persistent sessions only**: judgement runs in TUI and RPC modes. Print and JSON modes skip it, because the session already shuts down once the agent settles and an automatic continuation could never execute.
 
@@ -45,7 +46,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
   "maxAutoContinues": 2,
   "confidenceThreshold": 0.6,
   "timeoutSeconds": 30,
-  "includeToolTrace": true,
+  "includeToolTrace": false,
   "maxUserRequestChars": 2000,
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
@@ -64,7 +65,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | `maxAutoContinues` | `2` | Interventions per user request; `0` means unlimited. |
 | `confidenceThreshold` | `0.6` | Minimum confidence required to intervene. |
 | `timeoutSeconds` | `30` | Judge request timeout; a timeout is reported, not treated as a stop. |
-| `includeToolTrace` | `true` | Send this round's tool-call trace to the judge. |
+| `includeToolTrace` | `false` | Send this round's tool-call trace to the judge. Off by default: verdicts should come from the user request and the agent's final output. |
 | `maxUserRequestChars` | `2000` | Truncation limit for the user request. |
 | `maxFinalOutputChars` | `4000` | Truncation limit for the agent's final output. |
 | `maxToolTraceEntries` | `20` | Maximum tool-trace lines. |
@@ -82,14 +83,14 @@ After each turn the transcript shows **one** filled `[auto-goal]` block below th
 
 | Verdict line | Colour | Meaning |
 | --- | --- | --- |
-| `⚖️ stop accepted · confidence 92%` | green | Judged as a normal stop; no intervention. The percentage is the judge model's certainty. |
+| `⚖️ stop accepted · confidence 92%` | green | Judged as a normal stop; no intervention. The reason sits in the expandable details (`Ctrl+O`, or click the block in fullscreen mode). |
 | `⚖️ judged premature · continuation 1/2` | yellow | Judged as a premature stop; the continuation was sent (1/2 = 1 sent, limit 2). |
 | `⚖️ continuation limit reached (2/2) · no further intervention` | grey | Intervention budget for this request is used up. |
 | `⚖️ interrupted · not judged` | grey | You pressed Esc; the judgement stood down. |
 | `⚖️ turn did not finish normally · not judged` | grey | The turn ended with a failure or a truncated record. |
 | `⚖️ judge failed` | red | The judge call failed. |
 
-The body is a single line; the reason, the continuation that was sent, the failure, and the stop reason are kept in the expandable details: press **`Ctrl+O`** (the tool-output toggle) to read them. They take no space while collapsed.
+The body is a single line; the reason, the continuation that was sent, the failure, and the stop reason are kept in the expandable details: press **`Ctrl+O`** (the tool-output toggle), or click the notice block in fullscreen mode, to read them. They take no space while collapsed.
 
 The verdict never enters the LLM context and is not written to the footer status bar; it is a local session entry, so it still renders the same way when you reopen the session.
 

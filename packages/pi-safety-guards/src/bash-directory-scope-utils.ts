@@ -12,6 +12,8 @@ import {
 
 const SINGLE_OPTION_VALUE_COUNT = 1;
 const NAME_AND_VALUE_OPTION_COUNT = 2;
+/** 单个文件名分量的字节上限；比它更长的名字在主流文件系统上不可能存在。 */
+const MAX_NAME_BYTES = 255;
 const CHANGE_DIRECTORY_COMMAND_NAME = "cd";
 const JQ_COMMAND_NAME = "jq";
 const DATA_ONLY_COMMANDS = new Set(["echo", "printf"]);
@@ -504,7 +506,21 @@ function resolveReferencedPath(input: string, cwd: string): string | null {
   if (!value || startsWithUnknownExpansion(value)) return null;
 
   const absolutePath = isAbsolute(value) ? resolve(value) : resolve(cwd, value);
+  if (!isRepresentablePath(absolutePath)) return null;
   return canonicalizePotentialPath(absolutePath);
+}
+
+/**
+ * 名字长到文件系统无法表示时，该字符串不可能是命令真正访问的路径。
+ *
+ * 解释器的 `-c` / `-e` 程序正文会被当作位置参数收集成候选，例如
+ * `python3 -c 'import sys\n...'`；它没有 `/`，整段就是一个文件名分量，
+ * 超过 NAME_MAX 后 lstat 会抛 ENAMETOOLONG。这种候选直接丢弃，
+ * 既不参与范围判定，也不会让整条规则失败。
+ */
+function isRepresentablePath(absolutePath: string): boolean {
+  if (absolutePath.includes("\0")) return false;
+  return absolutePath.split(sep).every((segment) => Buffer.byteLength(segment) <= MAX_NAME_BYTES);
 }
 
 /** 规范化允许根目录并去重，避免符号链接别名绕过范围判断。 */
@@ -578,7 +594,11 @@ function lstatExists(path: string): boolean {
     lstatSync(path);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    // ENOENT 表示目标不存在；ENAMETOOLONG 表示整条路径长到文件系统无法表示，
+    // 两者都没有可解析的目标，统一按“不存在”继续向上寻找最近存在祖先，
+    // 而不是让整条规则以异常收场。
+    if (code === "ENOENT" || code === "ENAMETOOLONG") return false;
     throw error;
   }
 }

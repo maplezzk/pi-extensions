@@ -27,6 +27,18 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
+/** 主流文件系统的单个文件名分量上限（NAME_MAX），超过它的名字不可能存在。 */
+const NAME_MAX_BYTES = 255;
+/** 程序正文行数：只用于把解释器代码推到 NAME_MAX 之上。 */
+const PROGRAM_LINE_COUNT = 20;
+/** 深层路径的分量个数。 */
+const DEEP_SEGMENT_COUNT = 40;
+/** 深层路径的单个分量字节数：每段合法，但总长超过 PATH_MAX。 */
+const DEEP_SEGMENT_LENGTH = 60;
+
+/** 深层路径分量：每段在 NAME_MAX 之内，靠分量数量让总路径超过 PATH_MAX。 */
+const DEEP_SEGMENTS: readonly string[] = Array(DEEP_SEGMENT_COUNT).fill("d".repeat(DEEP_SEGMENT_LENGTH));
+
 /** 返回命令中的范围外路径，简化测试断言。 */
 function violations(command: string, externalDirectories: readonly string[] = []) {
   return findOutOfScopeBashPaths(command, currentDir, [currentDir, ...externalDirectories]);
@@ -90,6 +102,21 @@ test("远程 URL 不视为本地路径，设备路径也须显式允许", () => 
   assert.deepEqual(violations("echo ok > /dev/null", ["/dev/null"]), []);
   assert.deepEqual(violations("echo ok > /dev/stdout", ["/dev/stdout"]), []);
   assert.deepEqual(violations("echo ok > /dev/fd/1", ["/dev/fd"]), []);
+});
+
+test("解释器程序正文这类不可能存在的名字不参与范围判定", () => {
+  // 与 python3 -c 的多行程序同形：整段没有 `/`，本身就是单个文件名分量。
+  const program = `import sys,json\n${"d=json.load(sys.stdin)\n".repeat(PROGRAM_LINE_COUNT)}`;
+  assert.ok(program.length > NAME_MAX_BYTES);
+  assert.deepEqual(violations(`curl -s https://example.com/api | python3 -c '${program}'`), []);
+  assert.deepEqual(violations(`node -e '${program}'`), []);
+  // 范围外的超长名字同样不可能存在，不应升级成规则异常。
+  assert.deepEqual(violations(`cat ${shellQuote(join(outsideDir, "x".repeat(NAME_MAX_BYTES + 45)))}`), []);
+});
+
+test("总路径长到文件系统无法表示时仍然只做范围判定", () => {
+  assert.deepEqual(violations(`cat ${shellQuote(join(currentDir, ...DEEP_SEGMENTS))}`), []);
+  assert.equal(violations(`cat ${shellQuote(join(outsideDir, ...DEEP_SEGMENTS))}`).length, 1);
 });
 
 test("阻断内联目录选项和家目录路径", () => {
