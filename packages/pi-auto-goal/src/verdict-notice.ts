@@ -83,12 +83,10 @@ export function buildVerdictNotice(outcome: StopOutcome, sentMessage?: string): 
       return notice("warning", i18n.t("statusContinue", { budget: outcome.budget }), details);
     }
     case "stop":
-      // 判「可停止」时用户没有别的线索：没有催促消息、没有报错，
-      // 理由就是唯一的排查依据，所以默认跟在结论下面单独占一行，不用展开。
-      return notice("success", [
-        i18n.t("statusStop", { confidence: formatConfidence(outcome.confidence) }),
-        i18n.t("detailReason", { reason: oneLine(outcome.reason) }),
-      ].join("\n"), []);
+      // 理由放进详情：默认只占一行，Ctrl+O（或在全屏模式下直接点这条提示）展开就能看到。
+      return notice("success", i18n.t("statusStop", {
+        confidence: formatConfidence(outcome.confidence),
+      }), [i18n.t("detailReason", { reason: oneLine(outcome.reason) })]);
     case "skipped":
       return outcome.code === STOP_SKIP_BUDGET
         ? notice("dim", i18n.t("statusBudget", { budget: outcome.budget }), [

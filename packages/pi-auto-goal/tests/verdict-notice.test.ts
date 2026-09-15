@@ -31,26 +31,23 @@ test("早停干预：一行结论带进度，理由与已发送内容收进展�
   assert.match(notice.details.join("\n"), /继续干/);
 });
 
-test("判定为可以停止：理由默认显示在结论下面一行，不用展开", () => {
+test("判定为可以停止：结论一行带百分比置信度，理由在展开细节里", () => {
   const notice = buildVerdictNotice({ kind: "stop", reason: "已完成", confidence: 0.923 });
   assert.equal(notice.color, "success");
   assert.equal(notice.level, "info");
-  const [headline, reasonLine] = notice.text.split("\n");
-  assert.match(headline, /判定可停止|stop accepted/);
+  assert.match(notice.text, /判定可停止|stop accepted/);
   // 置信度写成整数百分比，用户不用猜 0.9 是秒数还是把握程度。
-  assert.match(headline, /置信度 92%|confidence 92%/);
+  assert.match(notice.text, /置信度 92%|confidence 92%/);
   assert.doesNotMatch(notice.text, /0\.9/);
-  // 理由单独一行且默认可见：判「可停止」时这是唯一的排查依据。
-  assert.match(reasonLine, /理由|Reason/);
-  assert.match(reasonLine, /已完成/);
-  assert.equal(notice.details.length, 0);
+  // 理由默认收起：Ctrl+O 或全屏点击展开后能看到（展开由 pi-extensions-i18n 渲染器管）。
+  assert.doesNotMatch(notice.text, /已完成/);
+  assert.match(notice.details.join("\n"), /已完成/);
 });
 
-test("判定理由是多行输出时压成一行，不把提示块撑开", () => {
+test("判定理由是多行输出时压成一行，不给展开再添行", () => {
   const notice = buildVerdictNotice({ kind: "stop", reason: "已完成\n且已自检", confidence: 0.9 });
-  const lines = notice.text.split("\n");
-  assert.equal(lines.length, 2);
-  assert.match(lines[1], /已完成 且已自检/);
+  assert.equal(notice.details.length, 1);
+  assert.match(notice.details.join("\n"), /已完成 且已自检/);
 });
 
 test("置信度换算成整数百分比，越界与非法值收敛到 0-100", () => {
@@ -128,7 +125,7 @@ test("每个结论都只给一条提示：正文一行 + 细节若干行", () =>
   for (const notice of notices) {
     assert.equal(typeof notice.text, "string");
     assert.ok(notice.text.length > 0);
-    // 详情可以为空（判「可停止」时理由已经在正文里），非空时不允许出现空行。
+    assert.ok(notice.details.length > 0, `细节行缺失：${notice.text}`);
     assert.ok(notice.details.every((line) => line.trim() !== ""));
   }
 });
