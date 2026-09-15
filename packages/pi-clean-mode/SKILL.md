@@ -49,6 +49,9 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；该轮是否已认领整轮最上面那个槽位（承载者是本轮第一条 assistant 消息） |
 | 活动区闪或卡 | 检查是否绕过了内容签名去重而每次 tick 都请求重绘；行内容不变时必须跳过 |
 | 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 并请求一次重绘） |
+| 活动区首行没有底色横条 | 首行的底色由 `component-patches.ts` 的 `bandActivityHead` 铺上（`styler.band`），检查轮首子组件是否绕过了它；主题缺 `customMessageBg` 时 `band` 会退化成纯文本补齐 |
+| 活动区行没对齐 | 首行与运行级横条同列（`BLOCK_INDENT`），细节行 `DETAIL_INDENT`、输出尾巴 `OUTPUT_INDENT`；三者在 `activity.ts` 顶部 |
+| 活动区显示一堆 `*` | 思考头部的成对强调符由 `stripEmphasisMarkup` 剥掉；若某条消息直接写快照而不经过 `extractThoughtHead`，就会绕过它 |
 | thinking 原文还在刷屏 | `hideThinking` 是否为 on；它靠 `resolveRenderedMessage` 在 `updateContent` 前抽掉 thinking 内容块，若某条消息看不到效果，检查该消息是否只走了 `render` 而没走 `updateContent` |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
 
@@ -68,13 +71,15 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 
 ## 实时活动区的三条约束
 
-改动 activity.ts / activity-area.ts / transcript-tail.ts 时必须遵守：
+改动 activity.ts / activity-area.ts / component-patches.ts 时必须遵守：
 
 1. 行内容不变就完全不请求重绘 → 先把行拼成字符串比较签名，不变就直接返回；
 2. 运行期间活动块行数只增不减（不足用空行补齐），否则内容高度会反复拖动下方内容；
 3. 动画固定 400ms（关闭动画 1000ms），定时器 `unref()`，且只在运行时存在；`agent_settled` 立即停掉并清空 `runtime.lines`。
 
-活动行内联在整轮最上面：`createRunHeaderComponent` 一个组件兼管「运行中画活动行」与「结束后画 `用时` 横条」，两者共用同一个槽位（耗时在 `agent_settled` 才写入，写完活动行立即清空，不会同时出现）。只有当前轮的承载者输出活动行（`isCurrentRunHost`），否则每个历史轮次都会重复显示一遍。
+活动行输出在整轮最上面：`createRunHeaderComponent` 一个组件兼管「运行中画活动块」与「结束后画 `用时` 横条」，两者共用同一个槽位（耗时在 `agent_settled` 才写入，写完活动行立即清空，不会同时出现）。只有当前轮的承载者输出活动行（`isCurrentRunHost`），否则每个历史轮次都会重复显示一遍。
+
+活动块的版式（`activity.ts`）：第一行是状态横条（`处理中`/`并行执行` + 耗时 + 非 0 计数），由轮首子组件整行铺底色；后面依次是思考头部、正在执行的工具（并行逐条）与输出尾巴。三档缩进常量在 `activity.ts` 顶部（`BLOCK_INDENT` / `DETAIL_INDENT` / `OUTPUT_INDENT`），首行与运行级横条文案同列，因此状态切换不跳列。
 
 ## 边界
 

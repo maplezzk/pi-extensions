@@ -43,9 +43,17 @@
     "zh-CN": "调用工具",
     "en-US": "Tool"
   },
-  "activityCounters": {
-    "zh-CN": "读取 {read} · 搜索 {search} · 命令 {command} · {duration}",
-    "en-US": "read {read} · search {search} · command {command} · {duration}"
+  "activityCounterRead": {
+    "zh-CN": "读取 {count}",
+    "en-US": "read {count}"
+  },
+  "activityCounterSearch": {
+    "zh-CN": "搜索 {count}",
+    "en-US": "search {count}"
+  },
+  "activityCounterCommand": {
+    "zh-CN": "命令 {count}",
+    "en-US": "command {count}"
   },
   "toggleGroupsDescription": {
     "zh-CN": "清爽模式：展开或收起全部动作组",

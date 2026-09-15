@@ -144,18 +144,18 @@ Set `PI_CLEAN_MODE_DEBUG=1` to append event and render decisions to `<pi agent d
 While the agent runs, a small block appears at the very top of the run:
 
 ```
-用户：帮我改一下 xxx
-│ ◑ 思考  正在追踪 token 失效路径…
-│ ⠹ 运行命令 npm test
-│   ↳ 12 passing
-│ 读取 4 · 搜索 3 · 命令 1 · 42s
- 探索 · 5 步 ▼
- 运行命令 ls -la ▶
+user: help me fix xxx
+  ⠹ Working · 42s · read 4 · search 3 · command 1   ← the first row is a full-width band
+    ◌ Thinking  tracing the token expiry path…
+    › Run Command npm test
+      ↳ 12 passing
+ Explored · 5 steps ▼
+ Run Command ls -la ▶
 ```
 
-It shares one slot with the run-level `Took …` band: while the run is going the duration is unknown, so that slot holds the live rows; once the run settles the rows are cleared and the same slot holds the band. Both therefore live at the top of the run, and neither ever looks like a status bar pinned to the bottom of the screen.
+It shares one slot with the run-level `Took …` band: while the run is going the duration is unknown, so that slot holds the live block; once the run settles the block is cleared and the same slot holds the band. Both start with a full-width band at the same column, so switching state changes the text, not the layout.
 
-Contents come from real events only — the running tool, its latest output line, the thinking head, and counters. Parallel calls collapse into one summary line.
+The first row is always the status band (`Working` / `Parallel` plus the elapsed time and the action counters); zero-valued counters are omitted. Below it come the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.
 
 Two implementation constraints matter:
 
@@ -164,7 +164,7 @@ Two implementation constraints matter:
 
 While the area shows the current action, Pi's own `Working...` line is suppressed so the two do not say the same thing twice.
 
-The rows are emitted by the run-header component itself (`createRunHeaderComponent` in `component-patches.ts`) — one component that draws the live rows while running and the `Took …` band once settled. The two never appear together: the duration is only written on `agent_settled`, and the rows are cleared in the same handler. Only the current run's host emits them, otherwise every historical run would show the same block again.
+The rows are emitted by the run-header component itself (`createRunHeaderComponent` in `component-patches.ts`) — one component that draws the live block while running and the `Took …` band once settled. The two never appear together: the duration is only written on `agent_settled`, and the rows are cleared in the same handler. Only the current run's host emits them, otherwise every historical run would show the same block again. The first row's background is applied by that same component through `styler.band`; padding rows stay blank.
 
 ## Compatibility
 
