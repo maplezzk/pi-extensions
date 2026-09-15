@@ -63,6 +63,9 @@ export const KIND_COLORS: Record<ResourceKind, string> = {
   web: ACCENT,
 };
 
+/** Shared accent for surfaces that cover every resource type, such as the browser button. */
+export const RESOURCE_ACCENT = ACCENT;
+
 /** Colorizes plain text with the shared blue accent. */
 export function kindColored(kind: ResourceKind, text: string): string {
   return tinted(KIND_COLORS[kind], text);

@@ -43,6 +43,14 @@
     "zh-CN": "←/→ 或 Tab/Shift+Tab 切换类型 · ↑/↓ 选择 · Enter 插入 · Esc 返回",
     "en-US": "Left/Right or Tab/Shift+Tab type · Up/Down select · Enter insert · Esc close"
   },
+  "viewResources": {
+    "zh-CN": "查看资源",
+    "en-US": "View resources"
+  },
+  "pickerHintMouse": {
+    "zh-CN": "←/→ 类型 · ↑/↓ 选择 · 点击打开 · Shift+点击插入",
+    "en-US": "←/→ type · ↑/↓ select · click open · Shift+click insert"
+  },
   "actionRead": {
     "zh-CN": "读取",
     "en-US": "read"
