@@ -6,7 +6,7 @@
  *
  * 为什么还要签名去重：活动行每 tick 都会重算，但内容常常没变（例如耗时没走到
  * 下一秒、动画帧循环回同一格）。内容不变时完全跳过重绘，让整屏刷新只发生在真正
- * 有新信息的时候；同时把动画压到 2.5fps，并让定时器只在运行期间存在。
+ * 有新信息的时候；动画按固定节拍推进，并让定时器只在运行期间存在。
  *
  * 刷新只做两件事：更新 runtime.lines，再请求重绘。行从哪里渲染由 component-patches.ts
  * 决定（轮首的活动区子组件）；这两个动作都是 ActivityUiHost 的必需成员，刻意不套
@@ -20,8 +20,8 @@
 
 import type { ActivityPainter, ActivitySnapshot } from "./activity.js";
 
-/** 开启动画时的刷新间隔，约 2.5fps。 */
-const ANIMATED_INTERVAL_MS = 400;
+/** 开启动画时的刷新间隔：约 6.7fps，跟 cli-spinners 点状动画的手感对齐。 */
+const ANIMATED_INTERVAL_MS = 150;
 /** 关闭动画时的刷新间隔，只是为了让耗时数字仍然更新。 */
 const STILL_INTERVAL_MS = 1000;
 
