@@ -19,6 +19,11 @@ const DEFAULT_REVIEW_TOOLS = ["edit", "write"];
 const ALL_TOOLS = "*";
 const REVIEW_TRIGGERS = ["before", "after"] as const;
 const DEFAULT_REVIEW_TRIGGER: ReviewTrigger = "after";
+/** Severity that makes one finding actionable, and therefore blocking. */
+const BLOCKING_SEVERITY = "error";
+const INFO_SEVERITY = "info";
+/** Rule group reported by findings the supervisor synthesizes itself. */
+const SUPERVISOR_RULE_GROUP = "supervisor";
 
 export type ReviewStatus = "passed" | "rejected" | "failed" | "skipped";
 export type ReviewTrigger = (typeof REVIEW_TRIGGERS)[number];
@@ -642,6 +647,23 @@ function normalizeFinding(value: unknown): FileEditReviewFinding | undefined {
   return { severity, message, line, ruleGroup };
 }
 
+/**
+ * Finds actionable issues. A finding without severity stays blocking so reviewers that omit
+ * the field keep their gate instead of silently losing it.
+ */
+function isBlockingFinding(finding: FileEditReviewFinding): boolean {
+  return finding.severity === undefined || finding.severity === BLOCKING_SEVERITY;
+}
+
+/** Records why the reviewer verdict was not taken at face value. */
+function buildVerdictConflictFinding(modelClaimedPassed: boolean): FileEditReviewFinding {
+  return {
+    severity: INFO_SEVERITY,
+    ruleGroup: SUPERVISOR_RULE_GROUP,
+    message: i18n.t(modelClaimedPassed ? "verdictConflictPassed" : "verdictConflictDowngraded"),
+  };
+}
+
 export function parseReviewResponse(text: string): ParsedFileEditReviewResult {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
   const start = trimmed.indexOf("{");
@@ -657,7 +679,16 @@ export function parseReviewResponse(text: string): ParsedFileEditReviewResult {
   const findings = Array.isArray(source.findings)
     ? source.findings.map(normalizeFinding).filter((finding): finding is FileEditReviewFinding => Boolean(finding))
     : [];
-  return { passed: source.passed, summary, findings };
+  // A rejection is honored only when the reviewer also reported an actionable issue; a model that
+  // claims passed false while listing nothing to fix would otherwise block the edit with no fix path.
+  const blocked = findings.some(isBlockingFinding);
+  const balanced = source.passed === !blocked;
+  const passed = source.passed || !blocked;
+  return {
+    passed,
+    summary,
+    findings: balanced ? findings : [...findings, buildVerdictConflictFinding(source.passed)],
+  };
 }
 
 /** Safely serializes untrusted tool input and bounds the prompt payload. */

@@ -15,6 +15,7 @@ An edit tool can complete successfully while the resulting file still violates l
 - Supports multiple reviewers running in parallel, each with its own model and one or more rule files.
 - Reads optional front matter from rule files for `enabled`, `filePatterns`, `complexity`, and `consumers`.
 - Returns `passed`, `rejected`, `failed`, or `skipped` status with summaries, findings, rule groups, and durations.
+- Treats a reviewer verdict as binding only when it is self-consistent: `passed: false` without any actionable (`error`-severity) finding is downgraded to passed and annotated, so a self-contradicting reviewer cannot block an edit with nothing to fix.
 - Passes native tool results through unchanged; it does not truncate or write tool output to temporary files. Output control belongs to Pi or other extensions.
 - Re-reads the configuration for every tool call, so configuration changes apply to the next matching operation.
 - Shows an audit card through Pi's display middleware or a fallback renderer. The shared display protocol is provided by `pi-extensions-tool-display`.
