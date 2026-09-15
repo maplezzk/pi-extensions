@@ -1,4 +1,4 @@
-import { complete } from "@earendil-works/pi-ai/compat";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type {
   ExtensionContext,
   SessionEntry,
@@ -6,16 +6,24 @@ import type {
 import { i18n } from "./i18n.ts";
 import { DEFAULT_TITLE_CONFIG, type TitleConfig } from "./config.ts";
 
-const MIN_TITLE_OUTPUT_TOKENS = 64;
-const TOKENS_PER_TITLE_CODE_POINT = 4;
-
 /** 生成标题所需的最小 session 上下文；终端消费者可复用该契约。 */
 export type SessionNameContext = Pick<ExtensionContext, "model" | "modelRegistry">;
 
 /** 可注入的标题 completion，便于终端消费者和测试复用同一套请求逻辑。 */
-export type SessionNameCompletion = (...args: Parameters<typeof complete>) => ReturnType<typeof complete>;
+export type SessionNameCompletion = (...args: Parameters<typeof completeSimple>) => ReturnType<typeof completeSimple>;
 
 type SessionNameModel = Parameters<SessionNameCompletion>[0];
+
+/** 计算标题请求的输出预算：取配置的预算与模型输出上限的较小值。 */
+export function resolveTitleMaxTokens(
+  model: Pick<SessionNameModel, "maxTokens">,
+  configuredMaxTokens: number,
+): number {
+  // 推理模型的思考与标题共用同一份输出预算。预算过小时思考会把额度整个吃掉，
+  // 响应因 max_output_tokens 截断且不含标题文本，最终报“没有返回有效标题”。
+  // 因此预算由 title.maxTokens 统一控制，默认 2048 留出思考余量。
+  return Math.min(model.maxTokens, configuredMaxTokens);
+}
 
 /** 标题请求参数；userMessages 只应包含待分析的用户输入。 */
 export type SessionNameRequest = {
@@ -127,7 +135,7 @@ export async function requestSessionName({
   userMessages,
   ctx,
   signal,
-  completion = complete,
+  completion = completeSimple,
   title = DEFAULT_TITLE_CONFIG,
 }: SessionNameRequest): Promise<string> {
   if (userMessages.length === 0) {
@@ -166,11 +174,9 @@ export async function requestSessionName({
       apiKey: auth.apiKey,
       headers: auth.headers,
       env: auth.env,
-      // 较长标题需要更多输出预算，但不能超过模型的输出上限。
-      maxTokens: Math.min(
-        model.maxTokens,
-        Math.max(MIN_TITLE_OUTPUT_TOKENS, title.maxLength * TOKENS_PER_TITLE_CODE_POINT),
-      ),
+      maxTokens: resolveTitleMaxTokens(model, title.maxTokens),
+      // 命名不需要高强度推理；档位可配置，降低思考占用预算的波动。
+      reasoning: title.effort,
       signal,
     },
   );

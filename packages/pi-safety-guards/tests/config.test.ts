@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { loadConfig, parseConfig } from "../src/config.ts";
+import type { PresetCatalog } from "../src/presets.ts";
 
 test("默认只有危险操作确认，不包含技术栈或目录限制", () => {
   const rules = parseConfig({}).rules;
@@ -48,6 +49,9 @@ test("拒绝拼写错误、旧技术专属配置、重复 ID 和无效规则", (
     { rules: [{ id: "filesystem.delete", match: { commands: [] } }] },
     { rules: [{ id: "filesystem.delete", match: { commands: ["rm"], detector: "fork-bomb" } }] },
     { rules: [{ id: "filesystem.delete", match: { detector: "unknown" } }] },
+    { rules: [{ id: "new", action: "block", match: { commandPrefixes: [] } }] },
+    { rules: [{ id: "new", action: "block", match: { commandPattern: "[" } }] },
+    { rules: [{ id: "new", action: "block", match: { commandPattern: 5 } }] },
     { rules: [{ id: "filesystem.delete", message: { "en-US": "only one locale" } }] },
   ];
   for (const value of invalid) assert.throws(() => parseConfig(value), JSON.stringify(value));
@@ -62,9 +66,34 @@ test("缺文件使用默认预设，坏文件和读取错误不静默降级", ()
   assert.throws(() => loadConfig(dir));
 });
 
+test("detector 已移除，写老配置时直接给出替代写法", () => {
+  assert.throws(
+    () => parseConfig({ rules: [{ id: "custom", action: "block", match: { detector: "disk-format" } }] }),
+    /commandPrefixes/,
+  );
+});
+
+test("commandPattern 必须是写配置时就能编译的正则", () => {
+  const rules = parseConfig({ presets: [], rules: [
+    { id: "custom", action: "block", match: { commandPattern: "^mkfs\\." } },
+  ] }).rules;
+  assert.deepEqual(rules[0]?.match, { commandPattern: "^mkfs\\." });
+});
+
 test("公开示例可解析，自定义规则不会改变默认预设", () => {
   for (const file of ["../config.example.json", "../examples/custom-rules.json"]) {
     assert.ok(parseConfig(JSON.parse(readFileSync(new URL(file, import.meta.url), "utf8"))).rules.length);
   }
   assert.equal(parseConfig({}).rules.length, 4);
+});
+
+test("预设目录可注入，未知预设名报错且缓存不被调用方改写", () => {
+  const catalog: PresetCatalog = { "demo-preset": [{ id: "demo", action: "warn", match: { commands: ["demo"] } }] };
+  assert.equal(parseConfig({ presets: ["demo-preset"] }, catalog).rules.length, 1);
+  assert.throws(() => parseConfig({ presets: ["destructive-operations"] }, catalog));
+  const first = parseConfig({ presets: ["demo-preset"] }, catalog).rules[0];
+  const second = parseConfig({ presets: ["demo-preset"] }, catalog).rules[0];
+  assert.notEqual(first, second);
+  assert.deepEqual(first, second);
+  assert.deepEqual(catalog["demo-preset"]?.[0]?.match, { commands: ["demo"] });
 });

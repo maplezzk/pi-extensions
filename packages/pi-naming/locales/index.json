@@ -159,6 +159,14 @@
     "zh-CN": "最大标题长度：{value}",
     "en-US": "Maximum title length: {value}"
   },
+  "configMaxTokens": {
+    "zh-CN": "输出预算：{value} tokens",
+    "en-US": "Output budget: {value} tokens"
+  },
+  "configEffort": {
+    "zh-CN": "思考档位：{value}",
+    "en-US": "Thinking effort: {value}"
+  },
   "configPreferredLength": {
     "zh-CN": "首选标题长度：{value}",
     "en-US": "Preferred title length: {value}"
@@ -206,6 +214,18 @@
   "configMaxLengthInput": {
     "zh-CN": "最大标题长度（正整数）",
     "en-US": "Maximum title length (positive integer)"
+  },
+  "configMaxTokensInput": {
+    "zh-CN": "输出预算（正整数，思考与标题共享）",
+    "en-US": "Output budget (positive integer, shared by thinking and title)"
+  },
+  "configEffortInput": {
+    "zh-CN": "思考档位",
+    "en-US": "Thinking effort"
+  },
+  "configEffortInvalid": {
+    "zh-CN": "思考档位无效：{value}；可选值：{options}",
+    "en-US": "Invalid thinking effort: {value}; allowed: {options}"
   },
   "configPreferredLengthInput": {
     "zh-CN": "首选标题长度（正整数）",
