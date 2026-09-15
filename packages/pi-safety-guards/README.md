@@ -108,6 +108,8 @@ Relative roots resolve against Pi's current working directory; absolute paths an
 
 Custom matchers can use the exported `findOutOfScopeBashPaths(command, cwd, roots)` helper to supply their own roots.
 
+Names the filesystem cannot represent (containing NUL, or a single component longer than 255 bytes) are not treated as paths, so interpreter program text such as `python3 -c '...'` cannot fail the rule. A candidate whose full path is too long to represent is still judged against the roots instead of failing the rule.
+
 ### Custom modules
 
 Module paths resolve against the directory containing `config.json`. A JavaScript ES module must default-export a matcher:
