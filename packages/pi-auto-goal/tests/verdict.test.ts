@@ -103,6 +103,17 @@ test("空输出与空工具轨迹使用占位文案", () => {
   assert.match(user, /\(本轮没有任何工具调用\)|（本轮没有任何工具调用）/);
 });
 
+test("未收集工具轨迹时写明原因，不冒充「本轮没有工具调用」", () => {
+  const user = buildJudgeUserPrompt({
+    userRequest: "任务",
+    finalOutput: "起来了",
+    toolTrace: [],
+    toolTraceOmitted: true,
+  });
+  assert.match(user, /没有收集工具调用轨迹|not collected/);
+  assert.doesNotMatch(user, /本轮没有任何工具调用|no tool calls in this round/);
+});
+
 test("输出被截断且没有文本时报成「预算不足」，并带上诊断信息", async () => {
   const truncated = createStopVerdictRequester(recordingInvoker({
     text: "   ",

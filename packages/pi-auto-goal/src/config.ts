@@ -88,7 +88,7 @@ export const DEFAULT_AUTO_GOAL_CONFIG: AutoGoalConfig = {
   maxAutoContinues: DEFAULT_MAX_AUTO_CONTINUES,
   confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
   timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
-  includeToolTrace: true,
+  includeToolTrace: false,
   maxUserRequestChars: DEFAULT_MAX_USER_REQUEST_CHARS,
   maxFinalOutputChars: DEFAULT_MAX_FINAL_OUTPUT_CHARS,
   maxToolTraceEntries: DEFAULT_MAX_TOOL_TRACE_ENTRIES,

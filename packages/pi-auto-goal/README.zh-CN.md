@@ -22,7 +22,7 @@ pi install npm:pi-auto-goal
 
 - **用户请求**：当前分支上最后一条真实用户输入。本扩展注入的催促消息会被跳过，因此连续干预时判定的始终是你最初的请求。
 - **最后输出**：agent 本轮最后一段文本输出。
-- **工具轨迹**：该用户输入之后发生的工具调用，每条压缩成一行。
+- **工具轨迹**（可选，默认关闭：`includeToolTrace`）：该用户输入之后发生的工具调用，每条压缩成一行；默认不发，判定只看上面两段文本。
 
 判定模型看不到你其它的会话分支。
 
@@ -46,7 +46,7 @@ pi install npm:pi-auto-goal
   "maxAutoContinues": 2,
   "confidenceThreshold": 0.6,
   "timeoutSeconds": 30,
-  "includeToolTrace": true,
+  "includeToolTrace": false,
   "maxUserRequestChars": 2000,
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
@@ -65,7 +65,7 @@ pi install npm:pi-auto-goal
 | `maxAutoContinues` | `2` | 同一条用户请求允许的自动干预次数；`0` 表示不限制。 |
 | `confidenceThreshold` | `0.6` | 触发干预所需的最低置信度。 |
 | `timeoutSeconds` | `30` | 判定请求超时；超时只报告，不当成可以停止。 |
-| `includeToolTrace` | `true` | 是否把本轮工具调用轨迹交给判定模型。 |
+| `includeToolTrace` | `false` | 是否把本轮工具调用轨迹交给判定模型。默认关闭：判定应当基于用户请求与 agent 的最后输出。 |
 | `maxUserRequestChars` | `2000` | 用户请求截断长度。 |
 | `maxFinalOutputChars` | `4000` | agent 最后输出截断长度。 |
 | `maxToolTraceEntries` | `20` | 工具轨迹最大条数。 |

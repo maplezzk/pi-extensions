@@ -22,7 +22,7 @@ Every fully settled turn is judged (unless `enabled` is false), so a single-line
 
 - **User request**: the last real user input on the current branch. Messages injected by this extension are skipped, so repeated interventions still judge against your original request.
 - **Final output**: the agent's last text output of this round.
-- **Tool trace**: tool calls made since that user input, condensed to one line each.
+- **Tool trace** (optional, off by default via `includeToolTrace`): tool calls made since that user input, condensed to one line each. It is not sent by default, so verdicts rest on the two text blocks above.
 
 The judge never sees your other session branches.
 
@@ -46,7 +46,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
   "maxAutoContinues": 2,
   "confidenceThreshold": 0.6,
   "timeoutSeconds": 30,
-  "includeToolTrace": true,
+  "includeToolTrace": false,
   "maxUserRequestChars": 2000,
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
@@ -65,7 +65,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | `maxAutoContinues` | `2` | Interventions per user request; `0` means unlimited. |
 | `confidenceThreshold` | `0.6` | Minimum confidence required to intervene. |
 | `timeoutSeconds` | `30` | Judge request timeout; a timeout is reported, not treated as a stop. |
-| `includeToolTrace` | `true` | Send this round's tool-call trace to the judge. |
+| `includeToolTrace` | `false` | Send this round's tool-call trace to the judge. Off by default: verdicts should come from the user request and the agent's final output. |
 | `maxUserRequestChars` | `2000` | Truncation limit for the user request. |
 | `maxFinalOutputChars` | `4000` | Truncation limit for the agent's final output. |
 | `maxToolTraceEntries` | `20` | Maximum tool-trace lines. |
