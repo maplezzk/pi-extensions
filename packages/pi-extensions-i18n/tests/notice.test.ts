@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Component, TuiMouseEvent } from "@earendil-works/pi-tui";
 import {
   formatNotice,
   hasNoticeRenderer,
@@ -181,6 +182,70 @@ test("提示块不留上下空白，细节行只在展开时显示", () => {
   assert.match(expanded, /<dim>判定模型：llm-proxy\/LOW<\/>/);
   // 每一行渲染行都有内容：提示块没有上下留白行。
   assert.equal(renderNoticeEntry({ data: entry }, ENTRY_THEME, false).render(RENDER_WIDTH).length, noticeContentLines(entry).length);
+});
+
+/** 点击测试用宽度：假主题的标记也会被算作可见字符，宽一点保证不折行。 */
+const CLICK_RENDER_WIDTH = 200;
+
+/** 构造一次左键点击事件；坐标与尺寸对断言无影响。 */
+function clickEvent(): TuiMouseEvent {
+  return {
+    type: "click",
+    button: "left",
+    x: 0,
+    y: 0,
+    screenX: 0,
+    screenY: 0,
+    width: CLICK_RENDER_WIDTH,
+    height: 1,
+    shift: false,
+    alt: false,
+    ctrl: false,
+  };
+}
+
+/** 把一次左键点击派发给提示块：全屏模式下走的就是这条路径。 */
+function clickNotice(component: Component): void {
+  component.handleMouse?.(clickEvent());
+}
+
+/** 测试用带细节行的条目：能点击展开的那种。 */
+const DETAILED_ENTRY = {
+  tag: "auto-goal",
+  color: "warning",
+  level: "info",
+  message: "⚖️ 判定可停止",
+  details: ["理由：已完成"],
+};
+
+test("全屏模式下点击提示块展开细节，再点一次收起", () => {
+  const component = renderNoticeEntry({ data: DETAILED_ENTRY }, ENTRY_THEME, false);
+  // 默认收起：只有一行，理由不占屏。
+  assert.equal(component.render(CLICK_RENDER_WIDTH).length, 1);
+  assert.doesNotMatch(component.render(CLICK_RENDER_WIDTH).join("\n"), /理由/);
+
+  clickNotice(component);
+  assert.match(component.render(CLICK_RENDER_WIDTH).join("\n"), /<dim>理由：已完成<\/>/);
+
+  clickNotice(component);
+  assert.equal(component.render(CLICK_RENDER_WIDTH).length, 1);
+});
+
+test("没有细节行的提示块不接管点击，避免无意义的交互", () => {
+  const component = renderNoticeEntry(
+    { data: { tag: "naming", color: "accent", level: "info", message: "已重命名" } },
+    ENTRY_THEME,
+    false,
+  );
+  assert.equal(component.handleMouse, undefined);
+});
+
+test("全局 Ctrl+O 已展开时，点击可以单独收起这一条", () => {
+  const component = renderNoticeEntry({ data: DETAILED_ENTRY }, ENTRY_THEME, true);
+  assert.match(component.render(CLICK_RENDER_WIDTH).join("\n"), /理由：已完成/);
+
+  clickNotice(component);
+  assert.equal(component.render(CLICK_RENDER_WIDTH).length, 1);
 });
 
 test("空细节行被丢弃，展开也不会出现空气泡", () => {

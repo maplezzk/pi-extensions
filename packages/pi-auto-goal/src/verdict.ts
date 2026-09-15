@@ -71,8 +71,9 @@ export function buildJudgeSystemPrompt(): string {
   return i18n.t("judgeSystemPrompt");
 }
 
-/** 把工具轨迹渲染成提示词文本块；无调用时使用占位文案。 */
+/** 把工具轨迹渲染成提示词文本块；未收集时说明原因，收集到空时说明本轮无调用。 */
 function formatToolTrace(snapshot: TurnSnapshot): string {
+  if (snapshot.toolTraceOmitted) return i18n.t("judgeToolTraceOmitted");
   return snapshot.toolTrace.length > 0
     ? snapshot.toolTrace.join("\n")
     : i18n.t("judgeToolTraceEmpty");

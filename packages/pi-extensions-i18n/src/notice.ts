@@ -6,11 +6,12 @@
  *
  * 做法：提示改走 Pi 的自定义条目（appendEntry + registerEntryRenderer），
  * 渲染成和用户消息同款的实心底色块（主题色 customMessageBg），左侧标注来源扩展的短标签。
+ * 细节行（details）默认收起：Ctrl+O 展开，全屏模式下也可以直接点这条提示块切换展开。
  * 这些条目不进入 LLM 上下文，只影响会话区外观。
  *
  * 本模块只用结构化类型，不直接依赖 Pi 的实现，便于独立测试。
  */
-import { Box, Text, type Component } from "@earendil-works/pi-tui";
+import * as piTui from "@earendil-works/pi-tui";
 
 /** 允许使用的提示级别；同时是运行时校验的唯一真值来源。 */
 const NOTICE_LEVELS = ["info", "warning", "error"] as const;
@@ -129,7 +130,7 @@ export interface NoticeApi {
       entry: { data?: unknown },
       options: { expanded?: boolean },
       theme: NoticeEntryTheme,
-    ) => Component,
+    ) => piTui.Component,
   ): void;
 }
 
@@ -158,11 +159,6 @@ function isNoticeLevel(value: unknown): value is NoticeLevel {
  */
 let noticeApi: NoticeApi | undefined;
 
-/**
- * 注入提示出口并注册条目渲染器。
- * 由 pi-extensions-i18n 的扩展入口调用；依赖它的扩展会自动带上这个入口。
- * 老版本 Pi 没有这两个能力时直接不注入，提示会退回 ui.notify（仍然可见，只是没有底色）。
- */
 /** 提示块的水平内边距：让文字不贴边。 */
 const NOTICE_PADDING_X = 1;
 /** 提示块的垂直内边距：0 表示只占一行，避免提示刷屏。 */
@@ -230,10 +226,102 @@ function isExpanded(options: unknown): boolean {
   return isRecord(options) && options.expanded === true;
 }
 
+/** 鼠标事件类型：只有左键 click 才切换展开态。 */
+const MOUSE_EVENT_CLICK = "click";
+/** 鼠标按键：只响应左键。 */
+const MOUSE_BUTTON_LEFT = "left";
+
+/** 鼠标事件里用得上的字段；只做结构化读取，不依赖 pi-tui 的具体类型。 */
+interface NoticeMouseEvent {
+  type?: unknown;
+  button?: unknown;
+}
+
+/** MouseRegion 的最小结构类型：包住子组件、接管它的鼠标事件。 */
+type NoticeMouseRegion = new (
+  child: piTui.Component,
+  onMouse: (event: NoticeMouseEvent) => { handled?: boolean } | undefined,
+) => piTui.Component;
+
+/**
+ * 取 pi-tui 的 MouseRegion。
+ * 只有全屏模式才会把鼠标事件派发到条目上；老版本 pi-tui 没有这个导出时返回 undefined，
+ * 提示块保持不可点击，键盘展开（Ctrl+O）照常可用。
+ */
+function resolveMouseRegion(): NoticeMouseRegion | undefined {
+  const candidate: unknown = (piTui as { MouseRegion?: unknown }).MouseRegion;
+  return typeof candidate === "function" ? (candidate as NoticeMouseRegion) : undefined;
+}
+
+/** 构造带底色的提示块正文；展开时追加细节行。 */
+function buildNoticeBox(input: unknown, theme: NoticeEntryTheme, expanded: boolean): piTui.Component {
+  const data = readNoticeEntryData(input);
+  const label = theme.fg(data.color, `[${data.tag}]`);
+  const body = theme.fg(noticeBodyColor(data.level, data.textColor), data.message);
+  const box = new piTui.Box(NOTICE_PADDING_X, NOTICE_PADDING_Y, (text) => theme.bg(NOTICE_BACKGROUND_COLOR, text));
+  box.addChild(new piTui.Text(`${label}${TAG_SEPARATOR}${body}`, 0, 0));
+  if (expanded && data.details !== undefined) {
+    for (const line of data.details) {
+      box.addChild(new piTui.Text(theme.fg("dim", line), 0, 0));
+    }
+  }
+  return box;
+}
+
+/**
+ * 提示块的正文组件。
+ *
+ * 展开态存在实例上，和 Pi 自己的工具输出组件一个做法：点击后宿主只请求重画、
+ * 不重建组件，所以 render() 时读实例状态就够。
+ */
+class NoticeEntryBody implements piTui.Component {
+  /** 点击带来的本地覆盖；undefined 表示跟随全局 Ctrl+O。 */
+  private override?: boolean;
+  /** 缓存的渲染结果：键是当时用的展开态。 */
+  private cached?: { expanded: boolean; box: piTui.Component };
+
+  /**
+   * @param input 条目数据（细节行写在 details 里）
+   * @param theme 前景色与底色
+   * @param globalExpanded 宿主给的全局展开态（Ctrl+O）
+   */
+  constructor(
+    private readonly input: unknown,
+    private readonly theme: NoticeEntryTheme,
+    private readonly globalExpanded: boolean,
+  ) {}
+
+  /** 当前是否展开：本地点击覆盖优先，没点过就跟随全局 Ctrl+O。 */
+  private isExpanded(): boolean {
+    return this.override ?? this.globalExpanded;
+  }
+
+  /** 点击时翻转展开态，返回翻转后的状态。 */
+  toggle(): boolean {
+    this.override = !this.isExpanded();
+    return this.override;
+  }
+
+  /** 按当前展开态渲染；只在展开态变化时重建内部组件树。 */
+  render(width: number): string[] {
+    const expanded = this.isExpanded();
+    if (this.cached === undefined || this.cached.expanded !== expanded) {
+      this.cached = { expanded, box: buildNoticeBox(this.input, this.theme, expanded) };
+    }
+    return this.cached.box.render(width);
+  }
+
+  /** 转发失效通知，让内部组件树下次重新渲染。 */
+  invalidate(): void {
+    this.cached?.box.invalidate();
+  }
+}
+
 /**
  * 把一个提示条目渲染成带底色的消息块。
  *
- * 默认只占一行（上下不加空白），避免提示刷屏；细节行只在展开（Ctrl+O）时追加。
+ * 默认只占一行（上下不加空白），避免提示刷屏；细节行只在展开时追加：
+ * 键盘用 Ctrl+O（全局展开），全屏模式下还可以直接点这条提示块切换它自己的展开态。
  * 这里直接构造 pi-tui 的 Box/Text：带底色消息块的排版（整块铺底色、按宽度换行）
  * 由 pi-tui 提供，Pi 自带的扩展消息渲染也是同样写法，属于有意为之的绑定。
  */
@@ -241,18 +329,16 @@ export function renderNoticeEntry(
   input: unknown,
   theme: NoticeEntryTheme,
   expanded = false,
-): Component {
-  const data = readNoticeEntryData(input);
-  const label = theme.fg(data.color, `[${data.tag}]`);
-  const body = theme.fg(noticeBodyColor(data.level, data.textColor), data.message);
-  const box = new Box(NOTICE_PADDING_X, NOTICE_PADDING_Y, (text) => theme.bg(NOTICE_BACKGROUND_COLOR, text));
-  box.addChild(new Text(`${label}${TAG_SEPARATOR}${body}`, 0, 0));
-  if (expanded && data.details !== undefined) {
-    for (const line of data.details) {
-      box.addChild(new Text(theme.fg("dim", line), 0, 0));
-    }
-  }
-  return box;
+): piTui.Component {
+  const body = new NoticeEntryBody(input, theme, expanded);
+  const MouseRegion = resolveMouseRegion();
+  // 没有细节行、或 pi-tui 太老没有 MouseRegion 时就不接管点击，只保留键盘展开。
+  if (MouseRegion === undefined || readNoticeEntryData(input).details === undefined) return body;
+  return new MouseRegion(body, (event) => {
+    if (event.type !== MOUSE_EVENT_CLICK || event.button !== MOUSE_BUTTON_LEFT) return undefined;
+    body.toggle();
+    return { handled: true };
+  });
 }
 
 /**

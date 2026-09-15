@@ -50,6 +50,12 @@ export interface TurnSnapshot {
   finalOutput: string;
   /** 本轮工具调用摘要行。 */
   toolTrace: string[];
+  /**
+   * 本轮是否根本没收集工具轨迹（`includeToolTrace` 关闭）。
+   * 与「收集了但本轮确实没有工具调用」区分开，避免提示词里把「没拿到轨迹」
+   * 说成「没有工具调用」。
+   */
+  toolTraceOmitted?: boolean;
 }
 
 /** 把字符串或内容块数组统一转成纯文本。 */
@@ -198,5 +204,6 @@ export function collectTurnSnapshot(
     toolTrace: options.includeToolTrace
       ? collectToolTrace(entries, lastUserIndex, options.maxToolTraceEntries)
       : [],
+    toolTraceOmitted: !options.includeToolTrace,
   };
 }
