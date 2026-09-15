@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.9.0...pi-distill-v1.9.1) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+    * pi-extensions-tool-display bumped from ^1.3.0 to ^1.3.1
+
 ## [1.9.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.8.0...pi-distill-v1.9.0) (2026-09-14)
 
 

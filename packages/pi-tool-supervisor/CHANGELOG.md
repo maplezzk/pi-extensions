@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.8.0...pi-tool-supervisor-v0.8.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* 审查结论与 findings 冲突时不再误阻断编辑 ([3eefb2b](https://github.com/maplezzk/pi-extensions/commit/3eefb2b9e78b46856afd79e4f0e9abf6babdb9fd))
+* 审查结论与 findings 冲突时不再误阻断编辑 ([214089b](https://github.com/maplezzk/pi-extensions/commit/214089be3dbf60aa8ef0c5aeaf95f192bb55e687))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+    * pi-extensions-tool-display bumped from ^1.3.0 to ^1.3.1
+
 ## [0.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.7.0...pi-tool-supervisor-v0.8.0) (2026-09-14)
 
 

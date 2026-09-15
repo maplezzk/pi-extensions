@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.7.0...pi-session-tools-v0.7.1) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.6.0...pi-session-tools-v0.7.0) (2026-09-14)
 
 

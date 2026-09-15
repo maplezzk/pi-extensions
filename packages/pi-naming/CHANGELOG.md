@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-naming-v0.5.0...pi-naming-v0.5.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* pi-naming 标题输出预算改为可配置的 title.maxTokens ([489c5c6](https://github.com/maplezzk/pi-extensions/commit/489c5c6f360ac21de59a599ab0314b5041cd8268))
+* pi-naming 标题预算与思考档位改为独立配置 ([d76b5b5](https://github.com/maplezzk/pi-extensions/commit/d76b5b5f99833d4a998420afc7595e6f6790a449))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+    * pi-terminal-mux bumped from ^0.6.3 to ^0.6.4
+  * devDependencies
+    * pi-terminal-mux bumped from ^0.6.3 to ^0.6.4
+
 ## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-naming-v0.4.0...pi-naming-v0.5.0) (2026-09-14)
 
 
