@@ -60,7 +60,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 层级 | 视觉 |
 |---|---|
 | 运行级折叠头 | 整行铺满底色的横条（`customMessageBg`）+ 左侧强调色箭头 + 右侧弱化色快捷键提示 |
-| 动作组头 | 缩进一级 + 强调色箭头 + 只包住文字的底色标签（`toolPendingBg`） |
+| 动作组头 | 与折叠头**同一左缩进**（不再多缩一级，两级箭头/文案对齐成一列）+ 强调色箭头 + 只包住文字的底色标签（`toolPendingBg`） |
 | 正文 / 工具行 | 不铺底色 |
 
 组内只有一条时标签直接用该动作的摘要（`toolActivityLabel` + `toolActivityDetail`），多条才用 `actionGroupHeader` 计数文案。主题缺色时 `createHeaderStyler` 在构造时探测并逐项退化成纯文本，渲染路径上没有 try/catch；横条的截断/补齐仍由 `truncateToWidth(..., pad)` 保证。

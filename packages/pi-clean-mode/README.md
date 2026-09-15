@@ -83,7 +83,7 @@ Each level gets its own treatment so the hierarchy reads at a glance and never b
 | Level | Treatment | Meaning |
 |---|---|---|
 | Run header | full-width **band** with a background + leading chevron + right-aligned shortcut hint | a whole run is folded here |
-| Action group header | one level of indentation + chevron + a **chip** (background only behind the label) | one action, or a group of them, is folded here |
+| Action group header | same left indent as the run header + chevron + a **chip** (background only behind the label) | one action, or a group of them, is folded here |
 | Prose and tool rows | no background, Pi's own look | content that is not folded |
 
 A single action uses its own summary as the label (`Run Command ls -la`); two or more are summarised as `Explored · N steps`. The `▸` / `▾` chevron carries both the state and the "clickable" affordance.

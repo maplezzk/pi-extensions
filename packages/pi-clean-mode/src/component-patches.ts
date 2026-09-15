@@ -43,14 +43,12 @@ import type { CleanModeConfig, CleanModeState } from "./types.js";
 const COLLAPSED_CHEVRON = "▸";
 /** 展开态的箭头，提示点击后收起。 */
 const EXPANDED_CHEVRON = "▾";
-/** 运行级折叠头左侧缩进。 */
-const RUN_HEADER_INDENT = "  ";
-/** 运行级折叠头里箭头与正文之间的间距。 */
+/** 折叠头左缩进：运行级与动作组共用同一个值，两级箭头与标签对齐成一列。 */
+const HEADER_INDENT = "  ";
+/** 折叠头里箭头与正文之间的间距。 */
 const RUN_HEADER_GAP = "  ";
 /** 右侧快捷提示与正文之间至少留的空格数。 */
 const HINT_MIN_GAP = 1;
-/** 动作组头缩进：比运行级折叠头低一级，形成树形视觉。 */
-const ACTION_GROUP_INDENT = "   ";
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
@@ -159,7 +157,7 @@ function buildRunHeaderLine(
 	const duration = formatDuration(deps.getRunDuration(host) ?? 0);
 	const chevron = deps.getState().collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
 	const left = [
-		RUN_HEADER_INDENT,
+		HEADER_INDENT,
 		deps.styler.accent(chevron),
 		RUN_HEADER_GAP,
 		deps.styler.primary(i18n.t("runHeader", { duration })),
@@ -400,7 +398,7 @@ function buildActionGroupHeaderLines(
 	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
 	const label = group.groupSize > 1 ? countLabel : (group.summary ?? countLabel);
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
-	const header = `${ACTION_GROUP_INDENT}${deps.styler.accent(chevron)} ${deps.styler.chip(label)}`;
+	const header = `${HEADER_INDENT}${deps.styler.accent(chevron)} ${deps.styler.chip(label)}`;
 	return [ACTION_GROUP_HEADER_BLANK, header];
 }
 

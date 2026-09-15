@@ -46,6 +46,8 @@ const PLAIN_THEME: ThemePainter = {
 };
 /** 折叠头里应当出现的耗时文案。 */
 const HEADER_FRAGMENT = formatDuration(RUN_DURATION_MS);
+/** 运行级折叠头的完整标签（含耗时），用来量它的起始列。 */
+const RUN_HEADER_LABEL = i18n.t("runHeader", { duration: formatDuration(RUN_DURATION_MS) });
 /** 三条成员的组头文案；由 i18n 推导，避免与实现里的文案漂移。 */
 const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
 /** 单条动作的组头摘要；组内只有一条时直接用它当组头文案。 */
@@ -64,6 +66,8 @@ const WORK_TEXT = "intermediate narration";
 const TOOL_CWD = "/tmp";
 /** 折叠头的行号；折叠头子组件输出「空行 + 折叠头」，所以落在第 1 行。 */
 const HEADER_ROW = 1;
+/** 两级折叠头共用的左缩进列数：组头不再比运行级多缩一级。 */
+const HEADER_INDENT_COLUMNS = 2;
 /** 折叠头上方空行的行号；它与折叠头属于同一个点击块。 */
 const HEADER_BLANK_ROW = 0;
 /** 折叠且已结束的运行状态。 */
@@ -225,6 +229,11 @@ function withPatches<T>(
 /** 以固定宽度渲染组件并取出文本行。 */
 function linesOf(component: { render(width: number): string[] }): string[] {
 	return component.render(WIDTH);
+}
+
+/** 取一行的起始列（前导空格数）；测试用透明主题，行内没有 ANSI 码。 */
+function leadingSpaces(line: string): number {
+	return line.length - line.trimStart().length;
 }
 
 test("运行中活动行显示在当前轮的轮首", () => {
@@ -469,6 +478,30 @@ test("多条成员的组收起时只渲染一条组头", () => {
 
 		assert.deepEqual(linesOf(toolComponent(ids[1])), [], "组内非首行收起时应隐藏");
 		assert.deepEqual(linesOf(toolComponent(ids[2])), [], "组内非首行收起时应隐藏");
+	});
+});
+
+test("动作组头与运行级折叠头左对齐", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+		const groupHeader = linesOf(toolComponent(ids[0])).find((line) =>
+			line.includes(GROUP_HEADER_FRAGMENT),
+		);
+		assert.ok(groupHeader, "前置条件：应渲染出组头行");
+
+		const runHeader = linesOf(new AssistantMessageComponent(finalMessage())).find((line) =>
+			line.includes(HEADER_FRAGMENT),
+		);
+		assert.ok(runHeader, "前置条件：应渲染出运行级折叠头");
+
+		// 箭头同列，箭头后面的文案也要同列，否则视觉上仍是两级缩进。
+		assert.equal(leadingSpaces(groupHeader), HEADER_INDENT_COLUMNS, "组头缩进应为一级");
+		assert.equal(leadingSpaces(groupHeader), leadingSpaces(runHeader), "两级折叠头应左对齐");
+		assert.equal(
+			groupHeader.indexOf(GROUP_HEADER_FRAGMENT),
+			runHeader.indexOf(RUN_HEADER_LABEL),
+			"两级折叠头的文案应同列",
+		);
 	});
 });
 
