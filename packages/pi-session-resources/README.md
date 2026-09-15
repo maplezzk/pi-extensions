@@ -54,11 +54,12 @@ Pi only routes mouse input to components in fullscreen mode, so start Pi with `p
 │ → src/index.ts                                write · read │
 │   tests/index.test.ts                                write │
 ├────────────────────────────────────────────────────────┤
-│ ←/→ type · ↑/↓ select · Enter insert · click open      │
+│ ←/→ type · ↑/↓ select · click open · Shift+click insert │
 ╰────────────────────────────────────────────────────────╯
 ```
 
 - Click the button to open the picker without typing `#`. The picker then opens with an empty query, so typing goes back to the editor instead of filtering.
+- Enter still inserts the selected reference, so keyboard and mouse stay interchangeable.
 - Click a tab to switch resource type; the pointer highlights the tab, the rows, and the button while hovering.
 - Click a resource row to open it, which is the same result as Cmd+click on an OSC 8 link: Pi's fullscreen renderer runs its own URL opener for the clicked link.
 - Shift+click (or Ctrl+click) a resource row to insert the reference instead of opening it.
