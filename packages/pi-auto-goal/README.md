@@ -83,14 +83,14 @@ After each turn the transcript shows **one** filled `[auto-goal]` block below th
 
 | Verdict line | Colour | Meaning |
 | --- | --- | --- |
-| `⚖️ stop accepted · confidence 92% · reason: …` | green | Judged as a normal stop; no intervention. The reason is in the body so no expansion is needed to audit it. |
+| `⚖️ stop accepted · confidence 92%` (next line `Reason: …`) | green | Judged as a normal stop; no intervention. The reason is shown by default on the line below, no expansion needed. |
 | `⚖️ judged premature · continuation 1/2` | yellow | Judged as a premature stop; the continuation was sent (1/2 = 1 sent, limit 2). |
 | `⚖️ continuation limit reached (2/2) · no further intervention` | grey | Intervention budget for this request is used up. |
 | `⚖️ interrupted · not judged` | grey | You pressed Esc; the judgement stood down. |
 | `⚖️ turn did not finish normally · not judged` | grey | The turn ended with a failure or a truncated record. |
 | `⚖️ judge failed` | red | The judge call failed. |
 
-The body is a single line: for an accepted stop the reason is written into the body itself (that is the case you need to audit), while the continuation that was sent, the failure, and the stop reason stay in the expandable details — press **`Ctrl+O`** (the tool-output toggle) to read them. They take no space while collapsed.
+When a stop is accepted, the verdict block shows the reason by default on the line below the headline (that is the case you need to audit); the continuation that was sent, the failure, and the stop reason stay in the expandable details — press **`Ctrl+O`** (the tool-output toggle) to read them. They take no space while collapsed.
 
 The verdict never enters the LLM context and is not written to the footer status bar; it is a local session entry, so it still renders the same way when you reopen the session.
 

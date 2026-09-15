@@ -31,23 +31,26 @@ test("早停干预：一行结论带进度，理由与已发送内容收进展�
   assert.match(notice.details.join("\n"), /继续干/);
 });
 
-test("判定为可以停止：理由直接写在正文里，不用展开细节", () => {
+test("判定为可以停止：理由默认显示在结论下面一行，不用展开", () => {
   const notice = buildVerdictNotice({ kind: "stop", reason: "已完成", confidence: 0.923 });
   assert.equal(notice.color, "success");
   assert.equal(notice.level, "info");
-  assert.match(notice.text, /判定可停止|stop accepted/);
+  const [headline, reasonLine] = notice.text.split("\n");
+  assert.match(headline, /判定可停止|stop accepted/);
   // 置信度写成整数百分比，用户不用猜 0.9 是秒数还是把握程度。
-  assert.match(notice.text, /置信度 92%|confidence 92%/);
+  assert.match(headline, /置信度 92%|confidence 92%/);
   assert.doesNotMatch(notice.text, /0\.9/);
-  // 判「可停止」时没有催促、没有报错，理由就是唯一线索，必须默认可见。
-  assert.match(notice.text, /已完成/);
+  // 理由单独一行且默认可见：判「可停止」时这是唯一的排查依据。
+  assert.match(reasonLine, /理由|Reason/);
+  assert.match(reasonLine, /已完成/);
   assert.equal(notice.details.length, 0);
 });
 
 test("判定理由是多行输出时压成一行，不把提示块撑开", () => {
   const notice = buildVerdictNotice({ kind: "stop", reason: "已完成\n且已自检", confidence: 0.9 });
-  assert.match(notice.text, /已完成 且已自检/);
-  assert.doesNotMatch(notice.text, /\n/);
+  const lines = notice.text.split("\n");
+  assert.equal(lines.length, 2);
+  assert.match(lines[1], /已完成 且已自检/);
 });
 
 test("置信度换算成整数百分比，越界与非法值收敛到 0-100", () => {
