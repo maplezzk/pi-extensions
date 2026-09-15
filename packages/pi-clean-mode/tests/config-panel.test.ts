@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CONFIG_PANEL_IDS, applyPanelChange, panelToggleLabels, toSettingItems } from "../src/config-panel.ts";
 import { i18n } from "../src/i18n.ts";
-import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig } from "../src/types.ts";
+import { DEFAULT_CLEAN_MODE_CONFIG, ACTIVITY_ROWS_RANGE, type CleanModeConfig } from "../src/types.ts";
 
-/** 面板上不该出现的行数取值，用于校验非法输入被拒绝。 */
-const OUT_OF_RANGE_ROWS = "9";
+/** 面板上不该出现的行数取值：比合法上限还大，用于校验非法输入被拒绝。 */
+const OUT_OF_RANGE_ROWS = String(ACTIVITY_ROWS_RANGE.max + 1);
 /** 测试里反复引用的字段名，避免字面量散落。 */
 const ACTIVITY_ROWS_ID = "activityRows";
 const ENABLED_ID = "enabled";

@@ -18,11 +18,11 @@ description: 配置与排查 pi-clean-mode 的配置面板、折叠单位、耗�
 | `showRunHeader` | `true` | 折叠时在最终答案上方显示 `用时 …` |
 | `enableActionGroups` | `true` | 把一个 turn 的多条工具调用收成一行组头 |
 | `showActivityArea` | `true` | 整轮最上面的实时活动行 |
-| `activityRows` | `4` | 活动区高度，1-6 |
+| `activityRows` | `4` | 活动区高度，1-20 |
 | `animateActivity` | `true` | 活动区动画；关闭后只保留静止标记 |
 | `hideThinking` | `true` | 把 Pi 的 thinking 块从消息里抽掉（不是开 Pi 自己的隐藏开关，那个会留一个空行） |
 
-改配置：`/clean config`（或直接 `/config:clean-mode`）打开交互式面板，`↑`/`↓` 选、`enter`/`space` 切换、`esc` 关闭；活动区行数会再开一层 1-6 的列表。面板里每改一项立刻落盘并生效。
+改配置：`/clean config`（或直接 `/config:clean-mode`）打开交互式面板，`↑`/`↓` 选、`enter`/`space` 切换、`esc` 关闭；活动区行数会再开一层 1-20 的列表（超出 8 项时列表自己滚动）。面板里每改一项立刻落盘并生效。
 
 不开面板时也可以用 `/config:clean-mode showRunHeader=off`，或直接编辑文件后重启会话。
 

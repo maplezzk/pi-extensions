@@ -1,5 +1,5 @@
-/** 活动区行数的合法区间。 */
-export const ACTIVITY_ROWS_RANGE = { min: 1, max: 6 } as const;
+/** 活动区行数的合法区间。上限只是「面板里列多少个选项」的限制，没有任何渲染层约束。 */
+export const ACTIVITY_ROWS_RANGE = { min: 1, max: 20 } as const;
 /** 默认活动区行数；配置缺省与测试都复用它。 */
 export const ACTIVITY_ROWS_DEFAULT = 4;
 

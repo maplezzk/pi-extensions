@@ -61,7 +61,7 @@
 Pi 自带的 `/settings` 只管内核选项，没有给扩展注册配置项的入口，所以清爽模式自带一个面板：`/clean config`（或直接 `/config:clean-mode`）会用列表接管编辑器。
 
 - `↑` / `↓` 移动，`enter` / `space` 切换，`esc` 关闭
-- `activityRows` 会再开一层 `1`–`6` 的列表：`enter` 选定，`esc` 保持原值
+- `activityRows` 会再开一层 `1`–`20` 的列表：`enter` 选定，`esc` 保持原值
 - 选中项下方显示说明，右侧显示当前值
 - 每改一项立刻写进配置文件；写失败会弹错误提示，不会只改内存不落盘
 
@@ -130,7 +130,7 @@ agent 执行期间保持展开 —— 否则折叠状态下用户在答案出现
 | `showRunHeader` | 在整轮最上方显示 `用时 …` 横条。 |
 | `enableActionGroups` | 把一个 turn 的多条工具调用收成一行组头。 |
 | `showActivityArea` | 运行中在整轮最上方显示实时活动行。 |
-| `activityRows` | 活动区高度，1-6，默认 4。 |
+| `activityRows` | 活动区高度，1-20，默认 4。 |
 | `animateActivity` | 是否播放动画；关闭后只保留静止标记。 |
 | `hideThinking` | 把 Pi 的 thinking 块整个抽掉（默认开）。 |
 

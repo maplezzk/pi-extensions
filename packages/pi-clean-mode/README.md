@@ -61,7 +61,7 @@ Group state and run state are independent: expanding the run shows groups in wha
 Pi's built-in `/settings` only manages core options and has no extension registration API, so clean mode ships its own panel: `/clean config` (or bare `/config:clean-mode`) replaces the editor with a list of every option.
 
 - `↑` / `↓` move, `enter` / `space` toggles, `esc` closes
-- `activityRows` opens a second list with `1`–`6`; `enter` picks, `esc` leaves it unchanged
+- `activityRows` opens a second list with `1`–`20`; `enter` picks, `esc` leaves it unchanged
 - the selected row shows its description, and the current value is on the right
 - each change is written to the config file immediately; a failed write shows an error notice instead of silently keeping the value only in memory
 
@@ -129,7 +129,7 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 | `showRunHeader` | Show the `Took …` band at the top of the run. |
 | `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
 | `showActivityArea` | Show the live activity rows at the top of the run. |
-| `activityRows` | Activity area height, 1-6 (default 4). |
+| `activityRows` | Activity area height, 1-20 (default 4). |
 | `animateActivity` | Animate the activity glyph; off keeps a still marker. |
 | `hideThinking` | Strip Pi's thinking blocks from the message entirely (on by default). |
 

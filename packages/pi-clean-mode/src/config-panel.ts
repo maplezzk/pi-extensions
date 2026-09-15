@@ -43,6 +43,8 @@ const ACTIVITY_ROW_VALUES: string[] = Array.from(
 	{ length: ACTIVITY_ROWS_RANGE.max - ACTIVITY_ROWS_RANGE.min + 1 },
 	(_unused, index) => String(ACTIVITY_ROWS_RANGE.min + index),
 );
+/** 行数列表最多同时显示几行；超出的部分由 SelectList 滚动。 */
+const ROW_MENU_MAX_VISIBLE = 8;
 
 /** 面板项。 */
 interface PanelItemSpec {
@@ -133,7 +135,11 @@ function createRowCountSubmenu(
 		value,
 		label: i18n.t("configActivityRowsOption", { count: value }),
 	}));
-	const list = new SelectList(items, items.length, getSelectListTheme());
+	const list = new SelectList(
+		items,
+		Math.min(items.length, ROW_MENU_MAX_VISIBLE),
+		getSelectListTheme(),
+	);
 	const currentIndex = ACTIVITY_ROW_VALUES.indexOf(currentValue);
 	if (currentIndex >= 0) {
 		list.setSelectedIndex(currentIndex);
