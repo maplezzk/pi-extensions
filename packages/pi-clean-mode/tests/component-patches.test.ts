@@ -14,6 +14,7 @@ import {
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import type { TuiMouseEvent } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	beginActionGroupStep,
 	createActionGroupState,
@@ -72,8 +73,6 @@ const HEADER_INDENT_COLUMNS = 2;
 const EXPANDED_CHEVRON = "▾";
 /** 收起态箭头；动作组默认就是收起态。 */
 const COLLAPSED_CHEVRON = "▸";
-/** 箭头与快捷键提示之间的固定间隔字符数。 */
-const CHEVRON_HINT_GAP_COLUMNS = 1;
 /** 折叠头上方空行的行号；它与折叠头属于同一个点击块。 */
 const HEADER_BLANK_ROW = 0;
 /** 折叠且已结束的运行状态。 */
@@ -487,7 +486,7 @@ test("多条成员的组收起时只渲染一条组头", () => {
 	});
 });
 
-test("动作组头与运行级折叠头文案同列，箭头都在右侧", () => {
+test("动作组头与运行级折叠头文案同列，箭头都贴右边缘", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
 		const groupHeader = linesOf(toolComponent(ids[0])).find((line) =>
@@ -512,15 +511,15 @@ test("动作组头与运行级折叠头文案同列，箭头都在右侧", () =>
 			"组头文案应顶在折叠头缩进列上",
 		);
 
-		// 箭头在文案右侧；折叠头再把快捷键提示接在箭头后面。
-		const groupChevron = groupHeader.indexOf(COLLAPSED_CHEVRON);
-		const runChevron = runHeader.indexOf(EXPANDED_CHEVRON);
-		assert.ok(groupChevron > groupHeader.indexOf(GROUP_HEADER_FRAGMENT), "组头箭头应在标签右侧");
-		assert.ok(runChevron > runHeader.indexOf(RUN_HEADER_LABEL), "折叠头箭头应在文案右侧");
-		assert.equal(
-			runHeader.indexOf(EXPAND_HINT),
-			runChevron + EXPANDED_CHEVRON.length + CHEVRON_HINT_GAP_COLUMNS,
-			"快捷键提示应紧跟在右侧箭头之后",
+		// 箭头贴右边缘：两级折叠头的行尾都应该是箭头（折叠头再跟上快捷键提示）。
+		assert.equal(visibleWidth(groupHeader), WIDTH, "组头行应补齐到整宽");
+		assert.ok(
+			groupHeader.trimEnd().endsWith(COLLAPSED_CHEVRON),
+			`组头箭头应贴在右边缘：${JSON.stringify(groupHeader)}`,
+		);
+		assert.ok(
+			runHeader.trimEnd().endsWith(EXPAND_HINT),
+			`折叠头右侧应以快捷键提示收尾：${JSON.stringify(runHeader)}`,
 		);
 	});
 });

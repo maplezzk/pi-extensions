@@ -47,8 +47,6 @@ const EXPANDED_CHEVRON = "▾";
 const HEADER_INDENT = "  ";
 /** 组头缩进：标签自带一格左内边距，所以少缩进一格，标签文字才与折叠头文案同列。 */
 const ACTION_GROUP_INDENT = " ";
-/** 组头标签与右侧箭头之间的间距。 */
-const GROUP_CHEVRON_GAP = " ";
 /** 折叠头右侧内容与正文之间至少留的空格数。 */
 const RIGHT_SIDE_MIN_GAP = 1;
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
@@ -387,27 +385,27 @@ function isGroupHeaderRow(host: ToolMessageHost, deps: ComponentPatchDeps): bool
 /** 组头前的空行，与普通工具行前面的 Spacer 保持一致。 */
 const ACTION_GROUP_HEADER_BLANK = "";
 
+/** 超过这个成员数才用「探索 · N 步」汇总文案；只有一条时直接用该动作的摘要。 */
+const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
+
 /**
  * 组装收起的动作组头。
  *
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
  * 输出又不丢失「刚才做了什么」；两条以上才汇总成「探索 · N 步」。逐字包一层底色
- * 标签，让它比正文重、比运行级横条轻；箭头跟在标签右侧，与折叠头一样「箭头在右」。
+ * 标签，让它比正文重、比运行级横条轻；箭头与折叠头一样贴右边缘，两级箭头竖着对齐。
  */
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
 	deps: ComponentPatchDeps,
+	width: number,
 ): string[] {
 	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
-	const label = group.groupSize > 1 ? countLabel : (group.summary ?? countLabel);
+	const label = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY ? countLabel : (group.summary ?? countLabel);
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
-	const header = [
-		ACTION_GROUP_INDENT,
-		deps.styler.chip(label),
-		GROUP_CHEVRON_GAP,
-		deps.styler.accent(chevron),
-	].join("");
-	return [ACTION_GROUP_HEADER_BLANK, header];
+	const left = `${ACTION_GROUP_INDENT}${deps.styler.chip(label)}`;
+	const line = alignRight(left, deps.styler.accent(chevron), width);
+	return [ACTION_GROUP_HEADER_BLANK, deps.styler.row(line, width)];
 }
 
 /** 调试日志作用域：工具行渲染决策。 */
@@ -452,7 +450,7 @@ function buildToolMessageRender(
 			return [];
 		}
 		if (mode === TOOL_ROW_GROUP_HEADER && group) {
-			const headerLines = buildActionGroupHeaderLines(group, deps);
+			const headerLines = buildActionGroupHeaderLines(group, deps, width);
 			if (!group.groupExpanded) {
 				return headerLines;
 			}
