@@ -103,12 +103,56 @@ test("思考头部取第一条 thinking 的首个非空行", () => {
 	assert.equal(extractThoughtHead({ content: [{ type: "text", text: "x" }] }), undefined);
 });
 
+test("思考头部的 markdown 强调符会被剥掉", () => {
+	const message = { content: [{ type: "thinking", thinking: "**先看 token 路径** 再看 `session.ts`" }] };
+	assert.equal(extractThoughtHead(message), "先看 token 路径 再看 session.ts");
+	assert.equal(
+		extractThoughtHead({ content: [{ type: "thinking", thinking: "snake_case 与 a*b 保持原样" }] }),
+		"snake_case 与 a*b 保持原样",
+		"散落的单个 * 与下划线不是成对标记，不应被删",
+	);
+	assert.equal(
+		extractThoughtHead({ content: [{ type: "thinking", thinking: "**  **" }] }),
+		undefined,
+		"只剩空白的标记剥完不应输出一行空思考",
+	);
+	assert.equal(
+		extractThoughtHead({ content: [{ type: "thinking", thinking: "**" }] }),
+		"**",
+		"落单的 ** 不是成对标记，原样保留",
+	);
+});
+
 test("未运行时活动区不输出任何行", () => {
 	const snapshot = { ...createActivitySnapshot(), active: false };
 	assert.deepEqual(buildActivityLines(renderInput({ snapshot })), []);
 });
 
-test("运行中至少输出当前动作行，并带上最新输出与计数", () => {
+test("首行是状态横条：正在做什么 + 耗时 + 非 0 计数", () => {
+	const snapshot = runningSnapshot();
+	snapshot.running[0].outputTail = "12 passing";
+	snapshot.counters = { read: 4, search: 0, command: 0, other: 0 };
+	const head = buildActivityLines(renderInput({ snapshot }))[0] ?? "";
+
+	assert.ok(head.includes(i18n.t("activityWorking")), `首行应说明正在处理：${head}`);
+	assert.ok(head.includes("42s"), `首行应带耗时：${head}`);
+	assert.ok(head.includes(i18n.t("activityCounterRead", { count: "4" })), `首行应带读取计数：${head}`);
+	assert.ok(!head.includes(i18n.t("activityCounterSearch", { count: "0" })), `0 的桶不应占位：${head}`);
+	assert.ok(!head.includes(i18n.t("activityCounterCommand", { count: "0" })), `0 的桶不应占位：${head}`);
+});
+
+test("计数全为 0 时首行只留状态与耗时", () => {
+	const snapshot = { ...createActivitySnapshot(), active: true, startedAtMs: 1_000_000 };
+	const lines = buildActivityLines(renderInput({ snapshot, nowMs: 1_042_000 }));
+	assert.equal(lines.length, 1, `没有动作也没有思考时只应有一行：${lines.join("\n")}`);
+	assert.equal(
+		lines[0],
+		`  ${activityGlyph("working", 0, false)} ${i18n.t("activityWorking")} · 42s`,
+		`不应出现全 0 的计数：${lines[0]}`,
+	);
+});
+
+test("当前动作与其输出尾巴各占一行，且都缩进在横条之下", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
 	const lines = buildActivityLines(renderInput({ snapshot }));
@@ -116,29 +160,34 @@ test("运行中至少输出当前动作行，并带上最新输出与计数", ()
 
 	assert.ok(joined.includes("npm test"), `应显示当前动作与参数：${joined}`);
 	assert.ok(joined.includes("12 passing"), `应显示最新输出：${joined}`);
-	assert.ok(joined.includes("42s"), `应显示耗时：${joined}`);
-	assert.ok(joined.includes("读取 4"), `应显示计数：${joined}`);
+	assert.ok(lines[1]?.startsWith("    "), `动作行应缩进一级：${JSON.stringify(lines[1])}`);
+	assert.ok(lines[2]?.startsWith("      "), `输出尾巴应缩进两级：${JSON.stringify(lines[2])}`);
 });
 
-test("行数预算收紧时优先保留当前动作", () => {
+test("行数预算收紧时优先保留状态横条", () => {
 	const snapshot = runningSnapshot();
 	snapshot.thought = "想一下";
 	const lines = buildActivityLines(renderInput({ snapshot, maxRows: 1 }));
 	assert.equal(lines.length, 1);
-	assert.ok(lines[0]?.includes("npm test"), `第一行应是当前动作：${lines[0]}`);
+	assert.ok(lines[0]?.includes("42s"), `第一行应是状态横条：${lines[0]}`);
 });
 
-test("并行执行时用一行汇总而不是逐条堆叠", () => {
+test("并行执行时首行换成并行文案，动作逐条列出", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running.push({ toolCallId: "c2", label: i18n.t("activityRead"), detail: "b.ts" });
 	const lines = buildActivityLines(renderInput({ snapshot }));
-	assert.ok(lines.length > 0, "并行时至少应输出一行");
-	assert.ok(lines[0]?.includes(i18n.t("activityParallel")), `首行应是并行汇总：${lines[0]}`);
-	assert.ok(lines[0]?.includes("2 ·"), `首行应带上并行条数：${lines[0]}`);
+	const joined = lines.join("\n");
+
+	assert.ok(lines[0]?.includes(i18n.t("activityParallel")), `首行应是并行文案：${lines[0]}`);
+	assert.ok(joined.includes("npm test"), `应列出第一个动作：${joined}`);
+	assert.ok(joined.includes("b.ts"), `应列出第二个动作：${joined}`);
 });
 
-test("没有正在执行的工具但有思考时只显示思考与计数", () => {
+test("没有正在执行的工具但有思考时，思考接在状态横条下面", () => {
 	const snapshot = { ...runningSnapshot(), running: [], thought: "权衡方案" };
 	const lines = buildActivityLines(renderInput({ snapshot }));
-	assert.ok(lines.join("\n").includes("权衡方案"));
+
+	assert.equal(lines.length, 2, `应只有状态行与思考行：${lines.join("\n")}`);
+	assert.ok(lines[0]?.includes(i18n.t("activityWorking")), `首行应是状态横条：${lines[0]}`);
+	assert.ok(lines[1]?.includes("权衡方案"), `第二行应是思考：${lines[1]}`);
 });

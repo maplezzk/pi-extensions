@@ -1,7 +1,7 @@
 /**
  * 实时活动区的运行时。
  *
- * 活动行内联在 transcript 末尾（见 transcript-tail.ts），不再用 Pi 的 widget：
+ * 活动行内联在整轮最上面（见 component-patches.ts 的轮首子组件），不再用 Pi 的 widget：
  * widget 固定在编辑器上下方，滚历史时它不动，看起来像钉在底部的一条状态。
  *
  * 为什么还要签名去重：活动行每 tick 都会重算，但内容常常没变（例如耗时没走到
@@ -46,7 +46,7 @@ export interface ActivityAreaRuntime {
 	 * 当前要展示在 transcript 末尾的行；空数组表示不展示。
 	 *
 	 * 本文件只负责写：每次重算后与 linesSignature 成对更新，由扩展入口通过
-	 * `getLines` 交给 transcript-tail 在渲染时读取。
+	 * `getLines` 交给轮首子组件在渲染时读取。
 	 */
 	lines: string[];
 	/**

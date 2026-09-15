@@ -187,6 +187,21 @@ function buildRunHeaderLine(
 }
 
 /**
+ * 给活动行的首行铺上底色。
+ *
+ * 活动块的首行是「现在在做什么」的状态行，用底色横条画出来，和运行结束后占据同一个
+ * 槽位的「用时」横条就是同一种东西：状态切换时只是文案变了，底色块不会凭空出现或消失。
+ * 只铺首行；补位用的空行保持空行，否则会在下面铺出一条空底色块。
+ */
+function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDeps): string[] {
+	const [head, ...rest] = lines;
+	if (head === undefined) {
+		return lines;
+	}
+	return [deps.styler.band(head, width), ...rest];
+}
+
+/**
  * 创建折叠头子组件。
  *
  * 它占着「整轮最上面」这个槽位，两块内容共用：
@@ -207,7 +222,7 @@ function createRunHeaderComponent(
 			const activity = deps.isCurrentRunHost(host) ? deps.getActivityLines() : [];
 			if (activity.length > 0) {
 				// 活动行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
-				return [HEADER_LEADING_BLANK, ...activity];
+				return [HEADER_LEADING_BLANK, ...bandActivityHead(activity, width, deps)];
 			}
 
 			const decision = resolveRunHeader({

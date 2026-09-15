@@ -1,12 +1,16 @@
 /**
  * 实时活动区的纯逻辑。
  *
- * 目标：运行期间在对话流末尾用固定行数展示「现在在做什么」，而不是让 transcript
- * 里的行反复增减。内容全部来自真实事件，不生成推测出来的进度。
+ * 目标：运行期间用固定行数展示「现在在做什么」，而不是让 transcript 里的行反复增减。
+ * 内容全部来自真实事件，不生成推测出来的进度。
+ *
+ * 行的形状：第一行是状态横条（正在做什么 + 耗时 + 计数），后面依次是思考头部、
+ * 正在执行的工具与其输出尾巴。第一行由 component-patches.ts 整行铺上底色，
+ * 与运行结束后的「用时」横条共用同一列与同一套视觉。
  *
  * 关键约束：行每 tick 都会重算，但内容常常没变（耗时没走到下一秒、动画帧循环回同一
  * 格），因此行内容必须可比较、不变时要能整体跳过重绘；真正决定「要不要重绘」以及在
- * 哪里渲染的职责在 activity-area.ts 与 transcript-tail.ts。
+ * 哪里渲染的职责在 activity-area.ts 与 component-patches.ts。
  */
 
 import { formatDuration } from "./duration.js";
@@ -27,16 +31,36 @@ export const ACTIVITY_MAX_LINE = 110;
 /** 输出尾巴的最大宽度。 */
 const OUTPUT_TAIL_MAX = 80;
 /** 活动区用到的主题色，按用途命名，避免调用处依赖具体色键。 */
-const COLOR_RAIL = "dim";
+const COLOR_DIM = "dim";
 const COLOR_DETAIL = "muted";
 const COLOR_GLYPH = "accent";
 const COLOR_HEADING = "toolTitle";
 /** 从工具参数里尝试读取摘要的候选字段，按优先级排列。 */
 const TOOL_ARG_KEYS = ["command", "file_path", "path", "pattern", "query", "url"] as const;
-/** 活动区轨道前缀。 */
-const RAIL = "│ ";
-/** 输出行的额外缩进。 */
-const OUTPUT_INDENT = "  ";
+/**
+ * 活动块的左缩进：与运行级「用时」横条的文案同列。
+ *
+ * 首行是铺底色的状态横条，运行中和运行结束共用同一列，切换时文案不会横向跳。
+ */
+const BLOCK_INDENT = "  ";
+/** 细节行（思考、当前动作）的缩进：比横条文案再深一级。 */
+const DETAIL_INDENT = "    ";
+/** 输出尾巴的缩进：让 `↳` 正好落在细节行文案的起始列。 */
+const OUTPUT_INDENT = "      ";
+/** 横条与细节行内各段之间的分隔符。 */
+const SEGMENT_SEPARATOR = " · ";
+/** 思考文案与「思考」标签之间的间距。 */
+const THOUGHT_GAP = "  ";
+/** 输出尾巴的标记。 */
+const OUTPUT_MARKER = "↳ ";
+/**
+ * 成对出现的强调标记：`**粗体**`、`__粗体__`、反引号代码，各留捕获组 1（标记里的正文）。
+ *
+ * 拆成三条而不是一条带或的正则，是为了让替换一律用 `$1`；三条各自只有一个捕获组。
+ */
+const PAIRED_EMPHASIS_PATTERNS = [/\*\*(.+?)\*\*/g, /__(.+?)__/g, /`([^`]+)`/g] as const;
+/** 替换模板：只保留第一个捕获组。 */
+const CAPTURE_ONE = "$1";
 
 /** 当前正在执行的工具。 */
 export interface RunningAction {
@@ -223,6 +247,19 @@ export function extractOutputTail(result: unknown): string | undefined {
 	return tail ? clampActivityText(tail, OUTPUT_TAIL_MAX) : undefined;
 }
 
+/**
+ * 去掉思考原文里成对的 markdown 强调标记，只留标记里的正文。
+ *
+ * 活动区是一行纯文本，`**加粗**` 原样显示只会变成一串星号。只处理成对的
+ * `**…**`、`__…__` 与反引号包裹；散落的单个 `*`、标识符里的下划线不动。
+ */
+export function stripEmphasisMarkup(text: string): string {
+	return PAIRED_EMPHASIS_PATTERNS.reduce(
+		(cleaned, pattern) => cleaned.replace(pattern, CAPTURE_ONE),
+		text,
+	);
+}
+
 /** 取模型思考的第一行非空内容。 */
 export function extractThoughtHead(message: unknown): string | undefined {
 	if (typeof message !== "object" || message === null) {
@@ -244,58 +281,73 @@ export function extractThoughtHead(message: unknown): string | undefined {
 		}
 		const firstLine = record.thinking.split("\n").find((line) => line.trim().length > 0);
 		if (firstLine) {
-			return clampActivityText(firstLine, ACTIVITY_MAX_LINE);
+			const cleaned = stripEmphasisMarkup(firstLine).trim();
+			return cleaned.length > 0 ? clampActivityText(cleaned, ACTIVITY_MAX_LINE) : undefined;
 		}
 	}
 
 	return undefined;
 }
 
-/** 组装计数与耗时那一行。 */
-function buildCounterLine(input: ActivityRenderInput): string {
-	const { snapshot, nowMs, paint } = input;
-	const elapsed = snapshot.startedAtMs === undefined ? "" : formatDuration(nowMs - snapshot.startedAtMs);
-	return paint.fg(
-		COLOR_DETAIL,
-		i18n.t("activityCounters", {
-			read: String(snapshot.counters.read),
-			search: String(snapshot.counters.search),
-			command: String(snapshot.counters.command),
-			duration: elapsed,
-		}),
-	);
+/** 把非 0 的分类计数拼成一段文本；全为 0 时返回空串（不占版面）。 */
+function buildCounterText(counters: ActivityCounters): string {
+	const parts: string[] = [];
+	if (counters.read > 0) {
+		parts.push(i18n.t("activityCounterRead", { count: String(counters.read) }));
+	}
+	if (counters.search > 0) {
+		parts.push(i18n.t("activityCounterSearch", { count: String(counters.search) }));
+	}
+	if (counters.command > 0) {
+		parts.push(i18n.t("activityCounterCommand", { count: String(counters.command) }));
+	}
+	return parts.join(SEGMENT_SEPARATOR);
 }
 
-/** 组装当前动作那一行（含并行情况）。 */
-function buildCurrentLines(input: ActivityRenderInput): string[] {
-	const { snapshot, frame, animated, paint } = input;
+/**
+ * 组装活动块首行：正在做什么 + 耗时 + 已完成的动作计数。
+ *
+ * 这一行会被渲染层整行铺上底色，成为与「用时」横条同款的横条，因此它是活动块里
+ * 唯一常驻的一行：无论当前在思考还是在跑工具，第一行永远成立，块的高度就不会抖。
+ * 计数为 0 的桶不显示 —— 刚开始跑时「读取 0 · 搜索 0 · 命令 0」全是噪音。
+ */
+function buildHeaderLine(input: ActivityRenderInput): string {
+	const { snapshot, nowMs, frame, animated, paint } = input;
 	const glyph = activityGlyph("working", frame, animated);
-	const rail = paint.fg(COLOR_RAIL, RAIL);
+	const label = snapshot.running.length > 1 ? i18n.t("activityParallel") : i18n.t("activityWorking");
 
-	if (snapshot.running.length === 0) {
-		return [
-			`${rail}${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, i18n.t("activityWorking")))}`,
+	const parts = [`${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, label))}`];
+	if (snapshot.startedAtMs !== undefined) {
+		parts.push(paint.fg(COLOR_DETAIL, formatDuration(nowMs - snapshot.startedAtMs)));
+	}
+
+	const counters = buildCounterText(snapshot.counters);
+	if (counters.length > 0) {
+		parts.push(paint.fg(COLOR_DETAIL, counters));
+	}
+
+	return `${BLOCK_INDENT}${parts.join(SEGMENT_SEPARATOR)}`;
+}
+
+/**
+ * 组装正在执行的工具行；并行时每个动作各占一行。
+ *
+ * 首行的横条只说「在处理」，具体在跑什么由这里逐条列出，带输出尾巴的动作紧跟着一行。
+ */
+function buildRunningLines(input: ActivityRenderInput): string[] {
+	const { snapshot, frame, animated, paint } = input;
+	const glyph = paint.fg(COLOR_GLYPH, `${activityGlyph("working", frame, animated)} `);
+
+	return snapshot.running.flatMap((action) => {
+		const detail = action.detail ? paint.fg(COLOR_DETAIL, ` ${action.detail}`) : "";
+		const lines = [
+			`${DETAIL_INDENT}${glyph}${paint.bold(paint.fg(COLOR_HEADING, action.label))}${detail}`,
 		];
-	}
-
-	if (snapshot.running.length > 1) {
-		const labels = [...new Set(snapshot.running.map((action) => action.label))];
-		return [
-			`${rail}${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, i18n.t("activityParallel")))}${paint.fg(COLOR_DETAIL, ` ${snapshot.running.length} · ${labels.join(" / ")}`)}`,
-		];
-	}
-
-	const action = snapshot.running[0];
-	const detail = action?.detail ? paint.fg(COLOR_DETAIL, ` ${action.detail}`) : "";
-	const lines = [
-		`${rail}${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, action?.label ?? ""))}${detail}`,
-	];
-
-	if (action?.outputTail) {
-		lines.push(paint.fg(COLOR_RAIL, `${RAIL}${OUTPUT_INDENT}↳ ${action.outputTail}`));
-	}
-
-	return lines;
+		if (action.outputTail) {
+			lines.push(paint.fg(COLOR_DIM, `${OUTPUT_INDENT}${OUTPUT_MARKER}${action.outputTail}`));
+		}
+		return lines;
+	});
 }
 
 /** 组装思考头部那一行。 */
@@ -306,17 +358,16 @@ function buildThoughtLine(input: ActivityRenderInput): string[] {
 	}
 
 	const glyph = activityGlyph("thinking", frame, animated);
-	const rail = paint.fg(COLOR_RAIL, RAIL);
 	return [
-		`${rail}${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, i18n.t("activityThinking")))}${paint.fg(COLOR_DETAIL, `  ${snapshot.thought}`)}`,
+		`${DETAIL_INDENT}${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, i18n.t("activityThinking")))}${paint.fg(COLOR_DETAIL, `${THOUGHT_GAP}${snapshot.thought}`)}`,
 	];
 }
 
 /**
  * 组装活动区行。
  *
- * 优先展示正在做什么，其次最新输出、思考头部，最后计数与耗时；
- * 超出 maxRows 时从尾部截断，保证最关键的当前动作一定可见。
+ * 第一行是铺底色的状态横条（永远在），后面依次是思考头部、正在执行的工具与其输出尾巴。
+ * 超出 maxRows 时从尾部截断：预算再紧也先保住「还在跑、跑了多久、做了多少」。
  */
 export function buildActivityLines(input: ActivityRenderInput): string[] {
 	const { snapshot, maxRows } = input;
@@ -325,9 +376,9 @@ export function buildActivityLines(input: ActivityRenderInput): string[] {
 	}
 
 	const lines = [
-		...buildCurrentLines(input),
+		buildHeaderLine(input),
 		...buildThoughtLine(input),
-		buildCounterLine(input),
+		...buildRunningLines(input),
 	];
 
 	return lines.slice(0, maxRows);

@@ -57,6 +57,8 @@ const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
 const SINGLE_ACTION_SUMMARY = "运行命令 ls -la";
 /** 轮首活动行；只用于断言它出现在当前轮最上面。 */
 const ACTIVITY_ROW = "│ ⠹ 运行命令 npm test";
+/** 活动行首行在组件里的行号：折叠头子组件输出「空行 + 活动行」，所以是第 1 行。 */
+const ACTIVITY_HEAD_ROW = 1;
 /** 工具调用 id。 */
 const TOOL_CALL_ID = "call-1";
 /** 最终答案的正文。 */
@@ -270,8 +272,20 @@ test("运行中活动行显示在当前轮的轮首", () => {
 		const lines = linesOf(component);
 
 		assert.ok(lines.join("\n").includes(ACTIVITY_ROW), `活动行应出现在轮首：${lines.join("\n")}`);
-		assert.equal(lines[1], ACTIVITY_ROW, "活动行应落在空行之后的第一行");
-		assert.deepEqual(lines.slice(0, 2), ["", ACTIVITY_ROW], "活动行应在工作过程正文之前");
+		const head = lines[ACTIVITY_HEAD_ROW];
+		assert.equal(head?.trimEnd(), ACTIVITY_ROW, "活动行应落在空行之后的第一行");
+		// 首行被当做状态横条渲染（styler.band），band 会按宽度补齐到整行；
+		// 其余活动行不补位，所以这条断言同时证明了「只有首行是横条」。
+		assert.equal(
+			visibleWidth(head ?? ""),
+			WIDTH,
+			`活动行首行应铺满整行：${JSON.stringify(head)}`,
+		);
+		assert.deepEqual(
+			lines.slice(0, ACTIVITY_HEAD_ROW + 1).map((line) => line.trimEnd()),
+			["", ACTIVITY_ROW],
+			"活动行应在工作过程正文之前",
+		);
 	});
 });
 
