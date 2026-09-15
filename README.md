@@ -13,7 +13,7 @@ Each package is independently installable and keeps its detailed behavior, confi
 
 | Package | Description | Documentation |
 | --- | --- | --- |
-| [`pi-safety-guards`](./packages/pi-safety-guards) | Configurable Bash safety presets, rule actions and custom matchers. | [English](./packages/pi-safety-guards/README.md) · [中文](./packages/pi-safety-guards/README.zh-CN.md) |
+| [`pi-safety-guards`](./packages/pi-safety-guards) | Configurable Bash safety rules, rule actions and custom matchers. | [English](./packages/pi-safety-guards/README.md) · [中文](./packages/pi-safety-guards/README.zh-CN.md) |
 | [`pi-nested-skills`](./packages/pi-nested-skills) | Nested skill discovery, aliases and completion from configured roots. | [English](./packages/pi-nested-skills/README.md) · [中文](./packages/pi-nested-skills/README.zh-CN.md) |
 | [`pi-notifications`](./packages/pi-notifications) | Configurable desktop notifications for agent activity. | [English](./packages/pi-notifications/README.md) · [中文](./packages/pi-notifications/README.zh-CN.md) |
 | [`pi-naming`](./packages/pi-naming) | Unified automatic and manual naming for sessions and owned terminal targets. | [English](./packages/pi-naming/README.md) · [中文](./packages/pi-naming/README.zh-CN.md) |

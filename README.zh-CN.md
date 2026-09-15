@@ -13,7 +13,7 @@
 
 | 包 | 说明 | 文档 |
 | --- | --- | --- |
-| [`pi-safety-guards`](./packages/pi-safety-guards) | 可选择的 Bash 安全预设、规则动作与自定义匹配器。 | [English](./packages/pi-safety-guards/README.md) · [中文](./packages/pi-safety-guards/README.zh-CN.md) |
+| [`pi-safety-guards`](./packages/pi-safety-guards) | 可配置的 Bash 安全规则、规则动作与自定义匹配器。 | [English](./packages/pi-safety-guards/README.md) · [中文](./packages/pi-safety-guards/README.zh-CN.md) |
 | [`pi-nested-skills`](./packages/pi-nested-skills) | 从配置目录发现嵌套技能，提供别名调用和补全。 | [English](./packages/pi-nested-skills/README.md) · [中文](./packages/pi-nested-skills/README.zh-CN.md) |
 | [`pi-notifications`](./packages/pi-notifications) | 可配置的 Agent 活动桌面通知。 | [English](./packages/pi-notifications/README.md) · [中文](./packages/pi-notifications/README.zh-CN.md) |
 | [`pi-naming`](./packages/pi-naming) | 统一自动和手动命名会话及允许修改的终端目标。 | [English](./packages/pi-naming/README.md) · [中文](./packages/pi-naming/README.zh-CN.md) |

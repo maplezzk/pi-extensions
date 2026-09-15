@@ -3,6 +3,10 @@
     "zh-CN": "安全规则配置字段无效：{field}",
     "en-US": "Invalid safety rule configuration field: {field}"
   },
+  "presetsRemoved": {
+    "zh-CN": "配置里的 presets 字段已移除：预设功能已删除，请把规则直接写进 rules。原来 destructive-operations 的 4 条规则见 README 或 config.example.json，可整段复制到 rules 里。",
+    "en-US": "The presets field was removed: presets no longer exist, so write rules directly under rules. The four rules that used to make up destructive-operations are in the README and config.example.json; copy them into rules."
+  },
   "detectorRemoved": {
     "zh-CN": "detector 匹配器已移除：它把匹配逻辑藏在代码里。请改用显式匹配：commands（命令名）、commandPrefixes（命令名前缀）、commandPattern（原始命令文本正则），需要命令加参数组合判断时用 module。旧名字到新写法的对照见 README。",
     "en-US": "The detector matcher was removed because it hid matching logic in code. Use explicit matchers instead: commands (exact names), commandPrefixes (name prefixes), commandPattern (regex over the raw command text), or module when a matcher needs command-plus-argument logic. See the README for old-name to new-syntax mappings."
@@ -11,25 +15,9 @@
     "zh-CN": "安全规则加载失败，Bash 已阻断。请修复配置并 /reload：{error}",
     "en-US": "Safety rules failed to load; Bash is blocked. Fix the configuration and /reload: {error}"
   },
-  "presetDirectoryFailed": {
-    "zh-CN": "读取内置安全预设目录失败：{directory}（{error}）",
-    "en-US": "Failed to read the bundled safety preset directory: {directory} ({error})"
-  },
-  "presetDirectoryEmpty": {
-    "zh-CN": "目录里没有 JSON 预设文件",
-    "en-US": "the directory contains no JSON preset files"
-  },
-  "presetFileInvalid": {
-    "zh-CN": "内置安全预设文件 {file} 无效：{error}",
-    "en-US": "Invalid bundled safety preset file {file}: {error}"
-  },
-  "presetNameInvalid": {
-    "zh-CN": "预设名 {name} 必须是小写字母、数字和单个连字符",
-    "en-US": "preset name {name} must use lowercase letters, digits and single hyphens"
-  },
   "noRules": {
-    "zh-CN": "尚未启用任何安全规则，本插件不会阻断操作。",
-    "en-US": "No safety rules are enabled; this extension will not block operations."
+    "zh-CN": "尚未配置任何安全规则，本插件不会阻断操作。",
+    "en-US": "No safety rules are configured; this extension will not block operations."
   },
   "ruleMatched": {
     "zh-CN": "命中规则 [{id}]",
@@ -92,76 +80,28 @@
     "en-US": "Rule module loading or matching timed out."
   },
   "configCommandDescription": {
-    "zh-CN": "配置安全规则",
-    "en-US": "Configure safety rules"
+    "zh-CN": "查看安全规则配置",
+    "en-US": "Show safety rule configuration"
   },
   "configCommandUsage": {
-    "zh-CN": "用法：/config:safety-guards（打开配置菜单）、/config:safety-guards show（查看当前生效规则）或 /config:safety-guards reset（恢复默认预设）",
-    "en-US": "Usage: /config:safety-guards (open settings), /config:safety-guards show (list effective rules) or /config:safety-guards reset (restore defaults)"
+    "zh-CN": "用法：/config:safety-guards（显示配置文件路径和生效规则）或 /config:safety-guards show。改规则请直接编辑配置文件。",
+    "en-US": "Usage: /config:safety-guards (shows the configuration file path and effective rules) or /config:safety-guards show. Edit the configuration file to change rules."
   },
-  "configMenuItemShow": {
-    "zh-CN": "查看生效规则明细",
-    "en-US": "Show effective rules"
-  },
-  "configShowPreset": {
-    "zh-CN": "预设 {name}（{count} 条规则）",
-    "en-US": "Preset {name} · rules: {count}"
+  "configShowPath": {
+    "zh-CN": "配置文件：{path}",
+    "en-US": "Configuration file: {path}"
   },
   "configShowRule": {
     "zh-CN": "  {id} → {action} · {match}",
     "en-US": "  {id} → {action} · {match}"
   },
-  "configShowOverride": {
-    "zh-CN": "  {id} → {action} · {match}（被 rules 覆盖）",
-    "en-US": "  {id} → {action} · {match} (overridden by rules)"
-  },
   "configShowDisabled": {
     "zh-CN": "  {id} → 已停用",
     "en-US": "  {id} → disabled"
   },
-  "configShowCustom": {
-    "zh-CN": "自定义规则 rules（{count} 条）",
-    "en-US": "Custom rules (rules) · {count}"
-  },
-  "configMenuLabelsNotUnique": {
-    "zh-CN": "安全规则菜单文案重复，无法唯一定位选项；请检查预设名和配置文案。",
-    "en-US": "Safety rule menu labels are duplicated, so an option cannot be identified; check preset names and messages."
-  },
-  "configMenuTitle": {
-    "zh-CN": "安全规则配置",
-    "en-US": "Safety rule settings"
-  },
-  "configPreset": {
-    "zh-CN": "预设 {name}：{value}，规则 {count} 条",
-    "en-US": "Preset {name}: {value}, rules: {count}"
-  },
-  "configCustomRules": {
-    "zh-CN": "自定义规则：{count} 条",
-    "en-US": "Custom rules: {count}"
-  },
-  "configCustomRulesHint": {
-    "zh-CN": "自定义规则仍保留在配置文件中；当前 TUI 可以切换内置预设。",
-    "en-US": "Custom rules remain in the configuration file; the TUI currently manages built-in presets."
-  },
-  "configOn": {
-    "zh-CN": "开",
-    "en-US": "on"
-  },
-  "configOff": {
-    "zh-CN": "关",
-    "en-US": "off"
-  },
-  "configDone": {
-    "zh-CN": "完成",
-    "en-US": "Done"
-  },
-  "configCommandInteractiveOnly": {
-    "zh-CN": "安全规则配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
-    "en-US": "Safety configuration requires the TUI; run this command in an interactive Pi session."
-  },
-  "configCommandSaved": {
-    "zh-CN": "安全规则配置已保存：{path}。请执行 /reload 使配置生效。",
-    "en-US": "Safety configuration saved to {path}. Run /reload to apply it."
+  "configSeedCreated": {
+    "zh-CN": "首次运行：已把默认安全规则写入 {path}，可直接编辑这个文件增删规则。",
+    "en-US": "First run: default safety rules were written to {path}; edit that file to add or remove rules."
   },
   "configCommandInvalid": {
     "zh-CN": "安全规则配置无效：{error}",

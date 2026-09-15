@@ -5,8 +5,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import extension, { registerSafetyGuards } from "../index.ts";
-import { parseConfig } from "../src/config.ts";
+import { DEFAULT_RULES, parseConfig } from "../src/config.ts";
 import { i18n } from "../src/i18n.ts";
+
+/** 默认规则等同于原来的 destructive-operations，测试里当作“用户写了这些规则”。 */
+const destructive = parseConfig({ rules: DEFAULT_RULES });
+/** 目录边界规则；现在必须由用户显式写进 rules。 */
+const WORKSPACE_RULE = { id: "paths.workspace", action: "block", match: { outsideRoots: ["."] } } as const;
 
 type Handler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown;
 type CommandHandler = { handler: (args: string, ctx: ExtensionContext) => Promise<void> };
@@ -65,7 +70,7 @@ test("session_squash 后目录授权仍能通过统一 Bash 规则入口", async
   const activeBranch = [{ type: "message", id: "user-1", parentId: null, message: {} }, squash];
   const fake = host(true, true, [state, sourceLeaf, squash], activeBranch);
   fake.ctx.cwd = cwd;
-  const config = parseConfig({ presets: ["workspace-boundary"] });
+  const config = parseConfig({ rules: [WORKSPACE_RULE] });
   await registerSafetyGuards(fake.pi, config);
   const command = `cat ${JSON.stringify(join(externalRoot, "file.txt"))}`;
   const withoutAuthorization = host();
@@ -78,7 +83,7 @@ test("session_squash 后目录授权仍能通过统一 Bash 规则入口", async
 test("默认危险操作确认，拒绝或无 UI 时阻断，普通构建不询问", async () => {
   for (const hasUI of [true, false]) {
     const fake = host(hasUI, false);
-    await registerSafetyGuards(fake.pi, parseConfig({}));
+    await registerSafetyGuards(fake.pi, destructive);
     const result = await fake.emit("tool_call", call("rm example")) as { block: boolean; reason: string };
     assert.equal(result.block, true);
     assert.match(result.reason, /filesystem.delete/);
@@ -86,14 +91,14 @@ test("默认危险操作确认，拒绝或无 UI 时阻断，普通构建不询�
     assert.equal(await fake.emit("tool_call", call("mvn test")), undefined);
   }
   const approved = host();
-  await registerSafetyGuards(approved.pi, parseConfig({}));
+  await registerSafetyGuards(approved.pi, destructive);
   assert.equal(await approved.emit("tool_call", call("rm example")), undefined);
   assert.equal(approved.prompts.length, 1);
 });
 
 test("block 不弹确认，原因包含用户填写的说明与规则 ID", async () => {
   const fake = host();
-  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "block", message: "Custom deletion rule matched." }] }));
+  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "block", message: "Custom deletion rule matched.", match: { commands: ["rm"] } }] }));
   const result = await fake.emit("tool_call", call("rm file")) as { block: boolean; reason: string };
   assert.equal(result.block, true);
   assert.match(result.reason, /Custom deletion rule matched/);
@@ -103,7 +108,7 @@ test("block 不弹确认，原因包含用户填写的说明与规则 ID", async
 
 test("warn 不阻断，按 toolCallId 附加到对应结果，无 UI 也可见", async () => {
   const fake = host(false);
-  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "warn" }] }));
+  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "warn", match: { commands: ["rm"] } }] }));
   assert.equal(await fake.emit("tool_call", call("rm file", "warned")), undefined);
   const original = [{ type: "text", text: "original output" }];
   assert.equal(await fake.emit("tool_result", { toolCallId: "another", content: original }), undefined);
@@ -115,7 +120,7 @@ test("warn 不阻断，按 toolCallId 附加到对应结果，无 UI 也可见",
 
 test("全部禁用不注册执行 hook，启动时说明没有保护", async () => {
   const fake = host();
-  await registerSafetyGuards(fake.pi, parseConfig({ presets: [] }));
+  await registerSafetyGuards(fake.pi, parseConfig({}));
   assert.equal(fake.handlers.has("tool_call"), false);
   await fake.emit("session_start");
   assert.equal(fake.notices.length, 1);
@@ -125,11 +130,11 @@ test("全部禁用不注册执行 hook，启动时说明没有保护", async () 
 
 test("解析和规则异常返回显式阻断，不吞掉失败", async () => {
   const fake = host();
-  await registerSafetyGuards(fake.pi, parseConfig({}));
+  await registerSafetyGuards(fake.pi, destructive);
   const parsed = await fake.emit("tool_call", call('echo "unterminated')) as { block: boolean };
   assert.equal(parsed.block, true);
   const moduleHost = host();
-  await registerSafetyGuards(moduleHost.pi, parseConfig({ presets: [], rules: [{ id: "custom", action: "warn", match: { module: "./rule.mjs" } }] }), {
+  await registerSafetyGuards(moduleHost.pi, parseConfig({ rules: [{ id: "custom", action: "warn", match: { module: "./rule.mjs" } }] }), {
     loader: async () => ({ default: () => { throw new Error("matcher failed"); } }),
   });
   const result = await moduleHost.emit("tool_call", call("anything")) as { block: boolean; reason: string };
@@ -137,7 +142,7 @@ test("解析和规则异常返回显式阻断，不吞掉失败", async () => {
   assert.match(result.reason, /custom.*matcher failed/);
 });
 
-test("损坏配置不默默恢复默认预设，而是通知并阻断 Bash", async (t) => {
+test("损坏配置不默默忽略，而是通知并阻断 Bash", async (t) => {
   const before = process.env.PI_CODING_AGENT_DIR;
   const dir = mkdtempSync(join(tmpdir(), "safety-startup-"));
   process.env.PI_CODING_AGENT_DIR = dir;
@@ -170,7 +175,7 @@ test("目录越界反馈真实证据、add_directory 参数和会话授权", asy
   writeFileSync(externalFile, "workflow");
   const fake = host();
   fake.ctx.cwd = cwd;
-  await registerSafetyGuards(fake.pi, parseConfig({ presets: ["workspace-boundary"] }));
+  await registerSafetyGuards(fake.pi, parseConfig({ rules: [WORKSPACE_RULE] }));
   const command = `cat ${externalFile}`;
   const blocked = await fake.emit("tool_call", call(command)) as { block: boolean; reason: string };
   assert.equal(blocked.block, true);
@@ -191,7 +196,7 @@ test("目录越界反馈真实证据、add_directory 参数和会话授权", asy
 
 test("未填写说明时仅反馈规则 ID 和动作，不附加替代方案", async () => {
   const fake = host();
-  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "block" }] }));
+  await registerSafetyGuards(fake.pi, parseConfig({ rules: [{ id: "filesystem.delete", action: "block", match: { commands: ["rm"] } }] }));
   const result = await fake.emit("tool_call", call("rm file"));
   assert.deepEqual(result, {
     block: true,
@@ -199,7 +204,7 @@ test("未填写说明时仅反馈规则 ID 和动作，不附加替代方案", a
   });
 });
 
-test("show 子命令按预设分组列出生效规则，无 UI 也可用", async (t) => {
+test("show 子命令列出配置文件位置和生效规则，无 UI 也可用", async (t) => {
   const before = process.env.PI_CODING_AGENT_DIR;
   const dir = mkdtempSync(join(tmpdir(), "safety-show-"));
   process.env.PI_CODING_AGENT_DIR = dir;
@@ -210,10 +215,10 @@ test("show 子命令按预设分组列出生效规则，无 UI 也可用", async
   const configDir = join(dir, "extensions", "pi-safety-guards");
   mkdirSync(configDir, { recursive: true });
   writeFileSync(join(configDir, "config.json"), JSON.stringify({
-    presets: ["destructive-operations", "workspace-boundary"],
     rules: [
-      { id: "filesystem.delete", action: "warn" },
+      { id: "filesystem.delete", action: "warn", match: { commands: ["rm"] } },
       { id: "local.maven", enabled: false, action: "block", match: { commands: ["mvn"] } },
+      { id: "paths.workspace", action: "block", match: { outsideRoots: ["."] } },
     ],
   }));
   const fake = host(false);
@@ -224,9 +229,8 @@ test("show 子命令按预设分组列出生效规则，无 UI 也可用", async
   assert.equal(fake.notices.length, 1);
   const message = fake.notices[0]?.message ?? "";
   assert.equal(fake.notices[0]?.level, "info");
-  assert.match(message, /destructive-operations/);
-  assert.match(message, /workspace-boundary/);
-  assert.match(message, /filesystem\.delete/);
-  assert.match(message, /paths\.workspace/);
-  assert.match(message, /local\.maven/);
+  assert.match(message, /config\.json/);
+  assert.match(message, /filesystem\.delete → warn/);
+  assert.match(message, /paths\.workspace → block/);
+  assert.match(message, /local\.maven → (已停用|disabled)/);
 });
