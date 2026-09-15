@@ -34,6 +34,8 @@ export interface CleanModeConfig {
 	activityRows: number;
 	/** 活动区是否播放动画；关闭后只保留静止标记。 */
 	animateActivity: boolean;
+	/** 是否把 Pi 的 thinking 块收成不占行的隐藏态（清爽模式下只看结论）。 */
+	hideThinking: boolean;
 }
 
 export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
@@ -45,6 +47,7 @@ export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
 	showActivityArea: true,
 	activityRows: ACTIVITY_ROWS_DEFAULT,
 	animateActivity: true,
+	hideThinking: true,
 };
 
 export interface ConfigLoadResult {

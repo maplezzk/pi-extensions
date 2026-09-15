@@ -108,7 +108,8 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
   "enabled": true,
   "autoExpandWhileRunning": true,
   "showRunHeader": true,
-  "showExpandHint": true
+  "showExpandHint": true,
+  "hideThinking": true
 }
 ```
 
@@ -116,12 +117,15 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 |---|---|
 | `enabled` | Master switch. When off, every patch passes the original render through untouched. |
 | `autoExpandWhileRunning` | Expand while running, then collapse when the run settles. |
-| `showRunHeader` | Show the `Took …` header above the final answer. |
-| `showExpandHint` | Append the expand hint to the header. |
+| `showRunHeader` | Show the `Took …` band at the top of the run. |
+| `showExpandHint` | Show the expand shortcut at the right end of the band. |
 | `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
-| `showActivityArea` | Show the live activity area at the end of the transcript while the agent runs. |
+| `showActivityArea` | Show the live activity rows at the top of the run. |
 | `activityRows` | Activity area height, 1-6 (default 4). |
 | `animateActivity` | Animate the activity glyph; off keeps a still marker. |
+| `hideThinking` | Strip Pi's thinking blocks from the message entirely (on by default). |
+
+`hideThinking` removes the thinking content blocks rather than turning on Pi's own "hide thinking" setting: that setting renders thinking as a one-line placeholder, which still costs a blank row plus the spacer after it even when the label is empty. Removing the blocks drops both rows (a test asserts the line count).
 
 ## Debugging
 
@@ -129,30 +133,30 @@ Set `PI_CLEAN_MODE_DEBUG=1` to append event and render decisions to `<pi agent d
 
 ## Live activity area
 
-While the agent runs, a small block is appended to the end of the transcript:
+While the agent runs, a small block appears at the very top of the run:
 
 ```
 用户：帮我改一下 xxx
-用时 21s ⌄
-▸ 探索 · 5 步
 │ ◑ 思考  正在追踪 token 失效路径…
 │ ⠹ 运行命令 npm test
 │   ↳ 12 passing
 │ 读取 4 · 搜索 3 · 命令 1 · 42s
+  ▸ 探索 · 5 步
+  ▸ 运行命令 ls -la
 ```
 
-It lives in the transcript and scrolls with the conversation, instead of being a status bar pinned above the editor — scroll up into history and it scrolls away with the content, matching the Codex desktop client.
+It shares one slot with the run-level `Took …` band: while the run is going the duration is unknown, so that slot holds the live rows; once the run settles the rows are cleared and the same slot holds the band. Both therefore live at the top of the run, and neither ever looks like a status bar pinned to the bottom of the screen.
 
 Contents come from real events only — the running tool, its latest output line, the thinking head, and counters. Parallel calls collapse into one summary line.
 
 Two implementation constraints matter:
 
-1. **Unchanged content never repaints.** Each tick renders the lines into a string and compares it with the previous tick; when it matches, no repaint is requested at all. The cost of a repaint lands on the content height change.
-2. **Motion is capped at 2.5fps (400ms)**, the timer only exists while a run is active, and it is `unref()`-ed. With `animateActivity: false` it slows to 1s and shows still markers.
+1. **Unchanged content never repaints.** Each tick renders the lines into a string and compares it with the previous tick; when it matches, no repaint is requested at all.
+2. **The block only grows.** During a run it is padded with blank rows up to the largest height seen in that run, so the rows below it never get pushed around. Motion is capped at 2.5fps (400ms), the timer only exists while a run is active and is `unref()`-ed; with `animateActivity: false` it slows to 1s and shows still markers.
 
-While the area shows the current action, Pi's own `Working...` line and hidden-thinking placeholder are suppressed so the two do not say the same thing twice.
+While the area shows the current action, Pi's own `Working...` line is suppressed so the two do not say the same thing twice.
 
-The lines are appended to the transcript container's `render` output. That container is located by walking the TUI component tree (it is the only one holding assistant messages directly), and it is identified by property shape rather than `instanceof`, so it still works when the extension and Pi each load their own copy of `pi-tui`.
+The rows are emitted by the run-header component itself (`createRunHeaderComponent` in `component-patches.ts`) — one component that draws the live rows while running and the `Took …` band once settled. The two never appear together: the duration is only written on `agent_settled`, and the rows are cleared in the same handler. Only the current run's host emits them, otherwise every historical run would show the same block again.
 
 ## Compatibility
 

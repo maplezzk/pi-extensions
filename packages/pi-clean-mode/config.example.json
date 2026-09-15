@@ -6,5 +6,6 @@
   "enableActionGroups": true,
   "showActivityArea": true,
   "activityRows": 4,
-  "animateActivity": true
+  "animateActivity": true,
+  "hideThinking": true
 }

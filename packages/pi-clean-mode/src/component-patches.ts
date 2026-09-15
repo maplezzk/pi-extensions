@@ -129,6 +129,10 @@ export interface ComponentPatchDeps {
 	onToggleActionGroup: (groupId: number) => void;
 	/** 认领本轮折叠头归属；只有第一条 assistant 消息会得到 true。 */
 	claimRunHeaderHost: (host: object) => boolean;
+	/** 该承载者是否就是当前「正在运行」那一轮的承载者。 */
+	isCurrentRunHost: (host: object) => boolean;
+	/** 当前要展示在轮首的实时活动行；空数组表示不展示。 */
+	getActivityLines: () => string[];
 	/** 查询某个承载者所属那一轮的耗时。 */
 	getRunDuration: (host: object) => number | undefined;
 	/** 查询某个承载者所属那一轮的工具调用数。 */
@@ -177,27 +181,35 @@ function alignRightHint(left: string, hint: string, width: number): string {
 /**
  * 创建折叠头子组件。
  *
- * 可见时输出「空行 + 横条」两行：空行与上方消息拉开距离，横条下方则接内容容器
- * 原有的 Spacer。不可见时渲染 0 行，因此不占空间也不可点击。
+ * 它占着「整轮最上面」这个槽位，两块内容共用：
+ * - 运行中：实时活动行（现在在做什么），耗时还不知道，所以折叠头不显示；
+ * - 运行结束：活动行被清空，同一个位置换成「用时 Ns」横条。
+ *
+ * 两者不会同时出现：耗时在 agent_settled 里才写入，写完活动行立刻被清空。
+ * 只有当前正在运行那一轮的承载者才输出活动行，否则同一块活动行会在每个带折叠头的
+ * 历史轮次里重复出现。
  */
 function createRunHeaderComponent(
 	host: AssistantMessageHost,
 	deps: ComponentPatchDeps,
 ): Component {
 	const content: Component = {
-		/** 可见时输出「空行 + 横条」，否则输出空行集。 */
+		/** 轮首槽位：运行中只有活动行，已结束时只有耗时横条。 */
 		render: (width: number): string[] => {
+			const activity = deps.isCurrentRunHost(host) ? deps.getActivityLines() : [];
+			if (activity.length > 0) {
+				// 活动行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
+				return [HEADER_LEADING_BLANK, ...activity];
+			}
+
 			const decision = resolveRunHeader({
 				config: deps.getConfig(),
 				durationMs: deps.getRunDuration(host),
 				collapsed: deps.getState().collapsed,
 			});
-			if (!decision.visible) {
-				return [];
-			}
-			return [HEADER_LEADING_BLANK, buildRunHeaderLine(host, deps, width)];
+			return decision.visible ? [HEADER_LEADING_BLANK, buildRunHeaderLine(host, deps, width)] : [];
 		},
-		/** 无缓存状态，渲染时实时读取当前折叠状态。 */
+		/** 无缓存状态，渲染时实时读取当前折叠状态与活动行。 */
 		invalidate: () => {},
 	};
 
@@ -271,6 +283,34 @@ function buildAssistantMessageRender(
 	};
 }
 
+/** 内容块类型标识：thinking。 */
+const CONTENT_TYPE_THINKING = "thinking";
+
+/** 判断输入是否为可按键读取的对象。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+/**
+ * 按配置决定交给 Pi 渲染的消息。
+ *
+ * 开启 hideThinking 时先把 thinking 内容块整个抽掉，而不是用 Pi 自己的
+ * `hideThinkingBlock` 开关：那个开关会把 thinking 渲染成一行占位文本，即使把占位
+ * 文案清空也会留下一个空行和它后面的 Spacer（实测确认），而抽掉内容块连这两行
+ * 一起消失。返回浅拷贝，原消息对象不动。
+ */
+function resolveRenderedMessage(message: unknown, deps: ComponentPatchDeps): unknown {
+	const { enabled, hideThinking } = deps.getConfig();
+	if (!enabled || !hideThinking || !isRecord(message) || !Array.isArray(message.content)) {
+		return message;
+	}
+
+	const content = message.content.filter(
+		(block) => !isRecord(block) || block.type !== CONTENT_TYPE_THINKING,
+	);
+	return content.length === message.content.length ? message : { ...message, content };
+}
+
 /**
  * 包装 assistant 消息的 updateContent。
  *
@@ -292,7 +332,14 @@ function buildAssistantMessageUpdateContent(
 		message: unknown,
 		isStreaming?: boolean,
 	) {
-		originalUpdateContent.call(this, message, isStreaming);
+		// 必须在原始实现之前处理：它会在这次调用里重建正文子组件。
+		const rendered = resolveRenderedMessage(message, deps);
+		originalUpdateContent.call(this, rendered, isStreaming);
+		if (rendered !== message) {
+			// 把原始消息留在实例上：Pi 后续任何一次重建（主题、设置变化）仍会走本补丁，
+			// 再抽一次 thinking 即可；留着被抽过的副本反而会让重建结果和原始消息不一致。
+			this.lastMessage = message;
+		}
 
 		if (this[RUN_HEADER_OWNERSHIP_RESOLVED_KEY] !== true) {
 			this[RUN_HEADER_OWNERSHIP_RESOLVED_KEY] = true;
@@ -308,6 +355,7 @@ function buildAssistantMessageUpdateContent(
 			return;
 		}
 
+		// 折叠头组件占整轮最上面：它内部再决定画活动行还是耗时横条。
 		container.children.unshift(getOrCreateRunHeader(this, deps));
 	};
 }

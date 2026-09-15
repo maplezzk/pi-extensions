@@ -18,9 +18,10 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 | `showRunHeader` | `true` | 折叠时在最终答案上方显示 `用时 …` |
 | `showExpandHint` | `true` | 折叠头末尾附带展开提示 |
 | `enableActionGroups` | `true` | 把一个 turn 的多条工具调用收成一行组头 |
-| `showActivityArea` | `true` | 对话流末尾的实时活动区 |
+| `showActivityArea` | `true` | 整轮最上面的实时活动行 |
 | `activityRows` | `4` | 活动区高度，1-6 |
 | `animateActivity` | `true` | 活动区动画；关闭后只保留静止标记 |
+| `hideThinking` | `true` | 把 Pi 的 thinking 块从消息里抽掉（不是开 Pi 自己的隐藏开关，那个会留一个空行） |
 
 改配置：`/config:clean-mode showRunHeader=off`，或直接编辑文件后重启会话。
 
@@ -41,9 +42,10 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 | 组头文案里的步数不对 | 检查 `turn_start` 是否每轮都触发，以及 `tool_call` 是否带上了 toolCallId |
 | 折叠后最终答案不见了 | 该消息是否被判定成「带 tool call」。`stopReason === "length"` 的截断回复可能含未完成的 tool call，从而被当作工作过程隐藏 |
 | 耗时头不显示 | `showRunHeader` 是否为 on；`runDurationMs` 是否为空（缺少 `agent_start` 时无耗时） |
-| 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；transcript 容器是否已定位到（容器要等第一条 assistant 消息出现） |
+| 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；该轮是否已认领整轮最上面那个槽位（承载者是本轮第一条 assistant 消息） |
 | 活动区闪或卡 | 检查是否绕过了内容签名去重而每次 tick 都请求重绘；行内容不变时必须跳过 |
 | 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 并请求一次重绘） |
+| thinking 原文还在刷屏 | `hideThinking` 是否为 on；它靠 `resolveRenderedMessage` 在 `updateContent` 前抽掉 thinking 内容块，若某条消息看不到效果，检查该消息是否只走了 `render` 而没走 `updateContent` |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
 
 ## 折叠后的视觉层次
@@ -63,10 +65,10 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 改动 activity.ts / activity-area.ts / transcript-tail.ts 时必须遵守：
 
 1. 行内容不变就完全不请求重绘 → 先把行拼成字符串比较签名，不变就直接返回；
-2. 动画固定 400ms（关闭动画 1000ms），定时器 `unref()`；
-3. 定时器只在运行时存在，`agent_settled` 立即停掉并清空 `runtime.lines`。
+2. 运行期间活动块行数只增不减（不足用空行补齐），否则内容高度会反复拖动下方内容；
+3. 动画固定 400ms（关闭动画 1000ms），定时器 `unref()`，且只在运行时存在；`agent_settled` 立即停掉并清空 `runtime.lines`。
 
-活动行内联在 transcript 末尾：`transcript-tail.ts` 把 transcript 容器的 `render` 尾部接上 `runtime.lines`，容器靠遍历组件树定位（唯一直接持有 assistant 消息的那个），判定用 `contentContainer` + `hasToolCalls` 属性特征而不是 `instanceof`。
+活动行内联在整轮最上面：`createRunHeaderComponent` 一个组件兼管「运行中画活动行」与「结束后画 `用时` 横条」，两者共用同一个槽位（耗时在 `agent_settled` 才写入，写完活动行立即清空，不会同时出现）。只有当前轮的承载者输出活动行（`isCurrentRunHost`），否则每个历史轮次都会重复显示一遍。
 
 ## 边界
 

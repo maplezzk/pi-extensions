@@ -61,7 +61,6 @@ import {
 } from "./action-groups.js";
 import { i18n } from "./i18n.js";
 import { applyCollapsed, createInitialState, settleRun, startRun } from "./run-state.js";
-import { createTranscriptTail, type TranscriptTail } from "./transcript-tail.js";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "./types.js";
 
 /** 折叠/展开快捷键；f2 未被 Pi 内置键位占用。 */
@@ -127,8 +126,6 @@ interface Runtime {
 	activityArea: ActivityAreaRuntime;
 	/** 活动区 UI 宿主；session_start 里构造一次，事件回调与定时器复用同一个对象。 */
 	activityHost?: ActivityUiHost;
-	/** transcript 末尾补丁；活动行靠它内联进对话流。 */
-	transcriptTail?: TranscriptTail;
 	/** 本轮登记过的工具调用数，运行结束写进折叠头。 */
 	runToolCount: number;
 	/** 每轮耗时账本，把耗时绑定到具体的最终答案消息上。 */
@@ -146,6 +143,8 @@ interface RunDurationLedger {
 	beginRun(): void;
 	/** 认领本轮折叠头归属；本轮已被认领时返回 false。 */
 	claimOwner(host: object): boolean;
+	/** 该承载者是否就是当前这一轮的承载者。 */
+	isOwner(host: object): boolean;
 	/**
 	 * 把本轮结果绑定到当前承载者上；耗时未知或还没人认领时不做任何事。
 	 *
@@ -187,6 +186,8 @@ function createRunDurationLedger(): RunDurationLedger {
 			owner = host;
 			return true;
 		},
+		/** 当前轮的承载者才返回 true；用于让轮首活动区只在当前轮出现。 */
+		isOwner: (host) => claimed && owner === host,
 		/** 耗时未知或尚无承载者时直接跳过。 */
 		bindRun: (durationMs, steps) => {
 			if (durationMs === undefined || !owner) {
@@ -298,15 +299,8 @@ function createActivityHost(runtime: Runtime, ctx: ExtensionContext): ActivityUi
 		ui: {
 			theme: ctx.ui.theme,
 			setWorkingVisible: (visible) => ctx.ui.setWorkingVisible(visible),
-			setHiddenThinkingLabel: (label) => ctx.ui.setHiddenThinkingLabel(label),
 		},
 		requestRender: () => requestRender(runtime),
-		attachTranscript: () => {
-			// 新挂上补丁的那一次要自己补个重绘：这一帧的活动行才画得出来。
-			if (runtime.transcriptTail?.attach()) {
-				requestRender(runtime);
-			}
-		},
 	};
 }
 
@@ -405,6 +399,8 @@ const CONFIG_FIELD_WRITERS: Record<
 	showRunHeader: (config, value) => ({ ...config, showRunHeader: value }),
 	// 折叠头附带展开提示。
 	showExpandHint: (config, value) => ({ ...config, showExpandHint: value }),
+	// 收起 Pi 的 thinking 块。
+	hideThinking: (config, value) => ({ ...config, hideThinking: value }),
 };
 
 /** 按字段名写回一个布尔配置项；字段名不受支持时返回 undefined。 */
@@ -438,6 +434,8 @@ function installPatches(runtime: Runtime): void {
 			requestRender(runtime);
 		},
 		claimRunHeaderHost: (host) => runtime.runDurations.claimOwner(host),
+		isCurrentRunHost: (host) => runtime.runDurations.isOwner(host),
+		getActivityLines: () => runtime.activityArea.lines,
 		getRunDuration: (host) => runtime.runDurations.getDuration(host),
 		getRunSteps: (host) => runtime.runDurations.getSteps(host),
 		expandHint: TOGGLE_SHORTCUT,
@@ -557,11 +555,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 			return NO_CONTENT_COMPONENT;
 		});
 
-		// 补丁与宿主都在这里装配一次，之后事件回调只做取值与复用。
-		runtime.transcriptTail = createTranscriptTail({
-			getRoot: () => runtime.tui,
-			getLines: () => runtime.activityArea.lines,
-		});
+		// 宿主在这里装配一次，之后事件回调只做取值与复用。
 		runtime.activityHost = createActivityHost(runtime, ctx);
 
 		installPatches(runtime);
@@ -686,8 +680,6 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		clearActivityArea(runtime.activityArea, requireActivityHost(runtime));
 		runtime.restorePatches?.();
 		runtime.restorePatches = undefined;
-		runtime.transcriptTail?.restore();
-		runtime.transcriptTail = undefined;
 		runtime.activityHost = undefined;
 		runtime.tui = undefined;
 	});

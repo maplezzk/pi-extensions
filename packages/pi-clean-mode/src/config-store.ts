@@ -61,6 +61,7 @@ export function normalizeConfig(raw: unknown): CleanModeConfig {
 		showActivityArea: toBoolean(record.showActivityArea, DEFAULT_CLEAN_MODE_CONFIG.showActivityArea),
 		activityRows: toRowCount(record.activityRows, DEFAULT_CLEAN_MODE_CONFIG.activityRows),
 		animateActivity: toBoolean(record.animateActivity, DEFAULT_CLEAN_MODE_CONFIG.animateActivity),
+		hideThinking: toBoolean(record.hideThinking, DEFAULT_CLEAN_MODE_CONFIG.hideThinking),
 	};
 }
 

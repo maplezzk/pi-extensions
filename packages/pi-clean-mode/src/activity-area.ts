@@ -8,8 +8,8 @@
  * 下一秒、动画帧循环回同一格）。内容不变时完全跳过重绘，让整屏刷新只发生在真正
  * 有新信息的时候；同时把动画压到 2.5fps，并让定时器只在运行期间存在。
  *
- * 刷新只做两件事：更新 runtime.lines，再请求重绘。这两个动作
- * （attachTranscript / requestRender）是 ActivityUiHost 的必需成员，刻意不套
+ * 刷新只做两件事：更新 runtime.lines，再请求重绘。行从哪里渲染由 component-patches.ts
+ * 决定（轮首的活动区子组件）；这两个动作都是 ActivityUiHost 的必需成员，刻意不套
  * safeUiCall：它们抛错说明扩展入口的适配层坏了，应当暴露而不是吞掉；safeUiCall
  * 只用于老版本 Pi 可能缺失的可选 UI 方法。
  */
@@ -24,11 +24,8 @@ const STILL_INTERVAL_MS = 1000;
 /**
  * 活动区需要的 UI 能力。
  *
- * 刻意比 `ExtensionContext` 窄：这里只用到主题取色、两个内置提示的显隐开关，
- * 以及触发重绘与挂载 transcript 末尾补丁，窄接口让测试无需伪造整个上下文。
- *
- * `setHiddenThinkingLabel("")` 表示把占位文案清空（活动区已经在展示真实思考头部），
- * 传 `undefined` 则是恢复 Pi 的默认占位文案。
+ * 刻意比 `ExtensionContext` 窄：这里只用到主题取色、内置 Working 提示的显隐开关，
+ * 以及触发重绘，窄接口让测试无需伪造整个上下文。
  */
 export interface ActivityUiHost {
 	ui: {
@@ -36,18 +33,9 @@ export interface ActivityUiHost {
 		theme: ActivityPainter;
 		/** 控制 Pi 内置 Working 提示的显隐。 */
 		setWorkingVisible(visible: boolean): void;
-		/** 设置 Pi 隐藏思考块的占位文案。 */
-		setHiddenThinkingLabel(label?: string): void;
 	};
 	/** 把最新活动行刷到屏幕上。 */
 	requestRender(): void;
-	/**
-	 * 确保 transcript 容器已接管末尾行。
-	 *
-	 * 契约：宿主内部在同一次调用里处理「刚挂上」的情况（自己补一次重绘），
-	 * 因此首次挂载后的第一帧就能看到活动行，调用方不需要关心返回值。
-	 */
-	attachTranscript(): void;
 }
 
 /** 活动区运行时持有的可变状态。 */
@@ -158,8 +146,8 @@ function renderActivityLines(
 /**
  * 刷新活动区。
  *
- * 行内容与上一 tick 完全一致时直接返回，不触发重绘；行有变化时先挂上 transcript
- * 末尾补丁，再请求重绘，保证补丁生效前不会白刷一帧。
+ * 行内容与上一 tick 完全一致时直接返回，不触发重绘；行有变化时先把新行写进
+ * runtime.lines，再请求重绘（轮首的活动区子组件每次渲染都从这里取行）。
  */
 export function refreshActivityArea(
 	runtime: ActivityAreaRuntime,
@@ -171,13 +159,6 @@ export function refreshActivityArea(
 	const rendered = renderActivityLines(runtime, host, deps);
 	const lines = padActivityLines(runtime, rendered);
 	const signature = lines.join("\n");
-
-	// transcript 容器要等第一条 assistant 消息出现才存在，所以只要还在运行就每次
-	// 刷新都试挂一次；已挂上时是常量时间的短路，还没挂上才走一次组件树查找。
-	// 这里不问签名：新挂上时宿主会自己补一次重绘，不会漏掉这一帧。
-	if (lines.length > 0) {
-		host.attachTranscript();
-	}
 
 	if (signature === runtime.linesSignature) {
 		return;
@@ -198,7 +179,6 @@ export function refreshActivityArea(
 
 	// 活动区已经在展示当前动作，Pi 内置的 Working 提示就是重复信息。
 	safeUiCall(() => host.ui.setWorkingVisible(false));
-	safeUiCall(() => host.ui.setHiddenThinkingLabel(""));
 	runtime.workingSuppressed = true;
 }
 
@@ -208,7 +188,6 @@ function restorePiWorkingIndicator(runtime: ActivityAreaRuntime, host: ActivityU
 		return;
 	}
 	safeUiCall(() => host.ui.setWorkingVisible(true));
-	safeUiCall(() => host.ui.setHiddenThinkingLabel(undefined));
 	runtime.workingSuppressed = false;
 }
 

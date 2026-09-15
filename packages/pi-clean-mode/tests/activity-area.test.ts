@@ -24,24 +24,21 @@ const NPM_BUILD_LINES = ["│ ⠸ 运行命令 npm run build"];
 /**
  * 测试用的假 UI 宿主。
  *
- * 活动行内联在 transcript 里，所以宿主侧要观察的是「请求了几次重绘」和
- * 「有没有挂过 transcript 补丁」，而不是过去那种 setWidget 调用。
+ * 活动行由轮首的活动区子组件从 runtime.lines 读取，所以宿主侧要观察的是
+ * 「请求了几次重绘」和「Pi 内置 Working 的显隐」，而不是过去那种挂 widget。
  */
 interface FakeHost {
 	host: ActivityUiHost;
 	/** 显示层调用计数。 */
-	calls: { renders: number; attaches: number };
+	calls: { renders: number };
 	/** Pi 内置 Working 提示的显隐变化。 */
 	workingVisible: boolean[];
-	/** 隐藏思考占位文案的每次设置。 */
-	thinkingLabels: Array<string | undefined>;
 }
 
 /** 造一个记录调用的假 UI 宿主；不需要伪造整个 ExtensionContext。 */
 function createFakeHost(): FakeHost {
-	const calls = { renders: 0, attaches: 0 };
+	const calls = { renders: 0 };
 	const workingVisible: boolean[] = [];
-	const thinkingLabels: Array<string | undefined> = [];
 
 	const host: ActivityUiHost = {
 		ui: {
@@ -56,22 +53,14 @@ function createFakeHost(): FakeHost {
 			setWorkingVisible: (visible: boolean) => {
 				workingVisible.push(visible);
 			},
-			/** 记录隐藏思考占位文案的每次设置。 */
-			setHiddenThinkingLabel: (label?: string) => {
-				thinkingLabels.push(label);
-			},
 		},
-		/** 活动行内联渲染，刷新只体现为一次重绘请求。 */
+		/** 活动行从 runtime.lines 渲染，刷新只体现为一次重绘请求。 */
 		requestRender: () => {
 			calls.renders += 1;
 		},
-		/** 记录补丁挂载尝试。 */
-		attachTranscript: () => {
-			calls.attaches += 1;
-		},
 	};
 
-	return { host, calls, workingVisible, thinkingLabels };
+	return { host, calls, workingVisible };
 }
 
 /** 造一个返回固定行的渲染依赖。 */
@@ -102,18 +91,15 @@ test("内容不变时跳过重绘", () => {
 	assert.equal(fake.calls.renders, rendersAfterFirst, "签名相同就不应再请求重绘");
 });
 
-/**
- * 合约：transcript 容器要等第一条 assistant 消息出现才存在，所以运行中每次刷新
- * 都试挂一次；已挂上时是常量时间的短路。
- */
-test("运行中每次刷新都试挂补丁，便于等第一条 assistant 消息出现后补上", () => {
+test("运行中内容无变化时刷新去重，不重复重绘", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
 	const deps = createDeps(activeSnapshot());
 
 	refreshActivityArea(runtime, fake.host, deps);
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.equal(fake.calls.attaches, 2, "内容无变化也要重试挂载，已挂上时是短路");
+	assert.deepEqual(runtime.lines, DEFAULT_LINES, "内容无变化时行保持原样");
+	assert.equal(fake.calls.renders, 1, "内容无变化就不应该重复重绘");
 });
 
 test("内容变化时更新行并请求重绘", () => {
@@ -138,7 +124,7 @@ test("内容变化时更新行并请求重绘", () => {
 	assert.deepEqual(runtime.lines, NPM_BUILD_LINES, "runtime 的行应跟着更新");
 });
 
-test("没有内容时清空行，只请求重绘不挂补丁", () => {
+test("没有内容时清空行并请求重绘", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
 	const deps = createDeps(createActivitySnapshot());
@@ -146,7 +132,6 @@ test("没有内容时清空行，只请求重绘不挂补丁", () => {
 	refreshActivityArea(runtime, fake.host, deps);
 	assert.deepEqual(runtime.lines, [], "未运行时不应留下任何活动行");
 	assert.equal(fake.calls.renders, 1, "清空行也要重绘一次");
-	assert.equal(fake.calls.attaches, 0, "没有内容时不需要挂 transcript 补丁");
 });
 
 test("活动区有内容时隐藏 Pi 内置 Working，清理时恢复", () => {
@@ -159,15 +144,6 @@ test("活动区有内容时隐藏 Pi 内置 Working，清理时恢复", () => {
 
 	clearActivityArea(runtime, fake.host);
 	assert.equal(fake.workingVisible[fake.workingVisible.length - 1], true, "清理时应恢复显示");
-});
-
-test("活动区有内容时清空 Pi 的隐藏思考占位文案", () => {
-	const fake = createFakeHost();
-	const runtime = createActivityAreaRuntime();
-	const deps = createDeps(activeSnapshot());
-
-	refreshActivityArea(runtime, fake.host, deps);
-	assert.deepEqual(fake.thinkingLabels, [""]);
 });
 
 test("定时器启动后存在，停止后释放", () => {

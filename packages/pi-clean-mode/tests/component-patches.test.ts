@@ -50,10 +50,14 @@ const HEADER_FRAGMENT = formatDuration(RUN_DURATION_MS);
 const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
 /** 单条动作的组头摘要；组内只有一条时直接用它当组头文案。 */
 const SINGLE_ACTION_SUMMARY = "运行命令 ls -la";
+/** 轮首活动行；只用于断言它出现在当前轮最上面。 */
+const ACTIVITY_ROW = "│ ⠹ 运行命令 npm test";
 /** 工具调用 id。 */
 const TOOL_CALL_ID = "call-1";
 /** 最终答案的正文。 */
 const FINAL_TEXT = "final answer body";
+/** thinking 块的正文；开启 hideThinking 后它不应出现在任何渲染行里。 */
+const THINKING_TEXT = "secret reasoning body";
 /** 工作过程的解说正文。 */
 const WORK_TEXT = "intermediate narration";
 /** 工具行构造用的工作目录。 */
@@ -84,6 +88,18 @@ function workMessage(): Record<string, unknown> {
 			{ type: "toolCall", id: TOOL_CALL_ID, name: "read", arguments: {} },
 		],
 		stopReason: "toolUse",
+	};
+}
+
+/** 造一条带 thinking 的最终答案消息：用来验证 thinking 被整个抽掉、不留占位行。 */
+function thinkingMessage(): Record<string, unknown> {
+	return {
+		role: "assistant",
+		content: [
+			{ type: "thinking", thinking: THINKING_TEXT },
+			{ type: "text", text: FINAL_TEXT },
+		],
+		stopReason: "stop",
 	};
 }
 
@@ -133,21 +149,25 @@ function clickAt(row: number, height: number): TuiMouseEvent {
 interface PatchHarness {
 	/** 动作组状态，用例可直接开组、登记工具调用与切换展开。 */
 	actionGroups: ActionGroupState;
+	/** 当前要展示在轮首的实时活动行；用例可直接改它模拟运行中。 */
+	activityLines: string[];
 	/** 运行级折叠被切换的次数。 */
 	runToggles: () => number;
 	/** 动作组被切换的次数。 */
 	groupToggles: () => number;
 }
 
-/** 装一次补丁、跑断言、无论成败都还原，避免测试间互相污染。 */
-function withPatches(
+/** 装一次补丁、跑断言或渲染、无论成败都还原，避免测试间互相污染。 */
+function withPatches<T>(
 	state: CleanModeState,
 	config: CleanModeConfig,
-	run: (harness: PatchHarness) => void,
-): void {
+	run: (harness: PatchHarness) => T,
+): T {
 	const actionGroups = createActionGroupState();
 	const durations = new WeakMap<object, number>();
+	const activityLines: string[] = [];
 	let runHeaderAssigned = false;
+	let runHeaderHost: object | undefined;
 	let runToggleCount = 0;
 	let groupToggleCount = 0;
 	const restore = installComponentPatches({
@@ -181,15 +201,19 @@ function withPatches(
 				return false;
 			}
 			runHeaderAssigned = true;
+			runHeaderHost = host;
 			durations.set(host, RUN_DURATION_MS);
 			return true;
 		},
+		isCurrentRunHost: (host) => host === runHeaderHost,
+		getActivityLines: () => activityLines,
 		getRunDuration: (host) => durations.get(host),
 		getRunSteps: () => RUN_STEPS,
 	});
 	try {
-		run({
+		return run({
 			actionGroups,
+			activityLines,
 			runToggles: () => runToggleCount,
 			groupToggles: () => groupToggleCount,
 		});
@@ -202,6 +226,29 @@ function withPatches(
 function linesOf(component: { render(width: number): string[] }): string[] {
 	return component.render(WIDTH);
 }
+
+test("运行中活动行显示在当前轮的轮首", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		harness.activityLines.push(ACTIVITY_ROW);
+		const component = new AssistantMessageComponent(workMessage());
+		const lines = linesOf(component);
+
+		assert.ok(lines.join("\n").includes(ACTIVITY_ROW), `活动行应出现在轮首：${lines.join("\n")}`);
+		assert.equal(lines[1], ACTIVITY_ROW, "活动行应落在空行之后的第一行");
+		assert.deepEqual(lines.slice(0, 2), ["", ACTIVITY_ROW], "活动行应在工作过程正文之前");
+	});
+});
+
+test("历史轮次不重复显示活动行", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		// 先让第一条消息认领当前轮，再渲染另一轮的消息。
+		new AssistantMessageComponent(workMessage());
+		harness.activityLines.push(ACTIVITY_ROW);
+
+		const other = new AssistantMessageComponent(workMessage());
+		assert.ok(!linesOf(other).join("\n").includes(ACTIVITY_ROW), "活动行只应出现在当前轮");
+	});
+});
 
 test("折叠时承载折叠头的工作过程消息只输出折叠头", () => {
 	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, () => {
@@ -295,6 +342,44 @@ test("折叠头不可见时不占用行也就不响应点击", () => {
 		assert.equal(harness.runToggles(), 0, "没有折叠头时点击第 1 行不应切换");
 	});
 });
+
+test("开启 hideThinking 时 thinking 块整个消失，不留占位行", () => {
+	const withThinking = renderAsRunHeader(thinkingMessage());
+	const withoutThinking = renderAsRunHeader(plainMessage());
+
+	assert.ok(!withThinking.join("\n").includes(THINKING_TEXT), "thinking 正文不应出现");
+	assert.ok(withThinking.join("\n").includes(FINAL_TEXT), "最终答案仍应保留");
+	assert.equal(
+		withThinking.length,
+		withoutThinking.length,
+		"抽掉 thinking 后行数应与压根没有 thinking 的消息一致，不留占位行",
+	);
+});
+
+test("关闭 hideThinking 时 thinking 原文照常渲染", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG, hideThinking: false }, () => {
+		const component = new AssistantMessageComponent(thinkingMessage(), false, undefined, "Thinking...", 1, []);
+		assert.ok(linesOf(component).join("\n").includes(THINKING_TEXT), "关掉开关应保留原文");
+	});
+});
+
+/**
+ * 在干净的补丁环境里把一条消息当作本轮的承载者渲染出来。
+ *
+ * 每次调用都新建一套补丁，这样拿到的两条消息都带折叠头，行数才可比。
+ */
+function renderAsRunHeader(message: Record<string, unknown>): string[] {
+	return withPatches(
+		EXPANDED_STATE,
+		{ ...DEFAULT_CLEAN_MODE_CONFIG, hideThinking: true },
+		() => linesOf(new AssistantMessageComponent(message, false, undefined, "Thinking...", 1, [])),
+	);
+}
+
+/** 造一条只有正文、没有 thinking 的最终答案消息，用作行数基准。 */
+function plainMessage(): Record<string, unknown> {
+	return { role: "assistant", content: [{ type: "text", text: FINAL_TEXT }], stopReason: "stop" };
+}
 
 test("关闭 showRunHeader 后最终答案不带耗时头", () => {
 	const config = { ...DEFAULT_CLEAN_MODE_CONFIG, showRunHeader: false };
