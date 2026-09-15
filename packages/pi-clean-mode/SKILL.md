@@ -1,6 +1,6 @@
 ---
 name: configure-pi-clean-mode
-description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动展开与快捷键。Use when configuring clean mode or diagnosing collapsed transcript behaviour.
+description: 配置与排查 pi-clean-mode 的配置面板、折叠单位、耗时头、自动展开与快捷键。Use when configuring clean mode, opening its settings panel, or diagnosing collapsed transcript behaviour.
 ---
 
 # 配置与排查 pi-clean-mode
@@ -23,7 +23,11 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 | `animateActivity` | `true` | 活动区动画；关闭后只保留静止标记 |
 | `hideThinking` | `true` | 把 Pi 的 thinking 块从消息里抽掉（不是开 Pi 自己的隐藏开关，那个会留一个空行） |
 
-改配置：`/config:clean-mode showRunHeader=off`，或直接编辑文件后重启会话。
+改配置：`/clean config`（或直接 `/config:clean-mode`）打开交互式面板，`↑`/`↓` 选、`enter`/`space` 切换、`esc` 关闭；活动区行数会再开一层 1-6 的列表。面板里每改一项立刻落盘并生效。
+
+不开面板时也可以用 `/config:clean-mode showRunHeader=off`，或直接编辑文件后重启会话。
+
+Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由扩展自己用 `ctx.ui.custom` + Pi 的 `SettingsList` 实现（`src/config-panel.ts`）；可写字段统一在 `src/config-fields.ts`，命令与面板共用同一套写回逻辑。
 
 切换折叠：`f2` 或 `/clean` 收起/展开整轮；`shift+f2` 批量展开/收起全部动作组；全屏模式（`pi --tui-mode fullscreen`）下还可以鼠标点击耗时头或组头。
 
@@ -33,6 +37,7 @@ description: 配置与排查 pi-clean-mode 的折叠单位、耗时头、自动�
 
 | 现象 | 检查点 |
 |---|---|
+| 面板打不开 | 命令是否敲成 `/clean config` 或 `/config:clean-mode`；非 TUI（`pi -p` 等非交互模式）下 `ctx.ui.custom` 不可用，只能用 `key=on/off` 形式改配置 |
 | 折叠后什么都没了 | `autoExpandWhileRunning` 是否被关掉，导致运行中也不显示；确认 `agent_settled` 能正常触发 |
 | 运行结束后没有自动收起 | 本轮是否手动切换过 —— 手动切换会压制本轮自动收起，这是预期行为；否则检查 `agent_settled` 是否触发、TUI 句柄是否取得 |
 | 耗时头上方太挤或下方空太多 | 耗时头子组件应输出「空行 + 耗时头」两行；下方间距由内容容器自带的 Spacer 提供，不要再加尾随空行 |

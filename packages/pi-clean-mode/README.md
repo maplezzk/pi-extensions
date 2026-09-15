@@ -52,8 +52,18 @@ Group state and run state are independent: expanding the run shows groups in wha
 | Mouse click on the run header | Same as `f2`, **fullscreen TUI mode only** |
 | Mouse click on a group header | Expand or collapse that one action group, **fullscreen TUI mode only** |
 | `/clean` | Same as the shortcut |
-| `/config:clean-mode` | Print the current configuration |
-| `/config:clean-mode <key>=on\|off` | Change one boolean setting and save it |
+| `/clean config` | Open the interactive settings panel |
+| `/config:clean-mode` | Open the interactive settings panel |
+| `/config:clean-mode <key>=on\|off` | Change one boolean setting and save it, without opening the panel |
+
+### Settings panel
+
+Pi's built-in `/settings` only manages core options and has no extension registration API, so clean mode ships its own panel: `/clean config` (or bare `/config:clean-mode`) replaces the editor with a list of every option.
+
+- `↑` / `↓` move, `enter` / `space` toggles, `esc` closes
+- `activityRows` opens a second list with `1`–`6`; `enter` picks, `esc` leaves it unchanged
+- the selected row shows its description, and the current value is on the right
+- each change is written to the config file immediately; a failed write shows an error notice instead of silently keeping the value only in memory
 
 Mouse support needs `pi --tui-mode fullscreen`; in regular mode the terminal owns mouse input and scrolling, so Pi never receives the click. The clickable area is the header line plus the blank line above it. Clicking the answer body does nothing.
 

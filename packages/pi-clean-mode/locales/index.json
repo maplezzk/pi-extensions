@@ -64,8 +64,96 @@
     "en-US": "Clean mode: collapse or expand this run's work"
   },
   "configDescription": {
-    "zh-CN": "清爽模式：查看或修改配置（key=on/off）",
-    "en-US": "Clean mode: view or change configuration (key=on/off)"
+    "zh-CN": "清爽模式：打开配置面板，或直接写 key=on/off",
+    "en-US": "Clean mode: open the settings panel, or pass key=on/off"
+  },
+  "configPanelTitle": {
+    "zh-CN": "清爽模式配置",
+    "en-US": "Clean mode settings"
+  },
+  "configValueOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configValueOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configLabelEnabled": {
+    "zh-CN": "启用清爽模式",
+    "en-US": "Enable clean mode"
+  },
+  "configDescEnabled": {
+    "zh-CN": "关闭后完全按 Pi 的原始方式渲染，不再折叠任何内容",
+    "en-US": "When off, Pi renders tool output exactly as it does by default"
+  },
+  "configLabelShowRunHeader": {
+    "zh-CN": "显示用时横条",
+    "en-US": "Show duration header"
+  },
+  "configDescShowRunHeader": {
+    "zh-CN": "收起后在最终答案上方显示「用时 Ns · N 步」",
+    "en-US": "Show \"Took Ns · N steps\" above the final answer when collapsed"
+  },
+  "configLabelShowExpandHint": {
+    "zh-CN": "显示展开提示",
+    "en-US": "Show expand hint"
+  },
+  "configDescShowExpandHint": {
+    "zh-CN": "在用时横条上标注展开快捷键",
+    "en-US": "Show the expand shortcut on the duration header"
+  },
+  "configLabelAutoExpand": {
+    "zh-CN": "运行中自动展开",
+    "en-US": "Auto-expand while running"
+  },
+  "configDescAutoExpand": {
+    "zh-CN": "运行过程中显示工作过程，运行结束后自动收起",
+    "en-US": "Show work while the run is active and collapse it when the run settles"
+  },
+  "configLabelActionGroups": {
+    "zh-CN": "合并工具调用",
+    "en-US": "Merge tool calls"
+  },
+  "configDescActionGroups": {
+    "zh-CN": "把同一轮的多条工具调用收成一行组头",
+    "en-US": "Collapse a turn's tool calls into a single group header"
+  },
+  "configLabelActivityArea": {
+    "zh-CN": "显示活动区",
+    "en-US": "Show activity area"
+  },
+  "configDescActivityArea": {
+    "zh-CN": "运行中在整轮最上方显示「现在在做什么」",
+    "en-US": "Show what is running at the top of the current run"
+  },
+  "configLabelActivityRows": {
+    "zh-CN": "活动区行数",
+    "en-US": "Activity rows"
+  },
+  "configDescActivityRows": {
+    "zh-CN": "活动区最多占用的行数；回车后选择具体数字",
+    "en-US": "Maximum rows used by the activity area; press enter to pick a number"
+  },
+  "configActivityRowsOption": {
+    "zh-CN": "{count} 行",
+    "en-US": "{count} rows"
+  },
+  "configLabelAnimateActivity": {
+    "zh-CN": "活动区动画",
+    "en-US": "Animate activity area"
+  },
+  "configDescAnimateActivity": {
+    "zh-CN": "关闭后活动区只显示静止标记",
+    "en-US": "When off, the activity area shows a static marker"
+  },
+  "configLabelHideThinking": {
+    "zh-CN": "隐藏思考块",
+    "en-US": "Hide thinking blocks"
+  },
+  "configDescHideThinking": {
+    "zh-CN": "收起模型的思考原文，只保留结论",
+    "en-US": "Strip the model's reasoning text and keep conclusions"
   },
   "collapsedNotice": {
     "zh-CN": "清爽模式：已收起工作过程，按 {key} 展开",

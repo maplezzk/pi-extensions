@@ -52,8 +52,18 @@
 | 鼠标点击耗时头 | 同 `f2`，**仅全屏 TUI 模式** |
 | 鼠标点击组头 | 单独展开或收起该动作组，**仅全屏 TUI 模式** |
 | `/clean` | 同快捷键 |
-| `/config:clean-mode` | 打印当前配置 |
-| `/config:clean-mode <key>=on\|off` | 修改一个布尔配置并保存 |
+| `/clean config` | 打开交互式配置面板 |
+| `/config:clean-mode` | 打开交互式配置面板 |
+| `/config:clean-mode <key>=on\|off` | 不开面板，直接改一个布尔配置并保存 |
+
+### 配置面板
+
+Pi 自带的 `/settings` 只管内核选项，没有给扩展注册配置项的入口，所以清爽模式自带一个面板：`/clean config`（或直接 `/config:clean-mode`）会用列表接管编辑器。
+
+- `↑` / `↓` 移动，`enter` / `space` 切换，`esc` 关闭
+- `activityRows` 会再开一层 `1`–`6` 的列表：`enter` 选定，`esc` 保持原值
+- 选中项下方显示说明，右侧显示当前值
+- 每改一项立刻写进配置文件；写失败会弹错误提示，不会只改内存不落盘
 
 鼠标需要 `pi --tui-mode fullscreen`；常规模式下终端自己接管鼠标输入与滚动，Pi 收不到点击。可点击区域是耗时头那行加上它上面的空行，点正文不会误触。
 

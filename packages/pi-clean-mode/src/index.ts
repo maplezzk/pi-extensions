@@ -23,6 +23,8 @@ import {
 	type NoticeSource,
 } from "pi-extensions-i18n";
 import { loadConfig, saveConfig } from "./config-store.js";
+import { parseToggleValue, withBooleanConfigField } from "./config-fields.js";
+import { openConfigPanel } from "./config-panel.js";
 import { debugLog, debugLogPath } from "./debug-logger.js";
 import {
 	buildActivityLines,
@@ -75,14 +77,12 @@ const TOGGLE_COMMAND = "clean";
 const CONFIG_COMMAND = "config:clean-mode";
 /** 一轮开始时本轮工具调用计数的初值。 */
 const INITIAL_RUN_TOOL_COUNT = 0;
-/** 配置命令里表示「打开」的取值。 */
-const CONFIG_ON_VALUES = new Set(["on", "true", "1", "yes"]);
-/** 配置命令里表示「关闭」的取值。 */
-const CONFIG_OFF_VALUES = new Set(["off", "false", "0", "no"]);
 /** 空渲染结果；探针组件用它表示「不占任何行」。 */
 const NO_LINES: string[] = [];
 /** 配置命令里 `key=value` 的最大切分段数。 */
 const ASSIGNMENT_PART_LIMIT = 2;
+/** `/clean` 后面跟这个参数时打开配置面板，而不是切换折叠。 */
+const CONFIG_PANEL_ARG = "config";
 
 /** 不渲染任何内容的组件，用于挂载探针并取得 TUI 句柄。 */
 const NO_CONTENT_COMPONENT: Component = {
@@ -374,45 +374,6 @@ function lookupToolRowGroup(runtime: Runtime, toolCallId: string): ToolRowGroupI
 	};
 }
 
-/** 把配置值文本解析成布尔；无法识别时返回 undefined。 */
-function parseToggleValue(raw: string): boolean | undefined {
-	const normalized = raw.trim().toLowerCase();
-	if (CONFIG_ON_VALUES.has(normalized)) {
-		return true;
-	}
-	if (CONFIG_OFF_VALUES.has(normalized)) {
-		return false;
-	}
-	return undefined;
-}
-
-/** 可写的布尔配置项 -> 写回函数；新增字段只改这张表。 */
-const CONFIG_FIELD_WRITERS: Record<
-	string,
-	(config: CleanModeConfig, value: boolean) => CleanModeConfig
-> = {
-	// 总开关。
-	enabled: (config, value) => ({ ...config, enabled: value }),
-	// 运行中自动展开。
-	autoExpandWhileRunning: (config, value) => ({ ...config, autoExpandWhileRunning: value }),
-	// 折叠时显示「用时」折叠头。
-	showRunHeader: (config, value) => ({ ...config, showRunHeader: value }),
-	// 折叠头附带展开提示。
-	showExpandHint: (config, value) => ({ ...config, showExpandHint: value }),
-	// 收起 Pi 的 thinking 块。
-	hideThinking: (config, value) => ({ ...config, hideThinking: value }),
-};
-
-/** 按字段名写回一个布尔配置项；字段名不受支持时返回 undefined。 */
-function withConfigField(
-	config: CleanModeConfig,
-	key: string,
-	value: boolean,
-): CleanModeConfig | undefined {
-	const writer = CONFIG_FIELD_WRITERS[key];
-	return writer ? writer(config, value) : undefined;
-}
-
 /** 请求重绘；TUI 句柄尚未取得时静默跳过。 */
 function requestRender(runtime: Runtime): void {
 	runtime.tui?.requestRender();
@@ -468,9 +429,9 @@ function toggleCollapsed(runtime: Runtime, ctx: ExtensionContext | ExtensionComm
 }
 
 /**
- * 尝试把 `key=value` 写入配置：校验字段、保存、重装补丁、重绘并提示结果。
+ * 尝试把 `key=value` 写入配置：校验字段、写入并让配置立即生效。
  *
- * 返回 false 表示参数不是可识别的配置赋值，由调用方回显当前配置。
+ * 返回 false 表示参数不是可识别的配置赋值，由调用方改走其它入口（打开配置面板）。
  */
 function applyConfigAssignment(
 	runtime: Runtime,
@@ -485,24 +446,15 @@ function applyConfigAssignment(
 	const parts = assignment.split("=", ASSIGNMENT_PART_LIMIT);
 	const value = parseToggleValue(parts[1] ?? "");
 	const nextConfig =
-		value === undefined ? undefined : withConfigField(runtime.config, (parts[0] ?? "").trim(), value);
+		value === undefined
+			? undefined
+			: withBooleanConfigField(runtime.config, (parts[0] ?? "").trim(), value);
 
 	if (!nextConfig) {
 		return false;
 	}
 
-	runtime.config = nextConfig;
-	const result = saveConfig(runtime.config);
-	installPatches(runtime);
-	requestRender(runtime);
-	notifyWithSource({
-		ctx,
-		source: NOTICE_SOURCE,
-		level: result.success ? "info" : "error",
-		message: result.success
-			? i18n.t("configSaved")
-			: i18n.t("configSaveFailed", { error: result.error ?? "" }),
-	});
+	applyLiveConfig(runtime, nextConfig, ctx, { announceSaved: true });
 	return true;
 }
 
@@ -525,18 +477,80 @@ function toggleAllActionGroups(
 	});
 }
 
-/** 处理 `/config:clean-mode key=value`；无参数或无法解析时只回显当前配置。 */
-function handleConfigCommand(runtime: Runtime, args: string, ctx: ExtensionCommandContext): void {
+/** 写入配置时的附加选项。 */
+interface ApplyConfigOptions {
+	/** 存盘成功后是否提示；面板里逐项切换不提示，避免刷屏。 */
+	announceSaved?: boolean;
+}
+
+/**
+ * 写入一项新配置并让它立即生效：存盘、重装补丁、重绘。
+ *
+ * 存盘失败也要先把新配置用在本次会话里，用户不至于改了没反应；失败只提示不静默。
+ */
+function applyLiveConfig(
+	runtime: Runtime,
+	config: CleanModeConfig,
+	ctx: ExtensionCommandContext,
+	options: ApplyConfigOptions = {},
+): void {
+	runtime.config = config;
+	const result = saveConfig(config);
+	installPatches(runtime);
+	requestRender(runtime);
+
+	if (!result.success) {
+		notifyWithSource({
+			ctx,
+			source: NOTICE_SOURCE,
+			level: "error",
+			message: i18n.t("configSaveFailed", { error: result.error ?? "" }),
+		});
+		return;
+	}
+
+	if (options.announceSaved) {
+		notifyWithSource({
+			ctx,
+			source: NOTICE_SOURCE,
+			level: "info",
+			message: i18n.t("configSaved"),
+		});
+	}
+}
+
+/** 打开配置面板；改动即时写入并生效。 */
+function openCleanModeConfigPanel(runtime: Runtime, ctx: ExtensionCommandContext): Promise<void> {
+	return openConfigPanel(ctx, {
+		getConfig: () => runtime.config,
+		onChange: (config) => applyLiveConfig(runtime, config, ctx),
+	});
+}
+
+/** 处理 `/config:clean-mode key=on|off`；没有合法赋值时打开配置面板。 */
+function handleConfigCommand(
+	runtime: Runtime,
+	args: string,
+	ctx: ExtensionCommandContext,
+): void | Promise<void> {
 	if (applyConfigAssignment(runtime, args, ctx)) {
 		return;
 	}
 
-	notifyWithSource({
-		ctx,
-		source: NOTICE_SOURCE,
-		level: "info",
-		message: JSON.stringify(runtime.config),
-	});
+	return openCleanModeConfigPanel(runtime, ctx);
+}
+
+/** `/clean` 的入口：`/clean config` 打开配置面板，其余情况切换折叠状态。 */
+function handleToggleCommand(
+	runtime: Runtime,
+	args: string,
+	ctx: ExtensionCommandContext,
+): void | Promise<void> {
+	if (args.trim() === CONFIG_PANEL_ARG) {
+		return openCleanModeConfigPanel(runtime, ctx);
+	}
+
+	toggleCollapsed(runtime, ctx);
 }
 
 /** 扩展工厂：注册事件、快捷键与命令。 */
@@ -691,7 +705,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 
 	pi.registerCommand(TOGGLE_COMMAND, {
 		description: i18n.t("toggleDescription"),
-		handler: async (_args, ctx) => toggleCollapsed(runtime, ctx),
+		handler: async (args, ctx) => handleToggleCommand(runtime, args, ctx),
 	});
 
 	pi.registerShortcut(TOGGLE_GROUPS_SHORTCUT, {
