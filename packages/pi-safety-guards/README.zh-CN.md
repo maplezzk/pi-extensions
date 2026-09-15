@@ -108,6 +108,8 @@ pi install npm:pi-safety-guards
 
 自定义匹配器可使用导出的 `findOutOfScopeBashPaths(command, cwd, roots)`，提供自行计算的目录列表。
 
+文件系统无法表示的名字（含 NUL，或单个分量超过 255 字节）不算路径引用，所以 `python3 -c '...'` 这类解释器程序正文不会让规则失败；整条路径长到无法表示的候选也只按普通路径判定范围，不会以异常阻断。
+
 ### 自定义模块
 
 模块路径以配置文件所在目录为基准。JavaScript ES 模块必须默认导出匹配函数：

@@ -115,6 +115,11 @@ test("异步模块超时阻断而不是无限等待", async () => {
   await assert.rejects(evaluateRules(rules, "example", tmpdir()), /slow-rule/);
 });
 
+test("解释器程序正文不会让目录规则失败并误阻断", async () => {
+  const program = `import sys,json\n${"d=json.load(sys.stdin)\n".repeat(20)}`;
+  assert.equal(await evaluate({ presets: ["workspace-boundary"] }, `python3 -c '${program}'`), undefined);
+});
+
 test("启用保护后解析失败显式报错，全部关闭则不解析", async () => {
   await assert.rejects(evaluate({}, 'echo "unterminated'), /解析|parsed/);
   assert.equal(await evaluate({ presets: [] }, 'echo "unterminated'), undefined);
