@@ -31,6 +31,7 @@ The judge never sees your other session branches.
 - **Bounded interventions**: `maxAutoContinues` (default `2`) caps automatic continuations per user request. Your own new input resets the counter. Reaching the cap produces a single warning and stops intervening.
 - **No interruption of your typing**: the verdict is discarded if you started a new turn, queued a message, or the branch moved while the judge was running.
 - **Conservative verdicts**: the built-in judge prompt treats thin evidence, polite closings, and analysis-only output as incomplete, and falls back to "stop" when the evidence is ambiguous.
+- **Background work counts as normal waiting**: when the agent started background work this round (tools such as `subagent`, `subagent_resume`, or `workflow` that return immediately and deliver their result automatically later) and nothing shows that result was handled yet, the judge prompt requires a "stop" verdict. The background work wakes the session when it finishes, so a continuation would only add an extra round; this rule outranks the other verdict rules.
 - **Explicit failures**: judge, authentication, timeout, and send errors are reported in the UI; a failed judgement is never treated as an acceptable stop.
 - **Persistent sessions only**: judgement runs in TUI and RPC modes. Print and JSON modes skip it, because the session already shuts down once the agent settles and an automatic continuation could never execute.
 

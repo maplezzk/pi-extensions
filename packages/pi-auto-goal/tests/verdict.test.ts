@@ -84,6 +84,16 @@ test("判定提示词包含固定规则与三段上下文边界", () => {
   assert.match(user, /<tool-trace>\n- read/);
 });
 
+test("判定提示词把「后台任务在跑时停下」列为可以停止", () => {
+  const system = buildJudgeSystemPrompt();
+  // 后台任务跑完会自己唤醒会话，所以这类停止不该被判为提前停止。
+  assert.match(system, /后台任务|background work/);
+  assert.match(system, /subagent/);
+  assert.match(system, /workflow/);
+  // 这条规则必须明确优先于「列了计划却没执行」等早停条目，否则模型会两边摇摆。
+  assert.match(system, /优先|outranks/);
+});
+
 test("空输出与空工具轨迹使用占位文案", () => {
   const user = buildJudgeUserPrompt({ userRequest: "任务", finalOutput: "", toolTrace: [] });
   assert.match(user, /\(agent 没有任何文本输出\)|（agent 没有任何文本输出）/);
