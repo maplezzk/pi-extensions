@@ -1,6 +1,0 @@
-[
-  { "id": "filesystem.delete", "action": "confirm", "match": { "commands": ["rm", "rmdir"] } },
-  { "id": "filesystem.format", "action": "confirm", "match": { "commandPrefixes": ["mkfs"] } },
-  { "id": "filesystem.ownership", "action": "confirm", "match": { "commands": ["chown"] } },
-  { "id": "shell.fork-bomb", "action": "confirm", "match": { "commandPattern": ":\\(\\)\\s*\\{" } }
-]

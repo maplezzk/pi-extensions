@@ -1,11 +1,9 @@
 import { i18n } from "./i18n.ts";
-import type { RuleAction, RuleMatch, RuleMessage, SafetyRule } from "./types.ts";
+import type { RuleAction, RuleMatch, RuleMessage } from "./types.ts";
 
 const ACTIONS = new Set<unknown>(["warn", "confirm", "block"]);
 /** 文案对象支持的语言键；新增语言时只改这里。 */
 const MESSAGE_LOCALES = ["zh-CN", "en-US"] as const;
-/** 内置预设文件里的规则条目；预设是随包发布的固定规则，不接受 enabled 开关。 */
-const PRESET_RULE_KEYS = ["id", "action", "match", "message"] as const;
 /** 错误里展示字段位置的统一分隔符。 */
 const FIELD_SEPARATOR = ".";
 
@@ -87,23 +85,4 @@ export function parseMessage(value: unknown, field: string): RuleMessage {
 export function parseAction(value: unknown, field: string): RuleAction {
   if (!ACTIONS.has(value)) return invalid(field);
   return value as RuleAction;
-}
-
-/** 预设文件是完整规则数组：每条规则都必须自带 id、action 和 match。 */
-export function parsePresetRules(value: unknown, field: string): SafetyRule[] {
-  if (!Array.isArray(value) || value.length === 0) return invalid(field);
-  const seen = new Set<string>();
-  const rules: SafetyRule[] = [];
-  for (const entry of value) {
-    const raw = object(entry, field);
-    checkKeys(raw, PRESET_RULE_KEYS, field);
-    const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : invalid(fieldPath(field, "id"));
-    if (seen.has(id)) invalid(fieldPath(field, id));
-    seen.add(id);
-    const action = parseAction(raw.action, fieldPath(field, id, "action"));
-    const match = parseMatch(raw.match, fieldPath(field, id, "match"));
-    const message = raw.message === undefined ? undefined : parseMessage(raw.message, fieldPath(field, id, "message"));
-    rules.push({ id, action, match, ...(message === undefined ? {} : { message }) });
-  }
-  return rules;
 }

@@ -1,6 +1,6 @@
 ---
 name: configure-pi-safety-guards
-description: "配置安全预设、规则动作和自定义匹配器。Use when configuring safety presets, rule actions or custom matchers."
+description: "配置安全规则、规则动作和自定义匹配器。Use when configuring safety rules, rule actions or custom matchers."
 ---
 
 # 配置安全规则 / Configure safety rules
@@ -9,21 +9,18 @@ description: "配置安全预设、规则动作和自定义匹配器。Use when 
 
 `<pi-agent-dir>/extensions/pi-safety-guards/config.json`
 
-遵守 `PI_CODING_AGENT_DIR`，可以使用 `/config:safety-guards` 打开 TUI 预设菜单（每项显示开/关和规则条数，菜单里有“查看生效规则明细”）；`/config:safety-guards show` 直接打印当前生效规则，`reset` 恢复默认预设，保存后执行 `/reload`。
-Respect `PI_CODING_AGENT_DIR`; use `/config:safety-guards` to open the TUI preset menu (each entry shows state and rule count, with a `Show effective rules` entry), use `/config:safety-guards show` to print effective rules, use `reset` for the default preset, and reload after saving.
+遵守 `PI_CODING_AGENT_DIR`。首次运行时如果文件不存在，插件会把 4 条默认规则写进该文件；之后只读这个文件，没有隐藏的内置规则。`/config:safety-guards`（等价于 `show`）打印配置文件路径和当前生效规则，不打开菜单、不改文件；改完执行 `/reload`。
+Respect `PI_CODING_AGENT_DIR`. On first run the extension writes four default rules into that file when it is missing, and reads only that file afterwards; no rules are hidden in code. `/config:safety-guards` (same as `show`) prints the file path and effective rules without opening a menu or writing files; reload after editing.
 
-## 选择规则 / Select rules
+## 规则 / Rules
 
-默认 `destructive-operations` 对支持的删除、格式化、所有权修改和 fork bomb 操作要求确认。需要限制目录时选择 `workspace-boundary`。
-
-The default `destructive-operations` preset asks for confirmation for supported deletion, formatting, ownership and fork-bomb operations. Select `workspace-boundary` for directory restrictions.
-
-- `presets`：选择预设；`[]` 不选择预设。Select presets; `[]` selects none.
-- 内置预设在包内 `presets/<预设名>.json`，文件内容就是规则数组，文件名就是预设名；只读自带目录，配置只能按名字选择。Bundled presets live in `presets/<name>.json` as plain rule arrays named after the preset; only bundled files are loaded and configuration selects them by name.
-- `rules`：按 ID 覆盖或添加；`enabled: false` 禁用已有规则。Override or add by ID; use `enabled: false` to disable a rule.
+- 顶层只有 `rules` 数组；数组为空就是没有任何保护。Only `rules` is accepted at the top level; an empty list means no protection.
+- 每条规则必须写 `id`、`action`、`match`；`message` 可选，`enabled: false` 表示保留但不执行（仍要写全 id/action/match）。Every rule needs `id`, `action` and `match`; `message` is optional and `enabled: false` keeps a rule without running it (it still needs a complete id/action/match).
+- ID 在列表内不能重复；未知字段直接报错，不静默忽略。IDs must be unique; unknown fields are rejected instead of silently ignored.
 - `action`：`warn`、`confirm`、`block`，优先级递增。Actions in increasing priority.
 - `match`：`commands`、`commandPrefixes`、`commandPattern`、`outsideRoots`、`module`，选择一种，匹配内容都写在 JSON 里。Choose one explicit matcher; the matching content lives in the JSON.
-- `message`：可选说明，支持文本或中英文对象。Optional text or bilingual message object.
+- 目录限制写成 `{ "id": "paths.workspace", "action": "block", "match": { "outsideRoots": ["."] } }`。Write directory restrictions as that rule shape.
+- 预设（`presets` 字段和 `presets/` 目录）已删除，出现 `presets` 字段会报错并提示改成 `rules`。Presets (the `presets` field and the `presets/` directory) were removed; a `presets` field now fails with a message pointing at `rules`.
 
 字段说明和示例见 [README](./README.zh-CN.md) 与 [配置示例](./config.example.json)。
 See the [English README](./README.md) and [configuration example](./config.example.json) for details.
@@ -36,7 +33,7 @@ Use a trusted local ES module that default-exports a boolean matcher over the fr
 
 ## 验证与排错 / Verify and troubleshoot
 
-- 配置后检查预设和规则 ID、动作及目录根是否符合预期。Check selected presets, IDs, actions and directory roots.
+- 配置后检查规则 ID、动作及目录根是否符合预期；`/config:safety-guards show` 会列出文件路径和生效规则，停用的规则显示“已停用”。Check IDs, actions and directory roots; `/config:safety-guards show` lists the file path and effective rules, marking disabled ones.
 - 无 UI 时 confirm 会阻断；warn 附加到对应工具结果。Without a UI, confirm blocks; warn appears in the corresponding tool result.
 - 配置、解析或规则失败时查看错误原因，修复后重试；修改配置或模块后 reload。Inspect failures, fix the cause and retry; reload after configuration or module changes.
 - 运行 `npm run check` 验证代码；单元测试不替代真实 Pi 交互确认。Run code checks; unit tests do not replace interactive Pi verification.
