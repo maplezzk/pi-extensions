@@ -1,6 +1,6 @@
 {
   "name": "pi-clean-mode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Collapse a whole agent run into a single duration header, leaving only the final answer",
   "type": "module",
   "main": "./index.ts",
@@ -61,7 +61,7 @@
     "@earendil-works/pi-coding-agent": ">=0.80.0"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.6.0"
+    "pi-extensions-i18n": "^0.7.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.85.1",
