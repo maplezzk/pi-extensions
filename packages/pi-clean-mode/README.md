@@ -109,6 +109,13 @@ Hidden rows render zero lines, so the duration header lands directly above the f
 The transcript stays expanded while the agent is running — otherwise a collapsed run would show nothing until the answer arrives. When the run settles (`agent_settled`) the work collapses automatically. Automatic collapsing is suppressed for the rest of the run if you toggled the state yourself.
 
 The header only appears once the run duration is known, so it does not show during streaming.
+
+## Resumed sessions
+
+After `/resume`, `/reload`, or `/fork`, historical messages do not replay `agent_start` / `agent_settled`, so the state would stay in the initial expanded form and the whole history would look as if clean mode were off. `session_start` therefore calls `restoreHistory`: when the master switch is on, the history is treated as already settled (collapsed), and the next real run expands again on `agent_start`.
+
+The cost: historical runs have **no duration header**. Durations and step counts live in memory and are never written into the session, so `getRunDuration` has nothing to return after a restore and the header stays hidden. Use `f2` or the command to expand everything.
+
 ## Configuration
 
 Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.example.json`.
