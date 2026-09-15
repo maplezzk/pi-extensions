@@ -51,11 +51,12 @@ test("宽度为 0 时不炸，返回空行", () => {
 	assert.equal(visibleWidth(styler.band("用时", 0)), 0);
 });
 
-test("标签两侧留出空格并压上底色", () => {
+test("标签只负责上底色，宽度与传入内容一致", () => {
 	const styler = createHeaderStyler(ansiTheme());
-	const chip = styler.chip("探索 · 3 步");
+	const content = "  探索 · 3 步 ▼ ";
+	const chip = styler.chip(content);
 
-	assert.equal(visibleWidth(chip), visibleWidth("探索 · 3 步") + 2, "标签应左右各留一格");
+	assert.equal(visibleWidth(chip), visibleWidth(content), "标签不该自己另外补留白");
 	assert.ok(chip.includes(BG_PREFIX), `标签应带底色：${JSON.stringify(chip)}`);
 });
 
@@ -74,5 +75,5 @@ test("主题缺色时退化成纯文本，排版仍然成立", () => {
 	assert.equal(styler.primary("用时"), "用时");
 	assert.equal(styler.muted("f2"), "f2");
 	assert.equal(visibleWidth(styler.band("用时 21s", 12)), 12, "没有底色也要补齐到整宽");
-	assert.equal(styler.chip("探索").trim(), "探索", "没有底色也保留两侧空格");
+	assert.equal(styler.chip("  探索 · 3 步 ▼ "), "  探索 · 3 步 ▼ ", "没有底色时原样返回");
 });

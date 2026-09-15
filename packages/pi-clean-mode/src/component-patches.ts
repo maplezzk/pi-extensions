@@ -45,10 +45,10 @@ const COLLAPSED_CHEVRON = "▶";
 const EXPANDED_CHEVRON = "▼";
 /** 折叠头左缩进：运行级与动作组的文案共用同一个起始列。 */
 const HEADER_INDENT = "  ";
-/** 组头缩进：标签自带一格左内边距，所以少缩进一格，标签文字才与折叠头文案同列。 */
-const ACTION_GROUP_INDENT = " ";
-/** 折叠头文案与箭头之间的间距；组头那一格由标签自带的右内边距充当。 */
+/** 折叠头文案与箭头之间的间距。 */
 const ARROW_GAP = " ";
+/** 组头标签右侧的收尾留白，让底色块收得不至于贴着箭头。 */
+const CHIP_TRAILING_PAD = " ";
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
@@ -57,8 +57,17 @@ const HEADER_CHILD_KEY: unique symbol = Symbol("piCleanModeHeaderChild");
 const RUN_HEADER_OWNERSHIP_RESOLVED_KEY: unique symbol = Symbol("piCleanModeRunHeaderResolved");
 /** 标记该实例是否为本轮折叠头的承载者。 */
 const RUN_HEADER_OWNER_KEY: unique symbol = Symbol("piCleanModeRunHeaderOwner");
-/** 工具行箭头所在的行号，由渲染记录、鼠标命中使用。 */
+/** 工具行箭头所在的行号（相对整个组件），由渲染记录、鼠标命中使用。 */
 const TOOL_ROW_ARROW_ROW_KEY: unique symbol = Symbol("piCleanModeToolRowArrowRow");
+/**
+ * 工具行正文相对组件顶部的行偏移；0 表示这一块没有组头、正文从第 0 行开始。
+ *
+ * 展开的组会把「空行 + 组头」拼在工具行前面，容器登记的高度表却是按 Pi 原本的正文
+ * 算的，所以鼠标透传前要先减掉这个偏移，否则点哪都差两行。
+ */
+const TOOL_ROW_BODY_OFFSET_KEY: unique symbol = Symbol("piCleanModeToolRowBodyOffset");
+/** 没有组头时的正文偏移。 */
+const NO_BODY_OFFSET = 0;
 
 /** assistant 组件对外可见的最小结构。 */
 interface AssistantMessageHost {
@@ -90,6 +99,8 @@ interface ToolMessageHost {
 	setExpanded?(expanded: boolean): void;
 	/** 箭头所在行号；渲染时写入，鼠标命中时读取。 */
 	[TOOL_ROW_ARROW_ROW_KEY]?: number;
+	/** 工具行正文的行偏移；渲染时写入，鼠标透传前用它换算坐标。 */
+	[TOOL_ROW_BODY_OFFSET_KEY]?: number;
 	render(width: number): string[];
 	handleMouse(event: TuiMouseEvent): unknown;
 }
@@ -390,8 +401,11 @@ const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
  * 组装收起的动作组头。
  *
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
- * 输出又不丢失「刚才做了什么」；两条以上才汇总成「探索 · N 步」。逐字包一层底色
- * 标签，让它比正文重、比运行级横条轻；箭头与折叠头一样紧跟在文案右边。
+ * 输出又不丢失「刚才做了什么」；两条以上才汇总成「探索 · N 步」。
+ *
+ * 对齐口径：标签底色的左边缘与运行级横条的左边缘同列（都是第 0 列），标签里的
+ * 文案与折叠头文案同列（都是第 2 列），箭头和折叠头一样紧跟在文案右边且留在底色内。
+ * 底色只包住这一行自己的内容，不再另加左内边距，否则底色块会比横条右缩一格。
  */
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
@@ -400,12 +414,14 @@ function buildActionGroupHeaderLines(
 	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
 	const label = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY ? countLabel : (group.summary ?? countLabel);
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
-	const line = [
-		ACTION_GROUP_INDENT,
-		deps.styler.chip(label),
+	const content = [
+		HEADER_INDENT,
+		label,
+		ARROW_GAP,
 		deps.styler.accent(chevron),
+		CHIP_TRAILING_PAD,
 	].join("");
-	return [ACTION_GROUP_HEADER_BLANK, line];
+	return [ACTION_GROUP_HEADER_BLANK, deps.styler.chip(content)];
 }
 
 /**
@@ -461,7 +477,7 @@ function scanLineEnd(line: string): LineEndScan {
  *
  * 箭头的显示宽度可能不是 1 格，所以按宽度取同样数量的尾部空格替换，行宽才不会变。
  */
-function insertToolRowArrow(line: string, arrow: string, deps: ComponentPatchDeps): string {
+function insertToolRowArrow(line: string, arrow: string, styler: HeaderStyler): string {
 	const { textEnd, trailingSpaces } = scanLineEnd(line);
 	const arrowWidth = visibleWidth(arrow);
 	if (trailingSpaces < TOOL_ROW_ARROW_GAP_SPACES + arrowWidth) {
@@ -484,7 +500,7 @@ function insertToolRowArrow(line: string, arrow: string, deps: ComponentPatchDep
 	);
 	// 箭头插在间距空格之后。
 	const insertAt = (spaceIndexes[TOOL_ROW_ARROW_GAP_SPACES - 1] ?? textEnd) + 1;
-	const arrowText = `${deps.styler.accent(arrow)}${RESET_FOREGROUND}`;
+	const arrowText = `${styler.accent(arrow)}${RESET_FOREGROUND}`;
 
 	let out = "";
 	for (let index = 0; index < line.length; index += 1) {
@@ -498,15 +514,25 @@ function insertToolRowArrow(line: string, arrow: string, deps: ComponentPatchDep
 	return out;
 }
 
+/** 给工具行加箭头所需的上下文。 */
+interface ToolRowArrowContext {
+	/** 折叠头着色能力，箭头要上强调色。 */
+	styler: HeaderStyler;
+	/** 工具行正文相对组件顶部的行偏移；展开的组会把「空行 + 组头」拼在前面。 */
+	bodyOffset: number;
+}
+
 /**
  * 给工具行的首行加上「可点击展开」箭头，并记下该行行号供鼠标命中使用。
  *
- * 行号记在实例上，因为渲染先于鼠标事件；没有可加箭头的行时清掉记录。
+ * 行号要加上 `bodyOffset` 再存：鼠标事件的 `y` 是相对整个组件的，而这里的行号是
+ * 相对 Pi 自己那几行。展开的组会在前面多拼「空行 + 组头」，不补偏移就永远对不上，
+ * 点箭头会被当成点组头、把整组收起来。
  */
 function withToolRowArrow(
 	host: ToolMessageHost,
 	lines: string[],
-	deps: ComponentPatchDeps,
+	context: ToolRowArrowContext,
 ): string[] {
 	const rowIndex = lines.findIndex((line) => scanLineEnd(line).textEnd > 0);
 	if (rowIndex === -1) {
@@ -516,8 +542,8 @@ function withToolRowArrow(
 
 	const arrow = host.expanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
 	const patched = [...lines];
-	patched[rowIndex] = insertToolRowArrow(lines[rowIndex] ?? "", arrow, deps);
-	host[TOOL_ROW_ARROW_ROW_KEY] = rowIndex;
+	patched[rowIndex] = insertToolRowArrow(lines[rowIndex] ?? "", arrow, context.styler);
+	host[TOOL_ROW_ARROW_ROW_KEY] = rowIndex + context.bodyOffset;
 	return patched;
 }
 
@@ -561,30 +587,42 @@ function buildToolMessageRender(
 
 		if (mode === TOOL_ROW_HIDDEN) {
 			this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
+			this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
 			return [];
 		}
 		if (mode === TOOL_ROW_GROUP_HEADER && group) {
 			const headerLines = buildActionGroupHeaderLines(group, deps);
 			if (!group.groupExpanded) {
+				// 收起时只留组头，没有正文可点，偏移归零避免鼠标透传算错行。
 				this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
+				this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
 				return headerLines;
 			}
 			// 展开的组里，成员行本身就是一条命令，同样要带上可点击的箭头。
+			this[TOOL_ROW_BODY_OFFSET_KEY] = headerLines.length;
 			return [
 				...headerLines,
-				...withToolRowArrow(this, originalRender.call(this, width), deps),
+				...withToolRowArrow(this, originalRender.call(this, width), {
+					styler: deps.styler,
+					bodyOffset: headerLines.length,
+				}),
 			];
 		}
-		return withToolRowArrow(this, originalRender.call(this, width), deps);
+		this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
+		return withToolRowArrow(this, originalRender.call(this, width), {
+			styler: deps.styler,
+			bodyOffset: NO_BODY_OFFSET,
+		});
 	};
 }
 
 /**
  * 包装工具行的 handleMouse。
  *
- * 两种情况归我们处理，其余透传给 Pi：
+ * 三种情况归我们处理，其余透传给 Pi：
  * - 工具行箭头所在那一行：左键切换 Pi 自己的输出展开；
- * - 动作组头：左键展开/收起整个组。
+ * - 组头那两行（含上方空行）：左键展开/收起整个组；
+ * - 展开的组里，组头下面的正文：坐标减掉组头高度再透传，否则点哪都差两行。
  */
 function buildToolMessageHandleMouse(
 	deps: ComponentPatchDeps,
@@ -599,16 +637,43 @@ function buildToolMessageHandleMouse(
 			return { handled: true };
 		}
 
-		const group = getGroupInfo(this, deps);
-		if (group && isGroupHeaderRow(this, deps)) {
-			if (isLeftClick) {
-				deps.onToggleActionGroup(group.membership.groupId);
-				return { handled: true };
+		const bodyOffset = this[TOOL_ROW_BODY_OFFSET_KEY] ?? NO_BODY_OFFSET;
+		if (bodyOffset > NO_BODY_OFFSET) {
+			// 组头块：它上面的空行也算命中区，点起来更宽松。
+			if (event.y < bodyOffset) {
+				return toggleActionGroupAt(this, deps, isLeftClick);
 			}
-			return undefined;
+			return originalHandleMouse.call(this, {
+				...event,
+				y: event.y - bodyOffset,
+				height: Math.max(event.height - bodyOffset, 1),
+			});
+		}
+
+		if (getGroupInfo(this, deps) && isGroupHeaderRow(this, deps)) {
+			return toggleActionGroupAt(this, deps, isLeftClick);
 		}
 		return originalHandleMouse.call(this, event);
 	};
+}
+
+/**
+ * 点组头时切换该动作组；不是左键或查不到组时返回 undefined（不接管这次事件）。
+ */
+function toggleActionGroupAt(
+	host: ToolMessageHost,
+	deps: ComponentPatchDeps,
+	isLeftClick: boolean,
+): unknown {
+	if (!isLeftClick) {
+		return undefined;
+	}
+	const group = getGroupInfo(host, deps);
+	if (!group) {
+		return undefined;
+	}
+	deps.onToggleActionGroup(group.membership.groupId);
+	return { handled: true };
 }
 
 /**

@@ -584,6 +584,45 @@ test("工具行的首行带上可点击箭头，点击该行切换 Pi 自己的�
 	});
 });
 
+test("展开的组里点成员箭头只切换这条工具行，不折叠整组", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+		toggleActionGroup(harness.actionGroups, 1);
+
+		const head = toolComponent(ids[0]);
+		const lines = linesOf(head);
+		// 组头行用的是展开态箭头 ▼，成员行自己的箭头才是 ▶，据此定位成员行。
+		const arrowRow = lines.findIndex((line) => stripAnsi(line).trimEnd().endsWith(COLLAPSED_CHEVRON));
+		assert.ok(arrowRow >= 0, `前置条件：展开的组里成员行应带箭头：${lines.join("\n")}`);
+
+		head.handleMouse(clickAt(arrowRow, lines.length));
+		assert.equal(harness.groupToggles(), 0, "点成员箭头不应折叠整组");
+
+		const after = linesOf(head);
+		assert.ok(
+			stripAnsi(after[arrowRow] ?? "").trimEnd().endsWith(EXPANDED_CHEVRON),
+			`点箭头后该工具行应变成展开态：${JSON.stringify(stripAnsi(after[arrowRow] ?? ""))}`,
+		);
+	});
+});
+
+test("展开的组里点组头可折叠整组，点成员正文不折叠整组", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+		toggleActionGroup(harness.actionGroups, 1);
+
+		const head = toolComponent(ids[0]);
+		const lines = linesOf(head);
+
+		head.handleMouse(clickAt(HEADER_BLANK_ROW, lines.length));
+		assert.equal(harness.groupToggles(), 1, "组头上方的空行属于同一点击块，应能折叠整组");
+
+		// 组头下面的行属于工具行自己，鼠标要透传给 Pi，不能当成组头。
+		head.handleMouse(clickAt(lines.length - 1, lines.length));
+		assert.equal(harness.groupToggles(), 1, "点成员正文不应折叠整组");
+	});
+});
+
 test("组展开后点击组头仍能收起该组", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
