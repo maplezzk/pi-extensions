@@ -40,8 +40,8 @@
     "en-US": "Configure metrics display"
   },
   "configCommandUsage": {
-    "zh-CN": "用法：/config:metrics（打开配置菜单）、enable、disable 或 reset",
-    "en-US": "Usage: /config:metrics (open settings), enable, disable, or reset"
+    "zh-CN": "用法：/config:metrics（打开配置菜单）、enable、disable、live、on-stop 或 reset",
+    "en-US": "Usage: /config:metrics (open settings), enable, disable, live, on-stop, or reset"
   },
   "configMenuTitle": {
     "zh-CN": "指标配置",
@@ -54,6 +54,18 @@
   "configDisabled": {
     "zh-CN": "禁用指标：{value}",
     "en-US": "Metrics disabled: {value}"
+  },
+  "configDisplay": {
+    "zh-CN": "显示时机：{value}",
+    "en-US": "Display: {value}"
+  },
+  "configDisplayLive": {
+    "zh-CN": "每轮实时一行",
+    "en-US": "one line per turn"
+  },
+  "configDisplayOnStop": {
+    "zh-CN": "停下后汇总一行",
+    "en-US": "one summary line when stopped"
   },
   "configOn": {
     "zh-CN": "开",

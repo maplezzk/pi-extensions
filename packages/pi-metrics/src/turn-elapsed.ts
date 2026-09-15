@@ -3,8 +3,8 @@
  *
  * - working 期间：实时更新 spinner 文字，显示从用户发出消息起的全程耗时（如 "⏱ 47s"），
  *   跨轮不归零 —— 用户等待时最关心的是"一共等了多久"
- * - agent 完全停止时（agent_settled）：插入一条总耗时，覆盖从用户发出消息到 AI 停止
- *   的整段过程（跨越多轮工具调用、自动重试和 compaction 续跑）
+ * - agent 完全停止时（agent_settled）：`display: "live"` 下补一条总耗时；`display: "on-stop"`
+ *   下不再单独发，总耗时由 tps 的整段汇总行带上，避免同一段运行冒两条提示
  *
  * 关于「本轮耗时」：它已经包含在 tps 的那条指标提示里（TPS/TTFT/耗时/tokens 一行），
  * 所以这里不再单独发一条，避免同一轮冒两条指标提示。
@@ -22,6 +22,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { notifyWithSource } from "pi-extensions-i18n";
+import { DEFAULT_METRICS_CONFIG, type MetricsDisplay } from "./config.ts";
 import { formatDone, formatTick } from "./format-utils.ts";
 import { i18n } from "./i18n.ts";
 import { NOTICE_SOURCE } from "./notice.ts";
@@ -30,6 +31,14 @@ const TICK_MS = 1000;
 
 /** 至少跑满两轮才值得单独报一次总耗时；单轮的总耗时是噪声。 */
 const MIN_TURNS_FOR_TOTAL = 2;
+
+/** 一次运行停下时结算出来的原始数据。 */
+export interface RunSettlement {
+  /** 从用户发出消息到 AI 停下的整段耗时（毫秒）。 */
+  elapsedMs: number;
+  /** 本段运行真正跑完的轮数。 */
+  turns: number;
+}
 
 /** 计时状态：与 Pi 事件解耦，便于直接测试判定规则。 */
 export interface ElapsedTracker {
@@ -41,8 +50,10 @@ export interface ElapsedTracker {
   startTurn(): void;
   /** 一轮结束：累计轮次并清掉本轮状态。 */
   endTurn(): void;
-  /** AI 停下：跑满两轮时返回本段总耗时（毫秒），否则返回 undefined。 */
-  settle(): number | undefined;
+  /** 本段运行的结算视图（只读，不复位）；没有进行中的运行返回 undefined。 */
+  currentRun(): RunSettlement | undefined;
+  /** 复位运行状态（一段运行结算完毕后由结算方调用）。 */
+  resetRun(): void;
   /** 清掉本轮起点（agent_end 用）。 */
   clearTurn(): void;
 }
@@ -78,15 +89,17 @@ export function createElapsedTracker(now: () => number = () => Date.now()): Elap
       if (inTurn) turnCount += 1;
       inTurn = false;
     },
-    /** AI 停下：跑满两轮时返回本段总耗时（毫秒），否则返回 undefined。 */
-    settle(): number | undefined {
-      const elapsed = running ? now() - runStartTime : 0;
-      const turns = turnCount;
+    /** 本段运行的结算视图（只读）；没有进行中的运行返回 undefined。 */
+    currentRun(): RunSettlement | undefined {
+      if (!running) return undefined;
+      return { elapsedMs: now() - runStartTime, turns: turnCount };
+    },
+    /** 复位运行状态（一段运行结算完毕后由结算方调用）。 */
+    resetRun(): void {
       running = false;
       inTurn = false;
       runStartTime = 0;
       turnCount = 0;
-      return elapsed > 0 && turns >= MIN_TURNS_FOR_TOTAL ? elapsed : undefined;
     },
     /** 清掉本轮状态（agent_end 用）。 */
     clearTurn(): void {
@@ -95,9 +108,36 @@ export function createElapsedTracker(now: () => number = () => Date.now()): Elap
   };
 }
 
-export default function (pi: ExtensionAPI) {
-  const tracker = createElapsedTracker();
+/** `live` 模式下是否值得单独报总耗时：跑满两轮且有实际耗时。 */
+export function shouldReportTotalRun(settlement: RunSettlement): boolean {
+  return settlement.elapsedMs > 0 && settlement.turns >= MIN_TURNS_FOR_TOTAL;
+}
+
+/** 耗时模块的可注入依赖：与 tps 共用同一个运行时钟，保证两处耗时一致。 */
+export interface TurnElapsedOptions {
+  /** 共享的计时状态；不传就自己造一个（便于单独使用和测试）。 */
+  tracker?: ElapsedTracker;
+  /** 显示时机；只有 `live` 才在这里补总耗时提示。 */
+  display?: MetricsDisplay;
+}
+
+/**
+ * 注册耗时事件：working 期间刷新 spinner，并（live 模式下）在停下时补总耗时提示。
+ *
+ * 运行时钟可以由外部注入：`on-stop` 模式下由 tps 结算同一个 tracker，保证汇总行的
+ * 总耗时与 spinner 显示的是同一段运行。
+ */
+export default function (pi: ExtensionAPI, options: TurnElapsedOptions = {}) {
+  const tracker = options.tracker ?? createElapsedTracker();
+  const display = options.display ?? DEFAULT_METRICS_CONFIG.display;
   let tickHandle: ReturnType<typeof setInterval> | null = null;
+
+  /** live 模式的结算入口：读运行数据后复位，只在本模块负责结算时调用。 */
+  const settleRun = (): RunSettlement | undefined => {
+    const settlement = tracker.currentRun();
+    tracker.resetRun();
+    return settlement;
+  };
 
   const stopTick = () => {
     if (tickHandle !== null) {
@@ -150,12 +190,18 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("agent_settled", async (_event, ctx) => {
     stopTick();
-    const runElapsed = tracker.settle();
+    // 运行时钟只有一个结算者：live 模式在这里结算，on-stop 模式由 tps 结算（汇总行要同时带上耗时）。
+    const settlement = display === "live" ? settleRun() : undefined;
     if (!ctx.hasUI) return;
 
     ctx.ui.setWorkingMessage(undefined);
-    if (runElapsed !== undefined) {
-      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: i18n.t("elapsedTotal", { value: formatDone(runElapsed) }) });
+    if (settlement !== undefined && shouldReportTotalRun(settlement)) {
+      notifyWithSource({
+        ctx,
+        source: NOTICE_SOURCE,
+        level: "info",
+        message: i18n.t("elapsedTotal", { value: formatDone(settlement.elapsedMs) }),
+      });
     }
   });
 }

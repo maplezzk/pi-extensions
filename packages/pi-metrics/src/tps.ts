@@ -3,6 +3,11 @@
  *
  * This is the TPS portion of pi-tps, maintained inside pi-metrics so the
  * elapsed-time HUD and generation telemetry share one lifecycle.
+ *
+ * 两种显示时机：
+ * - `live`：每轮结束即出一行指标。
+ * - `on-stop`（默认）：每轮只记 `tps` session entry 和事件，不动对话区；等整段运行
+ *   `agent_settled` 后把各轮合成一行汇总（总耗时、混合 TPS、TTFT、in/out、成本）。
  */
 
 import { performance } from "node:perf_hooks";
@@ -12,8 +17,12 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { notifyWithSource } from "pi-extensions-i18n";
+import { DEFAULT_METRICS_CONFIG, type MetricsDisplay } from "./config.ts";
+import { computeRateUsdPerM, formatDuration, formatNumber } from "./format-utils.ts";
 import { i18n } from "./i18n.ts";
 import { NOTICE_SOURCE } from "./notice.ts";
+import { composeRunSummary, createRunAccumulator, type RunAccumulator } from "./run-summary.ts";
+import type { ElapsedTracker } from "./turn-elapsed.ts";
 
 interface TurnStartEvent {
   type: "turn_start";
@@ -107,58 +116,6 @@ interface SessionEntryLike {
 
 const STALL_THRESHOLD_MS = 500;
 const NEURALWATT_ENERGY_EVENT = "neuralwatt:turn-energy";
-
-export function formatNumber(num: number): string {
-  if (num < 1_000) return String(num);
-
-  const [value, suffix] = num >= 1_000_000_000
-    ? [num / 1_000_000_000, "B"]
-    : num >= 1_000_000
-      ? [num / 1_000_000, "M"]
-      : [num / 1_000, "K"];
-  const formatted = value.toFixed(1);
-  return formatted.endsWith(".0") ? `${value.toFixed(0)}${suffix}` : `${formatted}${suffix}`;
-}
-
-export function formatDuration(totalSeconds: number): string {
-  if (totalSeconds < 60) return `${totalSeconds.toFixed(1)}s`;
-
-  const units = [
-    ["y", 365 * 24 * 60 * 60],
-    ["mo", 30 * 24 * 60 * 60],
-    ["w", 7 * 24 * 60 * 60],
-    ["d", 24 * 60 * 60],
-    ["h", 60 * 60],
-    ["m", 60],
-    ["s", 1],
-  ] as const;
-  const parts: Array<{ value: number; label: string }> = [];
-  let remaining = Math.round(totalSeconds);
-
-  for (const [label, seconds] of units) {
-    if (remaining >= seconds) {
-      parts.push({ value: Math.floor(remaining / seconds), label });
-      remaining %= seconds;
-    }
-  }
-
-  if (parts.length === 1) {
-    const first = units.findIndex(([label]) => label === parts[0].label);
-    let next = first + 1;
-    if (parts[0].label === "mo") next++;
-    if (parts[0].label === "y") next += 2;
-    if (next < units.length) parts.push({ value: 0, label: units[next][0] });
-  }
-
-  return parts.slice(0, 2).map(({ value, label }) => `${value}${label}`).join(" ");
-}
-
-export function computeRateUsdPerM(costUsd: number | null, totalTokens: number): number | null {
-  if (costUsd === null || !Number.isFinite(costUsd) || costUsd < 0) return null;
-  if (!Number.isFinite(totalTokens) || totalTokens <= 0) return null;
-  const rate = costUsd / (totalTokens / 1_000_000);
-  return Number.isFinite(rate) && rate >= 0 ? Math.round(rate * 100) / 100 : null;
-}
 
 function isAssistantMessage(message: unknown): message is AssistantMessage {
   if (!message || typeof message !== "object") return false;
@@ -342,7 +299,33 @@ function restoreTPSNotification(
   }
 }
 
-export default function tpsExtension(pi: ExtensionAPI): void {
+/** `on-stop` 模式下与汇总相关的运行状态。 */
+interface SummaryState {
+  /** 本段运行的增量累加器；只保留聚合量，不囤各轮原始记录。 */
+  accumulator: RunAccumulator;
+  /** 发提示用的上下文。 */
+  ctx: ExtensionContext;
+  /** 汇总行里的整段耗时（毫秒）；运行时钟没数据时为 null。 */
+  elapsedMs: number | null;
+  /** 最后累加的一轮下标；没有轮时为 null。 */
+  turnIndex: number | null;
+  /** 最后一轮已计入的计费金额，替换旧值时要用它扣减。 */
+  effectiveCostUsd: number | null;
+}
+
+/** tps 模块的可注入依赖：显示时机，以及 on-stop 模式下共用的运行时钟。 */
+export interface TpsOptions {
+  /** 显示时机；`live` 每轮一行，`on-stop` 只在整段停下后汇总一行。 */
+  display?: MetricsDisplay;
+  /** 共享的运行时钟；只在 `on-stop` 模式下用于汇总行的总耗时。 */
+  tracker?: ElapsedTracker;
+}
+
+/**
+ * 注册 TPS 指标事件：按 `display` 决定每轮实时出一行，还是整段停下后汇总出一行。
+ */
+export default function tpsExtension(pi: ExtensionAPI, options: TpsOptions = {}): void {
+  const display = options.display ?? DEFAULT_METRICS_CONFIG.display;
   let currentTiming: TurnTiming | null = null;
   let pendingNeuralwattBilledCost: { turnIndex: number; costUsd: number } | null = null;
   let lastCommittedTurn: {
@@ -351,6 +334,12 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     billedApplied: boolean;
     ctx: ExtensionContext;
   } | null = null;
+  /** `on-stop` 模式下本段运行的累加器，agent_settled 时出一个汇总行。 */
+  let runAccumulator: RunAccumulator = createRunAccumulator();
+  /** 本段运行最后累加的那一轮；只有它能收到迟到的账单。 */
+  let lastRunTurn: { turnIndex: number; effectiveCostUsd: number | null } | null = null;
+  /** 最近一次已经发出的汇总；账单迟到时用它重算并重发。 */
+  let lastSummary: SummaryState | null = null;
   const tpsCaps = new Map<string, number>();
   const restoreTimers = new Set<ReturnType<typeof setTimeout>>();
   let unsubscribeNeuralwatt: (() => void) | undefined;
@@ -359,8 +348,32 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     currentTiming = null;
     pendingNeuralwattBilledCost = null;
     lastCommittedTurn = null;
+    runAccumulator = createRunAccumulator();
+    lastRunTurn = null;
+    lastSummary = null;
     for (const timer of restoreTimers) clearTimeout(timer);
     restoreTimers.clear();
+  };
+
+  /**
+   * 账单在汇总之后才到达时修正已发的那一行：
+   * 只可能落在本段运行的最后一轮，因此用累加器替换该轮的计费金额并重发一行更正，
+   * 不重发单轮指标；金额没变化时跳过重发。
+   */
+  const applyLateBilledCost = (turnIndex: number, costUsd: number): void => {
+    const summary = lastSummary;
+    // 只有已发出的那一行里的最后一轮可能收到迟到账单，其他轮一律忽略。
+    if (!summary || summary.turnIndex !== turnIndex) return;
+    if (!summary.accumulator.replaceBilledCost(summary.effectiveCostUsd, costUsd)) return;
+    summary.effectiveCostUsd = costUsd;
+    const aggregate = summary.accumulator.summarize();
+    if (aggregate === null || !summary.ctx.hasUI) return;
+    notifyWithSource({
+      ctx: summary.ctx,
+      source: NOTICE_SOURCE,
+      level: "info",
+      message: composeRunSummary(aggregate, summary.elapsedMs),
+    });
   };
 
   const scheduleRestore = (callback: () => void) => {
@@ -394,6 +407,10 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     committed.telemetry = corrected;
     pi.appendEntry("tps", corrected);
     pi.events?.emit("tps:telemetry", corrected);
+    if (display === "on-stop") {
+      applyLateBilledCost(committed.turnIndex, costUsd);
+      return;
+    }
     if (committed.ctx.hasUI) notifyWithSource({ ctx: committed.ctx, source: NOTICE_SOURCE, level: "info", message: composeDisplayString(corrected) });
   });
 
@@ -411,6 +428,9 @@ export default function tpsExtension(pi: ExtensionAPI): void {
   pi.on("session_tree", (_event: SessionTreeEvent, ctx) => {
     pendingNeuralwattBilledCost = null;
     lastCommittedTurn = null;
+    runAccumulator = createRunAccumulator();
+    lastRunTurn = null;
+    lastSummary = null;
     restoreTPSNotification(ctx, scheduleRestore);
   });
 
@@ -515,7 +535,42 @@ export default function tpsExtension(pi: ExtensionAPI): void {
     };
     pi.appendEntry("tps", telemetry);
     pi.events?.emit("tps:telemetry", telemetry);
+    if (display === "on-stop") {
+      // 先累加：整段停下后只出一行汇总，多轮工具调用不会把对话区刷满。
+      const effectiveCostUsd = billedCost ?? telemetry.cost?.total ?? null;
+      runAccumulator.add(telemetry, effectiveCostUsd);
+      lastRunTurn = { turnIndex: event.turnIndex, effectiveCostUsd };
+      return;
+    }
     if (ctx.hasUI) notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: composeDisplayString(telemetry) });
+  });
+
+  pi.on("agent_settled", (_event, ctx: ExtensionContext) => {
+    if (display !== "on-stop") return;
+    // 运行时钟由本模块结算（live 模式下由 turn-elapsed 结算）：先取数再复位，
+    // 汇总行里的总耗时就是 spinner 一直在显示的那一段。
+    const settlement = options.tracker?.currentRun();
+    options.tracker?.resetRun();
+    const aggregate = runAccumulator.summarize();
+    if (aggregate === null) return;
+    const elapsedMs = settlement && settlement.elapsedMs > 0 ? settlement.elapsedMs : null;
+    lastSummary = {
+      accumulator: runAccumulator,
+      ctx,
+      elapsedMs,
+      turnIndex: lastRunTurn?.turnIndex ?? null,
+      effectiveCostUsd: lastRunTurn?.effectiveCostUsd ?? null,
+    };
+    // 本段运行已经结算：换一个空累加器，下一段运行从零开始。
+    runAccumulator = createRunAccumulator();
+    lastRunTurn = null;
+    if (!ctx.hasUI) return;
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: "info",
+      message: composeRunSummary(aggregate, elapsedMs),
+    });
   });
 
 }

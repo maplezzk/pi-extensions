@@ -20,7 +20,7 @@
 | [`pi-auto-goal`](./packages/pi-auto-goal) | 每次完全停止后用第二个模型判定是否属于擅自早停，是则以用户语气要求 agent 继续。 | [English](./packages/pi-auto-goal/README.md) · [中文](./packages/pi-auto-goal/README.zh-CN.md) |
 | [`pi-distill`](./packages/pi-distill) | 在所有已启用 object-schema 工具的超长输出占满上下文前进行提炼。 | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配规则在工具执行前后进行审查，并对 `edit`、`write` 使用真实 diff。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
-| [`pi-metrics`](./packages/pi-metrics) | 在 working spinner 实时显示会话全程耗时，并给出每轮耗时与总耗时小结。 | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |
+| [`pi-metrics`](./packages/pi-metrics) | 在 working spinner 实时显示会话全程耗时，并在 agent 停下后给一行汇总（`on-stop`，默认），或按 `live` 模式每轮一行。 | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |
 | [`pi-models-discovery`](./packages/pi-models-discovery) | 自动发现 models.json 中标记 `discoverModels` 的 provider 的模型列表，启动走持久化缓存，并提供手动刷新命令。 | [English](./packages/pi-models-discovery/README.md) · [中文](./packages/pi-models-discovery/README.zh-CN.md) |
 | [`pi-session-tools`](./packages/pi-session-tools) | 缓存 bash `grep`/`tail`/`head` 管道过滤前的完整输出，并提供 `session_log` / `session_squash` 对话压缩（主 agent 生成交接摘要）。 | [English](./packages/pi-session-tools/README.md) · [中文](./packages/pi-session-tools/README.zh-CN.md) |
 | [`pi-session-resources`](./packages/pi-session-resources) | 从成功工具活动中收集文件、浏览器 URL 和 PR/MR 链接，并通过编辑器上方可点击、可切换类型的 `#` 资源选择器进行引用。 | [English](./packages/pi-session-resources/README.md) · [中文](./packages/pi-session-resources/README.zh-CN.md) |
