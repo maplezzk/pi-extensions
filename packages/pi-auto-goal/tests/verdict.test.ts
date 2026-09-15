@@ -84,10 +84,13 @@ test("判定提示词包含固定规则与三段上下文边界", () => {
   assert.match(user, /<tool-trace>\n- read/);
 });
 
-test("判定提示词把「后台任务在跑时停下」列为可以停止", () => {
+test("判定提示词把「输出里在等后台任务」列为可以停止", () => {
   const system = buildJudgeSystemPrompt();
   // 后台任务跑完会自己唤醒会话，所以这类停止不该被判为提前停止。
   assert.match(system, /后台任务|background work/);
+  // 判断依据是 agent 的最后输出，而不是工具调用轨迹。
+  assert.match(system, /最后输出|final output/);
+  assert.doesNotMatch(system, /工具轨迹里出现这类调用|tool trace contains such a call/);
   assert.match(system, /subagent/);
   assert.match(system, /workflow/);
   // 这条规则必须明确优先于「列了计划却没执行」等早停条目，否则模型会两边摇摆。
