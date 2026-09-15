@@ -55,6 +55,11 @@ export function verdictNoticeLevel(color: VerdictColor): NoticeLevel {
   return "info";
 }
 
+/** 把理由压成单行，避免判定模型换行输出把提示块撑开。 */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 /** 拼一条结论：颜色决定级别，调用方只需给正文和细节。 */
 function notice(
   color: VerdictColor,
@@ -78,9 +83,12 @@ export function buildVerdictNotice(outcome: StopOutcome, sentMessage?: string): 
       return notice("warning", i18n.t("statusContinue", { budget: outcome.budget }), details);
     }
     case "stop":
+      // 判「可停止」时用户没有别的线索可查（没有催促消息、没有报错），
+      // 理由必须直接写在正文里，不能只藏在 Ctrl+O 展开的细节里。
       return notice("success", i18n.t("statusStop", {
         confidence: formatConfidence(outcome.confidence),
-      }), [i18n.t("detailReason", { reason: outcome.reason })]);
+        reason: oneLine(outcome.reason),
+      }), []);
     case "skipped":
       return outcome.code === STOP_SKIP_BUDGET
         ? notice("dim", i18n.t("statusBudget", { budget: outcome.budget }), [

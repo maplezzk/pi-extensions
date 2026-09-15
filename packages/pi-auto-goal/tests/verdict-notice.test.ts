@@ -31,7 +31,7 @@ test("早停干预：一行结论带进度，理由与已发送内容收进展�
   assert.match(notice.details.join("\n"), /继续干/);
 });
 
-test("判定为可以停止：一行结论带百分比置信度，理由在细节里", () => {
+test("判定为可以停止：理由直接写在正文里，不用展开细节", () => {
   const notice = buildVerdictNotice({ kind: "stop", reason: "已完成", confidence: 0.923 });
   assert.equal(notice.color, "success");
   assert.equal(notice.level, "info");
@@ -39,7 +39,15 @@ test("判定为可以停止：一行结论带百分比置信度，理由在细�
   // 置信度写成整数百分比，用户不用猜 0.9 是秒数还是把握程度。
   assert.match(notice.text, /置信度 92%|confidence 92%/);
   assert.doesNotMatch(notice.text, /0\.9/);
-  assert.match(notice.details.join("\n"), /已完成/);
+  // 判「可停止」时没有催促、没有报错，理由就是唯一线索，必须默认可见。
+  assert.match(notice.text, /已完成/);
+  assert.equal(notice.details.length, 0);
+});
+
+test("判定理由是多行输出时压成一行，不把提示块撑开", () => {
+  const notice = buildVerdictNotice({ kind: "stop", reason: "已完成\n且已自检", confidence: 0.9 });
+  assert.match(notice.text, /已完成 且已自检/);
+  assert.doesNotMatch(notice.text, /\n/);
 });
 
 test("置信度换算成整数百分比，越界与非法值收敛到 0-100", () => {
@@ -117,7 +125,7 @@ test("每个结论都只给一条提示：正文一行 + 细节若干行", () =>
   for (const notice of notices) {
     assert.equal(typeof notice.text, "string");
     assert.ok(notice.text.length > 0);
-    assert.ok(notice.details.length > 0, `细节行缺失：${notice.text}`);
+    // 详情可以为空（判「可停止」时理由已经在正文里），非空时不允许出现空行。
     assert.ok(notice.details.every((line) => line.trim() !== ""));
   }
 });
