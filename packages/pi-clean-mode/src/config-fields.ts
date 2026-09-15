@@ -17,7 +17,6 @@ export type BooleanConfigKey =
 	| "enabled"
 	| "autoExpandWhileRunning"
 	| "showRunHeader"
-	| "showExpandHint"
 	| "enableActionGroups"
 	| "showActivityArea"
 	| "animateActivity"
@@ -34,8 +33,6 @@ const BOOLEAN_FIELD_WRITERS: Record<
 	autoExpandWhileRunning: (config, value) => ({ ...config, autoExpandWhileRunning: value }),
 	// 折叠时显示「用时」折叠头。
 	showRunHeader: (config, value) => ({ ...config, showRunHeader: value }),
-	// 折叠头附带展开提示。
-	showExpandHint: (config, value) => ({ ...config, showExpandHint: value }),
 	// 同一轮的多条工具调用收成一行组头。
 	enableActionGroups: (config, value) => ({ ...config, enableActionGroups: value }),
 	// 轮首实时活动区。

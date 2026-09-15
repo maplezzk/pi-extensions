@@ -399,7 +399,6 @@ function installPatches(runtime: Runtime): void {
 		getActivityLines: () => runtime.activityArea.lines,
 		getRunDuration: (host) => runtime.runDurations.getDuration(host),
 		getRunSteps: (host) => runtime.runDurations.getSteps(host),
-		expandHint: TOGGLE_SHORTCUT,
 	});
 }
 

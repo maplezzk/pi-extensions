@@ -31,7 +31,7 @@ Groups with a single member are never collapsed — the tool row itself is shown
 Took 11s ⌄
 I'll check the restock data first.
 
-▸ Explored · 3 steps          ← collapsed group
+探索 · 3 steps ▶          ← collapsed group
 
 Took 11s ⌄
 I'll check the restock data first.
@@ -74,19 +74,19 @@ If you toggle the state yourself during a run, that run is not collapsed automat
 Each level gets its own treatment so the hierarchy reads at a glance and never blends into the prose:
 
 ```
-  ▸  用时 21s · 5 步                                              f2
-   ▸  探索 · 3 步
-   ▸  运行命令 ls -la
-  按类别：目录、视频、Excel、其他。
+ 用时 21s · 5 步 ▼
+ 探索 · 3 步 ▼
+ 运行命令 ls -la ▶
+ 按类别：目录、视频、Excel、其他。
 ```
 
 | Level | Treatment | Meaning |
 |---|---|---|
-| Run header | full-width **band** with a background + right-aligned chevron and shortcut hint | a whole run is folded here |
-| Action group header | same label column as the run header + a **chip** (background only behind the label) + right-aligned chevron | one action, or a group of them, is folded here |
+| Run header | full-width **band** with a background + chevron right after the text | a whole run is folded here |
+| Action group header | same label column as the run header + a **chip** (background only behind the label) + chevron right after it | one action, or a group of them, is folded here |
 | Prose and tool rows | no background, Pi's own look | content that is not folded |
 
-A single action uses its own summary as the label (`Run Command ls -la`); two or more are summarised as `Explored · N steps`. The `▸` / `▾` chevron is right-aligned to the row edge and carries both the state and the "clickable" affordance.
+A single action uses its own summary as the label (`Run Command ls -la`); two or more are summarised as `Explored · N steps`. Every folded row and every visible tool row ends its first line with `▶` / `▼`, sitting right after the text: state and "clickable" in one glance, with no key hint to learn.
 
 Backgrounds come from Pi's own theme keys (`customMessageBg` for the run band, `toolPendingBg` for the action chip), so this reads as the same visual language as extension message blocks and tool rows. If a theme is missing a colour key, only that layer of decoration is dropped — the layout is unaffected.
 
@@ -118,7 +118,6 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
   "enabled": true,
   "autoExpandWhileRunning": true,
   "showRunHeader": true,
-  "showExpandHint": true,
   "hideThinking": true
 }
 ```
@@ -128,7 +127,6 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 | `enabled` | Master switch. When off, every patch passes the original render through untouched. |
 | `autoExpandWhileRunning` | Expand while running, then collapse when the run settles. |
 | `showRunHeader` | Show the `Took …` band at the top of the run. |
-| `showExpandHint` | Show the expand shortcut at the right end of the band. |
 | `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
 | `showActivityArea` | Show the live activity rows at the top of the run. |
 | `activityRows` | Activity area height, 1-6 (default 4). |
@@ -151,8 +149,8 @@ While the agent runs, a small block appears at the very top of the run:
 │ ⠹ 运行命令 npm test
 │   ↳ 12 passing
 │ 读取 4 · 搜索 3 · 命令 1 · 42s
-  ▸ 探索 · 5 步
-  ▸ 运行命令 ls -la
+ 探索 · 5 步 ▼
+ 运行命令 ls -la ▶
 ```
 
 It shares one slot with the run-level `Took …` band: while the run is going the duration is unknown, so that slot holds the live rows; once the run settles the rows are cleared and the same slot holds the band. Both therefore live at the top of the run, and neither ever looks like a status bar pinned to the bottom of the screen.

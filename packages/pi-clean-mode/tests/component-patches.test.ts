@@ -49,6 +49,8 @@ const PLAIN_THEME: ThemePainter = {
 const HEADER_FRAGMENT = formatDuration(RUN_DURATION_MS);
 /** 运行级折叠头的完整标签（含耗时），用来量它的起始列。 */
 const RUN_HEADER_LABEL = i18n.t("runHeader", { duration: formatDuration(RUN_DURATION_MS) });
+/** 步数文案；箭头紧跟在它右边。 */
+const RUN_HEADER_STEPS = i18n.t("runHeaderSteps", { count: String(RUN_STEPS) });
 /** 三条成员的组头文案；由 i18n 推导，避免与实现里的文案漂移。 */
 const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
 /** 单条动作的组头摘要；组内只有一条时直接用它当组头文案。 */
@@ -69,10 +71,12 @@ const TOOL_CWD = "/tmp";
 const HEADER_ROW = 1;
 /** 两级折叠头共用的左缩进列数：组头文案不再比运行级多缩一级。 */
 const HEADER_INDENT_COLUMNS = 2;
-/** 展开态箭头；运行级折叠头在 EXPANDED_STATE 下用它。 */
-const EXPANDED_CHEVRON = "▾";
-/** 收起态箭头；动作组默认就是收起态。 */
-const COLLAPSED_CHEVRON = "▸";
+/** 展开态箭头：实心下三角。 */
+const EXPANDED_CHEVRON = "▼";
+/** 收起态箭头：实心右三角；动作组默认就是收起态。 */
+const COLLAPSED_CHEVRON = "▶";
+/** 文案与箭头之间的空格数。 */
+const CHEVRON_GAP_COLUMNS = 1;
 /** 折叠头上方空行的行号；它与折叠头属于同一个点击块。 */
 const HEADER_BLANK_ROW = 0;
 /** 折叠且已结束的运行状态。 */
@@ -236,9 +240,27 @@ function linesOf(component: { render(width: number): string[] }): string[] {
 	return component.render(WIDTH);
 }
 
-/** 取一行的起始列（前导空格数）；测试用透明主题，行内没有 ANSI 码。 */
-function leadingSpaces(line: string): number {
-	return line.length - line.trimStart().length;
+/** 去掉 ANSI 转义，只留可见文本。 */
+function stripAnsi(line: string): string {
+	return line.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
+}
+
+/** 子串在行内的起始列；含全角字符时不能用字符串下标当列号。 */
+function columnOf(line: string, marker: string): number {
+	const index = line.indexOf(marker);
+	return index === -1 ? -1 : visibleWidth(line.slice(0, index));
+}
+
+/** 断言箭头紧跟在指定文案（该行箭头前最后一段可见文字）右边，只隔 CHEVRON_GAP_COLUMNS 格。 */
+function assertChevronFollowsLabel(line: string, label: string, chevron: string): void {
+	const labelColumn = columnOf(line, label);
+	assert.ok(labelColumn >= 0, `前置条件：行内应出现文案：${JSON.stringify(line)}`);
+	const expected = labelColumn + visibleWidth(label) + CHEVRON_GAP_COLUMNS;
+	assert.equal(
+		columnOf(line, chevron),
+		expected,
+		`箭头应紧跟在文案右边：${JSON.stringify(line)}`,
+	);
 }
 
 test("运行中活动行显示在当前轮的轮首", () => {
@@ -486,7 +508,7 @@ test("多条成员的组收起时只渲染一条组头", () => {
 	});
 });
 
-test("动作组头与运行级折叠头文案同列，箭头都贴右边缘", () => {
+test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
 		const groupHeader = linesOf(toolComponent(ids[0])).find((line) =>
@@ -499,28 +521,22 @@ test("动作组头与运行级折叠头文案同列，箭头都贴右边缘", ()
 		);
 		assert.ok(runHeader, "前置条件：应渲染出运行级折叠头");
 
-		// 箭头挪到右侧后，左侧只剩文案；两级文案必须同列，否则看起来仍是没对齐。
+		// 箭头挪到文案右边后，左侧只剩文案；两级文案必须同列，否则看着还是没对齐。
 		assert.equal(
-			groupHeader.indexOf(GROUP_HEADER_FRAGMENT),
-			runHeader.indexOf(RUN_HEADER_LABEL),
+			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
+			columnOf(runHeader, RUN_HEADER_LABEL),
 			"两级折叠头的文案应同列",
 		);
 		assert.equal(
-			groupHeader.indexOf(GROUP_HEADER_FRAGMENT),
+			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
 			HEADER_INDENT_COLUMNS,
 			"组头文案应顶在折叠头缩进列上",
 		);
 
-		// 箭头贴右边缘：两级折叠头的行尾都应该是箭头（折叠头再跟上快捷键提示）。
-		assert.equal(visibleWidth(groupHeader), WIDTH, "组头行应补齐到整宽");
-		assert.ok(
-			groupHeader.trimEnd().endsWith(COLLAPSED_CHEVRON),
-			`组头箭头应贴在右边缘：${JSON.stringify(groupHeader)}`,
-		);
-		assert.ok(
-			runHeader.trimEnd().endsWith(EXPAND_HINT),
-			`折叠头右侧应以快捷键提示收尾：${JSON.stringify(runHeader)}`,
-		);
+		// 箭头紧跟在文案右边（只隔一格），而且不再显示快捷键提示。
+		assertChevronFollowsLabel(groupHeader, GROUP_HEADER_FRAGMENT, COLLAPSED_CHEVRON);
+		assertChevronFollowsLabel(runHeader, RUN_HEADER_STEPS, EXPANDED_CHEVRON);
+		assert.ok(!runHeader.includes(EXPAND_HINT), `折叠头不应再显示快捷键：${runHeader}`);
 	});
 });
 
@@ -544,6 +560,30 @@ test("组展开后成员逐条渲染，组头行依然保留", () => {
 	});
 });
 
+test("工具行的首行带上可点击箭头，点击该行切换 Pi 自己的展开", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, () => {
+		const component = toolComponent("loose-1");
+		const lines = linesOf(component);
+		const arrowRow = lines.findIndex((line) => stripAnsi(line).trim().length > 0);
+		assert.ok(arrowRow >= 0, "前置条件：工具行应有可见内容");
+
+		const firstLine = lines[arrowRow] ?? "";
+		assert.ok(
+			stripAnsi(firstLine).trimEnd().endsWith(COLLAPSED_CHEVRON),
+			`工具行首行应以箭头收尾：${JSON.stringify(stripAnsi(firstLine))}`,
+		);
+		assert.equal(visibleWidth(firstLine), WIDTH, "加箭头不能改变行宽");
+
+		// 点这一行应切到展开态，箭头方向跟着反过来。
+		component.handleMouse(clickAt(arrowRow, lines.length));
+		const expandedLines = linesOf(component);
+		assert.ok(
+			stripAnsi(expandedLines[arrowRow] ?? "").trimEnd().endsWith(EXPANDED_CHEVRON),
+			`展开后箭头应变成实心下三角：${JSON.stringify(stripAnsi(expandedLines[arrowRow] ?? ""))}`,
+		);
+	});
+});
+
 test("组展开后点击组头仍能收起该组", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
@@ -551,7 +591,7 @@ test("组展开后点击组头仍能收起该组", () => {
 
 		const head = toolComponent(ids[0]);
 		linesOf(head);
-		head.handleMouse(clickAt(0, HEADER_ROW + 1));
+		head.handleMouse(clickAt(HEADER_ROW, HEADER_ROW + 1));
 		assert.equal(harness.groupToggles(), 1, "展开态点击组头也应触发切换");
 	});
 });

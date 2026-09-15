@@ -50,7 +50,7 @@ test("读取部分字段时用默认值补齐其余字段", () => {
 		assert.equal(loaded.config.enabled, false);
 		assert.equal(loaded.config.showRunHeader, false);
 		assert.equal(loaded.config.autoExpandWhileRunning, DEFAULT_CLEAN_MODE_CONFIG.autoExpandWhileRunning);
-		assert.equal(loaded.config.showExpandHint, DEFAULT_CLEAN_MODE_CONFIG.showExpandHint);
+		assert.equal(loaded.config.hideThinking, DEFAULT_CLEAN_MODE_CONFIG.hideThinking);
 	});
 });
 

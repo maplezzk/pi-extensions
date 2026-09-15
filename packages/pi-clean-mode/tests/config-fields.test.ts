@@ -12,7 +12,6 @@ const BOOLEAN_KEYS = [
 	"enabled",
 	"autoExpandWhileRunning",
 	"showRunHeader",
-	"showExpandHint",
 	"enableActionGroups",
 	"showActivityArea",
 	"animateActivity",

@@ -71,12 +71,6 @@ const PANEL_ITEMS: readonly PanelItemSpec[] = [
 		kind: PANEL_ITEM_KIND.toggle,
 	},
 	{
-		id: "showExpandHint",
-		labelKey: "configLabelShowExpandHint",
-		descriptionKey: "configDescShowExpandHint",
-		kind: PANEL_ITEM_KIND.toggle,
-	},
-	{
 		id: "autoExpandWhileRunning",
 		labelKey: "configLabelAutoExpand",
 		descriptionKey: "configDescAutoExpand",

@@ -2,7 +2,6 @@
   "enabled": true,
   "autoExpandWhileRunning": true,
   "showRunHeader": true,
-  "showExpandHint": true,
   "enableActionGroups": true,
   "showActivityArea": true,
   "activityRows": 4,

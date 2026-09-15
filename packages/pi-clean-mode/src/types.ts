@@ -24,8 +24,6 @@ export interface CleanModeConfig {
 	autoExpandWhileRunning: boolean;
 	/** 折叠时在最终答案上方显示「用时」折叠头。 */
 	showRunHeader: boolean;
-	/** 折叠头文案里是否附带展开提示。 */
-	showExpandHint: boolean;
 	/** 是否把同一个 turn 里的多条工具调用收成一行组头。 */
 	enableActionGroups: boolean;
 	/** 是否在编辑器上方显示实时活动区。 */
@@ -42,7 +40,6 @@ export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
 	enabled: true,
 	autoExpandWhileRunning: true,
 	showRunHeader: true,
-	showExpandHint: true,
 	enableActionGroups: true,
 	showActivityArea: true,
 	activityRows: ACTIVITY_ROWS_DEFAULT,

@@ -50,8 +50,6 @@ export interface HeaderStyler {
 	muted(text: string): string;
 	/** 铺满整行宽度的底色横条；宽度不够时截断，不会撑破布局。 */
 	band(text: string, width: number): string;
-	/** 按宽度截断并补齐到整宽，但不铺底色；用于箭头要贴右边缘的组头行。 */
-	row(text: string, width: number): string;
 	/** 只包住文字本身的底色标签。 */
 	chip(text: string): string;
 }
@@ -118,8 +116,6 @@ export function createHeaderStyler(theme: ThemePainter): HeaderStyler {
 			const line = padToWidth(text, width);
 			return bandPaint ? bandPaint(line) : line;
 		},
-		/** 只补齐到整宽，不套任何底色。 */
-		row: padToWidth,
 		/** 把一段文字包成带左右空格的标签并压底色；无底色时至少保留两侧空格。 */
 		chip: (text) => {
 			const label = ` ${text} `;

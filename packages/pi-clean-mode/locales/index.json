@@ -95,14 +95,6 @@
     "zh-CN": "收起后在最终答案上方显示「用时 Ns · N 步」",
     "en-US": "Show \"Took Ns · N steps\" above the final answer when collapsed"
   },
-  "configLabelShowExpandHint": {
-    "zh-CN": "显示展开提示",
-    "en-US": "Show expand hint"
-  },
-  "configDescShowExpandHint": {
-    "zh-CN": "在用时横条上标注展开快捷键",
-    "en-US": "Show the expand shortcut on the duration header"
-  },
   "configLabelAutoExpand": {
     "zh-CN": "运行中自动展开",
     "en-US": "Auto-expand while running"

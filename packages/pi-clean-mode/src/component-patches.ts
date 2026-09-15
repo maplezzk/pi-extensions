@@ -39,16 +39,16 @@ import {
 import { installMethodPatch, type PatchablePrototype } from "./prototype-patch.js";
 import type { CleanModeConfig, CleanModeState } from "./types.js";
 
-/** 收起态的箭头，提示点击后展开。 */
-const COLLAPSED_CHEVRON = "▸";
-/** 展开态的箭头，提示点击后收起。 */
-const EXPANDED_CHEVRON = "▾";
+/** 收起态的箭头：实心右三角，提示点击后展开。 */
+const COLLAPSED_CHEVRON = "▶";
+/** 展开态的箭头：实心下三角，提示点击后收起。 */
+const EXPANDED_CHEVRON = "▼";
 /** 折叠头左缩进：运行级与动作组的文案共用同一个起始列。 */
 const HEADER_INDENT = "  ";
 /** 组头缩进：标签自带一格左内边距，所以少缩进一格，标签文字才与折叠头文案同列。 */
 const ACTION_GROUP_INDENT = " ";
-/** 折叠头右侧内容与正文之间至少留的空格数。 */
-const RIGHT_SIDE_MIN_GAP = 1;
+/** 折叠头文案与箭头之间的间距；组头那一格由标签自带的右内边距充当。 */
+const ARROW_GAP = " ";
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
@@ -57,6 +57,8 @@ const HEADER_CHILD_KEY: unique symbol = Symbol("piCleanModeHeaderChild");
 const RUN_HEADER_OWNERSHIP_RESOLVED_KEY: unique symbol = Symbol("piCleanModeRunHeaderResolved");
 /** 标记该实例是否为本轮折叠头的承载者。 */
 const RUN_HEADER_OWNER_KEY: unique symbol = Symbol("piCleanModeRunHeaderOwner");
+/** 工具行箭头所在的行号，由渲染记录、鼠标命中使用。 */
+const TOOL_ROW_ARROW_ROW_KEY: unique symbol = Symbol("piCleanModeToolRowArrowRow");
 
 /** assistant 组件对外可见的最小结构。 */
 interface AssistantMessageHost {
@@ -82,6 +84,12 @@ interface AssistantMessageHost {
 interface ToolMessageHost {
 	/** Pi 在构造时写入的工具调用 id。 */
 	toolCallId?: string;
+	/** Pi 记录的工具输出展开状态；工具行箭头靠它决定朝向。 */
+	expanded?: boolean;
+	/** Pi 的展开开关；点工具行箭头时调它。 */
+	setExpanded?(expanded: boolean): void;
+	/** 箭头所在行号；渲染时写入，鼠标命中时读取。 */
+	[TOOL_ROW_ARROW_ROW_KEY]?: number;
 	render(width: number): string[];
 	handleMouse(event: TuiMouseEvent): unknown;
 }
@@ -135,8 +143,6 @@ export interface ComponentPatchDeps {
 	getRunDuration: (host: object) => number | undefined;
 	/** 查询某个承载者所属那一轮的工具调用数。 */
 	getRunSteps: (host: object) => number | undefined;
-	/** 右侧展示的展开快捷键文案（例如 `f2`）。 */
-	expandHint: string;
 }
 
 /** 把 Pi 的 hasToolCalls 映射成业务分类；映射规则见本文件顶部说明。 */
@@ -156,25 +162,17 @@ function buildRunHeaderLine(
 ): string {
 	const duration = formatDuration(deps.getRunDuration(host) ?? 0);
 	const chevron = deps.getState().collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
-	const left = [
+	// 箭头紧跟在文案右边：先看到「这一轮用了多久」，紧接着就知道这行能点开。
+	const line = [
 		HEADER_INDENT,
 		deps.styler.primary(i18n.t("runHeader", { duration })),
 		" ",
 		deps.styler.muted(i18n.t("runHeaderSteps", { count: String(deps.getRunSteps(host) ?? 0) })),
+		ARROW_GAP,
+		deps.styler.accent(chevron),
 	].join("");
 
-	// 箭头靠右，与快捷键提示放在一起：左边留给文案，状态和「按哪个键」在同一处看。
-	const right = [deps.styler.accent(chevron)];
-	if (deps.getConfig().showExpandHint) {
-		right.push(deps.styler.muted(deps.expandHint));
-	}
-	return deps.styler.band(alignRight(left, right.join(" "), width), width);
-}
-
-/** 把右侧内容（箭头 + 快捷提示）接到正文后面，至少留一格间距；超宽由横条自己截断。 */
-function alignRight(left: string, right: string, width: number): string {
-	const gap = width - visibleWidth(left) - visibleWidth(right);
-	return `${left}${" ".repeat(Math.max(RIGHT_SIDE_MIN_GAP, gap))}${right}`;
+	return deps.styler.band(line, width);
 }
 
 /**
@@ -393,19 +391,134 @@ const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
  *
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
  * 输出又不丢失「刚才做了什么」；两条以上才汇总成「探索 · N 步」。逐字包一层底色
- * 标签，让它比正文重、比运行级横条轻；箭头与折叠头一样贴右边缘，两级箭头竖着对齐。
+ * 标签，让它比正文重、比运行级横条轻；箭头与折叠头一样紧跟在文案右边。
  */
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
 	deps: ComponentPatchDeps,
-	width: number,
 ): string[] {
 	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
 	const label = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY ? countLabel : (group.summary ?? countLabel);
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
-	const left = `${ACTION_GROUP_INDENT}${deps.styler.chip(label)}`;
-	const line = alignRight(left, deps.styler.accent(chevron), width);
-	return [ACTION_GROUP_HEADER_BLANK, deps.styler.row(line, width)];
+	const line = [
+		ACTION_GROUP_INDENT,
+		deps.styler.chip(label),
+		deps.styler.accent(chevron),
+	].join("");
+	return [ACTION_GROUP_HEADER_BLANK, line];
+}
+
+/**
+ * 工具行右侧「可点击展开」箭头的插入逻辑。
+ *
+ * 工具行是 Pi 自己的渲染结果（一行铺底色到整宽）。箭头要落在文案右边、且不改变
+ * 行宽，所以做法是「把尾部填充空格里的第二个换成箭头」，而不是截掉再拼接。
+ */
+
+/** 箭头与文案之间留的间距格数。 */
+const TOOL_ROW_ARROW_GAP_SPACES = 1;
+/** 箭头上了强调色后立即恢复默认前景色，避免颜色渗到后面的填充空格。 */
+const RESET_FOREGROUND = "\u001b[39m";
+/** 匹配行内 ANSI CSI 转义序列（宽度计为 0）；带 sticky 标志，从 lastIndex 处原地匹配。 */
+const ANSI_CSI_PATTERN = /\u001b\[[0-9;]*[A-Za-z]/y;
+
+/** 一行里最后一个可见字符之后的位置，以及它后面的空格数。 */
+interface LineEndScan {
+	/** 可见文字的结束下标（不含末尾空格）。 */
+	textEnd: number;
+	/** 可见文字之后的空格数（不含 ANSI 转义）。 */
+	trailingSpaces: number;
+}
+
+/** 扫描一行的结束位置；ANSI 转义不计数。 */
+function scanLineEnd(line: string): LineEndScan {
+	let index = 0;
+	let textEnd = 0;
+	let trailingSpaces = 0;
+
+	while (index < line.length) {
+		ANSI_CSI_PATTERN.lastIndex = index;
+		const escape = ANSI_CSI_PATTERN.exec(line)?.[0];
+		if (escape) {
+			index += escape.length;
+			continue;
+		}
+		if (line[index] === " ") {
+			trailingSpaces += 1;
+			index += 1;
+			continue;
+		}
+		index += 1;
+		textEnd = index;
+		trailingSpaces = 0;
+	}
+
+	return { textEnd, trailingSpaces };
+}
+
+/**
+ * 把箭头插到可见文字的右边；尾部空格不够时原样返回。
+ *
+ * 箭头的显示宽度可能不是 1 格，所以按宽度取同样数量的尾部空格替换，行宽才不会变。
+ */
+function insertToolRowArrow(line: string, arrow: string, deps: ComponentPatchDeps): string {
+	const { textEnd, trailingSpaces } = scanLineEnd(line);
+	const arrowWidth = visibleWidth(arrow);
+	if (trailingSpaces < TOOL_ROW_ARROW_GAP_SPACES + arrowWidth) {
+		return line;
+	}
+
+	// 尾部空格的下标：前 GAP 个当间距，接着 arrowWidth 个拿去放箭头。
+	const spaceIndexes: number[] = [];
+	for (let index = textEnd; index < line.length; index += 1) {
+		if (line[index] === " ") {
+			spaceIndexes.push(index);
+		}
+	}
+	// 被箭头替换掉的空格；箭头本身占同样宽度，所以行宽不变。
+	const replaced = new Set(
+		spaceIndexes.slice(
+			TOOL_ROW_ARROW_GAP_SPACES,
+			TOOL_ROW_ARROW_GAP_SPACES + arrowWidth,
+		),
+	);
+	// 箭头插在间距空格之后。
+	const insertAt = (spaceIndexes[TOOL_ROW_ARROW_GAP_SPACES - 1] ?? textEnd) + 1;
+	const arrowText = `${deps.styler.accent(arrow)}${RESET_FOREGROUND}`;
+
+	let out = "";
+	for (let index = 0; index < line.length; index += 1) {
+		if (index === insertAt) {
+			out += arrowText;
+		}
+		if (!replaced.has(index)) {
+			out += line[index];
+		}
+	}
+	return out;
+}
+
+/**
+ * 给工具行的首行加上「可点击展开」箭头，并记下该行行号供鼠标命中使用。
+ *
+ * 行号记在实例上，因为渲染先于鼠标事件；没有可加箭头的行时清掉记录。
+ */
+function withToolRowArrow(
+	host: ToolMessageHost,
+	lines: string[],
+	deps: ComponentPatchDeps,
+): string[] {
+	const rowIndex = lines.findIndex((line) => scanLineEnd(line).textEnd > 0);
+	if (rowIndex === -1) {
+		host[TOOL_ROW_ARROW_ROW_KEY] = undefined;
+		return lines;
+	}
+
+	const arrow = host.expanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
+	const patched = [...lines];
+	patched[rowIndex] = insertToolRowArrow(lines[rowIndex] ?? "", arrow, deps);
+	host[TOOL_ROW_ARROW_ROW_KEY] = rowIndex;
+	return patched;
 }
 
 /** 调试日志作用域：工具行渲染决策。 */
@@ -447,33 +560,48 @@ function buildToolMessageRender(
 		debugLog(DEBUG_SCOPE_TOOL_RENDER, describeToolRow(this, group, mode));
 
 		if (mode === TOOL_ROW_HIDDEN) {
+			this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
 			return [];
 		}
 		if (mode === TOOL_ROW_GROUP_HEADER && group) {
-			const headerLines = buildActionGroupHeaderLines(group, deps, width);
+			const headerLines = buildActionGroupHeaderLines(group, deps);
 			if (!group.groupExpanded) {
+				this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
 				return headerLines;
 			}
-			return [...headerLines, ...originalRender.call(this, width)];
+			// 展开的组里，成员行本身就是一条命令，同样要带上可点击的箭头。
+			return [
+				...headerLines,
+				...withToolRowArrow(this, originalRender.call(this, width), deps),
+			];
 		}
-		return originalRender.call(this, width);
+		return withToolRowArrow(this, originalRender.call(this, width), deps);
 	};
 }
 
 /**
  * 包装工具行的 handleMouse。
  *
- * 组头行上的左键点击用来展开/收起该动作组，不再交给 Pi 的单行输出展开。
- * 非组头行一律透传，保留 Pi 原有的点击展开行为。
+ * 两种情况归我们处理，其余透传给 Pi：
+ * - 工具行箭头所在那一行：左键切换 Pi 自己的输出展开；
+ * - 动作组头：左键展开/收起整个组。
  */
 function buildToolMessageHandleMouse(
 	deps: ComponentPatchDeps,
 	originalHandleMouse: (this: ToolMessageHost, event: TuiMouseEvent) => unknown,
 ): (this: ToolMessageHost, event: TuiMouseEvent) => unknown {
 	return function patchedToolMessageHandleMouse(this: ToolMessageHost, event: TuiMouseEvent) {
+		const isLeftClick = event.type === "click" && event.button === "left";
+		const arrowRow = this[TOOL_ROW_ARROW_ROW_KEY];
+
+		if (isLeftClick && arrowRow !== undefined && event.y === arrowRow && this.setExpanded) {
+			this.setExpanded(!this.expanded);
+			return { handled: true };
+		}
+
 		const group = getGroupInfo(this, deps);
 		if (group && isGroupHeaderRow(this, deps)) {
-			if (event.type === "click" && event.button === "left") {
+			if (isLeftClick) {
 				deps.onToggleActionGroup(group.membership.groupId);
 				return { handled: true };
 			}

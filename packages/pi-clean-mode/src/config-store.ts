@@ -53,7 +53,6 @@ export function normalizeConfig(raw: unknown): CleanModeConfig {
 			DEFAULT_CLEAN_MODE_CONFIG.autoExpandWhileRunning,
 		),
 		showRunHeader: toBoolean(record.showRunHeader, DEFAULT_CLEAN_MODE_CONFIG.showRunHeader),
-		showExpandHint: toBoolean(record.showExpandHint, DEFAULT_CLEAN_MODE_CONFIG.showExpandHint),
 		enableActionGroups: toBoolean(
 			record.enableActionGroups,
 			DEFAULT_CLEAN_MODE_CONFIG.enableActionGroups,

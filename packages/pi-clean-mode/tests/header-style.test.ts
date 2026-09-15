@@ -51,15 +51,6 @@ test("宽度为 0 时不炸，返回空行", () => {
 	assert.equal(visibleWidth(styler.band("用时", 0)), 0);
 });
 
-test("row 补齐到整宽但不铺底色", () => {
-	const styler = createHeaderStyler(ansiTheme());
-	const line = styler.row("探索 · 3 步", 24);
-
-	assert.equal(visibleWidth(line), 24, "应按宽度补齐");
-	assert.ok(line.startsWith("探索 · 3 步"), "内容应靠左");
-	assert.ok(!line.includes(BG_PREFIX), `组头行不应铺底色：${JSON.stringify(line)}`);
-});
-
 test("标签两侧留出空格并压上底色", () => {
 	const styler = createHeaderStyler(ansiTheme());
 	const chip = styler.chip("探索 · 3 步");
