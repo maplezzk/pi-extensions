@@ -394,7 +394,7 @@ subagent({ name: "Scout", agent: "scout", interactive: true, task: "..." });
 
 ## Tool Access Control
 
-Child subagent sessions cannot create or manage other subagents unless the global `allowSubagentSpawning` setting is `true`. When it is `false` (the default), the lifecycle tools `subagent`, `subagent_interrupt`, `subagents_list`, and `subagent_resume` are not registered in child sessions. The child-only `subagent_done` tool remains available; `caller_ping` remains available for requesting help from the parent.
+Child subagent sessions cannot create or manage other subagents unless the global `allowSubagentSpawning` setting is `true`. When it is `false` (the default), the lifecycle tools `subagent`, `subagent_interrupt`, `subagents_list`, and `subagent_resume` are not registered in child sessions. The child-only `subagent_done` tool remains available; `caller_ping` remains available for requesting help from the parent unless it is denied. `subagent_done` is never denied — it is the only completion channel.
 
 ### `spawning` (legacy)
 
@@ -410,6 +410,17 @@ name: focused-agent
 deny-tools: subagent
 ---
 ```
+
+`deny-tools` also accepts the child control tools, so an agent that must always report through `subagent_done` can be launched without `caller_ping`:
+
+```yaml
+---
+name: batch-worker
+deny-tools: caller_ping
+---
+```
+
+Callers may add restrictions for a single launch through the `subagent` tool's `denyTools` parameter; it is merged with the agent definition's `deny-tools`.
 
 ### Global setting
 

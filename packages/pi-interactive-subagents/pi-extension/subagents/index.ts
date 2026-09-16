@@ -182,6 +182,12 @@ const SubagentParams = Type.Object({
   tools: Type.Optional(
     Type.String({ description: "Comma-separated tools (overrides agent default)" }),
   ),
+  denyTools: Type.Optional(
+    Type.String({
+      description:
+        "Comma-separated tool names to additionally deny in the child session, merged with the agent definition's `deny-tools`.",
+    }),
+  ),
   cwd: Type.Optional(
     Type.String({
       description:
@@ -258,6 +264,16 @@ const SPAWNING_TOOLS = new Set([
 ]);
 
 /**
+ * Parse a comma-separated tool list, dropping blank entries.
+ */
+function parseToolList(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
  * Resolve the effective set of denied tool names for a child subagent.
  * The global switch controls whether every child session may create or manage
  * other subagents; the legacy `spawning` field does not override it.
@@ -270,15 +286,22 @@ function resolveDenyTools(
   const denied = allowSubagentSpawning ? new Set<string>() : new Set(SPAWNING_TOOLS);
 
   // deny-tools: explicit list
-  if (agentDefs?.denyTools) {
-    for (const t of agentDefs.denyTools
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)) {
-      denied.add(t);
-    }
-  }
+  for (const t of parseToolList(agentDefs?.denyTools)) denied.add(t);
 
+  return denied;
+}
+
+/**
+ * Resolve the deny set for one launch: agent definition restrictions plus the
+ * explicit per-launch `denyTools` parameter.
+ */
+function resolveLaunchDenyTools(
+  agentDefs: AgentDefaults | null,
+  allowSubagentSpawning: boolean,
+  launchDenyTools?: string,
+): Set<string> {
+  const denied = resolveDenyTools(agentDefs, allowSubagentSpawning);
+  for (const t of parseToolList(launchDenyTools)) denied.add(t);
   return denied;
 }
 
@@ -1563,6 +1586,7 @@ export const __test__ = {
   formatWidgetRightLabel,
   observeRunningSubagent,
   resolveDenyTools,
+  resolveLaunchDenyTools,
   resolveInterruptTarget,
   requestSubagentInterrupt,
   handleSubagentInterrupt,
@@ -1654,7 +1678,7 @@ async function launchSubagent(
     ? "Your FINAL assistant message should summarize what you accomplished."
     : "Your FINAL assistant message (before calling subagent_done or before the user exits) should summarize what you accomplished.";
   const { allowSubagentSpawning } = loadSubagentSpawningConfig();
-  const denySet = resolveDenyTools(agentDefs, allowSubagentSpawning);
+  const denySet = resolveLaunchDenyTools(agentDefs, allowSubagentSpawning, params.denyTools);
   const identity = agentDefs?.body ?? params.systemPrompt ?? null;
   const systemPromptMode = agentDefs?.systemPromptMode;
   const identityInSystemPrompt = systemPromptMode && identity;
