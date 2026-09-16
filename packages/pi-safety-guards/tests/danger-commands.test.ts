@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { tmpdir } from "node:os";
-import { parseConfig } from "../src/config.ts";
+import { DEFAULT_RULES, parseConfig } from "../src/config.ts";
 import { compileRules, evaluateRules } from "../src/engine.ts";
 
 /** 断言用的规则 ID；避免同一串 ID 在用例里散落。 */
@@ -17,9 +17,9 @@ const FORK_BOMB = ":(){ :|:& };:";
 /** 把 fork bomb 放进单引号后的命令文本，用于验证引号内文本也会命中。 */
 const QUOTED_FORK_BOMB = `echo '${FORK_BOMB}'`;
 
-const configured = compileRules(parseConfig({}), tmpdir());
+const configured = compileRules(parseConfig({ rules: DEFAULT_RULES }), tmpdir());
 
-/** 读取首个命中规则的 ID；命中顺序取决于预设里的规则顺序。 */
+/** 读取首个命中规则的 ID；命中顺序取决于配置里的规则顺序。 */
 async function matchedLabel(command: string): Promise<string | undefined> {
   return (await evaluateRules(await configured, command, tmpdir()))?.matches[0]?.id;
 }

@@ -1,6 +1,6 @@
 # pi-safety-guards
 
-Bash safety rules for Pi, with selectable presets, per-rule actions and custom matchers.
+Bash safety rules for Pi: rules live in the configuration file, with per-rule actions, messages and custom matchers.
 
 [中文文档](./README.zh-CN.md)
 
@@ -12,61 +12,62 @@ pi install npm:pi-safety-guards
 
 Run `/reload` after installation or configuration changes.
 
-## Presets
+## Default rules
 
-By default, `destructive-operations` asks for confirmation before these operations:
+On the first run, if the configuration file does not exist yet, the extension writes these four rules to `<pi-agent-dir>/extensions/pi-safety-guards/config.json` and reads only that file afterwards. No built-in rules are hidden in code: editing the file is editing the behavior.
 
-| Preset | Rule ID | Match | Action |
-| --- | --- | --- | --- |
-| `destructive-operations` | `filesystem.delete` | `commands: rm, rmdir` | confirm |
-| `destructive-operations` | `filesystem.format` | `commandPrefixes: mkfs` | confirm |
-| `destructive-operations` | `filesystem.ownership` | `commands: chown` | confirm |
-| `destructive-operations` | `shell.fork-bomb` | `commandPattern: :\(\)\s*\{` | confirm |
-| `workspace-boundary` (opt-in) | `paths.workspace` | `outsideRoots: .` | block |
+| Rule ID | Match | Action |
+| --- | --- | --- |
+| `filesystem.delete` | `commands: rm, rmdir` | confirm |
+| `filesystem.format` | `commandPrefixes: mkfs` | confirm |
+| `filesystem.ownership` | `commands: chown` | confirm |
+| `shell.fork-bomb` | `commandPattern: :\(\)\s*\{` | confirm |
+
+These four rules are the former `destructive-operations` preset; the same JSON is in [config.example.json](./config.example.json) and can be copied as a whole. The former `workspace-boundary` preset (block paths outside the workspace) is now written like this:
+
+```json
+{ "id": "paths.workspace", "action": "block", "match": { "outsideRoots": ["."] } }
+```
 
 Matching uses parsed commands, including supported wrappers, literal nested shells, substitutions and redirects. `echo 'rm file'` and `git rm` do not count as executing `rm`; `commandPattern` is the exception and sees the raw command text.
 
-Each preset is one plain JSON file in the package's `presets/` directory: the file name is the preset name and the file content is an array of rules, so the table above can be read directly from `presets/destructive-operations.json` and `presets/workspace-boundary.json`. Only the bundled files are loaded; `config.json` selects them by name and cannot add or replace preset files. A missing, empty or malformed preset file blocks Bash with the file path instead of silently disabling protection.
-
 ## Configuration
 
-File: `<pi-agent-dir>/extensions/pi-safety-guards/config.json`. The agent directory respects `PI_CODING_AGENT_DIR`.
+File: `<pi-agent-dir>/extensions/pi-safety-guards/config.json`. The agent directory respects `PI_CODING_AGENT_DIR`. Only `rules` is accepted at the top level.
 
 ```json
 {
-  "presets": ["destructive-operations"],
   "rules": [
-    { "id": "filesystem.delete", "action": "block" },
-    { "id": "filesystem.ownership", "enabled": false },
-    { "id": "example.command", "action": "confirm", "match": { "commands": ["example-command"] } }
+    { "id": "filesystem.delete", "action": "confirm", "match": { "commands": ["rm", "rmdir"] } },
+    {
+      "id": "project.build",
+      "action": "block",
+      "match": { "commands": ["mvn"] },
+      "message": { "zh-CN": "禁止直接运行 Maven。", "en-US": "Direct Maven execution is blocked." }
+    },
+    { "id": "paths.workspace", "enabled": false, "action": "block", "match": { "outsideRoots": ["."] } }
   ]
 }
 ```
 
-Replace `example-command` with the command to match. See also [config.example.json](./config.example.json) and [custom-rules.json](./examples/custom-rules.json).
+See also [config.example.json](./config.example.json) and [custom-rules.json](./examples/custom-rules.json).
 
-- `presets`: omitted selects the default preset; `[]` selects none.
-- `rules`: override selected preset rules by `id` or add new ones. IDs must be unique within this list.
-- Existing rules can override `action`, `match` and `message`, or use `enabled: false`.
-- New enabled rules require `id`, `action` and `match`.
+- `rules`: the rule list, and it may be empty; an empty list means no protection at all and is reported at startup.
+- Every rule needs `id`, `action` and `match`; an `id`-only entry no longer does anything (presets were removed).
+- `enabled`: optional boolean; `false` keeps a rule in the file but stops executing it. A disabled rule still needs a complete `id`, `action` and `match`.
+- IDs must be unique within the list. Unknown fields are rejected instead of silently ignored.
 - `message`: optional non-empty text or an object containing `zh-CN` and `en-US`. If omitted, feedback shows the rule ID and action.
-- Empty presets and rules disable checking and report that no protection is active.
 
-Use `/config:safety-guards` to open the normal TUI preset menu; every entry shows the preset state and how many rules it contains, and the `Show effective rules` entry prints the merged rules. `/config:safety-guards show` prints the same list without the menu, and `reset` restores the default preset.
+`/config:safety-guards` (same as `/config:safety-guards show`) prints the configuration file path and the effective rules. It opens no menu and never writes files:
 
 ```text
-Preset destructive-operations · rules: 4
-  filesystem.delete → warn · commands: rm, rmdir (overridden by rules)
-  filesystem.format → disabled
-  filesystem.ownership → confirm · commands: chown
-  shell.fork-bomb → confirm · commandPattern: :\(\)\s*\{
-Preset workspace-boundary · rules: 1
-  paths.workspace → block · outsideRoots: [.]
-Custom rules (rules) · 1
-  local.maven → block · commands: mvn, mvnw
+Configuration file: <pi-agent-dir>/extensions/pi-safety-guards/config.json
+  filesystem.delete → confirm · commands: rm, rmdir
+  project.build → block · commands: mvn
+  paths.workspace → disabled
 ```
 
-The list is grouped by preset and marks rules that `rules` overrides or disables. Run `/reload` after saving configuration or preset files.
+Disabled rules are marked `disabled`. Run `/reload` after saving the file.
 
 ### Actions
 
@@ -104,7 +105,7 @@ The former `detector` matcher was removed because its logic lived in code instea
 
 ### Directory rules
 
-Relative roots resolve against Pi's current working directory; absolute paths and `~/` are supported. Only listed roots are allowed. The preset uses `.` for the working directory. When `pi-add-dir` is installed, its active directory authorization is also honored; after `session_squash`, the guard restores the authorization from the squashed source branch. Add extra directories and device paths such as `/dev/null` when needed.
+Relative roots resolve against Pi's current working directory; absolute paths and `~/` are supported. Only listed roots are allowed, and `["."]` means the working directory. When `pi-add-dir` is installed, its active directory authorization is also honored; after `session_squash`, the guard restores the authorization from the squashed source branch. Add extra directories and device paths such as `/dev/null` when needed.
 
 Custom matchers can use the exported `findOutOfScopeBashPaths(command, cwd, roots)` helper to supply their own roots.
 
@@ -130,7 +131,7 @@ Modules run with full process permissions. The timeout cannot interrupt synchron
 
 The extension checks Pi's `bash` tool, not direct user shell commands, other tools or program-internal operations. It does not cover every dangerous command, simulate every working-directory change or resolve arbitrary variable-generated paths. Path checks handle statically identifiable references and symlinks, not OS-level access control.
 
-A missing config file uses the default preset. Invalid configuration, malformed Bash and enabled-rule failures block Bash until the relevant error is fixed. Configuration changes require `/reload`.
+A missing config file means no rules; invalid configuration, malformed Bash and enabled-rule failures block Bash until the relevant error is fixed. Configuration changes require `/reload`.
 
 Runtime messages are available in Chinese and English.
 

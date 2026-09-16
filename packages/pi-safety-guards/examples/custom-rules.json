@@ -1,18 +1,16 @@
 {
-  "presets": ["destructive-operations"],
   "rules": [
+    { "id": "filesystem.delete", "action": "confirm", "match": { "commands": ["rm", "rmdir"] } },
     {
-      "id": "filesystem.delete",
-      "action": "warn"
-    },
-    {
-      "id": "filesystem.ownership",
-      "enabled": false
-    },
-    {
-      "id": "example.command",
+      "id": "project.build",
       "action": "block",
-      "match": { "commands": ["example-command"] }
-    }
+      "match": { "commands": ["mvn", "mvnw", "mvnDebug", "mvnd", "maven"] },
+      "message": {
+        "zh-CN": "禁止直接运行 Maven，请走项目约定的构建入口。",
+        "en-US": "Direct Maven execution is blocked; use the project build entrypoint instead."
+      }
+    },
+    { "id": "paths.workspace", "enabled": false, "action": "block", "match": { "outsideRoots": ["."] } },
+    { "id": "custom.matcher", "action": "warn", "match": { "module": "./rules/deploy.mjs" } }
   ]
 }
