@@ -108,6 +108,12 @@ const PANEL_ITEMS: readonly PanelItemSpec[] = [
 		descriptionKey: "configDescHideThinking",
 		kind: PANEL_ITEM_KIND.toggle,
 	},
+	{
+		id: "hideExtensionEntries",
+		labelKey: "configLabelHideExtensionEntries",
+		descriptionKey: "configDescHideExtensionEntries",
+		kind: PANEL_ITEM_KIND.toggle,
+	},
 ];
 
 /** 面板覆盖的配置字段名，测试用它核对没有字段漏在面板外。 */

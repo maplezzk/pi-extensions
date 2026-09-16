@@ -6,5 +6,6 @@
   "showActivityArea": true,
   "activityRows": 4,
   "animateActivity": true,
-  "hideThinking": true
+  "hideThinking": true,
+  "hideExtensionEntries": true
 }

@@ -99,8 +99,11 @@ Pi exports its transcript components, so this package replaces `AssistantMessage
 | Assistant message **with** tool calls | hidden entirely (narration belongs to the work) |
 | Assistant message **without** tool calls | kept, with the duration header attached |
 | Tool row | hidden entirely, or reduced to one action-group header row |
+| Extension entry (custom entry) | rows created during the run or the session-restore window are hidden too; notices are exempt |
 
 A message without tool calls is the final answer because the agent loop only ends once a response has no tool calls left, so there is exactly one such message per run.
+
+Extension entries (rows written with `pi.appendEntry`, such as distill's audit line) are rendered by Pi's internal `CustomEntryComponent`, which is not part of Pi's public exports and carries no collapse signal. This package therefore patches `Container.prototype.render` from pi-tui, recognising entry components by "has entry + renderer + hasContent at once" and returning zero lines when collapsed. Only **work entries** are folded: rows first rendered during a run, or during the session-restore window (`session_start` until the first `agent_start`). Rows that only appear after a run settles (notices, summaries) stay visible, and pi-extensions-i18n notices are exempt at all times — otherwise warnings such as a failed config read would be folded away with the work. Set `hideExtensionEntries: false` to turn the behaviour off.
 
 Hidden rows render zero lines, so the duration header lands directly above the final answer. The header itself is a real child component wrapped in `MouseRegion` — not a string prepended during render — because Pi's `Container` computes mouse hit offsets from child heights.
 
@@ -125,7 +128,8 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
   "enabled": true,
   "autoExpandWhileRunning": true,
   "showRunHeader": true,
-  "hideThinking": true
+  "hideThinking": true,
+  "hideExtensionEntries": true
 }
 ```
 
@@ -139,6 +143,7 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 | `activityRows` | Activity area height, 1-20 (default 4). |
 | `animateActivity` | Animate the activity glyph; off keeps a still marker. |
 | `hideThinking` | Strip Pi's thinking blocks from the message entirely (on by default). |
+| `hideExtensionEntries` | Also collapse extension-written entries when collapsed (on by default); notices stay visible. |
 
 `hideThinking` removes the thinking content blocks rather than turning on Pi's own "hide thinking" setting: that setting renders thinking as a one-line placeholder, which still costs a blank row plus the spacer after it even when the label is empty. Removing the blocks drops both rows (a test asserts the line count).
 
@@ -176,6 +181,8 @@ The rows are emitted by the run-header component itself (`createRunHeaderCompone
 ## Compatibility
 
 This package patches Pi component prototypes, so it is coupled to Pi's exported component surface (`AssistantMessageComponent.hasToolCalls`, `ToolExecutionComponent.render`, and the empty-render-means-zero-lines behaviour). It restores the original prototypes on reload and shutdown, and refuses to overwrite a prototype that another extension replaced after install.
+
+Folding extension entries (`hideExtensionEntries`) additionally patches `Container.prototype.render` from pi-tui: Pi's internal `CustomEntryComponent` is not publicly exported, so the patch recognises it by structure ("has entry + renderer + hasContent at once"). If Pi renames those fields or lets the entry component override `render`, this single behaviour degrades silently (entries become visible again) instead of failing; `tests/extension-entry-patch.test.ts` guards the recognition.
 
 `f2` was chosen because Pi's built-in keybindings do not use it. If you rebind Pi keys, avoid colliding with it.
 
