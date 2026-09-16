@@ -154,6 +154,13 @@ export interface ComponentPatchDeps {
 	 */
 	getActivityLines: () => string[];
 	/**
+	 * 活动块里去掉动作名后的形态：思考行与输出尾巴。
+	 *
+	 * 组内只有一条时组头就是这条动作的摘要（`运行命令 npm test ▶`），活动块再列一次
+	 * 就变成同一句话出现两次 —— 那种情况用这个形态，动作名让给组头说。
+	 */
+	getActivityDetailLines: () => string[];
+	/**
 	 * 接在当前动作组组头文案后面的分类计数后缀，例如 ` · 读取 3 · 命令 2`；
 	 * 没有计数时为空串。只用在当前组上 —— 历史组显示本轮的累计数字是错的。
 	 */
@@ -496,6 +503,7 @@ interface ActivityTailInput {
  * 非当前组、或这一行不是最后一条可见行时原样返回。
  *
  * 块里全是普通行（思考、动作、输出尾巴），不铺底色：屏幕上只有轮首那条运行级横条。
+ * 组内只有一条时组头已经写出这条动作，块里就去掉动作名，只留思考与输出尾巴。
  */
 function appendActivityTail(
 	lines: string[],
@@ -511,7 +519,9 @@ function appendActivityTail(
 		return lines;
 	}
 
-	const activity = deps.getActivityLines();
+	// 组内只有一条时组头就是这条动作的摘要，动作名不再重复第二遍。
+	const activity =
+		group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY ? deps.getActivityLines() : deps.getActivityDetailLines();
 	if (activity.length === 0) {
 		return lines;
 	}

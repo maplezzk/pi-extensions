@@ -72,7 +72,8 @@ function createDeps(snapshot: ActivitySnapshot, lines: string[] = DEFAULT_LINES)
 		// 本组用例只关心去重与生命周期，动画固定为开。
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
-		renderLines: () => lines,
+		// 默认没有动作名行；需要验证动作行号的用例自行覆盖。
+		renderLines: () => ({ lines, actionRows: [] }),
 		// 轮首状态行与本组用例无关，固定返回一行可辨识的内容。
 		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 默认假定本轮已有承载折叠头的组件；需要验证「承载者未就绪」的用例自行覆盖它。
@@ -117,7 +118,7 @@ test("内容变化时更新行并请求重绘", () => {
 		// 本用例只关心内容变化触发重绘。
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
-		renderLines: () => lines,
+		renderLines: () => ({ lines, actionRows: [] }),
 		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 本用例与本轮承载者无关，固定为已就绪。
 		hasRunHeaderHost: () => true,
@@ -259,7 +260,7 @@ test("运行期间活动块行数只增不减，避免内容高度抖动", () =>
 		// 本用例只关心补位行为，动画固定为开。
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
-		renderLines: () => lines,
+		renderLines: () => ({ lines, actionRows: [] }),
 		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 补位与承载者无关，固定为已就绪。
 		hasRunHeaderHost: () => true,

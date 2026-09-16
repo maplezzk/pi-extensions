@@ -12,6 +12,7 @@ import {
 	formatActivityCountersSuffix,
 	toolActivityDetail,
 	toolActivityLabel,
+	withoutActionRows,
 	type ActivityRenderInput,
 } from "../src/activity.ts";
 import { i18n } from "../src/i18n.ts";
@@ -48,6 +49,11 @@ function renderInput(overrides: Partial<ActivityRenderInput> = {}): ActivityRend
 
 /** 思考动画一圈的帧数：半填充圆的四个朝向。 */
 const THINKING_FRAME_COUNT = 4;
+
+/** 只取活动块里的行；哪几行是动作名由专门的用例覆盖。 */
+function blockLines(overrides: Partial<ActivityRenderInput> = {}): string[] {
+	return buildActivityLines(renderInput(overrides)).lines;
+}
 
 test("静止模式下 thinking 与 working 使用不同标记", () => {
 	assert.equal(activityGlyph("thinking", 0, false), "·");
@@ -141,13 +147,13 @@ test("思考头部的 markdown 强调符会被剥掉", () => {
 
 test("未运行时活动区不输出任何行", () => {
 	const snapshot = { ...createActivitySnapshot(), active: false };
-	assert.deepEqual(buildActivityLines(renderInput({ snapshot })), []);
+	assert.deepEqual(blockLines({ snapshot }), []);
 });
 
 test("活动块只报最新状态：不重复顶部文案、耗时与分类计数", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
-	const joined = buildActivityLines(renderInput({ snapshot })).join("\n");
+	const joined = blockLines({ snapshot }).join("\n");
 
 	assert.ok(joined.includes("npm test"), `应显示正在跑的工具：${joined}`);
 	assert.ok(
@@ -204,7 +210,7 @@ test("轮首状态行在未运行或行数预算为零时为空", () => {
 
 test("思考行用当前动画帧，不出现改变填充比例的图形", () => {
 	const snapshot = { ...runningSnapshot(), thought: "正在追踪 token 失效路径" };
-	const lines = buildActivityLines(renderInput({ snapshot, animated: true, frame: 2 }));
+	const lines = blockLines({ snapshot, animated: true, frame: 2 });
 	const thoughtLine = lines.find((line) => line.includes(i18n.t("activityThinking")));
 
 	assert.ok(thoughtLine, `应当输出思考行：${lines.join("\n")}`);
@@ -218,7 +224,7 @@ test("思考行用当前动画帧，不出现改变填充比例的图形", () =>
 test("当前动作与其输出尾巴各占一行，都带细节缩进而不铺底色", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
-	const lines = buildActivityLines(renderInput({ snapshot }));
+	const lines = blockLines({ snapshot });
 	const joined = lines.join("\n");
 
 	assert.ok(joined.includes("npm test"), `应显示当前动作与参数：${joined}`);
@@ -230,7 +236,7 @@ test("当前动作与其输出尾巴各占一行，都带细节缩进而不铺�
 test("行数预算收紧时从尾部截断，先保住第一行", () => {
 	const snapshot = runningSnapshot();
 	snapshot.thought = "想一下";
-	const lines = buildActivityLines(renderInput({ snapshot, maxRows: 1 }));
+	const lines = blockLines({ snapshot, maxRows: 1 });
 
 	assert.equal(lines.length, 1);
 	assert.ok(lines[0]?.includes("想一下"), `第一行应是思考行：${lines[0]}`);
@@ -239,7 +245,7 @@ test("行数预算收紧时从尾部截断，先保住第一行", () => {
 test("并行执行时轮首换成并行文案，活动块里不重复", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running.push({ toolCallId: "c2", label: i18n.t("activityRead"), detail: "b.ts" });
-	const lines = buildActivityLines(renderInput({ snapshot }));
+	const lines = blockLines({ snapshot });
 	const joined = lines.join("\n");
 
 	assert.ok(
@@ -254,9 +260,48 @@ test("并行执行时轮首换成并行文案，活动块里不重复", () => {
 	assert.ok(joined.includes("b.ts"), `应列出第二个动作：${joined}`);
 });
 
+test("块里哪几行是动作名：并行列出行号，截断时丢掉越界的", () => {
+	const snapshot = runningSnapshot();
+	snapshot.running[0].outputTail = "12 passing";
+	snapshot.running.push({ toolCallId: "c2", label: i18n.t("activityRead"), detail: "b.ts" });
+	snapshot.thought = "权衡方案";
+
+	const block = buildActivityLines(renderInput({ snapshot }));
+	assert.deepEqual(
+		block.actionRows,
+		[1, 3],
+		`思考占一行，第一条动作带输出尾巴，第二条动作落在第 3 行：${block.lines.join("\n")}`,
+	);
+
+	const truncated = buildActivityLines(renderInput({ snapshot, maxRows: 2 }));
+	assert.deepEqual(truncated.actionRows, [1], `被截掉的动作行不应再算动作名：${truncated.lines.join("\n")}`);
+});
+
+test("去掉动作名后只剩思考与输出尾巴", () => {
+	const snapshot = runningSnapshot();
+	snapshot.running[0].outputTail = "12 passing";
+	snapshot.thought = "权衡方案";
+
+	const block = buildActivityLines(renderInput({ snapshot }));
+	const detail = withoutActionRows(block);
+
+	assert.deepEqual(
+		detail.map((line) => line.trimStart()),
+		[
+			`${activityGlyph("thinking", 0, false)} ${i18n.t("activityThinking")}  权衡方案`,
+			`↳ 12 passing`,
+		],
+		`动作名去掉后只留思考与尾巴：${detail.join("\n")}`,
+	);
+	assert.ok(
+		!detail.join("\n").includes("npm test"),
+		`动作名不应再出现：${detail.join("\n")}`,
+	);
+});
+
 test("没有正在执行的工具但有思考时，只输出思考行", () => {
 	const snapshot = { ...runningSnapshot(), running: [], thought: "权衡方案" };
-	const lines = buildActivityLines(renderInput({ snapshot }));
+	const lines = blockLines({ snapshot });
 
 	assert.equal(lines.length, 1, `没有动作时只应有思考行：${lines.join("\n")}`);
 	assert.ok(lines[0]?.includes("权衡方案"), `应输出思考：${lines[0]}`);

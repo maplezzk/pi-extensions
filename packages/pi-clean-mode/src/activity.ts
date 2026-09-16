@@ -368,22 +368,25 @@ export function buildRunStatusLines(input: ActivityRenderInput): string[] {
 /**
  * 组装正在执行的工具行；并行时每个动作各占一行。
  *
- * 块里的动作行逐条列出，具体在跑什么由它负责，带输出尾巴的动作紧跟着一行。
+ * 行与「哪些行是动作名」一起返回：组头已经写出这条动作时（单条组），渲染层要把动作名
+ * 那几行去掉，只留输出尾巴，靠的就是 `actionRows`。
  */
-function buildRunningLines(input: ActivityRenderInput): string[] {
+function buildRunningLines(input: ActivityRenderInput): { lines: string[]; actionRows: number[] } {
 	const { snapshot, frame, animated, paint } = input;
 	const glyph = paint.fg(COLOR_GLYPH, `${activityGlyph("working", frame, animated)} `);
+	const lines: string[] = [];
+	const actionRows: number[] = [];
 
-	return snapshot.running.flatMap((action) => {
+	for (const action of snapshot.running) {
 		const detail = action.detail ? paint.fg(COLOR_DETAIL, ` ${action.detail}`) : "";
-		const lines = [
-			`${DETAIL_INDENT}${glyph}${paint.bold(paint.fg(COLOR_HEADING, action.label))}${detail}`,
-		];
+		actionRows.push(lines.length);
+		lines.push(`${DETAIL_INDENT}${glyph}${paint.bold(paint.fg(COLOR_HEADING, action.label))}${detail}`);
 		if (action.outputTail) {
 			lines.push(paint.fg(COLOR_DIM, `${OUTPUT_INDENT}${OUTPUT_MARKER}${action.outputTail}`));
 		}
-		return lines;
-	});
+	}
+
+	return { lines, actionRows };
 }
 
 /** 组装思考头部那一行。 */
@@ -400,19 +403,46 @@ function buildThoughtLine(input: ActivityRenderInput): string[] {
 }
 
 /**
- * 组装活动块行。
+ * 活动块：块里全部的行，以及哪几行在报「正在跑什么」。
+ *
+ * 分开报是为了同一句话只说一遍：组头已经写出这条动作时（组内只有一条，组头就是那条动作
+ * 的摘要），渲染层按 `actionRows` 把动作名去掉，只留思考与输出尾巴；多条成员的组头是
+ * 汇总文案（`探索 · 12 步`），没写出具体动作，就得把动作行都留下。
+ */
+export interface ActivityLines {
+	/** 块里的全部行，按渲染顺序。 */
+	lines: string[];
+	/** `lines` 里属于动作名的行号（并行时多条）。 */
+	actionRows: number[];
+}
+
+/**
+ * 组装活动块。
  *
  * 内容是思考头部、正在执行的工具与其输出尾巴，全部是最新状态：没有铺底色的横条，
  * 也不重复顶部的时间与分类计数。超出 maxRows 时从尾部截断：预算再紧也先保住
- * 「正在跑什么」。
+ * 「正在跑什么」；被截掉的动作行也不再算动作行。
  */
-export function buildActivityLines(input: ActivityRenderInput): string[] {
+export function buildActivityLines(input: ActivityRenderInput): ActivityLines {
 	const { snapshot, maxRows } = input;
 	if (!snapshot.active || maxRows <= 0) {
-		return [];
+		return { lines: [], actionRows: [] };
 	}
 
-	const lines = [...buildThoughtLine(input), ...buildRunningLines(input)];
+	const thought = buildThoughtLine(input);
+	const running = buildRunningLines(input);
+	const lines = [...thought, ...running.lines].slice(0, maxRows);
 
-	return lines.slice(0, maxRows);
+	return {
+		lines,
+		actionRows: running.actionRows
+			.map((row) => row + thought.length)
+			.filter((row) => row < lines.length),
+	};
+}
+
+/** 活动块里去掉动作名后的行：思考头部与输出尾巴；组头已经写出这条动作时用这个形态。 */
+export function withoutActionRows({ lines, actionRows }: ActivityLines): string[] {
+	const actionRowSet = new Set(actionRows);
+	return lines.filter((_line, row) => !actionRowSet.has(row));
 }
