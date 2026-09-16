@@ -9,6 +9,7 @@ import {
 	createActivitySnapshot,
 	extractOutputTail,
 	extractThoughtHead,
+	isActivityHeadLine,
 	toolActivityDetail,
 	toolActivityLabel,
 	type ActivityRenderInput,
@@ -143,28 +144,43 @@ test("未运行时活动区不输出任何行", () => {
 	assert.deepEqual(buildActivityLines(renderInput({ snapshot })), []);
 });
 
-test("首行是状态横条：正在做什么 + 耗时 + 非 0 计数", () => {
+test("活动块首行只报计数：不重复顶部的「处理中」与耗时", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
 	snapshot.counters = { read: 4, search: 0, command: 0, other: 0 };
 	const head = buildActivityLines(renderInput({ snapshot }))[0] ?? "";
 
-	assert.ok(head.includes(i18n.t("activityWorking")), `首行应说明正在处理：${head}`);
-	assert.ok(head.includes("42s"), `首行应带耗时：${head}`);
 	assert.ok(head.includes(i18n.t("activityCounterRead", { count: "4" })), `首行应带读取计数：${head}`);
+	assert.ok(
+		!head.includes(i18n.t("activityWorking")),
+		`「处理中」只在轮首，块首行不应重复：${head}`,
+	);
+	assert.ok(!head.includes("42s"), `耗时只在轮首，块首行不应重复：${head}`);
 	assert.ok(!head.includes(i18n.t("activityCounterSearch", { count: "0" })), `0 的桶不应占位：${head}`);
 	assert.ok(!head.includes(i18n.t("activityCounterCommand", { count: "0" })), `0 的桶不应占位：${head}`);
 });
 
-test("计数全为 0 时首行只留状态与耗时", () => {
-	const snapshot = { ...createActivitySnapshot(), active: true, startedAtMs: 1_000_000 };
-	const lines = buildActivityLines(renderInput({ snapshot, nowMs: 1_042_000 }));
-	assert.equal(lines.length, 1, `没有动作也没有思考时只应有一行：${lines.join("\n")}`);
+test("计数全为 0 时不画块首行，块直接从动作行开始", () => {
+	const snapshot = runningSnapshot();
+	snapshot.counters = { read: 0, search: 0, command: 0, other: 0 };
+	const lines = buildActivityLines(renderInput({ snapshot }));
+
+	assert.equal(lines.length, 1, `没有计数时只应有动作行：${lines.join("\n")}`);
+	assert.ok(lines[0]?.includes("npm test"), `动作行应保留：${lines[0]}`);
 	assert.equal(
-		lines[0],
-		`  ${activityGlyph("working", 0, false)} ${i18n.t("activityWorking")} · 42s`,
-		`不应出现全 0 的计数：${lines[0]}`,
+		isActivityHeadLine(lines[0] ?? ""),
+		false,
+		`计数为 0 时首行是细节行，不应铺底色：${lines[0]}`,
 	);
+});
+
+test("块首行与细节行靠缩进区分", () => {
+	const snapshot = runningSnapshot();
+	const lines = buildActivityLines(renderInput({ snapshot }));
+
+	assert.equal(isActivityHeadLine(lines[0] ?? ""), true, `计数横条是块首行：${lines[0]}`);
+	assert.equal(isActivityHeadLine(lines[1] ?? ""), false, `动作行不是块首行：${lines[1]}`);
+	assert.equal(isActivityHeadLine(""), false, "补位空行不是块首行");
 });
 
 test("轮首状态行只报运行级时间：状态与耗时，不带计数与细节", () => {
@@ -214,30 +230,43 @@ test("当前动作与其输出尾巴各占一行，且都缩进在横条之下",
 	assert.ok(lines[2]?.startsWith("      "), `输出尾巴应缩进两级：${JSON.stringify(lines[2])}`);
 });
 
-test("行数预算收紧时优先保留状态横条", () => {
+test("行数预算收紧时优先保留块首行", () => {
 	const snapshot = runningSnapshot();
 	snapshot.thought = "想一下";
 	const lines = buildActivityLines(renderInput({ snapshot, maxRows: 1 }));
 	assert.equal(lines.length, 1);
-	assert.ok(lines[0]?.includes("42s"), `第一行应是状态横条：${lines[0]}`);
+	assert.ok(
+		lines[0]?.includes(i18n.t("activityCounterRead", { count: "4" })),
+		`第一行应是计数横条：${lines[0]}`,
+	);
 });
 
-test("并行执行时首行换成并行文案，动作逐条列出", () => {
+test("并行执行时轮首换成并行文案，块首行仍只报计数", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running.push({ toolCallId: "c2", label: i18n.t("activityRead"), detail: "b.ts" });
 	const lines = buildActivityLines(renderInput({ snapshot }));
 	const joined = lines.join("\n");
 
-	assert.ok(lines[0]?.includes(i18n.t("activityParallel")), `首行应是并行文案：${lines[0]}`);
+	assert.ok(
+		!joined.includes(i18n.t("activityParallel")),
+		`并行文案只在轮首，块里不应重复：${joined}`,
+	);
+	assert.ok(
+		buildRunStatusLines(renderInput({ snapshot }))[0]?.includes(i18n.t("activityParallel")),
+		"轮首应换成并行文案",
+	);
 	assert.ok(joined.includes("npm test"), `应列出第一个动作：${joined}`);
 	assert.ok(joined.includes("b.ts"), `应列出第二个动作：${joined}`);
 });
 
-test("没有正在执行的工具但有思考时，思考接在状态横条下面", () => {
+test("没有正在执行的工具但有思考时，思考接在计数横条下面", () => {
 	const snapshot = { ...runningSnapshot(), running: [], thought: "权衡方案" };
 	const lines = buildActivityLines(renderInput({ snapshot }));
 
-	assert.equal(lines.length, 2, `应只有状态行与思考行：${lines.join("\n")}`);
-	assert.ok(lines[0]?.includes(i18n.t("activityWorking")), `首行应是状态横条：${lines[0]}`);
+	assert.equal(lines.length, 2, `应只有计数行与思考行：${lines.join("\n")}`);
+	assert.ok(
+		lines[0]?.includes(i18n.t("activityCounterRead", { count: "4" })),
+		`首行应是计数横条：${lines[0]}`,
+	);
 	assert.ok(lines[1]?.includes("权衡方案"), `第二行应是思考：${lines[1]}`);
 });

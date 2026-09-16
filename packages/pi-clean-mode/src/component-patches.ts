@@ -26,6 +26,7 @@ import {
 	TOOL_ROW_HIDDEN,
 	type ActionGroupMembership,
 } from "./action-groups.js";
+import { isActivityHeadLine } from "./activity.js";
 import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import type { HeaderStyler } from "./header-style.js";
@@ -148,7 +149,10 @@ export interface ComponentPatchDeps {
 	claimRunHeaderHost: (host: object) => boolean;
 	/** 该承载者是否就是当前「正在运行」那一轮的承载者。 */
 	isCurrentRunHost: (host: object) => boolean;
-	/** 当前要展示的实时活动块；空数组表示不展示。接在当前组最后一条可见行的下面。 */
+	/**
+	 * 当前组的活动块；空数组表示不展示。首行是计数横条（计数为 0 时没有首行，
+	 * 块直接从思考或动作行开始），接在当前组最后一条可见行的下面。
+	 */
 	getActivityLines: () => string[];
 	/**
 	 * 轮首槽位要展示的状态行：只含「在处理 + 跑了多久」，最多一行。
@@ -201,15 +205,15 @@ function buildRunHeaderLine(
 }
 
 /**
- * 给活动行的首行铺上底色。
+ * 给活动块的首行铺上底色。
  *
- * 活动块的首行是「现在在做什么」的状态行，用底色横条画出来，和运行结束后占据同一个
- * 槽位的「用时」横条就是同一种东西：状态切换时只是文案变了，底色块不会凭空出现或消失。
- * 只铺首行；补位用的空行保持空行，否则会在下面铺出一条空底色块。
+ * 只给「块首行」铺色：块首行是计数横条（或轮首的运行级状态行），细节行不是。
+ * 计数全为 0 时活动块直接从细节行开始，那行开头不是块缩进，不会被铺色 —— 否则会在
+ * 思考行或动作行上糊出一条色块。
  */
 function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDeps): string[] {
 	const [head, ...rest] = lines;
-	if (head === undefined) {
+	if (head === undefined || !isActivityHeadLine(head)) {
 		return lines;
 	}
 	return [deps.styler.band(head, width), ...rest];

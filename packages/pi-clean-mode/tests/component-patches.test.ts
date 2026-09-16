@@ -55,16 +55,18 @@ const RUN_HEADER_STEPS = i18n.t("runHeaderSteps", { count: String(RUN_STEPS) });
 const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
 /** 单条动作的组头摘要；组内只有一条时直接用它当组头文案。 */
 const SINGLE_ACTION_SUMMARY = "运行命令 ls -la";
-/** 轮首活动行里的细节行（思考、工具）；轮首不应再出现它。 */
-const ACTIVITY_ROW = "│ ⠹ 运行命令 npm test";
-/** 活动块首行：带计数的状态横条；轮首自留的那份不带计数，两者文案不同。 */
-const ACTIVITY_HEAD_ROW_TEXT = "│ ⠋ 在处理 · 7s · 读取 4";
+/** 活动块里的细节行（思考、当前动作）；缩进 4 格，与块首行的 2 格区分开。 */
+const ACTIVITY_ROW = "    │ ⠹ 运行命令 npm test";
+/**
+ * 活动块首行：缩进 2 格的计数横条；「处理中」与耗时归轮首，块首行不重复它们。
+ */
+const ACTIVITY_HEAD_ROW_TEXT = "  │ ⠋ 读取 4 · 命令 1";
 /**
  * 轮首槽位的状态行：只报在处理与耗时。
  *
- * 它与活动块首行只差后面的计数，所以断言要整行比，不能用子串比。
+ * 它与活动块首行各报各的，所以断言要整行比，不能用子串比。
  */
-const RUN_STATUS_ROW = "│ ⠋ 工作 7s";
+const RUN_STATUS_ROW = "  │ ⠋ 处理中 · 7s";
 /** 活动行首行在组件里的行号：折叠头子组件输出「空行 + 活动行」，所以是第 1 行。 */
 const ACTIVITY_HEAD_ROW = 1;
 /** 工具调用 id。 */
@@ -300,6 +302,23 @@ test("本轮还没有工具行时，轮首只画状态行", () => {
 			"状态行应在工作过程正文之前",
 		);
 		assert.ok(!lines.join("\n").includes(ACTIVITY_ROW), `轮首不应出现思考与工具细节：${lines.join("\n")}`);
+	});
+});
+
+test("计数还没出现时活动块不铺底色", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		beginActionGroupStep(harness.actionGroups);
+		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
+		// 计数全为 0 时活动块里没有块首行，首条就是细节行。
+		harness.activityLines.push(ACTIVITY_ROW);
+
+		const rendered = linesOf(toolComponent()).map(stripAnsi);
+		const tail = rendered[rendered.length - 1] ?? "";
+		assert.equal(tail.trimEnd(), ACTIVITY_ROW, `活动块应接在组尾：${rendered.join("\n")}`);
+		assert.ok(
+			visibleWidth(tail) < WIDTH,
+			`细节行不应被铺成整宽底色块：${JSON.stringify(tail)}`,
+		);
 	});
 });
 
