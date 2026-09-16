@@ -9,7 +9,9 @@
  * - 轮首槽位（整轮最上面，`buildRunStatusLines`）：只报运行级状态「在处理 + 跑了多久」，
  *   和运行结束后的「用时」横条是同一个槽位、同一种横条，也是屏幕上唯一一条铺底色的横条；
  * - 活动块（接在当前动作组最后一条可见行的下面，`buildActivityLines`）：依次是思考头部、
- *   正在执行的工具与其输出尾巴，全部是最新状态，不占条、不铺底色。
+ *   正在执行的工具与其输出尾巴，全部是最新状态，不占条、不铺底色。每行前面还带一段
+ *   `├─` / `└─` 竖折（`renderActivityRows`）把自己挂在组头下面；只靠缩进时，看不出
+ *   这些行到底属于上面哪一条。
  *
  * 分类计数（`formatActivityCountersSuffix`）也不单独占一行：它接在当前动作组的组头文案后面
  * （`探索 · 12 步 · 读取 3 · 命令 2`）。单独占一行时，它和组头的步数在数同一件事，
@@ -57,10 +59,21 @@ const TOOL_ARG_KEYS = ["command", "file_path", "path", "pattern", "query", "url"
  * 运行中与运行结束共用这一列，状态切换时文案不会横向跳；细节行再深一级。
  */
 const BAND_INDENT = "  ";
-/** 细节行（思考、当前动作）的缩进：比横条文案再深一级。 */
-const DETAIL_INDENT = "    ";
-/** 输出尾巴的缩进：让 `↳` 正好落在细节行文案的起始列。 */
-const OUTPUT_INDENT = "      ";
+/**
+ * 活动块树形前缀的缩进：与组头 chip 里的文案同列。
+ *
+ * 组头用组件补丁的 `HEADER_INDENT` 把文案推到第 3 列，活动块的竖折就从这一列起画，
+ * 看上去像是从组头文字下面长出来的。
+ */
+const TREE_INDENT = "  ";
+/** 子项前的分支符：它后面还有别的子项时用这个。 */
+const BRANCH_MIDDLE = "├─";
+/** 最后一个子项的分支符：整块到这里收口。 */
+const BRANCH_LAST = "└─";
+/** 子项续行的宽度占位：与分支符 `├─ ` 同宽，正文才对得齐。 */
+const BRANCH_CONTINUATION_PADDING = "  ";
+/** 续行所属的子项后面还有子项时，用竖线把它和后续子项贯通起来。 */
+const BRANCH_CONTINUATION = "│";
 /** 横条与细节行内各段之间的分隔符。 */
 const SEGMENT_SEPARATOR = " · ";
 /** 思考文案与「思考」标签之间的间距。 */
@@ -371,26 +384,26 @@ export function buildRunStatusLines(input: ActivityRenderInput): string[] {
  * 行与「哪些行是动作名」一起返回：组头已经写出这条动作时（单条组），渲染层要把动作名
  * 那几行去掉，只留输出尾巴，靠的就是 `actionRows`。
  */
-function buildRunningLines(input: ActivityRenderInput): { lines: string[]; actionRows: number[] } {
+function buildRunningRows(input: ActivityRenderInput): { rows: ActivityRow[]; actionRows: number[] } {
 	const { snapshot, frame, animated, paint } = input;
 	const glyph = paint.fg(COLOR_GLYPH, `${activityGlyph("working", frame, animated)} `);
-	const lines: string[] = [];
+	const rows: ActivityRow[] = [];
 	const actionRows: number[] = [];
 
 	for (const action of snapshot.running) {
 		const detail = action.detail ? paint.fg(COLOR_DETAIL, ` ${action.detail}`) : "";
-		actionRows.push(lines.length);
-		lines.push(`${DETAIL_INDENT}${glyph}${paint.bold(paint.fg(COLOR_HEADING, action.label))}${detail}`);
+		actionRows.push(rows.length);
+		rows.push({ kind: "item", text: `${glyph}${paint.bold(paint.fg(COLOR_HEADING, action.label))}${detail}` });
 		if (action.outputTail) {
-			lines.push(paint.fg(COLOR_DIM, `${OUTPUT_INDENT}${OUTPUT_MARKER}${action.outputTail}`));
+			rows.push({ kind: "tail", text: paint.fg(COLOR_DIM, `${OUTPUT_MARKER}${action.outputTail}`) });
 		}
 	}
 
-	return { lines, actionRows };
+	return { rows, actionRows };
 }
 
 /** 组装思考头部那一行。 */
-function buildThoughtLine(input: ActivityRenderInput): string[] {
+function buildThoughtRows(input: ActivityRenderInput): ActivityRow[] {
 	const { snapshot, frame, animated, paint } = input;
 	if (!snapshot.thought) {
 		return [];
@@ -398,22 +411,86 @@ function buildThoughtLine(input: ActivityRenderInput): string[] {
 
 	const glyph = activityGlyph("thinking", frame, animated);
 	return [
-		`${DETAIL_INDENT}${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, i18n.t("activityThinking")))}${paint.fg(COLOR_DETAIL, `${THOUGHT_GAP}${snapshot.thought}`)}`,
+		{
+			kind: "item",
+			text: `${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, i18n.t("activityThinking")))}${paint.fg(COLOR_DETAIL, `${THOUGHT_GAP}${snapshot.thought}`)}`,
+		},
 	];
 }
 
 /**
- * 活动块：块里全部的行，以及哪几行在报「正在跑什么」。
+ * 活动块里一行的类型：子项（思考、正在执行的动作）、子项的续行（输出尾巴）、补位空行。
+ */
+export type ActivityRowKind = "item" | "tail" | "blank";
+
+/**
+ * 活动块里的一行。
+ *
+ * 只放正文、不放缩进与树形前缀：前缀要等「哪几行最终留在屏幕上」定下来才能拼 ——
+ * 单条组的动作行会被去掉，去掉之后原本的第二项就成了最后一项，分支符得从 `├─` 换成 `└─`。
+ * 所以渲染推迟到 `renderActivityRows`，去掉行之后再拼一次。
+ */
+export interface ActivityRow {
+	kind: ActivityRowKind;
+	/** 已着色的正文，不含缩进与树形前缀。 */
+	text: string;
+}
+
+/**
+ * 活动块：块里的全部行，以及哪几行在报「正在跑什么」。
  *
  * 分开报是为了同一句话只说一遍：组头已经写出这条动作时（组内只有一条，组头就是那条动作
  * 的摘要），渲染层按 `actionRows` 把动作名去掉，只留思考与输出尾巴；多条成员的组头是
  * 汇总文案（`探索 · 12 步`），没写出具体动作，就得把动作行都留下。
  */
 export interface ActivityLines {
-	/** 块里的全部行，按渲染顺序。 */
-	lines: string[];
-	/** `lines` 里属于动作名的行号（并行时多条）。 */
+	/** 块里的全部行，按渲染顺序；不带树形前缀。 */
+	rows: ActivityRow[];
+	/** `rows` 里属于动作名的行号（并行时多条）。 */
 	actionRows: number[];
+}
+
+/** 补位空行：行数只增不减时用来占位，渲染成真正的空行。 */
+export function blankActivityRow(): ActivityRow {
+	return { kind: "blank", text: "" };
+}
+
+/** 从 `index` 往后还有没有别的子项；续行与补位空行都不算。 */
+function hasItemAfter(rows: ActivityRow[], index: number): boolean {
+	return rows.slice(index + 1).some((row) => row.kind === "item");
+}
+
+/** 续行所属的子项行号：往前找最近的子项；找不到（它所属的子项已被去掉）返回 -1。 */
+function ownerItemIndex(rows: ActivityRow[], index: number): number {
+	for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+		if (rows[cursor]?.kind === "item") {
+			return cursor;
+		}
+	}
+	return -1;
+}
+
+/**
+ * 把结构化行拼成最终文本：子项带 `├─` / `└─`，续行补上贯通的竖线。
+ *
+ * 「最后一个子项」只看后面还有没有别的子项，补位空行不参与，所以截断、去动作行之后
+ * 重算都自动得到正确的收口。空行原样渲染成空串：补位不该在屏幕上留下一串前缀。
+ */
+export function renderActivityRows(rows: ActivityRow[], paint: ActivityPainter): string[] {
+	return rows.map((row, index) => {
+		if (row.kind === "blank") {
+			return "";
+		}
+
+		if (row.kind === "item") {
+			const branch = hasItemAfter(rows, index) ? BRANCH_MIDDLE : BRANCH_LAST;
+			return `${TREE_INDENT}${paint.fg(COLOR_DIM, branch)} ${row.text}`;
+		}
+
+		const owner = ownerItemIndex(rows, index);
+		const mark = owner >= 0 && hasItemAfter(rows, owner) ? BRANCH_CONTINUATION : " ";
+		return `${TREE_INDENT}${paint.fg(COLOR_DIM, mark)}${BRANCH_CONTINUATION_PADDING}${row.text}`;
+	});
 }
 
 /**
@@ -426,23 +503,23 @@ export interface ActivityLines {
 export function buildActivityLines(input: ActivityRenderInput): ActivityLines {
 	const { snapshot, maxRows } = input;
 	if (!snapshot.active || maxRows <= 0) {
-		return { lines: [], actionRows: [] };
+		return { rows: [], actionRows: [] };
 	}
 
-	const thought = buildThoughtLine(input);
-	const running = buildRunningLines(input);
-	const lines = [...thought, ...running.lines].slice(0, maxRows);
+	const thought = buildThoughtRows(input);
+	const running = buildRunningRows(input);
+	const rows = [...thought, ...running.rows].slice(0, maxRows);
 
 	return {
-		lines,
+		rows,
 		actionRows: running.actionRows
 			.map((row) => row + thought.length)
-			.filter((row) => row < lines.length),
+			.filter((row) => row < rows.length),
 	};
 }
 
 /** 活动块里去掉动作名后的行：思考头部与输出尾巴；组头已经写出这条动作时用这个形态。 */
-export function withoutActionRows({ lines, actionRows }: ActivityLines): string[] {
+export function withoutActionRows({ rows, actionRows }: ActivityLines): ActivityRow[] {
 	const actionRowSet = new Set(actionRows);
-	return lines.filter((_line, row) => !actionRowSet.has(row));
+	return rows.filter((_row, row) => !actionRowSet.has(row));
 }

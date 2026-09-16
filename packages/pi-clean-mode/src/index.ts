@@ -37,7 +37,6 @@ import {
 	formatActivityCountersSuffix,
 	toolActivityDetail,
 	toolActivityLabel,
-	withoutActionRows,
 	type ActivityCounters,
 	type ActivitySnapshot,
 } from "./activity.js";
@@ -439,8 +438,7 @@ function installPatches(runtime: Runtime): void {
 		claimRunHeaderHost: (host) => runtime.runDurations.claimOwner(host),
 		isCurrentRunHost: (host) => runtime.runDurations.isOwner(host),
 		getActivityLines: () => runtime.activityArea.lines,
-		getActivityDetailLines: () =>
-			withoutActionRows({ lines: runtime.activityArea.lines, actionRows: runtime.activityArea.actionRows }),
+		getActivityDetailLines: () => runtime.activityArea.detailLines,
 		getActivityCounters: () => formatActivityCountersSuffix(runtime.activity.counters),
 		getRunStatusLines: () => runtime.activityArea.runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === runtime.actionGroups.currentGroupId,

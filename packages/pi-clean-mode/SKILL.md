@@ -52,14 +52,14 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 顶部又出现思考或工具行 | 轮首子组件必须读 `getRunStatusLines`（`runtime.activityArea.runStatusLines`，无计数的状态行），不能读 `getActivityLines`；顶部只承担整轮时间，细节行只属于列表末尾 |
 | 屏幕上出现两个「处理中」 | 只有轮首能写 `activityWorking` / `activityParallel`（`buildRunStatusLines`）。活动块里只能放思考、动作、输出尾巴；把状态文案或耗时再写一遍就是同一句话重复，对应断言在 `tests/activity.test.ts` 的「活动块只报最新状态」 |
 | 分类计数又单独占一行 | 计数应接在组头 chip 后面（`buildActionGroupHeaderRow` + `getActivityCounters`），不另开一行。单独一行时它和组头的「N 步」在数同一件事 |
-| 同一个动作名出现两次 | 单条组的组头就是这条动作的摘要，活动块要走 `getActivityDetailLines`（`withoutActionRows` 去掉 `actionRows` 那几行）。动作名到活动块里再列一遍，屏幕上就是同一句话两次 |
+| 同一个动作名出现两次 | 单条组的组头就是这条动作的摘要，活动块要走去掉动作名的形态（`runtime.activityArea.detailLines` ← `withoutActionRows` 去掉 `actionRows` 那几行）。动作名到活动块里再列一遍，屏幕上就是同一句话两次 |
 | 历史组的组头也带计数 | 计数是本轮累计值，只能加在当前组上（`isCurrentActionGroup`）；忘了这个判断就会给历史组报出不属于它的数字 |
 | 活动块悬在组中段 | `appendActivityTail` 的「最后一条可见行」算错了：展开的组是 `groupSize - 1`，收起时是 `0`（成员行隐藏，只剩组头）；写成固定 0 就会挂到组头上、展开后看起来悬在中间 |
 | 发送后一段时间没任何反馈，看着像卡住 | 活动行要等一个能挂它的组件：轮首槽位属于本轮第一条 assistant 消息（`message_start` 才创建），组头则要等第一个工具调用。这段窗口里绝对不能关 Pi 自带的 Working 提示，否则屏幕一片空白。判定在 `ActivityAreaDeps.hasRunHeaderHost`，它也参与去重签名 |
 | 活动区闪或卡 | 检查是否绕过了内容签名去重而每次 tick 都请求重绘；行内容不变时必须跳过 |
-| 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 与 `runtime.runStatusLines` 并请求一次重绘） |
+| 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` / `detailLines` / `rows` 与 `runtime.runStatusLines` 并请求一次重绘） |
 | 活动区行没底色 | 只有轮首那条运行级横条铺底色（`bandActivityHead` + `styler.band`），活动块里的行本来就不铺；主题缺 `customMessageBg` 时 `band` 会退化成纯文本补齐 |
-| 活动区行没对齐 | 运行级横条文案缩进是 `BAND_INDENT`，细节行 `DETAIL_INDENT`、输出尾巴 `OUTPUT_INDENT`；三者在 `activity.ts` 顶部 |
+| 活动区行没对齐 / 竖折没出来 | 前缀常量在 `activity.ts` 顶部：横条文案用 `BAND_INDENT`，活动块的竖折用 `TREE_INDENT` + `├─` / `└─`（`renderActivityRows` 按「后面还有没有子项」选分支符）。截断或去掉动作行之后必须用 `renderActivityRows` 重拼一次，直接沿用上一轮拼好的字符串就会收口错（最后一行还挂 `├─`） |
 | 活动区显示一堆 `*` | 思考头部的成对强调符由 `stripEmphasisMarkup` 剥掉；若某条消息直接写快照而不经过 `extractThoughtHead`，就会绕过它 |
 | thinking 原文还在刷屏 | `hideThinking` 是否为 on；它靠 `resolveRenderedMessage` 在 `updateContent` 前抽掉 thinking 内容块，若某条消息看不到效果，检查该消息是否只走了 `render` 而没走 `updateContent` |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
@@ -92,7 +92,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 
 活动块的位置：接在当前组**最后一条可见行**的末尾（`appendActivityTail`）—— 展开的组接在末位成员下面，收起时成员行整行隐藏、接在组头下面，所以最新状态永远在列表最底部，不会悬在中段。轮首折叠头子组件（`createRunHeaderComponent`）只输出运行级时间（`buildRunStatusLines`：在处理 + 耗时，无计数），思考与工具细节一概不往顶部搬。两处共用 `runtime.activityArea.lines` / `runStatusLines` 与 `bandActivityHead`，且都只认「当前组」（`isCurrentActionGroup`）与「当前轮承载者」（`isCurrentRunHost`），所以历史轮次不会重复显示。运行结束后活动行清空，轮首位置换成 `用时` 横条（耗时在 `agent_settled` 才写入，两者不会同时出现）。
 
-分工与去重（屏幕上只有一条横条，一个动作名只说一遍）：**「处理中」（或并行文案）与耗时只在轮首出现一次**（`buildRunStatusLines`），活动块里全是思考、动作、输出尾巴这类普通行，不铺底色；**分类计数也不单独占行**，它接在当前动作组的组头 chip 后面（`formatActivityCountersSuffix` → `getActivityCounters`，只给当前组）；**组内只有一条时活动块去掉动作名**：`buildActivityLines` 除了行还返回 `actionRows`（哪几行在报「正在跑什么」），`withoutActionRows` 按它过滤出「思考 + 输出尾巴」的形态，`appendActivityTail` 按组大小选形态。活动块的位置见上一段。三档缩进常量在 `activity.ts` 顶部（`BAND_INDENT` / `DETAIL_INDENT` / `OUTPUT_INDENT`），运行级横条与运行结束后的「用时 …」同列，因此状态切换不跳列。
+分工与去重（屏幕上只有一条横条，一个动作名只说一遍）：**「处理中」（或并行文案）与耗时只在轮首出现一次**（`buildRunStatusLines`），活动块里全是思考、动作、输出尾巴这类普通行，不铺底色、行首带 `├─` / `└─` 竖折；**分类计数也不单独占行**，它接在当前动作组的组头 chip 后面（`formatActivityCountersSuffix` → `getActivityCounters`，只给当前组）；**组内只有一条时活动块去掉动作名**：`buildActivityLines` 返回结构化行 `rows` 与 `actionRows`（哪几行在报「正在跑什么」），`activity-area.ts` 先把 `rows` 补齐再渲染出完整形态 `lines` 与去掉动作名的 `detailLines`（`withoutActionRows` 过滤后用 `renderActivityRows` 重拼前缀），`appendActivityTail` 按组大小取形态。活动块的位置见上一段。缩进常量在 `activity.ts` 顶部（`BAND_INDENT` 是横条文案、`TREE_INDENT` 是活动块竖折），运行级横条与运行结束后的「用时 …」同列，因此状态切换不跳列。
 
 ## 边界
 

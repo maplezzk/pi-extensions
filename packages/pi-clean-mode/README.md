@@ -160,20 +160,21 @@ user: help me fix xxx
   ⠋ Working · 42s                     ← top: run-level state + time (the only band on screen)
  Explored · 5 steps · read 4 · search 3 ▶  ← current group header: step count + this run's counters
  Run Command ls -la ▶
- Run Command npm test                  ← newest action
-     ◐ Thinking  tracing the token expiry path…   ← activity block: right below the newest action
-     ⠋ Run Command npm test
-       ↳ 12 passing
+ Run Command npm test                  ← newest action (the block attaches below it)
+  ├─ ◐ Thinking  tracing the token expiry path…   ← block: thinking
+  └─ ⠋ Run Command npm test                        ← block: the action running now
+     ↳ 12 passing                                  ← its latest output
 ```
 
 - **Top (run-level band)**: state plus run-level time only — no counters, no thinking or tool detail. While running it reads `⠋ Working · 42s`; when the run settles the same slot holds `Took 42s · 3 steps ▶`, so switching state changes the text, not the layout.
 - **Group header chip**: the action counters (`· read 3 · command 2`) are appended right after `Explored · N steps` instead of taking a row of their own — on its own row the counters simply count the same thing as the step count, and with the top band that makes three places reporting progress. Only chips summarising `N steps` carry them, and only the current group does (the numbers are this run's totals).
 - **An action is named once**: with a single member the group header *is* that action's summary (`Run Command npm test ▶`), so the block does not list the action again — it only adds the thinking head and the output tail. A multi-member header is a summary line without action names, so there the block lists what is running.
 - **Activity block**: attached below the current group's **last visible row**. With the group expanded that is its last member; with the group collapsed the member rows render zero lines and the group header is the only visible row, so the block follows it. Either way it sits at the bottom of the list instead of hanging in the middle.
+- **The block hangs off the group header with tree lines**: each item starts with `├─` (another item follows) or `└─` (the last one), an output tail sits at the column after the branch, and a continuation whose owner still has siblings gets a `│`. Indentation alone does not say which row above an item belongs to; dropping the action name (single-member group) recomputes the closing branch, so the thinking row takes over as the last item.
 
 At any moment, the newest state is at the bottom of what you see. When the run itself is collapsed (tool rows render zero lines) the block is not drawn at all and only the top band remains — collapsing means folding the process away.
 
-Every row in the block is a plain row (no background band, nothing repeated from the top): the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.
+Every row in the block is a plain row (no background band, nothing repeated from the top, each row prefixed with a `├─` / `└─` tree line): the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.
 
 Two implementation constraints matter:
 
@@ -182,7 +183,7 @@ Two implementation constraints matter:
 
 While the area shows the current action, Pi's own `Working...` line is suppressed so the two do not say the same thing twice.
 
-Rendering is split in three places that share the same row data (plus which rows name a running action): the current group's tool rows append the block after themselves (`appendActivityTail` in `component-patches.ts`; only the last visible row appends), the run-header component emits run-level time only (`createRunHeaderComponent`, reading `getRunStatusLines`), and the group chip appends this run's counters from `getActivityCounters` (built by `formatActivityCountersSuffix`). A single-member group drops the action names from the block and keeps thinking plus output tails; multi-member groups list what is running. All three only accept "the current group" and "the current run's header host", so historical turns never repeat the same content. Only the run-level band gets a background (`bandActivityHead`); block rows are emitted as-is and padding rows stay blank.
+Rendering is split in three places that share the same row data (`runtime.activityArea.rows` is padded to the largest height seen, then rendered into the full `lines` and the action-name-free `detailLines`): the current group's tool rows append the block after themselves (`appendActivityTail` in `component-patches.ts`; only the last visible row appends), the run-header component emits run-level time only (`createRunHeaderComponent`, reading `getRunStatusLines`), and the group chip appends this run's counters from `getActivityCounters` (built by `formatActivityCountersSuffix`). A single-member group uses the action-name-free form and keeps thinking plus output tails; multi-member groups list what is running. All three only accept "the current group" and "the current run's header host", so historical turns never repeat the same content. Only the run-level band gets a background (`bandActivityHead`); block rows carry their tree prefix and padding rows still render as blank.
 
 ## Compatibility
 

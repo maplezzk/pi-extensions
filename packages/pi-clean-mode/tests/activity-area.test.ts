@@ -9,19 +9,31 @@ import {
 	type ActivityAreaDeps,
 	type ActivityUiHost,
 } from "../src/activity-area.ts";
-import { createActivitySnapshot, type ActivitySnapshot } from "../src/activity.ts";
+import {
+	createActivitySnapshot,
+	renderActivityRows,
+	type ActivityRow,
+	type ActivitySnapshot,
+} from "../src/activity.ts";
 import { ACTIVITY_ROWS_DEFAULT } from "../src/types.ts";
 
 /** 活动区默认行数，测试里同样用它避免魔法值。 */
 const MAX_ROWS = ACTIVITY_ROWS_DEFAULT;
-/** 默认的固定渲染行。 */
-const DEFAULT_LINES = ["│ ⠹ 运行命令"];
+/** 透明着色：活动块的前缀与正文都按原样比对。 */
+const PLAIN_PAINTER = {
+	fg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+};
+/** 默认的结构化活动行。 */
+const DEFAULT_ROWS: ActivityRow[] = [{ kind: "item", text: "⠹ 运行命令" }];
+/** 默认活动行渲染后的文本；竖折前缀由 renderActivityRows 拼。 */
+const DEFAULT_LINES = renderActivityRows(DEFAULT_ROWS, PLAIN_PAINTER);
 /** 轮首状态行的默认内容；与活动块不同，轮首只有这一行。 */
 const DEFAULT_RUN_STATUS_LINES = ["│ ⠋ 在处理 · 1s"];
 /** 内容变化对比用的第一组行。 */
-const NPM_TEST_LINES = ["│ ⠹ 运行命令 npm test"];
+const NPM_TEST_ROWS: ActivityRow[] = [{ kind: "item", text: "⠹ 运行命令 npm test" }];
 /** 内容变化对比用的第二组行。 */
-const NPM_BUILD_LINES = ["│ ⠸ 运行命令 npm run build"];
+const NPM_BUILD_ROWS: ActivityRow[] = [{ kind: "item", text: "⠸ 运行命令 npm run build" }];
 
 /**
  * 测试用的假 UI 宿主。
@@ -65,15 +77,15 @@ function createFakeHost(): FakeHost {
 	return { host, calls, workingVisible };
 }
 
-/** 造一个返回固定行的渲染依赖。 */
-function createDeps(snapshot: ActivitySnapshot, lines: string[] = DEFAULT_LINES): ActivityAreaDeps {
+/** 造一个返回固定结构化行的渲染依赖。 */
+function createDeps(snapshot: ActivitySnapshot, rows: ActivityRow[] = DEFAULT_ROWS): ActivityAreaDeps {
 	return {
 		getSnapshot: () => snapshot,
 		// 本组用例只关心去重与生命周期，动画固定为开。
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
 		// 默认没有动作名行；需要验证动作行号的用例自行覆盖。
-		renderLines: () => ({ lines, actionRows: [] }),
+		renderLines: () => ({ rows, actionRows: [] }),
 		// 轮首状态行与本组用例无关，固定返回一行可辨识的内容。
 		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 默认假定本轮已有承载折叠头的组件；需要验证「承载者未就绪」的用例自行覆盖它。
@@ -112,26 +124,30 @@ test("运行中内容无变化时刷新去重，不重复重绘", () => {
 test("内容变化时更新行并请求重绘", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
-	let lines = NPM_TEST_LINES;
+	let rows = NPM_TEST_ROWS;
 	const deps: ActivityAreaDeps = {
 		getSnapshot: () => activeSnapshot(),
 		// 本用例只关心内容变化触发重绘。
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
-		renderLines: () => ({ lines, actionRows: [] }),
+		renderLines: () => ({ rows, actionRows: [] }),
 		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 本用例与本轮承载者无关，固定为已就绪。
 		hasRunHeaderHost: () => true,
 	};
 
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.deepEqual(runtime.lines, NPM_TEST_LINES, "runtime 应持有当前渲染行");
+	assert.deepEqual(runtime.lines, renderActivityRows(NPM_TEST_ROWS, PLAIN_PAINTER), "runtime 应持有当前渲染行");
 	const rendersAfterFirst = fake.calls.renders;
 
-	lines = NPM_BUILD_LINES;
+	rows = NPM_BUILD_ROWS;
 	refreshActivityArea(runtime, fake.host, deps);
 	assert.equal(fake.calls.renders, rendersAfterFirst + 1, "内容变化应请求重绘");
-	assert.deepEqual(runtime.lines, NPM_BUILD_LINES, "runtime 的行应跟着更新");
+	assert.deepEqual(
+		runtime.lines,
+		renderActivityRows(NPM_BUILD_ROWS, PLAIN_PAINTER),
+		"runtime 的行应跟着更新",
+	);
 });
 
 test("没有内容时清空行并请求重绘", () => {
@@ -254,34 +270,73 @@ test("清理活动区会停掉定时器、清空行并请求重绘", () => {
 test("运行期间活动块行数只增不减，避免内容高度抖动", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
-	let lines = ["│ 处理中"];
+	let rows: ActivityRow[] = [{ kind: "item", text: "处理中" }];
 	const deps: ActivityAreaDeps = {
 		getSnapshot: () => activeSnapshot(),
 		// 本用例只关心补位行为，动画固定为开。
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
-		renderLines: () => ({ lines, actionRows: [] }),
+		renderLines: () => ({ rows, actionRows: [] }),
 		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 补位与承载者无关，固定为已就绪。
 		hasRunHeaderHost: () => true,
 	};
 
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.deepEqual(runtime.lines, ["│ 处理中"]);
+	assert.deepEqual(runtime.lines, ["  └─ 处理中"]);
 
-	lines = ["│ 处理中", "│ 思考 正在定位 token 失效路径"];
+	rows = [
+		{ kind: "item", text: "处理中" },
+		{ kind: "item", text: "思考 正在定位 token 失效路径" },
+	];
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.deepEqual(runtime.lines, lines, "新行出现时就地长高");
+	assert.deepEqual(
+		runtime.lines,
+		["  ├─ 处理中", "  └─ 思考 正在定位 token 失效路径"],
+		"新行出现时就地长高，收口跟着最后一项走",
+	);
 
-	lines = ["│ 处理中"];
+	rows = [{ kind: "item", text: "处理中" }];
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.deepEqual(runtime.lines, ["│ 处理中", ""], "行变少时用空行补齐，不缩回去");
+	assert.deepEqual(
+		runtime.lines,
+		["  └─ 处理中", ""],
+		"行变少时用空行补齐，且补位行不带竖折前缀",
+	);
+});
+
+test("细节形态去掉动作名后重拼前缀，收口落在剩下的最后一项上", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	const rows: ActivityRow[] = [
+		{ kind: "item", text: "思考 权衡方案" },
+		{ kind: "item", text: "运行命令 npm test" },
+		{ kind: "tail", text: "↳ 12 passing" },
+	];
+	const deps = createDeps(activeSnapshot(), rows);
+	deps.renderLines = () => ({ rows, actionRows: [1] });
+
+	refreshActivityArea(runtime, fake.host, deps);
+
+	assert.deepEqual(
+		runtime.lines,
+		["  ├─ 思考 权衡方案", "  └─ 运行命令 npm test", "     ↳ 12 passing"],
+		"完整形态里动作行是最后一项",
+	);
+	assert.deepEqual(
+		runtime.detailLines,
+		["  └─ 思考 权衡方案", "     ↳ 12 passing"],
+		"去掉动作行后思考接替成为最后一项，分支符要重拼成 └─",
+	);
 });
 
 test("清理活动区后补位高度归零，下一轮重新计算", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
-	const deps = createDeps(activeSnapshot(), ["│ 处理中", "│ 思考"]);
+	const deps = createDeps(activeSnapshot(), [
+		{ kind: "item", text: "处理中" },
+		{ kind: "item", text: "思考" },
+	]);
 
 	refreshActivityArea(runtime, fake.host, deps);
 	clearActivityArea(runtime, fake.host);
