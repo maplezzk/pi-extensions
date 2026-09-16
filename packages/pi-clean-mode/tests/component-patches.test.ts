@@ -178,6 +178,8 @@ interface PatchHarness {
 	activityDetailLines: string[];
 	/** 接在当前组组头后面的分类计数后缀；空串表示还没计数。 */
 	activityCounters: string;
+	/** 组头主词（如「运行命令」）；undefined 表示组内没有过半分类，组头用通用词。 */
+	groupActivityLabel: string | undefined;
 	/** 轮首槽位的状态行（只在在处理 + 耗时）；用例可直接改它模拟运行中。 */
 	runStatusLines: string[];
 	/** 运行级折叠被切换的次数。 */
@@ -196,7 +198,10 @@ function withPatches<T>(
 	const durations = new WeakMap<object, number>();
 	const activityLines: string[] = [];
 	const activityDetailLines: string[] = [];
-	const harness = { activityCounters: "" };
+	const harness: { activityCounters: string; groupActivityLabel: string | undefined } = {
+		activityCounters: "",
+		groupActivityLabel: undefined,
+	};
 	const runStatusLines: string[] = [];
 	let runHeaderAssigned = false;
 	let runHeaderHost: object | undefined;
@@ -243,6 +248,7 @@ function withPatches<T>(
 		getActivityCounters: () => harness.activityCounters,
 		getRunStatusLines: () => runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === actionGroups.currentGroupId,
+		getGroupActivityLabel: () => harness.groupActivityLabel,
 		getRunDuration: (host) => durations.get(host),
 		getRunSteps: () => RUN_STEPS,
 	});
@@ -256,6 +262,12 @@ function withPatches<T>(
 			},
 			set activityCounters(value: string) {
 				harness.activityCounters = value;
+			},
+			get groupActivityLabel(): string | undefined {
+				return harness.groupActivityLabel;
+			},
+			set groupActivityLabel(value: string | undefined) {
+				harness.groupActivityLabel = value;
 			},
 			runStatusLines,
 			runToggles: () => runToggleCount,
@@ -358,7 +370,7 @@ test("历史组的组头不带分类计数", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, "call-next", SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: "call-next", summary: SINGLE_ACTION_SUMMARY });
 		harness.activityCounters = " · 读取 4";
 
 		const oldHeader = linesOf(toolComponent(ids[0])).find((line) =>
@@ -375,7 +387,7 @@ test("历史组的组头不带分类计数", () => {
 test("计数还没出现时活动块不铺底色", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: TOOL_CALL_ID, summary: SINGLE_ACTION_SUMMARY });
 		// 满屏只有轮首一条横条：活动块里的行原样接上，不补宽也不铺底。
 		harness.activityDetailLines.push(ACTIVITY_ROW);
 
@@ -392,7 +404,7 @@ test("计数还没出现时活动块不铺底色", () => {
 test("组内只有一条时，活动块不重复组头已经写出的动作名", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: TOOL_CALL_ID, summary: SINGLE_ACTION_SUMMARY });
 		// 单条组的组头就是这条动作的摘要，活动块只留尾巴（思考行同理）。
 		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 		harness.activityDetailLines.push(ACTIVITY_TAIL_ROW);
@@ -415,8 +427,8 @@ test("组内只有一条时，活动块不重复组头已经写出的动作名",
 test("当前组展开时，活动块接在末位成员行下面", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
-		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: "call-1", summary: SINGLE_ACTION_SUMMARY });
+		registerActionToolCall(harness.actionGroups, { toolCallId: "call-2", summary: SINGLE_ACTION_SUMMARY });
 		toggleActionGroup(harness.actionGroups, harness.actionGroups.currentGroupId);
 		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 
@@ -439,8 +451,8 @@ test("当前组展开时，活动块接在末位成员行下面", () => {
 test("组收起时，成员行整行隐藏，活动块接在组头下面", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
-		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: "call-1", summary: SINGLE_ACTION_SUMMARY });
+		registerActionToolCall(harness.actionGroups, { toolCallId: "call-2", summary: SINGLE_ACTION_SUMMARY });
 		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 
 		const headLines = linesOf(toolComponent("call-1")).map(stripAnsi);
@@ -456,9 +468,9 @@ test("组收起时，成员行整行隐藏，活动块接在组头下面", () =>
 test("历史组不显示活动块", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: "call-1", summary: SINGLE_ACTION_SUMMARY });
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: "call-2", summary: SINGLE_ACTION_SUMMARY });
 		seedActivityBlock(harness, [ACTIVITY_ROW, ACTIVITY_TAIL_ROW]);
 
 		assert.ok(
@@ -475,7 +487,7 @@ test("历史组不显示活动块", () => {
 test("轮首只画运行级时间，活动细节接在组尾", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: TOOL_CALL_ID, summary: SINGLE_ACTION_SUMMARY });
 		seedActivityBlock(harness, [ACTIVITY_ROW, ACTIVITY_TAIL_ROW]);
 		harness.runStatusLines.push(RUN_STATUS_ROW);
 
@@ -498,7 +510,7 @@ test("轮首只画运行级时间，活动细节接在组尾", () => {
 test("运行级收起时轮首只画运行级时间，活动块不出现", () => {
 	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, { toolCallId: TOOL_CALL_ID, summary: SINGLE_ACTION_SUMMARY });
 		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 		harness.runStatusLines.push(RUN_STATUS_ROW);
 
@@ -707,7 +719,7 @@ function seedActionGroup(
 	const ids: string[] = [];
 	for (let index = 0; index < count; index += 1) {
 		const id = `group-${actionGroups.currentGroupId}-${index}`;
-		registerActionToolCall(actionGroups, id, summaries[index]);
+		registerActionToolCall(actionGroups, { toolCallId: id, summary: summaries[index] });
 		ids.push(id);
 	}
 	return ids;
@@ -750,6 +762,34 @@ test("多条成员的组收起时只渲染一条组头", () => {
 
 		assert.deepEqual(linesOf(toolComponent(ids[1])), [], "组内非首行收起时应隐藏");
 		assert.deepEqual(linesOf(toolComponent(ids[2])), [], "组内非首行收起时应隐藏");
+	});
+});
+
+test("组内有过半分类时组头用它命名", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+		harness.groupActivityLabel = i18n.t("activityCommand");
+
+		const rendered = linesOf(toolComponent(ids[0])).join("\n");
+		assert.ok(
+			rendered.includes(
+				i18n.t("actionGroupSteps", { label: i18n.t("activityCommand"), count: "3" }),
+			),
+			`组头应带主导分类：${rendered}`,
+		);
+		assert.ok(
+			!rendered.includes(GROUP_HEADER_FRAGMENT),
+			`有主导分类时不应再写通用词：${rendered}`,
+		);
+	});
+});
+
+test("没有过半分类时组头退回通用词", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+
+		const rendered = linesOf(toolComponent(ids[0])).join("\n");
+		assert.ok(rendered.includes(GROUP_HEADER_FRAGMENT), `应退回「探索 · 3 步」：${rendered}`);
 	});
 });
 

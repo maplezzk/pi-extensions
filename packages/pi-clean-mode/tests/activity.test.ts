@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	activityClassLabel,
 	activityGlyph,
 	buildActivityLines,
 	buildRunStatusLines,
 	classifyToolActivity,
 	clampActivityText,
 	createActivitySnapshot,
+	dominantActivityClass,
 	extractOutputTail,
 	extractThoughtHead,
 	formatActivityCountersSuffix,
@@ -104,6 +106,31 @@ test("工具分类决定计数桶", () => {
 	assert.equal(classifyToolActivity("find"), "search");
 	assert.equal(classifyToolActivity("bash"), "command");
 	assert.equal(classifyToolActivity("weird_tool"), "other");
+});
+
+test("分类桶映射到动作标签", () => {
+	assert.equal(activityClassLabel("read"), i18n.t("activityRead"));
+	assert.equal(activityClassLabel("search"), i18n.t("activitySearch"));
+	assert.equal(activityClassLabel("command"), i18n.t("activityCommand"));
+	assert.equal(activityClassLabel("other"), i18n.t("activityTool"));
+});
+
+test("主导分类要严格过半，最多但不够半数就不给主词", () => {
+	assert.equal(dominantActivityClass({ command: 9, read: 3 }), "command", "9/12 严格过半");
+	assert.equal(dominantActivityClass({ read: 7, search: 1 }), "read", "7/8 严格过半");
+	assert.equal(
+		dominantActivityClass({ read: 3, command: 2, search: 1 }),
+		undefined,
+		"3/6 正好一半，「最多的一类」不算主导",
+	);
+	assert.equal(
+		dominantActivityClass({ read: 3, other: 4 }),
+		undefined,
+		"「调用工具」不当主词，但它算在分母里",
+	);
+	assert.equal(dominantActivityClass({ command: 4, other: 1 }), "command", "只有过半才忽略 other");
+	assert.equal(dominantActivityClass({}), undefined, "空计数没有主导");
+	assert.equal(dominantActivityClass(undefined), undefined, "未知组没有主导");
 });
 
 test("参数摘要优先取命令原文，缺失时退回工具名", () => {

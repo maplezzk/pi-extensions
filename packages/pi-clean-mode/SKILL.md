@@ -45,6 +45,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 收起态点不动耗时头 | 收起态是否绕过了容器渲染：`Container` 在 `render` 里登记每个子组件的高度，鼠标命中靠这份表算坐标；跳过就会沿用旧表，点击被派发到正文子容器上（见 `component-patches.ts` 的 `refreshContainerMouseLayout`） |
 | 多条工具调用没有收成组头 | `enableActionGroups` 是否为 on；这些调用之间是否夹了解说（夹了就会断开成两组）；同组只有一条时不折叠 |
 | 组头文案里的步数不对 | 检查 `turn_start` 是否每轮都触发，以及 `tool_call` 是否带上了 toolCallId |
+| 组头永远是「探索 · N 步」 | 主词按组内**过半分类**选（`getGroupActivityLabel` → `dominantActivityClass`）。没传 `activity`（分类）或没有哪一类过半时就退回通用词，这是预期行为不是 bug；分类由 `registerActionToolCall` 的 `activity` 字段按组累加 |
 | 折叠后最终答案不见了 | 该消息是否被判定成「带 tool call」。`stopReason === "length"` 的截断回复可能含未完成的 tool call，从而被当作工作过程隐藏 |
 | 耗时头不显示 | `showRunHeader` 是否为 on；`runDurationMs` 是否为空（缺少 `agent_start` 时无耗时） |
 | 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；该轮是否已认领轮首承载者（本轮第一条 assistant 消息），或当前组是否存在；`isCurrentActionGroup` 是否取到当前状态 |
@@ -92,7 +93,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 
 活动块的位置：接在当前组**最后一条可见行**的末尾（`appendActivityTail`）—— 展开的组接在末位成员下面，收起时成员行整行隐藏、接在组头下面，所以最新状态永远在列表最底部，不会悬在中段。轮首折叠头子组件（`createRunHeaderComponent`）只输出运行级时间（`buildRunStatusLines`：在处理 + 耗时，无计数），思考与工具细节一概不往顶部搬。两处共用 `runtime.activityArea.lines` / `runStatusLines` 与 `bandActivityHead`，且都只认「当前组」（`isCurrentActionGroup`）与「当前轮承载者」（`isCurrentRunHost`），所以历史轮次不会重复显示。运行结束后活动行清空，轮首位置换成 `用时` 横条（耗时在 `agent_settled` 才写入，两者不会同时出现）。
 
-分工与去重（屏幕上只有一条横条，一个动作名只说一遍）：**「处理中」（或并行文案）与耗时只在轮首出现一次**（`buildRunStatusLines`），活动块里全是思考、动作、输出尾巴这类普通行，不铺底色、行首带 `├─` / `└─` 竖折；**分类计数也不单独占行**，它接在当前动作组的组头 chip 后面（`formatActivityCountersSuffix` → `getActivityCounters`，只给当前组）；**组内只有一条时活动块去掉动作名**：`buildActivityLines` 返回结构化行 `rows` 与 `actionRows`（哪几行在报「正在跑什么」），`activity-area.ts` 先把 `rows` 补齐再渲染出完整形态 `lines` 与去掉动作名的 `detailLines`（`withoutActionRows` 过滤后用 `renderActivityRows` 重拼前缀），`appendActivityTail` 按组大小取形态。活动块的位置见上一段。缩进常量在 `activity.ts` 顶部（`BAND_INDENT` 是横条文案、`TREE_INDENT` 是活动块竖折），运行级横条与运行结束后的「用时 …」同列，因此状态切换不跳列。
+分工与去重（屏幕上只有一条横条，一个动作名只说一遍）：**「处理中」（或并行文案）与耗时只在轮首出现一次**（`buildRunStatusLines`），活动块里全是思考、动作、输出尾巴这类普通行，不铺底色、行首带 `├─` / `└─` 竖折；**分类计数也不单独占行**，它接在当前动作组的组头 chip 后面（`formatActivityCountersSuffix` → `getActivityCounters`，只给当前组）；**组头主词**按组内过半分类选（`dominantActivityClass` → `activityClassLabel`，经 `getGroupActivityLabel` 交给渲染层），没有过半分类时退回通用词 `探索 · N 步`；**组内只有一条时活动块去掉动作名**：`buildActivityLines` 返回结构化行 `rows` 与 `actionRows`（哪几行在报「正在跑什么」），`activity-area.ts` 先把 `rows` 补齐再渲染出完整形态 `lines` 与去掉动作名的 `detailLines`（`withoutActionRows` 过滤后用 `renderActivityRows` 重拼前缀），`appendActivityTail` 按组大小取形态。活动块的位置见上一段。缩进常量在 `activity.ts` 顶部（`BAND_INDENT` 是横条文案、`TREE_INDENT` 是活动块竖折），运行级横条与运行结束后的「用时 …」同列，因此状态切换不跳列。
 
 ## 边界
 

@@ -224,6 +224,45 @@ export function classifyToolActivity(toolName: string): keyof ActivityCounters {
 	}
 }
 
+/** 分类桶对应的 i18n key。 */
+const ACTIVITY_CLASS_LABELS = {
+	read: "activityRead",
+	search: "activitySearch",
+	command: "activityCommand",
+	other: "activityTool",
+} as const;
+
+/** 能当组头主词的分类；顺序决定平手时先取谁。 */
+const DOMINANT_ACTIVITY_CLASSES = ["command", "read", "search"] as const;
+
+/** 能当组头主词的分类。 */
+export type DominantActivityClass = (typeof DOMINANT_ACTIVITY_CLASSES)[number];
+
+/** 取分类桶对应的动作标签（如 `运行命令`）。 */
+export function activityClassLabel(bucket: keyof ActivityCounters): string {
+	return i18n.t(ACTIVITY_CLASS_LABELS[bucket]);
+}
+
+/**
+ * 取一组动作里的主导分类：某一类**严格过半**才算主导，否则返回 undefined。
+ *
+ * 分母是组内全部成员（含 `other`），`other` 自己不当主词 —— 「调用工具」什么也说不出。
+ * 用「过半」而不是「最多的一类」，是因为 3 条读取 + 2 条命令说成「读取文件 · 5 步」会误导；
+ * 一半对一半时没有哪一类说得清这一组在做什么，交给调用方退回通用词。
+ */
+export function dominantActivityClass(counts: Partial<ActivityCounters> | undefined): DominantActivityClass | undefined {
+	if (!counts) {
+		return undefined;
+	}
+
+	const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+	if (total <= 0) {
+		return undefined;
+	}
+
+	return DOMINANT_ACTIVITY_CLASSES.find((bucket) => (counts[bucket] ?? 0) * 2 > total);
+}
+
 /** 从工具参数里取一段可读摘要，例如命令原文或文件路径。 */
 export function toolActivityDetail(toolName: string, args: unknown): string | undefined {
 	if (typeof args !== "object" || args === null) {
