@@ -34,6 +34,14 @@ export interface CleanModeConfig {
 	animateActivity: boolean;
 	/** 是否把 Pi 的 thinking 块收成不占行的隐藏态（清爽模式下只看结论）。 */
 	hideThinking: boolean;
+	/**
+	 * 折叠时是否把扩展写入的条目（custom entry）一并收起来。
+	 *
+	 * 只收「工作条目」：运行期间与会话恢复窗口内出现的条目，例如 distill 的审计行、
+	 * tool-supervisor 的审计行、pi-metrics 的遥测行。通知提示（pi-extensions-i18n）
+	 * 无论何时都保持可见，避免把「配置读取失败」这类警告一起收掉。
+	 */
+	hideExtensionEntries: boolean;
 }
 
 export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
@@ -45,6 +53,7 @@ export const DEFAULT_CLEAN_MODE_CONFIG: CleanModeConfig = {
 	activityRows: ACTIVITY_ROWS_DEFAULT,
 	animateActivity: true,
 	hideThinking: true,
+	hideExtensionEntries: true,
 };
 
 export interface ConfigLoadResult {

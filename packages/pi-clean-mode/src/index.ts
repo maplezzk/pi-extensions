@@ -10,12 +10,13 @@
  * - TUI 句柄在 session_start 通过一个空 widget 工厂取得，render 补丁保持纯函数。
  */
 
-import type {
-	ExtensionAPI,
-	ExtensionCommandContext,
-	ExtensionContext,
+import {
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type ExtensionContext,
+	AssistantMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import type { Component, TUI } from "@earendil-works/pi-tui";
+import { Container, type Component, type TUI } from "@earendil-works/pi-tui";
 import {
 	installNoticeRenderer,
 	notifyWithSource,
@@ -28,12 +29,15 @@ import { openConfigPanel } from "./config-panel.js";
 import { debugLog, debugLogPath } from "./debug-logger.js";
 import {
 	buildActivityLines,
+	buildRunStatusLines,
 	classifyToolActivity,
 	createActivitySnapshot,
 	extractOutputTail,
 	extractThoughtHead,
+	formatActivityCountersSuffix,
 	toolActivityDetail,
 	toolActivityLabel,
+	withoutActionRows,
 	type ActivityCounters,
 	type ActivitySnapshot,
 } from "./activity.js";
@@ -46,6 +50,7 @@ import {
 	type ActivityUiHost,
 } from "./activity-area.js";
 import { installComponentPatches, type ToolRowGroupInfo } from "./component-patches.js";
+import { installExtensionEntryPatch, resolveContainerPrototypes } from "./extension-entry-patch.js";
 import { createHeaderStyler, type HeaderStyler, type ThemePainter } from "./header-style.js";
 import {
 	areAllActionGroupsExpanded,
@@ -143,6 +148,13 @@ interface Runtime {
 	runToolCount: number;
 	/** 每轮耗时账本，把耗时绑定到具体的最终答案消息上。 */
 	runDurations: RunDurationLedger;
+	/**
+	 * 会话恢复窗口：session_start 之后、首次 agent_start 之前为真。
+	 *
+	 * 历史条目与历史消息一样不会重放事件，所以这个窗口里的扩展条目也要当成
+	 * 上一轮的工作过程收起，否则 `/resume` 之后审计行会一条条铺在折叠好的对话里。
+	 */
+	historyRestoreWindow: boolean;
 }
 
 /**
@@ -230,6 +242,7 @@ function createRuntime(): Runtime {
 		activityArea: createActivityAreaRuntime(),
 		runToolCount: INITIAL_RUN_TOOL_COUNT,
 		runDurations: createRunDurationLedger(),
+		historyRestoreWindow: false,
 	};
 }
 
@@ -294,6 +307,17 @@ function createActivityDeps(runtime: Runtime): ActivityAreaDeps {
 		renderLines: (input) => {
 			const { painter, frame, maxRows, animated } = input;
 			return buildActivityLines({
+				snapshot: runtime.activity,
+				nowMs: Date.now(),
+				frame,
+				animated,
+				maxRows,
+				paint: painter,
+			});
+		},
+		renderRunStatusLines: (input) => {
+			const { painter, frame, maxRows, animated } = input;
+			return buildRunStatusLines({
 				snapshot: runtime.activity,
 				nowMs: Date.now(),
 				frame,
@@ -400,7 +424,7 @@ function requestRender(runtime: Runtime): void {
 /** 安装渲染补丁；重复调用是幂等的。 */
 function installPatches(runtime: Runtime): void {
 	runtime.restorePatches?.();
-	runtime.restorePatches = installComponentPatches({
+	const restoreComponentPatches = installComponentPatches({
 		getState: () => runtime.state,
 		getConfig: () => runtime.config,
 		styler: runtime.styler,
@@ -415,9 +439,29 @@ function installPatches(runtime: Runtime): void {
 		claimRunHeaderHost: (host) => runtime.runDurations.claimOwner(host),
 		isCurrentRunHost: (host) => runtime.runDurations.isOwner(host),
 		getActivityLines: () => runtime.activityArea.lines,
+		getActivityDetailLines: () =>
+			withoutActionRows({ lines: runtime.activityArea.lines, actionRows: runtime.activityArea.actionRows }),
+		getActivityCounters: () => formatActivityCountersSuffix(runtime.activity.counters),
+		getRunStatusLines: () => runtime.activityArea.runStatusLines,
+		isCurrentActionGroup: (groupId) => groupId === runtime.actionGroups.currentGroupId,
 		getRunDuration: (host) => runtime.runDurations.getDuration(host),
 		getRunSteps: (host) => runtime.runDurations.getSteps(host),
 	});
+	const restoreExtensionEntryPatch = installExtensionEntryPatch({
+		getState: () => runtime.state,
+		getConfig: () => runtime.config,
+		isHistoryRestoreWindow: () => runtime.historyRestoreWindow,
+		// pi-tui 可能被装成两份，条目组件继承的那份从 Pi 导出的组件往上取。
+		containerPrototypes: resolveContainerPrototypes({
+			ownContainerPrototype: Container.prototype,
+			piComponentPrototype: AssistantMessageComponent.prototype,
+		}),
+	});
+
+	runtime.restorePatches = () => {
+		restoreExtensionEntryPatch();
+		restoreComponentPatches();
+	};
 }
 
 /**
@@ -582,6 +626,8 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 
 		// 历史消息不会重放 agent_start / agent_settled，不主动处理就会整段原样展开。
 		runtime.state = restoreHistory({ state: runtime.state, config: runtime.config });
+		// 历史扩展条目同样不会重放事件，开一个恢复窗口直到本轮真正开始运行。
+		runtime.historyRestoreWindow = true;
 
 		// 通过一个不渲染内容的 widget 工厂取得 TUI 句柄，用于后续触发重绘。
 		ctx.ui.setWidget(PROBE_WIDGET_KEY, (tui: TUI): Component => {
@@ -614,6 +660,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		runtime.runStartedAtMs = Date.now();
 		runtime.runToolCount = INITIAL_RUN_TOOL_COUNT;
 		runtime.state = startRun({ state: runtime.state, config: runtime.config });
+		runtime.historyRestoreWindow = false;
 		beginActionGroupStep(runtime.actionGroups);
 		runtime.runDurations.beginRun();
 

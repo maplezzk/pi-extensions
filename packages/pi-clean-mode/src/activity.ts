@@ -4,9 +4,19 @@
  * 目标：运行期间用固定行数展示「现在在做什么」，而不是让 transcript 里的行反复增减。
  * 内容全部来自真实事件，不生成推测出来的进度。
  *
- * 行的形状：第一行是状态横条（正在做什么 + 耗时 + 计数），后面依次是思考头部、
- * 正在执行的工具与其输出尾巴。第一行由 component-patches.ts 整行铺上底色，
- * 与运行结束后的「用时」横条共用同一列与同一套视觉。
+ * 屏幕上有两个位置报进度，分工固定，不说同一句话：
+ *
+ * - 轮首槽位（整轮最上面，`buildRunStatusLines`）：只报运行级状态「在处理 + 跑了多久」，
+ *   和运行结束后的「用时」横条是同一个槽位、同一种横条，也是屏幕上唯一一条铺底色的横条；
+ * - 活动块（接在当前动作组最后一条可见行的下面，`buildActivityLines`）：依次是思考头部、
+ *   正在执行的工具与其输出尾巴，全部是最新状态，不占条、不铺底色。
+ *
+ * 分类计数（`formatActivityCountersSuffix`）也不单独占一行：它接在当前动作组的组头文案后面
+ * （`探索 · 12 步 · 读取 3 · 命令 2`）。单独占一行时，它和组头的步数在数同一件事，
+ * 加上顶部横条就变成三处在报进度。
+ *
+ * 活动块挂在最新那条动作的下面，因为最新状态必须落在列表最底下：挂在组头上方时，
+ * 展开的组里它下面还压着整组成员行，看上去就悬在中段。
  *
  * 关键约束：行每 tick 都会重算，但内容常常没变（耗时没走到下一秒、动画帧循环回同一
  * 格），因此行内容必须可比较、不变时要能整体跳过重绘；真正决定「要不要重绘」以及在
@@ -16,16 +26,20 @@
 import { formatDuration } from "./duration.js";
 import { i18n } from "./i18n.js";
 
-/** 思考动画帧；刻意比 working 慢半速。 */
-const THINKING_FRAMES = ["◌", "◔", "◑", "◕"] as const;
+/**
+ * 思考动画帧：半填充圆按顺时针转，四帧一循环。
+ *
+ * 每帧都是单格宽、被填满的墨量完全相同，所以图标不会忽大忽小；运动感来自被填充那半边的朝向。
+ * 历史选择：盲文单点（⠁⠂⠄⡀⢀⠠⠐⠈）在深色底上像一个孤立的噪点；
+ * 六段细弧线（◜◠◝◞◡◟）形状跨度大，在 150ms 一帧下像在闪。
+ */
+const THINKING_FRAMES = ["◐", "◓", "◑", "◒"] as const;
 /** 工作动画帧。 */
 const WORKING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"] as const;
-/** 静止时思考与工作的标记。 */
-const STILL_THINKING_GLYPH = "◌";
+/** 静止时思考的标记：一个点，不使用圆圈字形。 */
+const STILL_THINKING_GLYPH = "·";
 /** 静止时工作的标记。 */
 const STILL_WORKING_GLYPH = "›";
-/** 每几帧前进一次思考动画，使其慢于工作动画。 */
-const THINKING_FRAME_DIVISOR = 2;
 /** 活动区单行最大宽度。 */
 export const ACTIVITY_MAX_LINE = 110;
 /** 输出尾巴的最大宽度。 */
@@ -38,11 +52,11 @@ const COLOR_HEADING = "toolTitle";
 /** 从工具参数里尝试读取摘要的候选字段，按优先级排列。 */
 const TOOL_ARG_KEYS = ["command", "file_path", "path", "pattern", "query", "url"] as const;
 /**
- * 活动块的左缩进：与运行级「用时」横条的文案同列。
+ * 运行级横条的文案缩进：与组件补丁里折叠头（「用时 …」）的文案同列。
  *
- * 首行是铺底色的状态横条，运行中和运行结束共用同一列，切换时文案不会横向跳。
+ * 运行中与运行结束共用这一列，状态切换时文案不会横向跳；细节行再深一级。
  */
-const BLOCK_INDENT = "  ";
+const BAND_INDENT = "  ";
 /** 细节行（思考、当前动作）的缩进：比横条文案再深一级。 */
 const DETAIL_INDENT = "    ";
 /** 输出尾巴的缩进：让 `↳` 正好落在细节行文案的起始列。 */
@@ -140,8 +154,7 @@ export function activityGlyph(kind: "thinking" | "working", frame: number, anima
 
 	const safeFrame = Math.max(0, Math.floor(frame));
 	if (kind === "thinking") {
-		const index = Math.floor(safeFrame / THINKING_FRAME_DIVISOR) % THINKING_FRAMES.length;
-		return THINKING_FRAMES[index] ?? STILL_THINKING_GLYPH;
+		return THINKING_FRAMES[safeFrame % THINKING_FRAMES.length] ?? STILL_THINKING_GLYPH;
 	}
 	return WORKING_FRAMES[safeFrame % WORKING_FRAMES.length] ?? STILL_WORKING_GLYPH;
 }
@@ -289,29 +302,40 @@ export function extractThoughtHead(message: unknown): string | undefined {
 	return undefined;
 }
 
-/** 把非 0 的分类计数拼成一段文本；全为 0 时返回空串（不占版面）。 */
-function buildCounterText(counters: ActivityCounters): string {
-	const parts: string[] = [];
-	if (counters.read > 0) {
-		parts.push(i18n.t("activityCounterRead", { count: String(counters.read) }));
-	}
-	if (counters.search > 0) {
-		parts.push(i18n.t("activityCounterSearch", { count: String(counters.search) }));
-	}
-	if (counters.command > 0) {
-		parts.push(i18n.t("activityCounterCommand", { count: String(counters.command) }));
-	}
-	return parts.join(SEGMENT_SEPARATOR);
+/**
+ * 参与组头计数的分类桶，顺序即展示顺序（读取 → 搜索 → 命令）。
+ *
+ * 文案键写在这里而不是拆成几段 if：新增或去掉一个桶只改这张表，拼接逻辑不必跟着动。
+ */
+const COUNTER_BUCKETS = [
+	{ bucket: "read", messageKey: "activityCounterRead" },
+	{ bucket: "search", messageKey: "activityCounterSearch" },
+	{ bucket: "command", messageKey: "activityCounterCommand" },
+] as const satisfies ReadonlyArray<{
+	bucket: keyof ActivityCounters;
+	messageKey: Parameters<typeof i18n.t>[0];
+}>;
+
+/**
+ * 把非 0 的分类计数拼成组头后缀，例如 ` · 读取 3 · 命令 2`；没有计数时返回空串。
+ *
+ * 前缀分隔符也在这里拼，调用处直接接在组头文案后面就行，不必再判空或补分隔符。
+ * 计数为 0 的桶不显示 —— 刚开始跑时「读取 0 · 搜索 0 · 命令 0」全是噪音。
+ */
+export function formatActivityCountersSuffix(counters: ActivityCounters): string {
+	const parts = COUNTER_BUCKETS.filter(({ bucket }) => counters[bucket] > 0).map(
+		({ bucket, messageKey }) => i18n.t(messageKey, { count: String(counters[bucket]) }),
+	);
+	return parts.length > 0 ? `${SEGMENT_SEPARATOR}${parts.join(SEGMENT_SEPARATOR)}` : "";
 }
 
 /**
- * 组装活动块首行：正在做什么 + 耗时 + 已完成的动作计数。
+ * 组装轮首的运行级状态行：在处理（并行时是并行文案）+ 跑了多久。
  *
- * 这一行会被渲染层整行铺上底色，成为与「用时」横条同款的横条，因此它是活动块里
- * 唯一常驻的一行：无论当前在思考还是在跑工具，第一行永远成立，块的高度就不会抖。
- * 计数为 0 的桶不显示 —— 刚开始跑时「读取 0 · 搜索 0 · 命令 0」全是噪音。
+ * 这一行由渲染层整行铺上底色，和运行结束后的「用时」横条共用同一列与同一套视觉，
+ * 因此它是整轮最上面那个槽位里唯一的内容，越往下的细节都不归它。
  */
-function buildHeaderLine(input: ActivityRenderInput): string {
+function buildRunStatusLine(input: ActivityRenderInput): string {
 	const { snapshot, nowMs, frame, animated, paint } = input;
 	const glyph = activityGlyph("working", frame, animated);
 	const label = snapshot.running.length > 1 ? i18n.t("activityParallel") : i18n.t("activityWorking");
@@ -321,33 +345,48 @@ function buildHeaderLine(input: ActivityRenderInput): string {
 		parts.push(paint.fg(COLOR_DETAIL, formatDuration(nowMs - snapshot.startedAtMs)));
 	}
 
-	const counters = buildCounterText(snapshot.counters);
-	if (counters.length > 0) {
-		parts.push(paint.fg(COLOR_DETAIL, counters));
+	return `${BAND_INDENT}${parts.join(SEGMENT_SEPARATOR)}`;
+}
+
+/**
+ * 组装轮首槽位的状态行：只报「在处理 + 跑了多久」，不报思考、工具和计数。
+ *
+ * 轮首是整轮最上面那个槽位，它的职责只有运行级时间：和运行结束后的「用时」横条是同一种
+ * 东西，状态切换时只换文案，位置与版式都不动。细节行只出现在活动块里，
+ * 所以进度贴在新动作旁边，而顶部不会重复一份。
+ *
+ * 「处理中」这句话归这里独占：活动块里不再重复它，屏幕上只会出现一次。
+ */
+export function buildRunStatusLines(input: ActivityRenderInput): string[] {
+	if (!input.snapshot.active || input.maxRows <= 0) {
+		return [];
 	}
 
-	return `${BLOCK_INDENT}${parts.join(SEGMENT_SEPARATOR)}`;
+	return [buildRunStatusLine(input)];
 }
 
 /**
  * 组装正在执行的工具行；并行时每个动作各占一行。
  *
- * 首行的横条只说「在处理」，具体在跑什么由这里逐条列出，带输出尾巴的动作紧跟着一行。
+ * 行与「哪些行是动作名」一起返回：组头已经写出这条动作时（单条组），渲染层要把动作名
+ * 那几行去掉，只留输出尾巴，靠的就是 `actionRows`。
  */
-function buildRunningLines(input: ActivityRenderInput): string[] {
+function buildRunningLines(input: ActivityRenderInput): { lines: string[]; actionRows: number[] } {
 	const { snapshot, frame, animated, paint } = input;
 	const glyph = paint.fg(COLOR_GLYPH, `${activityGlyph("working", frame, animated)} `);
+	const lines: string[] = [];
+	const actionRows: number[] = [];
 
-	return snapshot.running.flatMap((action) => {
+	for (const action of snapshot.running) {
 		const detail = action.detail ? paint.fg(COLOR_DETAIL, ` ${action.detail}`) : "";
-		const lines = [
-			`${DETAIL_INDENT}${glyph}${paint.bold(paint.fg(COLOR_HEADING, action.label))}${detail}`,
-		];
+		actionRows.push(lines.length);
+		lines.push(`${DETAIL_INDENT}${glyph}${paint.bold(paint.fg(COLOR_HEADING, action.label))}${detail}`);
 		if (action.outputTail) {
 			lines.push(paint.fg(COLOR_DIM, `${OUTPUT_INDENT}${OUTPUT_MARKER}${action.outputTail}`));
 		}
-		return lines;
-	});
+	}
+
+	return { lines, actionRows };
 }
 
 /** 组装思考头部那一行。 */
@@ -364,22 +403,46 @@ function buildThoughtLine(input: ActivityRenderInput): string[] {
 }
 
 /**
- * 组装活动区行。
+ * 活动块：块里全部的行，以及哪几行在报「正在跑什么」。
  *
- * 第一行是铺底色的状态横条（永远在），后面依次是思考头部、正在执行的工具与其输出尾巴。
- * 超出 maxRows 时从尾部截断：预算再紧也先保住「还在跑、跑了多久、做了多少」。
+ * 分开报是为了同一句话只说一遍：组头已经写出这条动作时（组内只有一条，组头就是那条动作
+ * 的摘要），渲染层按 `actionRows` 把动作名去掉，只留思考与输出尾巴；多条成员的组头是
+ * 汇总文案（`探索 · 12 步`），没写出具体动作，就得把动作行都留下。
  */
-export function buildActivityLines(input: ActivityRenderInput): string[] {
+export interface ActivityLines {
+	/** 块里的全部行，按渲染顺序。 */
+	lines: string[];
+	/** `lines` 里属于动作名的行号（并行时多条）。 */
+	actionRows: number[];
+}
+
+/**
+ * 组装活动块。
+ *
+ * 内容是思考头部、正在执行的工具与其输出尾巴，全部是最新状态：没有铺底色的横条，
+ * 也不重复顶部的时间与分类计数。超出 maxRows 时从尾部截断：预算再紧也先保住
+ * 「正在跑什么」；被截掉的动作行也不再算动作行。
+ */
+export function buildActivityLines(input: ActivityRenderInput): ActivityLines {
 	const { snapshot, maxRows } = input;
 	if (!snapshot.active || maxRows <= 0) {
-		return [];
+		return { lines: [], actionRows: [] };
 	}
 
-	const lines = [
-		buildHeaderLine(input),
-		...buildThoughtLine(input),
-		...buildRunningLines(input),
-	];
+	const thought = buildThoughtLine(input);
+	const running = buildRunningLines(input);
+	const lines = [...thought, ...running.lines].slice(0, maxRows);
 
-	return lines.slice(0, maxRows);
+	return {
+		lines,
+		actionRows: running.actionRows
+			.map((row) => row + thought.length)
+			.filter((row) => row < lines.length),
+	};
+}
+
+/** 活动块里去掉动作名后的行：思考头部与输出尾巴；组头已经写出这条动作时用这个形态。 */
+export function withoutActionRows({ lines, actionRows }: ActivityLines): string[] {
+	const actionRowSet = new Set(actionRows);
+	return lines.filter((_line, row) => !actionRowSet.has(row));
 }

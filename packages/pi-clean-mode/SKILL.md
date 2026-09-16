@@ -17,10 +17,11 @@ description: 配置与排查 pi-clean-mode 的配置面板、折叠单位、耗�
 | `autoExpandWhileRunning` | `true` | 执行中展开、运行结束后收起 |
 | `showRunHeader` | `true` | 折叠时在最终答案上方显示 `用时 …` |
 | `enableActionGroups` | `true` | 把一个 turn 的多条工具调用收成一行组头 |
-| `showActivityArea` | `true` | 整轮最上面的实时活动行 |
+| `showActivityArea` | `true` | 运行中显示实时活动块：顶部只留整轮时间与「处理中」，分类计数接在组头后面，细节行接在最新动作下面 |
 | `activityRows` | `4` | 活动区高度，1-20 |
 | `animateActivity` | `true` | 活动区动画；关闭后只保留静止标记 |
 | `hideThinking` | `true` | 把 Pi 的 thinking 块从消息里抽掉（不是开 Pi 自己的隐藏开关，那个会留一个空行） |
+| `hideExtensionEntries` | `true` | 折叠时连扩展写入的条目一起收起；通知提示始终可见 |
 
 改配置：`/clean config`（或直接 `/config:clean-mode`）打开交互式面板，`↑`/`↓` 选、`enter`/`space` 切换、`esc` 关闭；活动区行数会再开一层 1-20 的列表（超出 8 项时列表自己滚动）。面板里每改一项立刻落盘并生效。
 
@@ -46,15 +47,23 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 组头文案里的步数不对 | 检查 `turn_start` 是否每轮都触发，以及 `tool_call` 是否带上了 toolCallId |
 | 折叠后最终答案不见了 | 该消息是否被判定成「带 tool call」。`stopReason === "length"` 的截断回复可能含未完成的 tool call，从而被当作工作过程隐藏 |
 | 耗时头不显示 | `showRunHeader` 是否为 on；`runDurationMs` 是否为空（缺少 `agent_start` 时无耗时） |
-| 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；该轮是否已认领整轮最上面那个槽位（承载者是本轮第一条 assistant 消息） |
-| 发送后一段时间没任何反餈，看着像卡住 | 活动行画在轮首槽位里，而那个槽位属于本轮第一条 assistant 消息（`message_start` 才创建）。这段窗口里绝对不能关 Pi 自带的 Working 提示，否则屏幕一片空白。判定在 `ActivityAreaDeps.hasRunHeaderHost`，它也参与去重签名 |
+| 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；该轮是否已认领轮首承载者（本轮第一条 assistant 消息），或当前组是否存在；`isCurrentActionGroup` 是否取到当前状态 |
+| 活动区一直停在顶部，不跟着最新动作走 | 活动块应接在当前组最后一条可见行末尾（`appendActivityTail`）。卡在顶部说明轮首还在读 `getActivityLines`（它只应读 `getRunStatusLines`），或当前组号对不上（`beginActionGroupStep` 是否在 turn 边界调了） |
+| 顶部又出现思考或工具行 | 轮首子组件必须读 `getRunStatusLines`（`runtime.activityArea.runStatusLines`，无计数的状态行），不能读 `getActivityLines`；顶部只承担整轮时间，细节行只属于列表末尾 |
+| 屏幕上出现两个「处理中」 | 只有轮首能写 `activityWorking` / `activityParallel`（`buildRunStatusLines`）。活动块里只能放思考、动作、输出尾巴；把状态文案或耗时再写一遍就是同一句话重复，对应断言在 `tests/activity.test.ts` 的「活动块只报最新状态」 |
+| 分类计数又单独占一行 | 计数应接在组头 chip 后面（`buildActionGroupHeaderRow` + `getActivityCounters`），不另开一行。单独一行时它和组头的「N 步」在数同一件事 |
+| 同一个动作名出现两次 | 单条组的组头就是这条动作的摘要，活动块要走 `getActivityDetailLines`（`withoutActionRows` 去掉 `actionRows` 那几行）。动作名到活动块里再列一遍，屏幕上就是同一句话两次 |
+| 历史组的组头也带计数 | 计数是本轮累计值，只能加在当前组上（`isCurrentActionGroup`）；忘了这个判断就会给历史组报出不属于它的数字 |
+| 活动块悬在组中段 | `appendActivityTail` 的「最后一条可见行」算错了：展开的组是 `groupSize - 1`，收起时是 `0`（成员行隐藏，只剩组头）；写成固定 0 就会挂到组头上、展开后看起来悬在中间 |
+| 发送后一段时间没任何反馈，看着像卡住 | 活动行要等一个能挂它的组件：轮首槽位属于本轮第一条 assistant 消息（`message_start` 才创建），组头则要等第一个工具调用。这段窗口里绝对不能关 Pi 自带的 Working 提示，否则屏幕一片空白。判定在 `ActivityAreaDeps.hasRunHeaderHost`，它也参与去重签名 |
 | 活动区闪或卡 | 检查是否绕过了内容签名去重而每次 tick 都请求重绘；行内容不变时必须跳过 |
-| 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 并请求一次重绘） |
-| 活动区首行没有底色横条 | 首行的底色由 `component-patches.ts` 的 `bandActivityHead` 铺上（`styler.band`），检查轮首子组件是否绕过了它；主题缺 `customMessageBg` 时 `band` 会退化成纯文本补齐 |
-| 活动区行没对齐 | 首行与运行级横条同列（`BLOCK_INDENT`），细节行 `DETAIL_INDENT`、输出尾巴 `OUTPUT_INDENT`；三者在 `activity.ts` 顶部 |
+| 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 与 `runtime.runStatusLines` 并请求一次重绘） |
+| 活动区行没底色 | 只有轮首那条运行级横条铺底色（`bandActivityHead` + `styler.band`），活动块里的行本来就不铺；主题缺 `customMessageBg` 时 `band` 会退化成纯文本补齐 |
+| 活动区行没对齐 | 运行级横条文案缩进是 `BAND_INDENT`，细节行 `DETAIL_INDENT`、输出尾巴 `OUTPUT_INDENT`；三者在 `activity.ts` 顶部 |
 | 活动区显示一堆 `*` | 思考头部的成对强调符由 `stripEmphasisMarkup` 剥掉；若某条消息直接写快照而不经过 `extractThoughtHead`，就会绕过它 |
 | thinking 原文还在刷屏 | `hideThinking` 是否为 on；它靠 `resolveRenderedMessage` 在 `updateContent` 前抽掉 thinking 内容块，若某条消息看不到效果，检查该消息是否只走了 `render` 而没走 `updateContent` |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
+| 清爽模式下仍有裸露的扩展行（如 `Distill` 审计行） | 该行是 `pi.appendEntry` 写的 custom entry，不在两个导出组件里。检查 `hideExtensionEntries` 是否为 on（默认 on）；条目是否在「工作窗口」内产生 —— 运行期间，或 `session_start` 后的恢复窗口；运行结束后才出现的条目不折。若两者都成立仍不隐藏，看 Pi 的 `CustomEntryComponent` 特征是否变了（本扩展靠「同时持有 entry / renderer / hasContent」识别），或该条目被注册成了 `pi-extensions-notice`（通知豁免，不折） |
 | `/resume` 或 `/reload` 后整段历史原样铺开 | `session_start` 是否调了 `restoreHistory`：历史消息不重放 `agent_start` / `agent_settled`，状态会停在 `createInitialState()` 的展开态，折叠就失效。注意即使收起，历史轮次也不会出现耗时横条 —— 耗时与步数只存在内存里，不写进会话 |
 | `session_start` 到底拿到的哪个 reason | 调试日志里记了 `reason=startup\|reload\|new\|resume\|fork` 与处理后的 `collapsed` |
 
@@ -72,17 +81,18 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 
 组内只有一条时标签直接用该动作的摘要（`toolActivityLabel` + `toolActivityDetail`），多条才用 `actionGroupHeader` 计数文案。主题缺色时 `createHeaderStyler` 在构造时探测并逐项退化成纯文本，渲染路径上没有 try/catch；横条的截断/补齐仍由 `truncateToWidth(..., pad)` 保证。
 
-## 实时活动区的三条约束
+## 实时活动区的四条约束
 
 改动 activity.ts / activity-area.ts / component-patches.ts 时必须遵守：
 
 1. 行内容不变就完全不请求重绘 → 先把行拼成字符串比较签名，不变就直接返回；
 2. 运行期间活动块行数只增不减（不足用空行补齐），否则内容高度会反复拖动下方内容；
-3. 动画固定 400ms（关闭动画 1000ms），定时器 `unref()`，且只在运行时存在；`agent_settled` 立即停掉并清空 `runtime.lines`。
+3. 动画 150ms 一帧（关闭动画 1000ms），定时器 `unref()`，且只在运行时存在；`agent_settled` 立即停掉并清空 `runtime.lines`。
+4. 思考动画帧只用「每帧单格宽、墨量恒定、只变朝向」的字符：当前是 `◐◓◑◒`（四个方向各半填充，顺时针转，四帧一循环）。不要用盲文单点（`⠁⠂⠄⡀⢀⠠⠐⠈` —— 一个孤点在深色底上像噪点），也不要用 `◌◔◕●` 这类改变填充比例的图形（视觉上会被读成忽大忽小）。
 
-活动行输出在整轮最上面：`createRunHeaderComponent` 一个组件兼管「运行中画活动块」与「结束后画 `用时` 横条」，两者共用同一个槽位（耗时在 `agent_settled` 才写入，写完活动行立即清空，不会同时出现）。只有当前轮的承载者输出活动行（`isCurrentRunHost`），否则每个历史轮次都会重复显示一遍。
+活动块的位置：接在当前组**最后一条可见行**的末尾（`appendActivityTail`）—— 展开的组接在末位成员下面，收起时成员行整行隐藏、接在组头下面，所以最新状态永远在列表最底部，不会悬在中段。轮首折叠头子组件（`createRunHeaderComponent`）只输出运行级时间（`buildRunStatusLines`：在处理 + 耗时，无计数），思考与工具细节一概不往顶部搬。两处共用 `runtime.activityArea.lines` / `runStatusLines` 与 `bandActivityHead`，且都只认「当前组」（`isCurrentActionGroup`）与「当前轮承载者」（`isCurrentRunHost`），所以历史轮次不会重复显示。运行结束后活动行清空，轮首位置换成 `用时` 横条（耗时在 `agent_settled` 才写入，两者不会同时出现）。
 
-活动块的版式（`activity.ts`）：第一行是状态横条（`处理中`/`并行执行` + 耗时 + 非 0 计数），由轮首子组件整行铺底色；后面依次是思考头部、正在执行的工具（并行逐条）与输出尾巴。三档缩进常量在 `activity.ts` 顶部（`BLOCK_INDENT` / `DETAIL_INDENT` / `OUTPUT_INDENT`），首行与运行级横条文案同列，因此状态切换不跳列。
+分工与去重（屏幕上只有一条横条，一个动作名只说一遍）：**「处理中」（或并行文案）与耗时只在轮首出现一次**（`buildRunStatusLines`），活动块里全是思考、动作、输出尾巴这类普通行，不铺底色；**分类计数也不单独占行**，它接在当前动作组的组头 chip 后面（`formatActivityCountersSuffix` → `getActivityCounters`，只给当前组）；**组内只有一条时活动块去掉动作名**：`buildActivityLines` 除了行还返回 `actionRows`（哪几行在报「正在跑什么」），`withoutActionRows` 按它过滤出「思考 + 输出尾巴」的形态，`appendActivityTail` 按组大小选形态。活动块的位置见上一段。三档缩进常量在 `activity.ts` 顶部（`BAND_INDENT` / `DETAIL_INDENT` / `OUTPUT_INDENT`），运行级横条与运行结束后的「用时 …」同列，因此状态切换不跳列。
 
 ## 边界
 
@@ -93,3 +103,4 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 - 会话重新加载后历史行不会恢复分组（组号与成员表在内存里），它们会逐条正常显示。
 - 原型补丁在 reload / shutdown 时还原；若安装后原型被其它扩展替换，本扩展不会顶掉对方的实现。
 - 与重新注册工具类的扩展（例如 `pi-extensions-tool-display`）不冲突：本扩展不调用 `pi.registerTool`。
+- 扩展条目折叠（`src/extension-entry-patch.ts`）补丁的是 pi-tui 的 `Container.prototype.render`：Pi 没导出 `CustomEntryComponent`，只能按结构特征认。只折工作条目（运行期间 + 会话恢复窗口），通知条目（`NOTICE_ENTRY_TYPE`）始终豁免。

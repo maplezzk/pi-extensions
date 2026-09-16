@@ -148,8 +148,37 @@ export interface ComponentPatchDeps {
 	claimRunHeaderHost: (host: object) => boolean;
 	/** 该承载者是否就是当前「正在运行」那一轮的承载者。 */
 	isCurrentRunHost: (host: object) => boolean;
-	/** 当前要展示在轮首的实时活动行；空数组表示不展示。 */
+	/**
+	 * 当前组的活动块：思考行与正在跑的动作行（首行就是细节行，不铺底色）；
+	 * 空数组表示不展示。接在当前组最后一条可见行的下面。
+	 */
 	getActivityLines: () => string[];
+	/**
+	 * 活动块里去掉动作名后的形态：思考行与输出尾巴。
+	 *
+	 * 组内只有一条时组头就是这条动作的摘要（`运行命令 npm test ▶`），活动块再列一次
+	 * 就变成同一句话出现两次 —— 那种情况用这个形态，动作名让给组头说。
+	 */
+	getActivityDetailLines: () => string[];
+	/**
+	 * 接在当前动作组组头文案后面的分类计数后缀，例如 ` · 读取 3 · 命令 2`；
+	 * 没有计数时为空串。只用在当前组上 —— 历史组显示本轮的累计数字是错的。
+	 */
+	getActivityCounters: () => string;
+	/**
+	 * 轮首槽位要展示的状态行：只含「在处理 + 跑了多久」，最多一行。
+	 *
+	 * 轮首只承担「整轮一共跑了多久」；思考、正在跑什么、分类计数都属于最新动作那一头，
+	 * 两块内容分开取，顶部就不会再出现一份细节。
+	 */
+	getRunStatusLines: () => string[];
+	/**
+	 * 某个动作组是不是当前 turn 的组。
+	 *
+	 * 活动块接在当前组的最后一条可见行下面（而不是挂在整轮最上面），所以它总是紧跟在
+	 * 最新动作旁边；靠组号区分当前组，历史组不会再显示一遍活动行。
+	 */
+	isCurrentActionGroup: (groupId: number) => boolean;
 	/** 查询某个承载者所属那一轮的耗时。 */
 	getRunDuration: (host: object) => number | undefined;
 	/** 查询某个承载者所属那一轮的工具调用数。 */
@@ -187,11 +216,10 @@ function buildRunHeaderLine(
 }
 
 /**
- * 给活动行的首行铺上底色。
+ * 给运行级状态行铺上底色。
  *
- * 活动块的首行是「现在在做什么」的状态行，用底色横条画出来，和运行结束后占据同一个
- * 槽位的「用时」横条就是同一种东西：状态切换时只是文案变了，底色块不会凭空出现或消失。
- * 只铺首行；补位用的空行保持空行，否则会在下面铺出一条空底色块。
+ * 屏幕上只有这一条铺底色的横条（运行中是在处理 + 耗时，结束后是「用时 …」）。活动块由
+ * 普通行组成，不铺底色，因此这里不需要判断首行是哪一种。
  */
 function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDeps): string[] {
 	const [head, ...rest] = lines;
@@ -202,14 +230,14 @@ function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDe
 }
 
 /**
- * 创建折叠头子组件。
+ * 创建轮首子组件。
  *
  * 它占着「整轮最上面」这个槽位，两块内容共用：
- * - 运行中：实时活动行（现在在做什么），耗时还不知道，所以折叠头不显示；
+ * - 运行中：轮首状态行（在处理 + 耗时），但只在两种情况下留在这里（见 render 里的判定）；
  * - 运行结束：活动行被清空，同一个位置换成「用时 Ns」横条。
  *
  * 两者不会同时出现：耗时在 agent_settled 里才写入，写完活动行立刻被清空。
- * 只有当前正在运行那一轮的承载者才输出活动行，否则同一块活动行会在每个带折叠头的
+ * 只有当前那一轮的承载者才输出这些内容，否则同一块活动行会在每个带折叠头的
  * 历史轮次里重复出现。
  */
 function createRunHeaderComponent(
@@ -217,12 +245,14 @@ function createRunHeaderComponent(
 	deps: ComponentPatchDeps,
 ): Component {
 	const content: Component = {
-		/** 轮首槽位：运行中只有活动行，已结束时只有耗时横条。 */
+		/** 轮首槽位：运行中只画整轮时间，已结束时只画耗时横条。 */
 		render: (width: number): string[] => {
-			const activity = deps.isCurrentRunHost(host) ? deps.getActivityLines() : [];
-			if (activity.length > 0) {
-				// 活动行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
-				return [HEADER_LEADING_BLANK, ...bandActivityHead(activity, width, deps)];
+			// 轮首只回答「整轮一共跑了多久」：运行中是状态横条（在处理 + 耗时），
+			// 结束后是「用时 N 步」。活动块不在顶部，它接在最新动作的下面。
+			const status = deps.isCurrentRunHost(host) ? deps.getRunStatusLines() : [];
+			if (status.length > 0) {
+				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
+				return [HEADER_LEADING_BLANK, ...bandActivityHead(status, width, deps)];
 			}
 
 			const decision = resolveRunHeader({
@@ -422,21 +452,81 @@ const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
  * 文案与折叠头文案同列（都是第 2 列），箭头和折叠头一样紧跟在文案右边且留在底色内。
  * 底色只包住这一行自己的内容，不再另加左内边距，否则底色块会比横条右缩一格。
  */
-function buildActionGroupHeaderLines(
-	group: ToolRowGroupInfo,
-	deps: ComponentPatchDeps,
-): string[] {
+function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
 	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
-	const label = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY ? countLabel : (group.summary ?? countLabel);
+	const showsStepCount = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY;
+	const label = showsStepCount ? countLabel : (group.summary ?? countLabel);
+	// 分类计数接在步数后面（`探索 · 12 步 · 读取 3 · 命令 2`），不另占一行。
+	// 只有「汇总成 N 步」的组头才带它：单条动作的组头已经写清做了什么，再加个「· 命令 1」是废话。
+	// 也只给当前组带：计数是本轮累计值，历史组显示它会报出不属于它的数字。
+	const counters =
+		showsStepCount && deps.isCurrentActionGroup(group.membership.groupId)
+			? deps.getActivityCounters()
+			: "";
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
 	const content = [
 		HEADER_INDENT,
 		label,
+		counters,
 		ARROW_GAP,
 		deps.styler.accent(chevron),
 		CHIP_TRAILING_PAD,
 	].join("");
-	return [ACTION_GROUP_HEADER_BLANK, deps.styler.chip(content)];
+	return deps.styler.chip(content);
+}
+
+/**
+ * 组装收起的动作组头（前导空行 + 组头行）。
+ */
+function buildActionGroupHeaderLines(
+	group: ToolRowGroupInfo,
+	deps: ComponentPatchDeps,
+): string[] {
+	return [ACTION_GROUP_HEADER_BLANK, buildActionGroupHeaderRow(group, deps)];
+}
+
+/** `appendActivityTail` 需要的输入。 */
+interface ActivityTailInput {
+	/** 当前工具行所属的组；未登记时为 undefined。 */
+	group: ToolRowGroupInfo | undefined;
+	/** 补丁层依赖，用于取活动行。 */
+	deps: ComponentPatchDeps;
+}
+
+/**
+ * 把活动块接到当前组「最后一条可见行」的下面。
+ *
+ * 活动块代表最新状态，必须贴在列表最底部（最新那条动作的下方）。插在组头上方时，
+ * 展开的组里它下面还压着整组成员行，看上去就悬在中段。
+ *
+ * 组收起时成员行整行隐藏，组头是该组唯一可见的行，活动块就接在它下面；
+ * 非当前组、或这一行不是最后一条可见行时原样返回。
+ *
+ * 块里全是普通行（思考、动作、输出尾巴），不铺底色：屏幕上只有轮首那条运行级横条。
+ * 组内只有一条时组头已经写出这条动作，块里就去掉动作名，只留思考与输出尾巴。
+ */
+function appendActivityTail(
+	lines: string[],
+	{ group, deps }: ActivityTailInput,
+): string[] {
+	if (!group || !deps.isCurrentActionGroup(group.membership.groupId)) {
+		return lines;
+	}
+
+	// 展开的组里最后一条可见行是末位成员；收起时只剩组头（index 0）。
+	const lastVisibleIndex = group.groupExpanded ? group.groupSize - 1 : 0;
+	if (group.membership.index !== lastVisibleIndex) {
+		return lines;
+	}
+
+	// 组内只有一条时组头就是这条动作的摘要，动作名不再重复第二遍。
+	const activity =
+		group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY ? deps.getActivityLines() : deps.getActivityDetailLines();
+	if (activity.length === 0) {
+		return lines;
+	}
+
+	return [...lines, ...activity];
 }
 
 /**
@@ -582,7 +672,8 @@ function describeToolRow(
  * 包装工具行的 render。
  *
  * 三种去向：运行级折叠时整行隐藏；多条成员的组在收起时只留首行充当组头；
- * 其余情况（含组内只有一条）直接交给 Pi 原本的渲染。
+ * 其余情况（含组内只有一条）直接交给 Pi 原本的渲染。当前组的最后一条可见行
+ * 还要在末尾接上活动块。
  */
 function buildToolMessageRender(
 	deps: ComponentPatchDeps,
@@ -611,23 +702,22 @@ function buildToolMessageRender(
 				// 收起时只留组头，没有正文可点，偏移归零避免鼠标透传算错行。
 				this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
 				this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
-				return headerLines;
+				return appendActivityTail(headerLines, { group, deps });
 			}
 			// 展开的组里，成员行本身就是一条命令，同样要带上可点击的箭头。
 			this[TOOL_ROW_BODY_OFFSET_KEY] = headerLines.length;
-			return [
-				...headerLines,
-				...withToolRowArrow(this, originalRender.call(this, width), {
-					styler: deps.styler,
-					bodyOffset: headerLines.length,
-				}),
-			];
+			const body = withToolRowArrow(this, originalRender.call(this, width), {
+				styler: deps.styler,
+				bodyOffset: headerLines.length,
+			});
+			return appendActivityTail([...headerLines, ...body], { group, deps });
 		}
 		this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
-		return withToolRowArrow(this, originalRender.call(this, width), {
+		const rendered = withToolRowArrow(this, originalRender.call(this, width), {
 			styler: deps.styler,
 			bodyOffset: NO_BODY_OFFSET,
 		});
+		return appendActivityTail(rendered, { group, deps });
 	};
 }
 

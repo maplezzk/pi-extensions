@@ -99,8 +99,11 @@ Pi exports its transcript components, so this package replaces `AssistantMessage
 | Assistant message **with** tool calls | hidden entirely (narration belongs to the work) |
 | Assistant message **without** tool calls | kept, with the duration header attached |
 | Tool row | hidden entirely, or reduced to one action-group header row |
+| Extension entry (custom entry) | rows created during the run or the session-restore window are hidden too; notices are exempt |
 
 A message without tool calls is the final answer because the agent loop only ends once a response has no tool calls left, so there is exactly one such message per run.
+
+Extension entries (rows written with `pi.appendEntry`, such as distill's audit line) are rendered by Pi's internal `CustomEntryComponent`, which is not part of Pi's public exports and carries no collapse signal. This package therefore patches `Container.prototype.render` from pi-tui, recognising entry components by "has entry + renderer + hasContent at once" and returning zero lines when collapsed. Only **work entries** are folded: rows first rendered during a run, or during the session-restore window (`session_start` until the first `agent_start`). Rows that only appear after a run settles (notices, summaries) stay visible, and pi-extensions-i18n notices are exempt at all times — otherwise warnings such as a failed config read would be folded away with the work. Set `hideExtensionEntries: false` to turn the behaviour off.
 
 Hidden rows render zero lines, so the duration header lands directly above the final answer. The header itself is a real child component wrapped in `MouseRegion` — not a string prepended during render — because Pi's `Container` computes mouse hit offsets from child heights.
 
@@ -125,7 +128,8 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
   "enabled": true,
   "autoExpandWhileRunning": true,
   "showRunHeader": true,
-  "hideThinking": true
+  "hideThinking": true,
+  "hideExtensionEntries": true
 }
 ```
 
@@ -135,10 +139,11 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 | `autoExpandWhileRunning` | Expand while running, then collapse when the run settles. |
 | `showRunHeader` | Show the `Took …` band at the top of the run. |
 | `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
-| `showActivityArea` | Show the live activity rows at the top of the run. |
+| `showActivityArea` | Show the live activity block that follows the current action group. |
 | `activityRows` | Activity area height, 1-20 (default 4). |
 | `animateActivity` | Animate the activity glyph; off keeps a still marker. |
 | `hideThinking` | Strip Pi's thinking blocks from the message entirely (on by default). |
+| `hideExtensionEntries` | Also collapse extension-written entries when collapsed (on by default); notices stay visible. |
 
 `hideThinking` removes the thinking content blocks rather than turning on Pi's own "hide thinking" setting: that setting renders thinking as a one-line placeholder, which still costs a blank row plus the spacer after it even when the label is empty. Removing the blocks drops both rows (a test asserts the line count).
 
@@ -148,34 +153,42 @@ Set `PI_CLEAN_MODE_DEBUG=1` to append event and render decisions to `<pi agent d
 
 ## Live activity area
 
-While the agent runs, a small block appears at the very top of the run:
+While the agent runs, the layout splits in two: **the very top only answers "how long has the whole run taken", and the newest state always sits below the newest action.**
 
 ```
 user: help me fix xxx
-  ⠹ Working · 42s · read 4 · search 3 · command 1   ← the first row is a full-width band
-    ◌ Thinking  tracing the token expiry path…
-    › Run Command npm test
-      ↳ 12 passing
- Explored · 5 steps ▼
+  ⠋ Working · 42s                     ← top: run-level state + time (the only band on screen)
+ Explored · 5 steps · read 4 · search 3 ▶  ← current group header: step count + this run's counters
  Run Command ls -la ▶
+ Run Command npm test                  ← newest action
+     ◐ Thinking  tracing the token expiry path…   ← activity block: right below the newest action
+     ⠋ Run Command npm test
+       ↳ 12 passing
 ```
 
-It shares one slot with the run-level `Took …` band: while the run is going the duration is unknown, so that slot holds the live block; once the run settles the block is cleared and the same slot holds the band. Both start with a full-width band at the same column, so switching state changes the text, not the layout.
+- **Top (run-level band)**: state plus run-level time only — no counters, no thinking or tool detail. While running it reads `⠋ Working · 42s`; when the run settles the same slot holds `Took 42s · 3 steps ▶`, so switching state changes the text, not the layout.
+- **Group header chip**: the action counters (`· read 3 · command 2`) are appended right after `Explored · N steps` instead of taking a row of their own — on its own row the counters simply count the same thing as the step count, and with the top band that makes three places reporting progress. Only chips summarising `N steps` carry them, and only the current group does (the numbers are this run's totals).
+- **An action is named once**: with a single member the group header *is* that action's summary (`Run Command npm test ▶`), so the block does not list the action again — it only adds the thinking head and the output tail. A multi-member header is a summary line without action names, so there the block lists what is running.
+- **Activity block**: attached below the current group's **last visible row**. With the group expanded that is its last member; with the group collapsed the member rows render zero lines and the group header is the only visible row, so the block follows it. Either way it sits at the bottom of the list instead of hanging in the middle.
 
-The first row is always the status band (`Working` / `Parallel` plus the elapsed time and the action counters); zero-valued counters are omitted. Below it come the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.
+At any moment, the newest state is at the bottom of what you see. When the run itself is collapsed (tool rows render zero lines) the block is not drawn at all and only the top band remains — collapsing means folding the process away.
+
+Every row in the block is a plain row (no background band, nothing repeated from the top): the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.
 
 Two implementation constraints matter:
 
 1. **Unchanged content never repaints.** Each tick renders the lines into a string and compares it with the previous tick; when it matches, no repaint is requested at all.
-2. **The block only grows.** During a run it is padded with blank rows up to the largest height seen in that run, so the rows below it never get pushed around. Motion is capped at 2.5fps (400ms), the timer only exists while a run is active and is `unref()`-ed; with `animateActivity: false` it slows to 1s and shows still markers.
+2. **The block only grows.** During a run it is padded with blank rows up to the largest height seen in that run, so the rows below it never get pushed around. Animation advances one frame every 150ms (about 6.7fps), the timer only exists while a run is active and is `unref()`-ed; with `animateActivity: false` it slows to 1s and shows still markers.
 
 While the area shows the current action, Pi's own `Working...` line is suppressed so the two do not say the same thing twice.
 
-The rows are emitted by the run-header component itself (`createRunHeaderComponent` in `component-patches.ts`) — one component that draws the live block while running and the `Took …` band once settled. The two never appear together: the duration is only written on `agent_settled`, and the rows are cleared in the same handler. Only the current run's host emits them, otherwise every historical run would show the same block again. The first row's background is applied by that same component through `styler.band`; padding rows stay blank.
+Rendering is split in three places that share the same row data (plus which rows name a running action): the current group's tool rows append the block after themselves (`appendActivityTail` in `component-patches.ts`; only the last visible row appends), the run-header component emits run-level time only (`createRunHeaderComponent`, reading `getRunStatusLines`), and the group chip appends this run's counters from `getActivityCounters` (built by `formatActivityCountersSuffix`). A single-member group drops the action names from the block and keeps thinking plus output tails; multi-member groups list what is running. All three only accept "the current group" and "the current run's header host", so historical turns never repeat the same content. Only the run-level band gets a background (`bandActivityHead`); block rows are emitted as-is and padding rows stay blank.
 
 ## Compatibility
 
 This package patches Pi component prototypes, so it is coupled to Pi's exported component surface (`AssistantMessageComponent.hasToolCalls`, `ToolExecutionComponent.render`, and the empty-render-means-zero-lines behaviour). It restores the original prototypes on reload and shutdown, and refuses to overwrite a prototype that another extension replaced after install.
+
+Folding extension entries (`hideExtensionEntries`) additionally patches `Container.prototype.render` from pi-tui: Pi's internal `CustomEntryComponent` is not publicly exported, so the patch recognises it by structure ("has entry + renderer + hasContent at once"). If Pi renames those fields or lets the entry component override `render`, this single behaviour degrades silently (entries become visible again) instead of failing; `tests/extension-entry-patch.test.ts` guards the recognition.
 
 `f2` was chosen because Pi's built-in keybindings do not use it. If you rebind Pi keys, avoid colliding with it.
 
