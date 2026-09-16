@@ -62,6 +62,14 @@ JSON 配置优先级高于环境变量。
 
 `/workflow-config` 和 `/pi-workflow-config` 仍作为兼容别名保留。
 
+### 报错：Subagent finished without calling structured_output
+
+**原因**：带 `schema` 的 `agent()` 只有在子 agent 通过 `subagent_done` 结束时才能拿到结果。其他任何退出方式（求助、崩溃、被取消）都不会留下结构化结果，workflow 只能报这一句通用错误，真实原因留在子 session 文件里。
+
+带 `schema` 启动的 agent 是 fire-and-forget：workflow 运行期间没有任何角色能回应求助，因此这些 agent 禁用 `caller_ping`，被阻塞的子 agent 必须把阻塞写进结构化结果（`ok: false`，原因放在 `error`/`notes`）。
+
+**处理方式**：翻 workflow 提示的子 session 文件找原因，或先解除阻塞条件再重跑。不要盲目重试——同一个阻塞会得到同一个错误。
+
 ## 用法
 
 ```js

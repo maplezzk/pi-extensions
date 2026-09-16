@@ -88,6 +88,14 @@ function getSubagentApi(): SubagentApi {
   return api as SubagentApi;
 }
 
+/**
+ * agent() 是 fire-and-forget：调用方在运行期间无法回应子 agent 的求助。
+ * caller_ping 会写 .exit 并立即结束子 session，使 structuredOutput 永远拿不到，
+ * workflow 只能把它报成"没有返回结构化结果"，阻塞原因全部丢失。
+ * 因此带 schema 的 agent() 直接禁用 caller_ping，让子 agent 只能走 subagent_done。
+ */
+const CALLER_PING_TOOL = "caller_ping";
+
 // ── options ──
 export interface SubagentWorkflowAgentOptions {
   cwd?: string;
@@ -155,7 +163,9 @@ export class SubagentWorkflowAgent {
         task,
         model: options.model ?? this.model,
         cwd: this.cwd,
-        ...(options.schema ? { structuredOutputSchema: options.schema } : {}),
+        ...(options.schema
+          ? { structuredOutputSchema: options.schema, denyTools: CALLER_PING_TOOL }
+          : {}),
       },
       this.launchCtx,
     );
