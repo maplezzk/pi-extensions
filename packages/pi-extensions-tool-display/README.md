@@ -8,6 +8,8 @@ It provides:
 - a pending registration queue for when the Pi display host loads later;
 - safe component detection and a helper for appending an audit panel to the original tool result.
 
+A result-render middleware registered for `"*"` really does run for every extension-registered tool: the host wires the middleware chain into any tool it does not already own, keeping the tool's own `renderResult` (or Pi's plain text preview when it has none) as the base. `isResultRenderPipelineActive` therefore reports `true` for those tools as well, so a consumer never needs to fall back to a separate transcript entry. Pi's own built-in tools stay behind the `registerToolOverrides` switches.
+
 It is also a standalone Pi extension. Install or include this package in Pi's package list to load the actual tool-display host. Feature package manifests include this dependency's extension entry, so installing either feature package loads one shared host without requiring a second host package.
 
 ## Boundary

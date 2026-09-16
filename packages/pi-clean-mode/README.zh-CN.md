@@ -99,8 +99,11 @@ Pi 在扩展入口导出了对话组件，本扩展替换 `AssistantMessageCompo
 | **带** tool call 的 assistant 消息 | 整条隐藏（解说属于工作过程） |
 | **不带** tool call 的 assistant 消息 | 保留，并挂上耗时头 |
 | 工具行 | 整行隐藏，或收成一行动作组组头 |
+| 扩展条目（custom entry） | 运行期间与会话恢复窗口内出现的条目一并隐藏，通知提示除外 |
 
 「不带 tool call 的消息就是最终答案」的依据是：agent 循环只有在一次回复不含 tool call 时才结束，所以一次运行里这样的消息只有最后那一条。
+
+扩展条目（`pi.appendEntry` 写的 row，例如 distill 的审计行）走的是 Pi 内部的 `CustomEntryComponent`，它不在 Pi 的公开导出里，也没有折叠信号。所以这里补丁了 pi-tui 的 `Container.prototype.render`，靠「同时持有 entry / renderer / hasContent」认 出条目组件，收起时返回 0 行。只收**工作条目**：一次运行期间，以及会话恢复窗口（`session_start` 之后、首次 `agent_start` 之前）首次渲染的条目；运行结束后才出现的条目（提示、汇总）保持可见，且 pi-extensions-i18n 的通知块无论何时都豁免 —— 否则「配置读取失败」这类警告会被一起收掉。可用 `hideExtensionEntries: false` 关掉这个行为。
 
 被隐藏的行渲染为 0 行，所以耗时头正好落在最终答案上方。耗时头本身是包了 `MouseRegion` 的真实子组件，而不是 render 里拼的字符串 —— 因为 Pi 的 `Container` 按子组件高度计算鼠标命中偏移。
 
@@ -125,7 +128,8 @@ agent 执行期间保持展开 —— 否则折叠状态下用户在答案出现
   "enabled": true,
   "autoExpandWhileRunning": true,
   "showRunHeader": true,
-  "hideThinking": true
+  "hideThinking": true,
+  "hideExtensionEntries": true
 }
 ```
 
@@ -139,6 +143,7 @@ agent 执行期间保持展开 —— 否则折叠状态下用户在答案出现
 | `activityRows` | 活动区高度，1-20，默认 4。 |
 | `animateActivity` | 是否播放动画；关闭后只保留静止标记。 |
 | `hideThinking` | 把 Pi 的 thinking 块整个抽掉（默认开）。 |
+| `hideExtensionEntries` | 折叠时连扩展写入的条目一起收起（默认开）；通知提示始终可见。 |
 
 `hideThinking` 是把 thinking 内容块从消息里抽掉，而不是开 Pi 自己的「隐藏 thinking」开关：后者会把 thinking 渲染成一行占位文本，即使把占位文案清空也会留下一个空行和它后面的 Spacer。抽掉内容块则连那两行一起消失（有测试盯着行数）。
 
@@ -181,6 +186,8 @@ agent 运行期间会显示一小块「现在在做什么」。它跟着**当前
 ## 兼容性
 
 本扩展替换 Pi 组件的原型方法，因此与 Pi 的组件导出面绑定（`AssistantMessageComponent.hasToolCalls`、`ToolExecutionComponent.render`，以及「空渲染等于 0 行」的行为）。它在 reload 与 shutdown 时还原原型，并且不会覆盖安装之后被其它扩展替换掉的原型。
+
+扩展条目折叠（`hideExtensionEntries`）额外补丁了 pi-tui 的 `Container.prototype.render`：Pi 内部的 `CustomEntryComponent` 没有公开导出，只能靠「同时持有 entry / renderer / hasContent」这个结构特征识别。Pi 若改了它的字段名、或让条目组件自己覆写 `render`，这一项会静默失效（条目重新变得可见）而不是报错；`tests/extension-entry-patch.test.ts` 盯着特征判定。
 
 选 `f2` 是因为 Pi 内置键位没有占用它。如果你改过 Pi 键位，请避免与它冲突。
 

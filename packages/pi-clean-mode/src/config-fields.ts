@@ -20,7 +20,8 @@ export type BooleanConfigKey =
 	| "enableActionGroups"
 	| "showActivityArea"
 	| "animateActivity"
-	| "hideThinking";
+	| "hideThinking"
+	| "hideExtensionEntries";
 
 /** 布尔配置项 -> 写回函数；新增布尔字段只改这张表。 */
 const BOOLEAN_FIELD_WRITERS: Record<
@@ -41,6 +42,8 @@ const BOOLEAN_FIELD_WRITERS: Record<
 	animateActivity: (config, value) => ({ ...config, animateActivity: value }),
 	// 收起 Pi 的 thinking 块。
 	hideThinking: (config, value) => ({ ...config, hideThinking: value }),
+	// 连扩展写入的条目一起收起。
+	hideExtensionEntries: (config, value) => ({ ...config, hideExtensionEntries: value }),
 };
 
 /** 把配置值文本解析成布尔；无法识别时返回 undefined。 */
