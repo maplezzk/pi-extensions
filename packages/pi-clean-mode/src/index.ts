@@ -29,12 +29,15 @@ import { openConfigPanel } from "./config-panel.js";
 import { debugLog, debugLogPath } from "./debug-logger.js";
 import {
 	buildActivityLines,
+	buildRunStatusLines,
 	classifyToolActivity,
 	createActivitySnapshot,
 	extractOutputTail,
 	extractThoughtHead,
+	formatActivityCountersSuffix,
 	toolActivityDetail,
 	toolActivityLabel,
+	withoutActionRows,
 	type ActivityCounters,
 	type ActivitySnapshot,
 } from "./activity.js";
@@ -312,6 +315,17 @@ function createActivityDeps(runtime: Runtime): ActivityAreaDeps {
 				paint: painter,
 			});
 		},
+		renderRunStatusLines: (input) => {
+			const { painter, frame, maxRows, animated } = input;
+			return buildRunStatusLines({
+				snapshot: runtime.activity,
+				nowMs: Date.now(),
+				frame,
+				animated,
+				maxRows,
+				paint: painter,
+			});
+		},
 	};
 }
 
@@ -425,8 +439,11 @@ function installPatches(runtime: Runtime): void {
 		claimRunHeaderHost: (host) => runtime.runDurations.claimOwner(host),
 		isCurrentRunHost: (host) => runtime.runDurations.isOwner(host),
 		getActivityLines: () => runtime.activityArea.lines,
+		getActivityDetailLines: () =>
+			withoutActionRows({ lines: runtime.activityArea.lines, actionRows: runtime.activityArea.actionRows }),
+		getActivityCounters: () => formatActivityCountersSuffix(runtime.activity.counters),
+		getRunStatusLines: () => runtime.activityArea.runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === runtime.actionGroups.currentGroupId,
-		hasRunToolRows: () => runtime.runToolCount > INITIAL_RUN_TOOL_COUNT,
 		getRunDuration: (host) => runtime.runDurations.getDuration(host),
 		getRunSteps: (host) => runtime.runDurations.getSteps(host),
 	});
