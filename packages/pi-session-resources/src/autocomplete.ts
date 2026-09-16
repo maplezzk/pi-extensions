@@ -120,7 +120,7 @@ function resourceSearchText(resource: SessionResource): string {
 }
 
 /** Formats one resource as a picker row without repeating the active tab type. */
-function resourceItem(resource: SessionResource): ResourceSuggestion {
+export function resourceItem(resource: SessionResource): ResourceSuggestion {
   const actions = resource.actions.map((action) => i18n.t(ACTION_LABELS[action])).join(" · ");
   const usage = resource.seenCount > 1 ? ` · ×${resource.seenCount}` : "";
   const label = resource.label;
@@ -133,13 +133,25 @@ function resourceItem(resource: SessionResource): ResourceSuggestion {
   };
 }
 
+/**
+ * Filters resources with Pi's fuzzy matcher in relevance order.
+ * `limit` is omitted by the picker, which scrolls its own window over every match.
+ */
+export function resourceMatches(
+  resources: readonly SessionResource[],
+  query: string,
+  limit?: number,
+): SessionResource[] {
+  const matches = query
+    ? fuzzyFilter([...resources], query, resourceSearchText)
+    : [...resources];
+  return limit === undefined ? matches : matches.slice(0, limit);
+}
+
 /** Filters recent resources with Pi's fuzzy matcher and caps the result set. */
 export function resourceSuggestions(
   resources: readonly SessionResource[],
   query: string,
 ): ResourceSuggestion[] {
-  const matches = query
-    ? fuzzyFilter([...resources], query, resourceSearchText)
-    : [...resources];
-  return matches.slice(0, RESOURCE_AUTOCOMPLETE_LIMIT).map(resourceItem);
+  return resourceMatches(resources, query, RESOURCE_AUTOCOMPLETE_LIMIT).map(resourceItem);
 }

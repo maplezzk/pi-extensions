@@ -13,7 +13,7 @@ A passive session-resource reference extension for the [Pi coding agent](https:/
 - Shows a rounded, accent-bordered resource picker only after `#` is typed, with no persistent panel. It follows the editor width as the terminal resizes, while files, PR/MR links, and URLs stay in separate tabs.
 - Fuzzy-filters recent resources by label, target, kind, action, and source tool. The frame, selected arrow, and selected label use the subagent widget's fixed `#4DA3FF` accent; the selected label is bold, while actions stay dim.
 - Renders candidate labels as OSC 8 hyperlinks. File links use `file://`; web and review links keep their original URL.
-- Shows a one-line `查看资源` / `View resources` button above the editor in Pi fullscreen mode. Clicking it opens the picker panel, and the pointer can then switch tabs, highlight rows, and open resources without touching the keyboard.
+- Shows a one-line `查看资源` / `View resources` button above the editor in Pi fullscreen mode, followed by per-type counts. Clicking a count opens that type directly, and the pointer can then switch tabs, highlight rows, close with `✕`, and open resources without touching the keyboard.
 - Provides both `zh-CN` and `en-US` UI text through `pi-extensions-i18n`.
 
 ## Usage
@@ -48,21 +48,23 @@ Pi only routes mouse input to components in fullscreen mode, so start Pi with `p
 
 ```text
  查看资源 FILE 3 · PR/MR 1 · URL 2
-╭─ Session resources ────────────────────────────────────╮
-│  FILE 8   PR/MR 2   URL 3                              │
-├────────────────────────────────────────────────────────┤
+╭─ Session resources ─────────────────────────────────── ✕ ─╮
+│  FILE 8   PR/MR 2   URL 3                                 │
+├───────────────────────────────────────────────────────────┤
 │ → src/index.ts                                write · read │
 │   tests/index.test.ts                                write │
-├────────────────────────────────────────────────────────┤
-│ ←/→ type · ↑/↓ select · click open · Shift+click insert │
-╰────────────────────────────────────────────────────────╯
+├───────────────────────────────────────────────────────────┤
+│ ←/→ type · ↑/↓ select · click open · ✕ close       3/8   │
+╰───────────────────────────────────────────────────────────╯
 ```
 
-- Click the button to open the picker without typing `#`. The picker then opens with an empty query, so typing goes back to the editor instead of filtering.
+- Click the button label to open the picker without typing `#`. The picker then opens with an empty query, so typing goes back to the editor instead of filtering.
+- Click a count chip such as `PR/MR 1` to open the picker directly on that type instead of switching tabs afterwards.
+- Click the `✕` at the right end of the panel's top border to close the picker, which is the same result as Esc.
 - Enter still inserts the selected reference, so keyboard and mouse stay interchangeable.
-- Click a tab to switch resource type; the pointer highlights the tab, the rows, and the button while hovering.
+- Click a tab to switch resource type; the pointer highlights the tab, the chips, the rows, and the button while hovering.
 - Click a resource row to open it, which is the same result as Cmd+click on an OSC 8 link: Pi's fullscreen renderer runs its own URL opener for the clicked link.
-- Shift+click (or Ctrl+click) a resource row to insert the reference instead of opening it.
+- When one type has more matches than the panel shows, Up/Down scrolls the list and the hint row shows the current position (`3/8`).
 - Drag inside the picker to select text, and scroll the transcript with the wheel; the header leaves wheel input to Pi.
 - Esc closes the picker, and the `#` flow keeps working unchanged.
 
