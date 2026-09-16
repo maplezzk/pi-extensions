@@ -3,6 +3,8 @@
  * - Shows agent identity + available tools as a styled widget above the editor (toggle with Ctrl+J)
  * - Provides a `subagent_done` tool for autonomous agents to self-terminate
  * - Nudges any agent that forgets to call subagent_done after generating
+ * - Respects PI_DENY_TOOLS for its own tools: a denied tool is not registered,
+ *   `caller_ping` included; `subagent_done` is never denied.
  *
  * auto-exit 历史背景：
  *   早期设计中 PI_SUBAGENT_AUTO_EXIT=1 会让 agent_end 短路退出 — agent 正常结束
@@ -74,13 +76,16 @@ export function parseDeniedTools(rawValue: string | undefined): string[] {
 
 export default function (pi: ExtensionAPI) {
   let toolNames: string[] = [];
-  let denied: string[] = [];
   let expanded = false;
 
   // Read subagent identity from env vars (set by parent orchestrator)
   const subagentName = process.env.PI_SUBAGENT_NAME ?? "";
   const subagentAgent = process.env.PI_SUBAGENT_AGENT ?? "";
-  const deniedToolsValue = process.env.PI_DENY_TOOLS;
+  // 父 session 通过 PI_DENY_TOOLS 指定的禁用工具。必须在模块加载时读一次：注册
+  // 工具发生在加载期，之后设置 env 不会影响已注册的工具。
+  // subagent_done 是完成上报的唯一出口，永不禁用。
+  const deniedTools = new Set(parseDeniedTools(process.env.PI_DENY_TOOLS));
+  const denied = [...deniedTools];
   const autoExit = process.env.PI_SUBAGENT_AUTO_EXIT === "1";
   const recorder = createSubagentActivityRecorder({
     runningChildId: process.env.PI_SUBAGENT_ID,
@@ -196,7 +201,6 @@ export default function (pi: ExtensionAPI) {
     clearNudgeTimer();
     const tools = pi.getAllTools();
     toolNames = tools.map((t) => t.name).sort();
-    denied = parseDeniedTools(deniedToolsValue);
 
     renderWidget(ctx);
   });
@@ -299,48 +303,50 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool({
-    name: "caller_ping",
-    label: "Caller Ping",
+  // caller_ping 被禁用时不注册：它只会退出 session，被禁用时应留给 subagent_done。
+  if (!deniedTools.has("caller_ping"))
+    pi.registerTool({
+      name: "caller_ping",
+      label: "Caller Ping",
     description:
       "Send a help request to the parent agent and exit this session. " +
       "The parent will be notified with your message and can resume this session with a response. " +
       "Use when you're stuck, need clarification, or need the parent to take action.",
-    parameters: Type.Object({
-      message: Type.String({ description: "What you need help with" }),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const sessionFile = process.env.PI_SUBAGENT_SESSION;
-      if (!sessionFile) {
-        throw new Error(
-          "caller_ping is only available in subagent contexts. " +
-            "PI_SUBAGENT_SESSION environment variable is not set.",
-        );
-      }
+      parameters: Type.Object({
+        message: Type.String({ description: "What you need help with" }),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const sessionFile = process.env.PI_SUBAGENT_SESSION;
+        if (!sessionFile) {
+          throw new Error(
+            "caller_ping is only available in subagent contexts. " +
+              "PI_SUBAGENT_SESSION environment variable is not set.",
+          );
+        }
 
-      doneCalled = true;
-      clearNudgeTimer();
-      recorder.callerPing();
-      const exitData = {
-        type: "ping" as const,
-        name: process.env.PI_SUBAGENT_NAME ?? "subagent",
-        message: params.message,
-      };
-      try {
-        writeFileSync(`${sessionFile}.exit`, JSON.stringify(exitData));
-      } catch (writeErr: any) {
-        process.stderr.write(
-          `[subagent-done] caller_ping: .exit 写入失败 file=${sessionFile}.exit err=${writeErr?.message ?? String(writeErr)}\n`,
-        );
-      }
+        doneCalled = true;
+        clearNudgeTimer();
+        recorder.callerPing();
+        const exitData = {
+          type: "ping" as const,
+          name: process.env.PI_SUBAGENT_NAME ?? "subagent",
+          message: params.message,
+        };
+        try {
+          writeFileSync(`${sessionFile}.exit`, JSON.stringify(exitData));
+        } catch (writeErr: any) {
+          process.stderr.write(
+            `[subagent-done] caller_ping: .exit 写入失败 file=${sessionFile}.exit err=${writeErr?.message ?? String(writeErr)}\n`,
+          );
+        }
 
-      ctx.shutdown();
-      return {
-        content: [{ type: "text", text: "Ping sent. Session will exit and parent will be notified." }],
-        details: {},
-      };
-    },
-  });
+        ctx.shutdown();
+        return {
+          content: [{ type: "text", text: "Ping sent. Session will exit and parent will be notified." }],
+          details: {},
+        };
+      },
+    });
 
   // ── subagent_done ──
   // When PI_SUBAGENT_STRUCTURED_OUTPUT_SCHEMA is set, the `result` parameter

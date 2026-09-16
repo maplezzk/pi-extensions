@@ -62,6 +62,14 @@ The `subagent` backend can be activated by either of:
 
 `/workflow-config` and `/pi-workflow-config` remain available as compatibility aliases.
 
+### Error: Subagent finished without calling structured_output
+
+**Cause**: an `agent()` call with `schema` only reports a result when the subagent finishes through `subagent_done`. Any other exit — a help request, a crash, a cancel — leaves no structured result, so the workflow can only report this generic error and the reason stays in the child session file.
+
+Agents launched with `schema` run fire-and-forget: nothing can answer a help request while the workflow is running, so these agents deny `caller_ping` and a blocked subagent must report through its structured result instead (`ok: false` plus the reason in `error`/`notes`).
+
+**Fix**: inspect the child session file the workflow reported, or re-run the task once the blocking condition is removed. Do not retry blindly — a retry against the same blocker produces the same error.
+
 ## Usage
 
 ```js

@@ -79,10 +79,15 @@ function createSessionFile(dir: string, entries: object[]): string {
   return file;
 }
 
-function withTempDir(run: (dir: string) => void) {
+/**
+ * Run a test body in a fresh temp directory and clean up afterwards.
+ * Awaits the body, so async bodies finish (and their cleanup runs) before the
+ * caller continues — an unawaited async body leaked env restore into the next test.
+ */
+async function withTempDir(run: (dir: string) => void | Promise<void>) {
   const dir = createTestDir();
   try {
-    run(dir);
+    await run(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1559,6 +1564,53 @@ describe("subagent-done.ts", () => {
         }
       });
     });
+
+    it("does not register caller_ping when PI_DENY_TOOLS denies it", async () => {
+      const { mod, restore } = await loadSubagentDoneDefaultWithEnv({
+        PI_DENY_TOOLS: "caller_ping",
+        PI_SUBAGENT_NUDGE_DISABLE: "1",
+      });
+
+      try {
+        const mock = createHandlerCapturingMockApi();
+        mod.default(mock.api);
+        const registeredNames = mock.registeredTools.map((tool) => tool.name);
+
+        assert.equal(
+          registeredNames.includes("caller_ping"),
+          false,
+          "a denied caller_ping must not be registered, otherwise the child exits " +
+            "through a ping instead of reporting its result. " +
+            `Registered tools: ${registeredNames.join(", ")}`,
+        );
+        assert.equal(
+          registeredNames.includes("subagent_done"),
+          true,
+          "subagent_done is the completion channel and must never be denied",
+        );
+      } finally {
+        restore();
+      }
+    });
+
+    it("keeps caller_ping registered when PI_DENY_TOOLS does not deny it", async () => {
+      const { mod, restore } = await loadSubagentDoneDefaultWithEnv({
+        PI_SUBAGENT_NUDGE_DISABLE: "1",
+      });
+
+      try {
+        const mock = createHandlerCapturingMockApi();
+        mod.default(mock.api);
+
+        assert.equal(
+          mock.registeredTools.some((tool) => tool.name === "caller_ping"),
+          true,
+          "caller_ping stays available when the parent does not deny it",
+        );
+      } finally {
+        restore();
+      }
+    });
   });
 });
 describe("commands", () => {
@@ -1622,6 +1674,20 @@ describe("tool registration", () => {
     for (const tool of ["subagent", "subagent_interrupt", "subagents_list", "subagent_resume"]) {
       assert.equal(allowed.has(tool), false, `${tool} should be allowed when spawning is enabled`);
     }
+  });
+
+  it("merges launch-level denyTools with agent definition restrictions", () => {
+    const testApi = getToolRegistrationTestApi();
+
+    const denied = testApi.resolveLaunchDenyTools(null, true, "caller_ping");
+    assert.equal(denied.has("caller_ping"), true, "launch-level caller_ping should be denied");
+
+    const merged = testApi.resolveLaunchDenyTools({ denyTools: "subagent" }, true, "caller_ping");
+    assert.equal(merged.has("subagent"), true, "agent definition restriction should survive");
+    assert.equal(merged.has("caller_ping"), true, "launch-level restriction should be added");
+
+    const untouched = testApi.resolveLaunchDenyTools(null, true, undefined);
+    assert.equal(untouched.has("caller_ping"), false, "no launch-level deny keeps caller_ping");
   });
 
   it("hides lifecycle tools from a child session when spawning is disabled", () => {
