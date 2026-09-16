@@ -1,21 +1,23 @@
 /**
  * 实时活动区的运行时。
  *
- * 活动行内联在整轮最上面（见 component-patches.ts 的轮首子组件），不再用 Pi 的 widget：
- * widget 固定在编辑器上下方，滚历史时它不动，看起来像钉在底部的一条状态。
+ * 活动行内联在对话里（见 component-patches.ts）：本轮已经有工具行时挂在当前动作组头上，
+ * 跟着最新动作走；还没有工具行、或者收起态看不到工具行时，回落到轮首槽位。
+ * 不用 Pi 的 widget：widget 固定在编辑器上下方，滚历史时它不动，看起来像钉在底部的一条状态。
  *
  * 为什么还要签名去重：活动行每 tick 都会重算，但内容常常没变（例如耗时没走到
  * 下一秒、动画帧循环回同一格）。内容不变时完全跳过重绘，让整屏刷新只发生在真正
  * 有新信息的时候；动画按固定节拍推进，并让定时器只在运行期间存在。
  *
  * 刷新只做两件事：更新 runtime.lines，再请求重绘。行从哪里渲染由 component-patches.ts
- * 决定（轮首的活动区子组件）；这两个动作都是 ActivityUiHost 的必需成员，刻意不套
+ * 决定（轮首子组件或当前组头的工具行）；这两个动作都是 ActivityUiHost 的必需成员，刻意不套
  * safeUiCall：它们抛错说明扩展入口的适配层坏了，应当暴露而不是吞掉；safeUiCall
  * 只用于老版本 Pi 可能缺失的可选 UI 方法。
  *
- * 另一个必须先想的点：活动行画在「本轮第一条 assistant 消息」的轮首槽位里，那条消息
- * 要等 message_start 才创建。所以从 agent_start 到第一个 token 之间活动行根本画不出来，
- * 这段时间必须留着 Pi 自带的 Working 提示，否则屏幕上什么都没有，看起来就是卡住。
+ * 另一个必须先想的点：活动行要等一个能挂它的组件先出现 —— 轮首槽位属于本轮第一条
+ * assistant 消息（message_start 才创建），组头则是第一个工具调用。所以从 agent_start
+ * 到第一个 token 之间活动行根本画不出来，这段时间必须留着 Pi 自带的 Working 提示，
+ * 否则屏幕上什么都没有，看起来就是卡住。
  */
 
 import type { ActivityPainter, ActivitySnapshot } from "./activity.js";
@@ -81,11 +83,11 @@ export interface ActivityAreaDeps {
 	/** 用给定主题渲染活动区行。 */
 	renderLines: (input: ActivityLinesInput) => string[];
 	/**
-	 * 本轮是否已经有能承载活动行的组件。
+	 * 本轮是否已经有能承载活动行的轮首组件。
 	 *
-	 * 活动行画在轮首槽位里，而那个槽位属于本轮第一条 assistant 消息，它要等
-	 * message_start 才存在；在那之前活动行画不出来，Pi 自带的 Working 提示就得继续
-	 * 顶着，否则从 agent_start 到第一个 token 之间屏幕上没有任何反餈。
+	 * 轮首槽位属于本轮第一条 assistant 消息，它要等 message_start 才存在。在那之前
+	 * 活动行画不出来（组头也还没有），Pi 自带的 Working 提示就得继续顶着，
+	 * 否则从 agent_start 到第一个 token 之间屏幕上没有任何反馈。
 	 */
 	hasRunHeaderHost: () => boolean;
 }
@@ -205,7 +207,7 @@ export function refreshActivityArea(
 
 	if (!deps.hasRunHeaderHost()) {
 		// 承载者还没出现，活动行画不出来；这时关掉 Pi 的 Working 提示会让屏幕彻底没有
-		// 反餈，看起来就是卡住。承载者出现后下一 tick 会因签名变化重新走到下面接管。
+		// 反馈，看起来就是卡住。承载者出现后下一 tick 会因签名变化重新走到下面接管。
 		restorePiWorkingIndicator(runtime, host);
 		return;
 	}

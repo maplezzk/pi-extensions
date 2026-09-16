@@ -135,7 +135,7 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 | `autoExpandWhileRunning` | Expand while running, then collapse when the run settles. |
 | `showRunHeader` | Show the `Took …` band at the top of the run. |
 | `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
-| `showActivityArea` | Show the live activity rows at the top of the run. |
+| `showActivityArea` | Show the live activity block that follows the current action group. |
 | `activityRows` | Activity area height, 1-20 (default 4). |
 | `animateActivity` | Animate the activity glyph; off keeps a still marker. |
 | `hideThinking` | Strip Pi's thinking blocks from the message entirely (on by default). |
@@ -148,19 +148,24 @@ Set `PI_CLEAN_MODE_DEBUG=1` to append event and render decisions to `<pi agent d
 
 ## Live activity area
 
-While the agent runs, a small block appears at the very top of the run:
+While the agent runs, a small block shows what is happening. It follows the **current turn's action-group header**, so progress always sits next to the latest action:
 
 ```
 user: help me fix xxx
-  ⠹ Working · 42s · read 4 · search 3 · command 1   ← the first row is a full-width band
-    ⠂ Thinking  tracing the token expiry path…
-    › Run Command npm test
+  ◜ Working · 42s · read 4 · search 3 · command 1   ← the first row is a full-width band
+    ◜ Thinking  tracing the token expiry path…
+    ⠋ Run Command npm test
       ↳ 12 passing
  Explored · 5 steps ▼
  Run Command ls -la ▶
 ```
 
-It shares one slot with the run-level `Took …` band: while the run is going the duration is unknown, so that slot holds the live block; once the run settles the block is cleared and the same slot holds the band. Both start with a full-width band at the same column, so switching state changes the text, not the layout.
+The block falls back to the very top of the run in two cases only:
+
+- the run has no tool call yet (there is no group header to attach to);
+- the work is collapsed (tool rows render zero lines).
+
+Otherwise it stays on the current group header — a new turn opens a new group, and the block travels down with it, so you never have to scroll back up. When the run settles the block is cleared and that position holds the `Took …` band instead: both start with a full-width band at the same column, so switching state changes the text, not the layout.
 
 The first row is always the status band (`Working` / `Parallel` plus the elapsed time and the action counters); zero-valued counters are omitted. Below it come the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.
 
@@ -171,7 +176,7 @@ Two implementation constraints matter:
 
 While the area shows the current action, Pi's own `Working...` line is suppressed so the two do not say the same thing twice.
 
-The rows are emitted by the run-header component itself (`createRunHeaderComponent` in `component-patches.ts`) — one component that draws the live block while running and the `Took …` band once settled. The two never appear together: the duration is only written on `agent_settled`, and the rows are cleared in the same handler. Only the current run's host emits them, otherwise every historical run would show the same block again. The first row's background is applied by that same component through `styler.band`; padding rows stay blank.
+Rendering is split in two places that share the same row data (`runtime.activityArea.lines`): the current group's tool row inserts the activity rows above its group header (`buildGroupHeadLines` in `component-patches.ts`), and the run-header component only emits them under the two fallback conditions above (`createRunHeaderComponent` in the same file). Both sides only accept "the current group" and "the current run's header host", so historical turns never repeat the block. The first row's background is applied through `styler.band`; padding rows stay blank.
 
 ## Compatibility
 
