@@ -152,8 +152,8 @@ While the agent runs, a small block shows what is happening. It follows the **cu
 
 ```
 user: help me fix xxx
-  ◜ Working · 42s · read 4 · search 3 · command 1   ← the first row is a full-width band
-    ◜ Thinking  tracing the token expiry path…
+  ⠋ Working · 42s · read 4 · search 3 · command 1   ← the first row is a full-width band
+    ◐ Thinking  tracing the token expiry path…
     ⠋ Run Command npm test
       ↳ 12 passing
  Explored · 5 steps ▼

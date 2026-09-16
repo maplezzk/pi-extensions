@@ -44,8 +44,8 @@ function renderInput(overrides: Partial<ActivityRenderInput> = {}): ActivityRend
 	};
 }
 
-/** 思考动画一圈的帧数：arc 的六段弧线。 */
-const THINKING_FRAME_COUNT = 6;
+/** 思考动画一圈的帧数：半填充圆的四个朝向。 */
+const THINKING_FRAME_COUNT = 4;
 
 test("静止模式下 thinking 与 working 使用不同标记", () => {
 	assert.equal(activityGlyph("thinking", 0, false), "·");
@@ -57,14 +57,14 @@ test("动画模式下 thinking 与 working 每帧都前进", () => {
 	assert.notEqual(activityGlyph("thinking", 0, true), activityGlyph("thinking", 1, true));
 });
 
-test("思考动画每帧都是不同弧线、单格宽，且走满一圈回到起始帧", () => {
+test("思考动画每帧都是不同朝向、单格宽，且走满一圈回到起始帧", () => {
 	const frames = new Set<string>();
 	for (let frame = 0; frame < THINKING_FRAME_COUNT; frame += 1) {
 		const glyph = activityGlyph("thinking", frame, true);
 		assert.equal(visibleWidth(glyph), 1, `${glyph} 应当只占一格，否则行宽会抖`);
 		frames.add(glyph);
 	}
-	assert.equal(frames.size, THINKING_FRAME_COUNT, "每帧应当是不同弧线");
+	assert.equal(frames.size, THINKING_FRAME_COUNT, "每帧应当是不同朝向");
 	assert.equal(
 		activityGlyph("thinking", THINKING_FRAME_COUNT, true),
 		activityGlyph("thinking", 0, true),
@@ -166,7 +166,7 @@ test("计数全为 0 时首行只留状态与耗时", () => {
 	);
 });
 
-test("思考行用当前动画帧的点，不出现圆圈字形", () => {
+test("思考行用当前动画帧，不出现改变填充比例的图形", () => {
 	const snapshot = { ...runningSnapshot(), thought: "正在追踪 token 失效路径" };
 	const lines = buildActivityLines(renderInput({ snapshot, animated: true, frame: 2 }));
 	const thoughtLine = lines.find((line) => line.includes(i18n.t("activityThinking")));
@@ -176,7 +176,7 @@ test("思考行用当前动画帧的点，不出现圆圈字形", () => {
 		thoughtLine.includes(activityGlyph("thinking", 2, true)),
 		`思考行应带当前动画帧：${thoughtLine}`,
 	);
-	assert.ok(!/[◌◔◑◕]/.test(thoughtLine), `思考行不应出现圆圈字形：${thoughtLine}`);
+	assert.ok(!/[◌◔◕●]/.test(thoughtLine), `思考行不应出现填充比例图形：${thoughtLine}`);
 });
 
 test("当前动作与其输出尾巴各占一行，且都缩进在横条之下", () => {
