@@ -9,7 +9,6 @@ import {
   isFullscreenTui,
   renderResourcePicker,
   resourceButtonSegments,
-  resourceCloseSegment,
   resourceTabSegments,
   type ResourcePickerTheme,
   SessionResourceEditor,
@@ -259,6 +258,15 @@ function plainText(text: string): string {
   return text.replace(/\x1b\][^\x07]*\x07/g, "").replace(/\x1b\[[0-9;]*m/g, "");
 }
 
+/** Locates the close label inside one rendered picker, as the pointer would see it. */
+function closeHitPoint(lines: string[]): { x: number; y: number } {
+  // The last line is the wrapped editor, then the bottom border, then the hint row.
+  const y = lines.length - 3;
+  const x = plainText(lines[y] ?? "").indexOf("✕");
+  assert.ok(y > 0 && x > 0, "the rendered hint row must expose a close label");
+  return { x, y };
+}
+
 /** Creates one wrapper with the given mouse-mode probe. */
 function createEditor(base: FakeEditor, isMouseEnabled: () => boolean): SessionResourceEditor {
   return new SessionResourceEditor(base, {
@@ -337,20 +345,21 @@ test("clicking a picker tab switches the resource type", () => {
   assert.equal(editor.getActiveKind(), "review");
 });
 
-test("the picker close button closes the panel on click", () => {
+test("the hint row close label closes the panel on click", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const editor = createEditor(new FakeEditor(), () => true);
-  const close = resourceCloseSegment(72);
-  assert.ok(close);
 
   // Without a panel the collapsed button has no close affordance.
-  assert.ok(!(editor.render(72)[0] ?? "").includes("✕"));
+  assert.ok(!plainText(editor.render(72)[0] ?? "").includes("✕"));
   editor.handleInput("#");
-  assert.ok((editor.render(72)[0] ?? "").includes("✕"));
 
-  const overClose = mouseEvent({ x: close.start + 1, y: 0 });
+  const lines = editor.render(72);
+  assert.ok(plainText(lines[lines.length - 3] ?? "").includes("✕ close"));
+  const { x, y } = closeHitPoint(lines);
+
+  const overClose = mouseEvent({ x, y });
   assert.deepEqual(editor.handleMouse({ ...overClose, type: "move" }), { handled: true, render: true });
-  assert.ok((editor.render(72)[0] ?? "").includes(SELECTED_BACKGROUND_START));
+  assert.ok((editor.render(72)[y] ?? "").includes(SELECTED_BACKGROUND_START));
 
   assert.deepEqual(editor.handleMouse(overClose), { handled: true, focus: true });
   assert.deepEqual(
@@ -361,12 +370,16 @@ test("the picker close button closes the panel on click", () => {
   assert.ok((editor.render(72)[0] ?? "").includes("View resources"));
 });
 
-test("the picker renders no close button without mouse input", () => {
+test("the picker renders no clickable close label without mouse input", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const editor = createEditor(new FakeEditor(), () => false);
   editor.handleInput("#");
   assert.equal(editor.isPickerOpen(), true);
-  assert.ok(!(editor.render(72)[0] ?? "").includes("✕"));
+  const lines = editor.render(72);
+  assert.ok(!plainText(lines[lines.length - 3] ?? "").includes("✕"));
+  // Nothing in the hint row closes the picker when Pi keeps mouse input to itself.
+  assert.equal(editor.handleMouse(mouseEvent({ x: 40, y: lines.length - 3 })), undefined);
+  assert.equal(editor.isPickerOpen(), true);
 });
 
 test("clicking a count chip opens the picker directly on that type", () => {
