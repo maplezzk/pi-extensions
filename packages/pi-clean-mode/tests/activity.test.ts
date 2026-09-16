@@ -13,6 +13,7 @@ import {
 	type ActivityRenderInput,
 } from "../src/activity.ts";
 import { i18n } from "../src/i18n.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 /** 透明的取色能力，便于断言明文。 */
 const PLAIN_PAINTER = {
@@ -43,26 +44,8 @@ function renderInput(overrides: Partial<ActivityRenderInput> = {}): ActivityRend
 	};
 }
 
-/** 盲文图案区的首尾码点；每个比特对应格子里的一个点位。 */
-const BRAILLE_BASE = 0x2800;
-const BRAILLE_LAST = 0x28ff;
-/** 思考动画一圈的帧数：盲文格子里的八个点位。 */
-const THINKING_FRAME_COUNT = 8;
-
-/** 取一个盲文字符里点亮的点数；非盲文返回 -1。 */
-function brailleDotCount(glyph: string): number {
-	const code = glyph.codePointAt(0);
-	if (code === undefined || code < BRAILLE_BASE || code > BRAILLE_LAST) {
-		return -1;
-	}
-	let bits = code - BRAILLE_BASE;
-	let count = 0;
-	while (bits > 0) {
-		count += bits & 1;
-		bits >>= 1;
-	}
-	return count;
-}
+/** 思考动画一圈的帧数：半填充圆的四个朝向。 */
+const THINKING_FRAME_COUNT = 4;
 
 test("静止模式下 thinking 与 working 使用不同标记", () => {
 	assert.equal(activityGlyph("thinking", 0, false), "·");
@@ -74,14 +57,14 @@ test("动画模式下 thinking 与 working 每帧都前进", () => {
 	assert.notEqual(activityGlyph("thinking", 0, true), activityGlyph("thinking", 1, true));
 });
 
-test("思考动画每帧只有一个点：墨量恒定，看起来不会忽大忽小", () => {
+test("思考动画每帧都是不同朝向、单格宽，且走满一圈回到起始帧", () => {
 	const frames = new Set<string>();
 	for (let frame = 0; frame < THINKING_FRAME_COUNT; frame += 1) {
 		const glyph = activityGlyph("thinking", frame, true);
-		assert.equal(brailleDotCount(glyph), 1, `${glyph} 应当只有一个点`);
+		assert.equal(visibleWidth(glyph), 1, `${glyph} 应当只占一格，否则行宽会抖`);
 		frames.add(glyph);
 	}
-	assert.equal(frames.size, THINKING_FRAME_COUNT, "每帧应当落在不同位置");
+	assert.equal(frames.size, THINKING_FRAME_COUNT, "每帧应当是不同朝向");
 	assert.equal(
 		activityGlyph("thinking", THINKING_FRAME_COUNT, true),
 		activityGlyph("thinking", 0, true),
@@ -183,7 +166,7 @@ test("计数全为 0 时首行只留状态与耗时", () => {
 	);
 });
 
-test("思考行用当前动画帧的点，不出现圆圈字形", () => {
+test("思考行用当前动画帧，不出现改变填充比例的图形", () => {
 	const snapshot = { ...runningSnapshot(), thought: "正在追踪 token 失效路径" };
 	const lines = buildActivityLines(renderInput({ snapshot, animated: true, frame: 2 }));
 	const thoughtLine = lines.find((line) => line.includes(i18n.t("activityThinking")));
@@ -193,7 +176,7 @@ test("思考行用当前动画帧的点，不出现圆圈字形", () => {
 		thoughtLine.includes(activityGlyph("thinking", 2, true)),
 		`思考行应带当前动画帧：${thoughtLine}`,
 	);
-	assert.ok(!/[◌◔◑◕]/.test(thoughtLine), `思考行不应出现圆圈字形：${thoughtLine}`);
+	assert.ok(!/[◌◔◕●]/.test(thoughtLine), `思考行不应出现填充比例图形：${thoughtLine}`);
 });
 
 test("当前动作与其输出尾巴各占一行，且都缩进在横条之下", () => {

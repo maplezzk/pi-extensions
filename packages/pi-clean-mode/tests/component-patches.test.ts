@@ -164,8 +164,10 @@ function clickAt(row: number, height: number): TuiMouseEvent {
 interface PatchHarness {
 	/** 动作组状态，用例可直接开组、登记工具调用与切换展开。 */
 	actionGroups: ActionGroupState;
-	/** 当前要展示在轮首的实时活动行；用例可直接改它模拟运行中。 */
+	/** 当前要展示的实时活动行；用例可直接改它模拟运行中。 */
 	activityLines: string[];
+	/** 本轮是否已经登记过工具调用；改它可验证活动块在轮首与组头之间切换。 */
+	hasToolRows: { value: boolean };
 	/** 运行级折叠被切换的次数。 */
 	runToggles: () => number;
 	/** 动作组被切换的次数。 */
@@ -181,6 +183,7 @@ function withPatches<T>(
 	const actionGroups = createActionGroupState();
 	const durations = new WeakMap<object, number>();
 	const activityLines: string[] = [];
+	const hasToolRows = { value: false };
 	let runHeaderAssigned = false;
 	let runHeaderHost: object | undefined;
 	let runToggleCount = 0;
@@ -222,6 +225,8 @@ function withPatches<T>(
 		},
 		isCurrentRunHost: (host) => host === runHeaderHost,
 		getActivityLines: () => activityLines,
+		isCurrentActionGroup: (groupId) => groupId === actionGroups.currentGroupId,
+		hasRunToolRows: () => hasToolRows.value,
 		getRunDuration: (host) => durations.get(host),
 		getRunSteps: () => RUN_STEPS,
 	});
@@ -229,6 +234,7 @@ function withPatches<T>(
 		return run({
 			actionGroups,
 			activityLines,
+			hasToolRows,
 			runToggles: () => runToggleCount,
 			groupToggles: () => groupToggleCount,
 		});
@@ -265,7 +271,7 @@ function assertChevronFollowsLabel(line: string, label: string, chevron: string)
 	);
 }
 
-test("运行中活动行显示在当前轮的轮首", () => {
+test("本轮还没有工具行时，活动行留在轮首", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		harness.activityLines.push(ACTIVITY_ROW);
 		const component = new AssistantMessageComponent(workMessage());
@@ -285,6 +291,77 @@ test("运行中活动行显示在当前轮的轮首", () => {
 			lines.slice(0, ACTIVITY_HEAD_ROW + 1).map((line) => line.trimEnd()),
 			["", ACTIVITY_ROW],
 			"活动行应在工作过程正文之前",
+		);
+	});
+});
+
+test("本轮已有工具行时，活动行挂在当前组的组头上", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		beginActionGroupStep(harness.actionGroups);
+		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
+		harness.hasToolRows.value = true;
+		harness.activityLines.push(ACTIVITY_ROW);
+
+		const rendered = linesOf(toolComponent()).map(stripAnsi);
+
+		assert.equal(rendered[HEADER_BLANK_ROW]?.trimEnd(), "", "前导空行在活动行上方");
+		assert.equal(rendered[ACTIVITY_HEAD_ROW]?.trimEnd(), ACTIVITY_ROW, "活动行紧跟在空行之后");
+		assert.equal(
+			visibleWidth(rendered[ACTIVITY_HEAD_ROW] ?? ""),
+			WIDTH,
+			"活动首行应铺满整行",
+		);
+		assert.ok(
+			(rendered[ACTIVITY_HEAD_ROW + 1] ?? "").includes(SINGLE_ACTION_SUMMARY),
+			`活动行下面就是组头：${rendered.join("\n")}`,
+		);
+	});
+});
+
+test("历史组的组头不重复显示活动行", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		beginActionGroupStep(harness.actionGroups);
+		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
+		beginActionGroupStep(harness.actionGroups);
+		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
+		harness.hasToolRows.value = true;
+		harness.activityLines.push(ACTIVITY_ROW);
+
+		assert.ok(
+			!linesOf(toolComponent("call-1")).join("\n").includes(ACTIVITY_ROW),
+			"历史组不应带活动行",
+		);
+		assert.ok(
+			linesOf(toolComponent("call-2")).join("\n").includes(ACTIVITY_ROW),
+			"当前组应带活动行",
+		);
+	});
+});
+
+test("活动行不会同时出现在轮首与组头", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		beginActionGroupStep(harness.actionGroups);
+		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
+		harness.hasToolRows.value = true;
+		harness.activityLines.push(ACTIVITY_ROW);
+
+		const host = new AssistantMessageComponent(workMessage());
+		assert.ok(!linesOf(host).join("\n").includes(ACTIVITY_ROW), "轮首不再重复显示");
+		assert.ok(linesOf(toolComponent()).join("\n").includes(ACTIVITY_ROW), "只在当前组头显示");
+	});
+});
+
+test("收起态下活动行回落到轮首", () => {
+	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const host = new AssistantMessageComponent(workMessage());
+		harness.hasToolRows.value = true;
+		harness.activityLines.push(ACTIVITY_ROW);
+
+		const rendered = linesOf(host).map(stripAnsi);
+		assert.equal(
+			rendered[ACTIVITY_HEAD_ROW]?.trimEnd(),
+			ACTIVITY_ROW,
+			"收起态工具行整行隐藏，活动行必须回落到轮首",
 		);
 	});
 });
