@@ -57,8 +57,14 @@ const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
 const SINGLE_ACTION_SUMMARY = "运行命令 ls -la";
 /** 轮首活动行里的细节行（思考、工具）；轮首不应再出现它。 */
 const ACTIVITY_ROW = "│ ⠹ 运行命令 npm test";
-/** 轮首状态行：只报在处理与耗时，回落时轮首只画这一行。 */
-const RUN_STATUS_ROW = "│ ⠋ 在处理 · 7s";
+/** 活动块首行：带计数的状态横条；轮首自留的那份不带计数，两者文案不同。 */
+const ACTIVITY_HEAD_ROW_TEXT = "│ ⠋ 在处理 · 7s · 读取 4";
+/**
+ * 轮首槽位的状态行：只报在处理与耗时。
+ *
+ * 它与活动块首行只差后面的计数，所以断言要整行比，不能用子串比。
+ */
+const RUN_STATUS_ROW = "│ ⠋ 工作 7s";
 /** 活动行首行在组件里的行号：折叠头子组件输出「空行 + 活动行」，所以是第 1 行。 */
 const ACTIVITY_HEAD_ROW = 1;
 /** 工具调用 id。 */
@@ -170,8 +176,6 @@ interface PatchHarness {
 	activityLines: string[];
 	/** 轮首槽位的状态行（只在在处理 + 耗时）；用例可直接改它模拟运行中。 */
 	runStatusLines: string[];
-	/** 本轮是否已经登记过工具调用；改它可验证活动块在轮首与组头之间切换。 */
-	hasToolRows: { value: boolean };
 	/** 运行级折叠被切换的次数。 */
 	runToggles: () => number;
 	/** 动作组被切换的次数。 */
@@ -188,7 +192,6 @@ function withPatches<T>(
 	const durations = new WeakMap<object, number>();
 	const activityLines: string[] = [];
 	const runStatusLines: string[] = [];
-	const hasToolRows = { value: false };
 	let runHeaderAssigned = false;
 	let runHeaderHost: object | undefined;
 	let runToggleCount = 0;
@@ -232,7 +235,6 @@ function withPatches<T>(
 		getActivityLines: () => activityLines,
 		getRunStatusLines: () => runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === actionGroups.currentGroupId,
-		hasRunToolRows: () => hasToolRows.value,
 		getRunDuration: (host) => durations.get(host),
 		getRunSteps: () => RUN_STEPS,
 	});
@@ -241,7 +243,6 @@ function withPatches<T>(
 			actionGroups,
 			activityLines,
 			runStatusLines,
-			hasToolRows,
 			runToggles: () => runToggleCount,
 			groupToggles: () => groupToggleCount,
 		});
@@ -302,78 +303,110 @@ test("本轮还没有工具行时，轮首只画状态行", () => {
 	});
 });
 
-test("本轮已有工具行时，活动行挂在当前组的组头上", () => {
+test("当前组展开时，活动块接在末位成员行下面", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
-		harness.hasToolRows.value = true;
-		harness.activityLines.push(ACTIVITY_ROW);
+		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
+		toggleActionGroup(harness.actionGroups, harness.actionGroups.currentGroupId);
+		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
 
-		const rendered = linesOf(toolComponent()).map(stripAnsi);
+		const headText = linesOf(toolComponent("call-1")).map(stripAnsi).join("\n");
+		const lastLines = linesOf(toolComponent("call-2")).map(stripAnsi);
 
-		assert.equal(rendered[HEADER_BLANK_ROW]?.trimEnd(), "", "前导空行在活动行上方");
-		assert.equal(rendered[ACTIVITY_HEAD_ROW]?.trimEnd(), ACTIVITY_ROW, "活动行紧跟在空行之后");
-		assert.equal(
-			visibleWidth(rendered[ACTIVITY_HEAD_ROW] ?? ""),
-			WIDTH,
-			"活动首行应铺满整行",
+		assert.ok(!headText.includes(ACTIVITY_ROW), `组头行不该带活动块：${headText}`);
+		assert.deepEqual(
+			lastLines.slice(-2).map((line) => line.trimEnd()),
+			[ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW],
+			`活动块应贴在末位成员下面：${lastLines.join("\n")}`,
 		);
-		assert.ok(
-			(rendered[ACTIVITY_HEAD_ROW + 1] ?? "").includes(SINGLE_ACTION_SUMMARY),
-			`活动行下面就是组头：${rendered.join("\n")}`,
+		assert.equal(
+			visibleWidth(lastLines[lastLines.length - 2] ?? ""),
+			WIDTH,
+			"活动块首行应铺满整行",
 		);
 	});
 });
 
-test("历史组的组头不重复显示活动行", () => {
+test("组收起时，成员行整行隐藏，活动块接在组头下面", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		beginActionGroupStep(harness.actionGroups);
+		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
+		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
+		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
+
+		const headLines = linesOf(toolComponent("call-1")).map(stripAnsi);
+		assert.deepEqual(
+			headLines.slice(-2).map((line) => line.trimEnd()),
+			[ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW],
+			`组头是该组唯一可见的行，活动块接在它下面：${headLines.join("\n")}`,
+		);
+		assert.deepEqual(linesOf(toolComponent("call-2")), [], "收起组的成员行整行隐藏");
+	});
+});
+
+test("历史组不显示活动块", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
-		harness.hasToolRows.value = true;
-		harness.activityLines.push(ACTIVITY_ROW);
+		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
 
 		assert.ok(
 			!linesOf(toolComponent("call-1")).join("\n").includes(ACTIVITY_ROW),
-			"历史组不应带活动行",
+			"历史组不应带活动块",
 		);
 		assert.ok(
 			linesOf(toolComponent("call-2")).join("\n").includes(ACTIVITY_ROW),
-			"当前组应带活动行",
+			"当前组应带活动块",
 		);
 	});
 });
 
-test("活动块挂在组头时，轮首不再重复状态行", () => {
+test("轮首只画运行级时间，活动细节接在组尾", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
-		harness.hasToolRows.value = true;
-		harness.activityLines.push(RUN_STATUS_ROW, ACTIVITY_ROW);
+		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
 		harness.runStatusLines.push(RUN_STATUS_ROW);
 
-		const headText = linesOf(new AssistantMessageComponent(workMessage())).join("\n");
-		assert.ok(!headText.includes(RUN_STATUS_ROW), `轮首不应重复运行级状态：${headText}`);
-		assert.ok(!headText.includes(ACTIVITY_ROW), `轮首不应出现活动细节：${headText}`);
-		assert.ok(linesOf(toolComponent()).join("\n").includes(ACTIVITY_ROW), "只在当前组头显示");
+		const headLines = linesOf(new AssistantMessageComponent(workMessage())).map(stripAnsi);
+		assert.equal(headLines[ACTIVITY_HEAD_ROW]?.trimEnd(), RUN_STATUS_ROW, "轮首应显示整轮时间");
+		assert.ok(
+			!headLines.join("\n").includes(ACTIVITY_ROW),
+			`轮首不应出现活动细节：${headLines.join("\n")}`,
+		);
+
+		const tailLines = linesOf(toolComponent()).map(stripAnsi);
+		assert.equal(
+			tailLines[tailLines.length - 1]?.trimEnd(),
+			ACTIVITY_ROW,
+			`活动细节应接在组尾：${tailLines.join("\n")}`,
+		);
+		assert.equal(
+			tailLines[tailLines.length - 2]?.trimEnd(),
+			ACTIVITY_HEAD_ROW_TEXT,
+			"组尾那份活动块的首行是带计数的状态横条",
+		);
 	});
 });
 
-test("收起态下轮首只画状态行", () => {
+test("运行级收起时轮首只画运行级时间，活动块不出现", () => {
 	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const host = new AssistantMessageComponent(workMessage());
-		harness.hasToolRows.value = true;
-		harness.activityLines.push(RUN_STATUS_ROW, ACTIVITY_ROW);
+		beginActionGroupStep(harness.actionGroups);
+		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
+		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
 		harness.runStatusLines.push(RUN_STATUS_ROW);
 
-		const rendered = linesOf(host).map(stripAnsi);
+		const rendered = linesOf(new AssistantMessageComponent(workMessage())).map(stripAnsi);
 		assert.equal(
 			rendered[ACTIVITY_HEAD_ROW]?.trimEnd(),
 			RUN_STATUS_ROW,
-			"收起态工具行整行隐藏，轮首只留运行级状态行",
+			"运行级收起时轮首只留运行级时间",
 		);
-		assert.ok(!rendered.join("\n").includes(ACTIVITY_ROW), "收起态轮首不应出现活动细节");
+		assert.ok(!rendered.join("\n").includes(ACTIVITY_ROW), "收起时活动块整块隐藏");
+		assert.deepEqual(linesOf(toolComponent()), [], "运行级收起时工具行整行隐藏");
 	});
 });
 

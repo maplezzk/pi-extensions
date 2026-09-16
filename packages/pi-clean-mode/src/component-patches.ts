@@ -148,29 +148,22 @@ export interface ComponentPatchDeps {
 	claimRunHeaderHost: (host: object) => boolean;
 	/** 该承载者是否就是当前「正在运行」那一轮的承载者。 */
 	isCurrentRunHost: (host: object) => boolean;
-	/** 当前要展示的实时活动块；空数组表示不展示。挂在当前动作组头上。 */
+	/** 当前要展示的实时活动块；空数组表示不展示。接在当前组最后一条可见行的下面。 */
 	getActivityLines: () => string[];
 	/**
 	 * 轮首槽位要展示的状态行：只含「在处理 + 跑了多久」，最多一行。
 	 *
-	 * 轮首是整轮最上面那个位置，它只承担运行级时间信息；思考、正在跑什么、分类计数
-	 * 都属于当前动作组头。两块内容分开取，顶部就不会再出现一份思考或工具细节。
+	 * 轮首只承担「整轮一共跑了多久」；思考、正在跑什么、分类计数都属于最新动作那一头，
+	 * 两块内容分开取，顶部就不会再出现一份细节。
 	 */
 	getRunStatusLines: () => string[];
 	/**
 	 * 某个动作组是不是当前 turn 的组。
 	 *
-	 * 活动块挂在当前组头上（而不是挂在整轮最上面），所以它总是紧跟在最新动作旁边；
-	 * 靠组号区分当前组，历史组不会再显示一遍活动行。
+	 * 活动块接在当前组的最后一条可见行下面（而不是挂在整轮最上面），所以它总是紧跟在
+	 * 最新动作旁边；靠组号区分当前组，历史组不会再显示一遍活动行。
 	 */
 	isCurrentActionGroup: (groupId: number) => boolean;
-	/**
-	 * 本轮是否已经登记过工具调用 —— 屏幕上是否已经有可以挂活动块的动作组头。
-	 *
-	 * 为假时（第一个工具调用之前）轮首退而展示运行级时间；否则运行刚开始那段时间里
-	 * 既没有工具行、又已经关掉 Pi 自带的 Working 提示，画面会一片空白。
-	 */
-	hasRunToolRows: () => boolean;
 	/** 查询某个承载者所属那一轮的耗时。 */
 	getRunDuration: (host: object) => number | undefined;
 	/** 查询某个承载者所属那一轮的工具调用数。 */
@@ -238,14 +231,11 @@ function createRunHeaderComponent(
 	deps: ComponentPatchDeps,
 ): Component {
 	const content: Component = {
-		/** 轮首槽位：运行中只在回落条件下画状态行，已结束时只画耗时横条。 */
+		/** 轮首槽位：运行中只画整轮时间，已结束时只画耗时横条。 */
 		render: (width: number): string[] => {
-			// 活动块平时挂在当前动作组头上（跟着最新动作走），只有两种回落：本轮还没
-			// 登记过工具调用（屏幕上没有组头可挂），或者收起态下工具行整行隐藏。
-			// 回落时轮首只画运行级时间：思考与工具细节仍然只属于组头，不往顶部搬。
-			const statusAtHeader =
-				deps.isCurrentRunHost(host) && (deps.getState().collapsed || !deps.hasRunToolRows());
-			const status = statusAtHeader ? deps.getRunStatusLines() : [];
+			// 轮首只回答「整轮一共跑了多久」：运行中是状态横条（在处理 + 耗时），
+			// 结束后是「用时 N 步」。活动块不在顶部，它接在最新动作的下面。
+			const status = deps.isCurrentRunHost(host) ? deps.getRunStatusLines() : [];
 			if (status.length > 0) {
 				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
 				return [HEADER_LEADING_BLANK, ...bandActivityHead(status, width, deps)];
@@ -472,37 +462,45 @@ function buildActionGroupHeaderLines(
 	return [ACTION_GROUP_HEADER_BLANK, buildActionGroupHeaderRow(group, deps)];
 }
 
-/** `buildGroupHeadLines` 的输入。 */
-interface GroupHeadLinesInput {
-	/** 当前工具行所属的组。 */
-	group: ToolRowGroupInfo;
+/** `appendActivityTail` 需要的输入。 */
+interface ActivityTailInput {
+	/** 当前工具行所属的组；未登记时为 undefined。 */
+	group: ToolRowGroupInfo | undefined;
 	/** 补丁层依赖，用于取活动行。 */
 	deps: ComponentPatchDeps;
 	/** 渲染宽度，铺底色的活动首行要用。 */
 	width: number;
-	/** 原组头行（前导空行 + 组头行）。 */
-	headerLines: string[];
 }
 
 /**
- * 组装组头块：活动块（只有当前组才有）插在组头行上方。
+ * 把活动块接到当前组「最后一条可见行」的下面。
  *
- * 活动块挂在当前组的组头上而不是整轮最上面，所以进度行总是贴着最新动作，
- * 不用回头往上看；历史组拿到的是空活动行，直接返回原组头。
+ * 活动块代表最新状态，必须贴在列表最底部（最新那条动作的下方）。插在组头上方时，
+ * 展开的组里它下面还压着整组成员行，看上去就悬在中段。
+ *
+ * 组收起时成员行整行隐藏，组头是该组唯一可见的行，活动块就接在它下面；
+ * 非当前组、或这一行不是最后一条可见行时原样返回。
  */
-function buildGroupHeadLines(input: GroupHeadLinesInput): string[] {
-	const { group, deps, width, headerLines } = input;
-	const activity = deps.isCurrentActionGroup(group.membership.groupId)
-		? deps.getActivityLines()
-		: [];
-	if (activity.length === 0) {
-		return headerLines;
+function appendActivityTail(
+	lines: string[],
+	{ group, deps, width }: ActivityTailInput,
+): string[] {
+	if (!group || !deps.isCurrentActionGroup(group.membership.groupId)) {
+		return lines;
 	}
-	return [
-		ACTION_GROUP_HEADER_BLANK,
-		...bandActivityHead(activity, width, deps),
-		buildActionGroupHeaderRow(group, deps),
-	];
+
+	// 展开的组里最后一条可见行是末位成员；收起时只剩组头（index 0）。
+	const lastVisibleIndex = group.groupExpanded ? group.groupSize - 1 : 0;
+	if (group.membership.index !== lastVisibleIndex) {
+		return lines;
+	}
+
+	const activity = deps.getActivityLines();
+	if (activity.length === 0) {
+		return lines;
+	}
+
+	return [...lines, ...bandActivityHead(activity, width, deps)];
 }
 
 /**
@@ -648,7 +646,8 @@ function describeToolRow(
  * 包装工具行的 render。
  *
  * 三种去向：运行级折叠时整行隐藏；多条成员的组在收起时只留首行充当组头；
- * 其余情况（含组内只有一条）直接交给 Pi 原本的渲染。
+ * 其余情况（含组内只有一条）直接交给 Pi 原本的渲染。当前组的最后一条可见行
+ * 还要在末尾接上活动块。
  */
 function buildToolMessageRender(
 	deps: ComponentPatchDeps,
@@ -673,28 +672,26 @@ function buildToolMessageRender(
 		}
 		if (mode === TOOL_ROW_GROUP_HEADER && group) {
 			const headerLines = buildActionGroupHeaderLines(group, deps);
-			const headLines = buildGroupHeadLines({ group, deps, width, headerLines });
 			if (!group.groupExpanded) {
 				// 收起时只留组头，没有正文可点，偏移归零避免鼠标透传算错行。
 				this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
 				this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
-				return headLines;
+				return appendActivityTail(headerLines, { group, deps, width });
 			}
 			// 展开的组里，成员行本身就是一条命令，同样要带上可点击的箭头。
-			this[TOOL_ROW_BODY_OFFSET_KEY] = headLines.length;
-			return [
-				...headLines,
-				...withToolRowArrow(this, originalRender.call(this, width), {
-					styler: deps.styler,
-					bodyOffset: headLines.length,
-				}),
-			];
+			this[TOOL_ROW_BODY_OFFSET_KEY] = headerLines.length;
+			const body = withToolRowArrow(this, originalRender.call(this, width), {
+				styler: deps.styler,
+				bodyOffset: headerLines.length,
+			});
+			return appendActivityTail([...headerLines, ...body], { group, deps, width });
 		}
 		this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
-		return withToolRowArrow(this, originalRender.call(this, width), {
+		const rendered = withToolRowArrow(this, originalRender.call(this, width), {
 			styler: deps.styler,
 			bodyOffset: NO_BODY_OFFSET,
 		});
+		return appendActivityTail(rendered, { group, deps, width });
 	};
 }
 

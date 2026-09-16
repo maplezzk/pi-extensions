@@ -153,28 +153,26 @@ Set `PI_CLEAN_MODE_DEBUG=1` to append event and render decisions to `<pi agent d
 
 ## Live activity area
 
-While the agent runs, a small block shows what is happening. It follows the **current turn's action-group header**, so progress always sits next to the latest action:
+While the agent runs, the layout splits in two: **the very top only answers "how long has the whole run taken", and the newest state always sits below the newest action.**
 
 ```
 user: help me fix xxx
-  ⠋ Working · 42s · read 4 · search 3 · command 1   ← the first row is a full-width band
-    ◐ Thinking  tracing the token expiry path…
-    ⠋ Run Command npm test
-      ↳ 12 passing
- Explored · 5 steps ▼
+  ⠋ Working · 42s                     ← top: run-level time
+ Explored · 5 steps ▶                  ← current group header (with a collapsed group it is the only visible row)
  Run Command ls -la ▶
+ Run Command npm test                  ← newest action
+   ⠋ Working · 42s · read 4 · search 3   ← activity block: right below the newest action
+     ◐ Thinking  tracing the token expiry path…
+     ⠋ Run Command npm test
+       ↳ 12 passing
 ```
 
-The block falls back to the very top of the run in two cases only:
+- **Top (run-level band)**: run-level time only — no counters, no thinking or tool detail. While running it reads `⠋ Working · 42s`; when the run settles the same slot holds `Took 42s · 3 steps ▶`, so switching state changes the text, not the layout.
+- **Activity block**: attached below the current group's **last visible row**. With the group expanded that is its last member; with the group collapsed the member rows render zero lines and the group header is the only visible row, so the block follows it. Either way it sits at the bottom of the list instead of hanging in the middle.
 
-- the run has no tool call yet (there is no group header to attach to);
-- the work is collapsed (tool rows render zero lines).
+At any moment, the newest state is at the bottom of what you see. When the run itself is collapsed (tool rows render zero lines) the block is not drawn at all and only the top band remains — collapsing means folding the process away.
 
-On that fallback the top shows **only the run-level status line** (`⠋ Working · 42s`): it says the run is alive and for how long, with no counters and none of the thinking or tool detail — those rows belong to the current group header and are never duplicated at the top.
-
-Otherwise it stays on the current group header — a new turn opens a new group, and the block travels down with it, so you never have to scroll back up. When the run settles the block is cleared and that position holds the `Took …` band instead: both start with a full-width band at the same column, so switching state changes the text, not the layout.
-
-The first row is always the status band (`Working` / `Parallel` plus the elapsed time and the action counters); zero-valued counters are omitted. Below it come the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.
+The block's first row is the status band (`Working` / `Parallel` plus the elapsed time and the action counters); zero-valued counters are omitted. Below it come the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.
 
 Two implementation constraints matter:
 
@@ -183,7 +181,7 @@ Two implementation constraints matter:
 
 While the area shows the current action, Pi's own `Working...` line is suppressed so the two do not say the same thing twice.
 
-Rendering is split in two places that share the same row data (`runtime.activityArea.lines`): the current group's tool row inserts the activity rows above its group header (`buildGroupHeadLines` in `component-patches.ts`), and the run-header component only emits them under the two fallback conditions above (`createRunHeaderComponent` in the same file). Both sides only accept "the current group" and "the current run's header host", so historical turns never repeat the block. The first row's background is applied through `styler.band`; padding rows stay blank.
+Rendering is split in two places that share the same row data (`runtime.activityArea.lines`): the current group's tool rows append the block after themselves (`appendActivityTail` in `component-patches.ts`; only the last visible row appends), and the run-header component emits run-level time only (`createRunHeaderComponent`, reading `getRunStatusLines`). Both sides only accept "the current group" and "the current run's header host", so historical turns never repeat the same content. The block's first row gets its background through `styler.band`; padding rows stay blank.
 
 ## Compatibility
 

@@ -17,7 +17,7 @@ description: 配置与排查 pi-clean-mode 的配置面板、折叠单位、耗�
 | `autoExpandWhileRunning` | `true` | 执行中展开、运行结束后收起 |
 | `showRunHeader` | `true` | 折叠时在最终答案上方显示 `用时 …` |
 | `enableActionGroups` | `true` | 把一个 turn 的多条工具调用收成一行组头 |
-| `showActivityArea` | `true` | 运行中显示实时活动块，跟着当前动作组头走（无组头或收起时轮首只显示运行级时间） |
+| `showActivityArea` | `true` | 运行中显示实时活动块：顶部只留整轮时间，最新状态接在最新动作下面 |
 | `activityRows` | `4` | 活动区高度，1-20 |
 | `animateActivity` | `true` | 活动区动画；关闭后只保留静止标记 |
 | `hideThinking` | `true` | 把 Pi 的 thinking 块从消息里抽掉（不是开 Pi 自己的隐藏开关，那个会留一个空行） |
@@ -48,12 +48,13 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 折叠后最终答案不见了 | 该消息是否被判定成「带 tool call」。`stopReason === "length"` 的截断回复可能含未完成的 tool call，从而被当作工作过程隐藏 |
 | 耗时头不显示 | `showRunHeader` 是否为 on；`runDurationMs` 是否为空（缺少 `agent_start` 时无耗时） |
 | 活动区不显示 | `showActivityArea` 是否为 on；快照是否 `active`（未运行时不显示）；该轮是否已认领轮首承载者（本轮第一条 assistant 消息），或当前组是否存在；`isCurrentActionGroup` / `hasRunToolRows` 是否取到当前状态 |
-| 活动区一直停在顶部，不跟着最新动作走 | 本轮已经有工具行时，活动块应由当前组的组头渲染（`buildGroupHeadLines`），轮首只在 `collapsed || !hasRunToolRows()` 时才画。卡在顶部说明 `hasRunToolRows` 恒为假（`runtime.runToolCount` 没被登记）或当前组号对不上（`beginActionGroupStep` 是否在 turn 边界调了） |
-| 顶部又出现思考或工具行 | 轮首子组件必须读 `getRunStatusLines`（`runtime.activityArea.runStatusLines`，无计数的状态行），不能读 `getActivityLines`；轮首只承担运行级时间，细节行只属于组头 |
+| 活动区一直停在顶部，不跟着最新动作走 | 活动块应接在当前组最后一条可见行末尾（`appendActivityTail`）。卡在顶部说明轮首还在读 `getActivityLines`（它只应读 `getRunStatusLines`），或当前组号对不上（`beginActionGroupStep` 是否在 turn 边界调了） |
+| 顶部又出现思考或工具行 | 轮首子组件必须读 `getRunStatusLines`（`runtime.activityArea.runStatusLines`，无计数的状态行），不能读 `getActivityLines`；顶部只承担整轮时间，细节行只属于列表末尾 |
+| 活动块悬在组中段 | `appendActivityTail` 的「最后一条可见行」算错了：展开的组是 `groupSize - 1`，收起时是 `0`（成员行隐藏，只剩组头）；写成固定 0 就会挂到组头上、展开后看起来悬在中间 |
 | 发送后一段时间没任何反馈，看着像卡住 | 活动行要等一个能挂它的组件：轮首槽位属于本轮第一条 assistant 消息（`message_start` 才创建），组头则要等第一个工具调用。这段窗口里绝对不能关 Pi 自带的 Working 提示，否则屏幕一片空白。判定在 `ActivityAreaDeps.hasRunHeaderHost`，它也参与去重签名 |
 | 活动区闪或卡 | 检查是否绕过了内容签名去重而每次 tick 都请求重绘；行内容不变时必须跳过 |
 | 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` 与 `runtime.runStatusLines` 并请求一次重绘） |
-| 活动区首行没有底色横条 | 首行的底色由 `component-patches.ts` 的 `bandActivityHead` 铺上（`styler.band`），轮首子组件与组头（`buildGroupHeadLines`）都要走它；主题缺 `customMessageBg` 时 `band` 会退化成纯文本补齐 |
+| 活动区首行没有底色横条 | 首行的底色由 `component-patches.ts` 的 `bandActivityHead` 铺上（`styler.band`），轮首子组件与活动块尾部（`appendActivityTail`）都要走它；主题缺 `customMessageBg` 时 `band` 会退化成纯文本补齐 |
 | 活动区行没对齐 | 首行与运行级横条同列（`BLOCK_INDENT`），细节行 `DETAIL_INDENT`、输出尾巴 `OUTPUT_INDENT`；三者在 `activity.ts` 顶部 |
 | 活动区显示一堆 `*` | 思考头部的成对强调符由 `stripEmphasisMarkup` 剥掉；若某条消息直接写快照而不经过 `extractThoughtHead`，就会绕过它 |
 | thinking 原文还在刷屏 | `hideThinking` 是否为 on；它靠 `resolveRenderedMessage` 在 `updateContent` 前抽掉 thinking 内容块，若某条消息看不到效果，检查该消息是否只走了 `render` 而没走 `updateContent` |
@@ -85,9 +86,9 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 3. 动画 150ms 一帧（关闭动画 1000ms），定时器 `unref()`，且只在运行时存在；`agent_settled` 立即停掉并清空 `runtime.lines`。
 4. 思考动画帧只用「每帧单格宽、墨量恒定、只变朝向」的字符：当前是 `◐◓◑◒`（四个方向各半填充，顺时针转，四帧一循环）。不要用盲文单点（`⠁⠂⠄⡀⢀⠠⠐⠈` —— 一个孤点在深色底上像噪点），也不要用 `◌◔◕●` 这类改变填充比例的图形（视觉上会被读成忽大忽小）。
 
-活动块的位置跟随当前动作：本轮已经有工具行时，它插在当前组的组头上方（`buildGroupHeadLines`：前导空行 → 活动行 → 组头行），所以进度贴着最新动作；本轮还没有工具行、或运行级收起（工具行整行隐藏）时，回落到轮首折叠头子组件（`createRunHeaderComponent`）—— 但轮首只取 `buildRunStatusLines` 的输出（不带计数的状态行），思考与工具细节只属于组头，顶部不重复一份。两处共用 `runtime.activityArea.lines` / `runStatusLines` 与 `bandActivityHead`，且都只认「当前组」（`isCurrentActionGroup`）与「当前轮承载者」（`isCurrentRunHost`），所以历史轮次不会重复显示。运行结束后活动行清空，轮首位置换成 `用时` 横条（耗时在 `agent_settled` 才写入，两者不会同时出现）。
+活动块的位置：接在当前组**最后一条可见行**的末尾（`appendActivityTail`）—— 展开的组接在末位成员下面，收起时成员行整行隐藏、接在组头下面，所以最新状态永远在列表最底部，不会悬在中段。轮首折叠头子组件（`createRunHeaderComponent`）只输出运行级时间（`buildRunStatusLines`：在处理 + 耗时，无计数），思考与工具细节一概不往顶部搬。两处共用 `runtime.activityArea.lines` / `runStatusLines` 与 `bandActivityHead`，且都只认「当前组」（`isCurrentActionGroup`）与「当前轮承载者」（`isCurrentRunHost`），所以历史轮次不会重复显示。运行结束后活动行清空，轮首位置换成 `用时` 横条（耗时在 `agent_settled` 才写入，两者不会同时出现）。
 
-活动块的版式（`activity.ts`）：第一行是状态横条（`处理中`/`并行执行` + 耗时 + 非 0 计数），由渲染方整行铺底色；后面依次是思考头部、正在执行的工具（并行逐条）与输出尾巴。轮首回落时只输出这个横条的无计数版本（`buildRunStatusLines`），所以顶部只有时间，细节只在组头。三档缩进常量在 `activity.ts` 顶部（`BLOCK_INDENT` / `DETAIL_INDENT` / `OUTPUT_INDENT`），首行与运行级横条文案同列，因此状态切换不跳列。
+活动块的版式（`activity.ts`）：第一行是状态横条（`处理中`/`并行执行` + 耗时 + 非 0 计数），由渲染方整行铺底色；后面依次是思考头部、正在执行的工具（并行逐条）与输出尾巴。轮首只输出这个横条的无计数版本（`buildRunStatusLines`），所以顶部只有时间，细节只在列表末尾。三档缩进常量在 `activity.ts` 顶部（`BLOCK_INDENT` / `DETAIL_INDENT` / `OUTPUT_INDENT`），首行与运行级横条文案同列，因此状态切换不跳列。
 
 ## 边界
 

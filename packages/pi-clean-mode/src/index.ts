@@ -439,7 +439,6 @@ function installPatches(runtime: Runtime): void {
 		getActivityLines: () => runtime.activityArea.lines,
 		getRunStatusLines: () => runtime.activityArea.runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === runtime.actionGroups.currentGroupId,
-		hasRunToolRows: () => runtime.runToolCount > INITIAL_RUN_TOOL_COUNT,
 		getRunDuration: (host) => runtime.runDurations.getDuration(host),
 		getRunSteps: (host) => runtime.runDurations.getSteps(host),
 	});
