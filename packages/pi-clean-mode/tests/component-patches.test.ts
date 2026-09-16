@@ -55,12 +55,10 @@ const RUN_HEADER_STEPS = i18n.t("runHeaderSteps", { count: String(RUN_STEPS) });
 const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
 /** 单条动作的组头摘要；组内只有一条时直接用它当组头文案。 */
 const SINGLE_ACTION_SUMMARY = "运行命令 ls -la";
-/** 活动块里的细节行（思考、当前动作）；缩进 4 格，与块首行的 2 格区分开。 */
+/** 活动块里的动作行；块里全是普通行，不铺底色。 */
 const ACTIVITY_ROW = "    │ ⠹ 运行命令 npm test";
-/**
- * 活动块首行：缩进 2 格的计数横条；「处理中」与耗时归轮首，块首行不重复它们。
- */
-const ACTIVITY_HEAD_ROW_TEXT = "  │ ⠋ 读取 4 · 命令 1";
+/** 活动块里跟在动作行后面的输出尾巴。 */
+const ACTIVITY_TAIL_ROW = "      │ ↳ 12 passing";
 /**
  * 轮首槽位的状态行：只报在处理与耗时。
  *
@@ -176,6 +174,8 @@ interface PatchHarness {
 	actionGroups: ActionGroupState;
 	/** 当前要展示的实时活动行；用例可直接改它模拟运行中。 */
 	activityLines: string[];
+	/** 接在当前组组头后面的分类计数后缀；空串表示还没计数。 */
+	activityCounters: string;
 	/** 轮首槽位的状态行（只在在处理 + 耗时）；用例可直接改它模拟运行中。 */
 	runStatusLines: string[];
 	/** 运行级折叠被切换的次数。 */
@@ -193,6 +193,7 @@ function withPatches<T>(
 	const actionGroups = createActionGroupState();
 	const durations = new WeakMap<object, number>();
 	const activityLines: string[] = [];
+	const harness = { activityCounters: "" };
 	const runStatusLines: string[] = [];
 	let runHeaderAssigned = false;
 	let runHeaderHost: object | undefined;
@@ -235,6 +236,7 @@ function withPatches<T>(
 		},
 		isCurrentRunHost: (host) => host === runHeaderHost,
 		getActivityLines: () => activityLines,
+		getActivityCounters: () => harness.activityCounters,
 		getRunStatusLines: () => runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === actionGroups.currentGroupId,
 		getRunDuration: (host) => durations.get(host),
@@ -244,6 +246,12 @@ function withPatches<T>(
 		return run({
 			actionGroups,
 			activityLines,
+			get activityCounters(): string {
+				return harness.activityCounters;
+			},
+			set activityCounters(value: string) {
+				harness.activityCounters = value;
+			},
 			runStatusLines,
 			runToggles: () => runToggleCount,
 			groupToggles: () => groupToggleCount,
@@ -305,19 +313,63 @@ test("本轮还没有工具行时，轮首只画状态行", () => {
 	});
 });
 
+test("组头带上当前组的分类计数后缀", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+		harness.activityCounters = ` · ${i18n.t("activityCounterRead", { count: "4" })} · ${i18n.t("activityCounterCommand", { count: "1" })}`;
+
+		const groupHeader = linesOf(toolComponent(ids[0])).find((line) =>
+			line.includes(GROUP_HEADER_FRAGMENT),
+		);
+		assert.ok(groupHeader, "前置条件：应渲染出组头行");
+		assert.ok(
+			groupHeader.includes(i18n.t("activityCounterRead", { count: "4" })),
+			`组头应带上读取计数：${groupHeader}`,
+		);
+		assert.equal(
+			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
+			HEADER_INDENT_COLUMNS,
+			"计数后缀不能把组头文案挤离缩进列",
+		);
+		assertChevronFollowsLabel(
+			groupHeader,
+			i18n.t("activityCounterCommand", { count: "1" }),
+			COLLAPSED_CHEVRON,
+		);
+	});
+});
+
+test("历史组的组头不带分类计数", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+		beginActionGroupStep(harness.actionGroups);
+		registerActionToolCall(harness.actionGroups, "call-next", SINGLE_ACTION_SUMMARY);
+		harness.activityCounters = " · 读取 4";
+
+		const oldHeader = linesOf(toolComponent(ids[0])).find((line) =>
+			line.includes(GROUP_HEADER_FRAGMENT),
+		);
+		assert.ok(oldHeader, "前置条件：历史组头仍应渲染");
+		assert.ok(
+			!oldHeader.includes(i18n.t("activityCounterRead", { count: "4" })),
+			`历史组不该显示本轮累计计数：${oldHeader}`,
+		);
+	});
+});
+
 test("计数还没出现时活动块不铺底色", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
-		// 计数全为 0 时活动块里没有块首行，首条就是细节行。
+		// 满屏只有轮首一条横条：活动块里的行原样接上，不补宽也不铺底。
 		harness.activityLines.push(ACTIVITY_ROW);
 
 		const rendered = linesOf(toolComponent()).map(stripAnsi);
 		const tail = rendered[rendered.length - 1] ?? "";
-		assert.equal(tail.trimEnd(), ACTIVITY_ROW, `活动块应接在组尾：${rendered.join("\n")}`);
+		assert.equal(tail, ACTIVITY_ROW, `活动块应原样接在组尾：${rendered.join("\n")}`);
 		assert.ok(
 			visibleWidth(tail) < WIDTH,
-			`细节行不应被铺成整宽底色块：${JSON.stringify(tail)}`,
+			`活动块里的行不应被铺成整宽底色块：${JSON.stringify(tail)}`,
 		);
 	});
 });
@@ -328,21 +380,20 @@ test("当前组展开时，活动块接在末位成员行下面", () => {
 		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
 		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
 		toggleActionGroup(harness.actionGroups, harness.actionGroups.currentGroupId);
-		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
+		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 
 		const headText = linesOf(toolComponent("call-1")).map(stripAnsi).join("\n");
 		const lastLines = linesOf(toolComponent("call-2")).map(stripAnsi);
 
 		assert.ok(!headText.includes(ACTIVITY_ROW), `组头行不该带活动块：${headText}`);
 		assert.deepEqual(
-			lastLines.slice(-2).map((line) => line.trimEnd()),
-			[ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW],
-			`活动块应贴在末位成员下面：${lastLines.join("\n")}`,
+			lastLines.slice(-2),
+			[ACTIVITY_ROW, ACTIVITY_TAIL_ROW],
+			`活动块应原样贴在末位成员下面：${lastLines.join("\n")}`,
 		);
-		assert.equal(
-			visibleWidth(lastLines[lastLines.length - 2] ?? ""),
-			WIDTH,
-			"活动块首行应铺满整行",
+		assert.ok(
+			visibleWidth(lastLines[lastLines.length - 2] ?? "") < WIDTH,
+			"活动块不铺底色，不被补成整宽色块",
 		);
 	});
 });
@@ -352,12 +403,12 @@ test("组收起时，成员行整行隐藏，活动块接在组头下面", () =>
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
 		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
-		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
+		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 
 		const headLines = linesOf(toolComponent("call-1")).map(stripAnsi);
 		assert.deepEqual(
-			headLines.slice(-2).map((line) => line.trimEnd()),
-			[ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW],
+			headLines.slice(-2),
+			[ACTIVITY_ROW, ACTIVITY_TAIL_ROW],
 			`组头是该组唯一可见的行，活动块接在它下面：${headLines.join("\n")}`,
 		);
 		assert.deepEqual(linesOf(toolComponent("call-2")), [], "收起组的成员行整行隐藏");
@@ -370,7 +421,7 @@ test("历史组不显示活动块", () => {
 		registerActionToolCall(harness.actionGroups, "call-1", SINGLE_ACTION_SUMMARY);
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, "call-2", SINGLE_ACTION_SUMMARY);
-		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
+		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 
 		assert.ok(
 			!linesOf(toolComponent("call-1")).join("\n").includes(ACTIVITY_ROW),
@@ -387,7 +438,7 @@ test("轮首只画运行级时间，活动细节接在组尾", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
-		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
+		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 		harness.runStatusLines.push(RUN_STATUS_ROW);
 
 		const headLines = linesOf(new AssistantMessageComponent(workMessage())).map(stripAnsi);
@@ -398,15 +449,10 @@ test("轮首只画运行级时间，活动细节接在组尾", () => {
 		);
 
 		const tailLines = linesOf(toolComponent()).map(stripAnsi);
-		assert.equal(
-			tailLines[tailLines.length - 1]?.trimEnd(),
-			ACTIVITY_ROW,
+		assert.deepEqual(
+			tailLines.slice(-2),
+			[ACTIVITY_ROW, ACTIVITY_TAIL_ROW],
 			`活动细节应接在组尾：${tailLines.join("\n")}`,
-		);
-		assert.equal(
-			tailLines[tailLines.length - 2]?.trimEnd(),
-			ACTIVITY_HEAD_ROW_TEXT,
-			"组尾那份活动块的首行是带计数的状态横条",
 		);
 	});
 });
@@ -415,7 +461,7 @@ test("运行级收起时轮首只画运行级时间，活动块不出现", () =>
 	withPatches(COLLAPSED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, TOOL_CALL_ID, SINGLE_ACTION_SUMMARY);
-		harness.activityLines.push(ACTIVITY_HEAD_ROW_TEXT, ACTIVITY_ROW);
+		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
 		harness.runStatusLines.push(RUN_STATUS_ROW);
 
 		const rendered = linesOf(new AssistantMessageComponent(workMessage())).map(stripAnsi);

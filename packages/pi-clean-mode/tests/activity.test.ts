@@ -9,7 +9,7 @@ import {
 	createActivitySnapshot,
 	extractOutputTail,
 	extractThoughtHead,
-	isActivityHeadLine,
+	formatActivityCountersSuffix,
 	toolActivityDetail,
 	toolActivityLabel,
 	type ActivityRenderInput,
@@ -144,43 +144,40 @@ test("未运行时活动区不输出任何行", () => {
 	assert.deepEqual(buildActivityLines(renderInput({ snapshot })), []);
 });
 
-test("活动块首行只报计数：不重复顶部的「处理中」与耗时", () => {
+test("活动块只报最新状态：不重复顶部文案、耗时与分类计数", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
-	snapshot.counters = { read: 4, search: 0, command: 0, other: 0 };
-	const head = buildActivityLines(renderInput({ snapshot }))[0] ?? "";
+	const joined = buildActivityLines(renderInput({ snapshot })).join("\n");
 
-	assert.ok(head.includes(i18n.t("activityCounterRead", { count: "4" })), `首行应带读取计数：${head}`);
+	assert.ok(joined.includes("npm test"), `应显示正在跑的工具：${joined}`);
 	assert.ok(
-		!head.includes(i18n.t("activityWorking")),
-		`「处理中」只在轮首，块首行不应重复：${head}`,
+		!joined.includes(i18n.t("activityWorking")),
+		`「处理中」只在轮首，活动块不应重复：${joined}`,
 	);
-	assert.ok(!head.includes("42s"), `耗时只在轮首，块首行不应重复：${head}`);
-	assert.ok(!head.includes(i18n.t("activityCounterSearch", { count: "0" })), `0 的桶不应占位：${head}`);
-	assert.ok(!head.includes(i18n.t("activityCounterCommand", { count: "0" })), `0 的桶不应占位：${head}`);
+	assert.ok(!joined.includes("42s"), `耗时只在轮首，活动块不应重复：${joined}`);
+	assert.ok(
+		!joined.includes(i18n.t("activityCounterRead", { count: "4" })),
+		`分类计数接在组头上，不另占一行：${joined}`,
+	);
 });
 
-test("计数全为 0 时不画块首行，块直接从动作行开始", () => {
-	const snapshot = runningSnapshot();
-	snapshot.counters = { read: 0, search: 0, command: 0, other: 0 };
-	const lines = buildActivityLines(renderInput({ snapshot }));
-
-	assert.equal(lines.length, 1, `没有计数时只应有动作行：${lines.join("\n")}`);
-	assert.ok(lines[0]?.includes("npm test"), `动作行应保留：${lines[0]}`);
+test("分类计数拼成组头后缀，前缀与 0 的桶都按需省略", () => {
+	const counted = formatActivityCountersSuffix({ read: 4, search: 3, command: 1, other: 9 });
 	assert.equal(
-		isActivityHeadLine(lines[0] ?? ""),
-		false,
-		`计数为 0 时首行是细节行，不应铺底色：${lines[0]}`,
+		counted,
+		` · ${i18n.t("activityCounterRead", { count: "4" })} · ${i18n.t("activityCounterSearch", { count: "3" })} · ${i18n.t("activityCounterCommand", { count: "1" })}`,
+		`后缀自带前缀分隔符，顺序是读取 → 搜索 → 命令：${counted}`,
 	);
-});
-
-test("块首行与细节行靠缩进区分", () => {
-	const snapshot = runningSnapshot();
-	const lines = buildActivityLines(renderInput({ snapshot }));
-
-	assert.equal(isActivityHeadLine(lines[0] ?? ""), true, `计数横条是块首行：${lines[0]}`);
-	assert.equal(isActivityHeadLine(lines[1] ?? ""), false, `动作行不是块首行：${lines[1]}`);
-	assert.equal(isActivityHeadLine(""), false, "补位空行不是块首行");
+	assert.equal(
+		formatActivityCountersSuffix({ read: 0, search: 0, command: 0, other: 5 }),
+		"",
+		"只有 other 时没有可报的分类，应返回空串",
+	);
+	assert.equal(
+		formatActivityCountersSuffix({ read: 0, search: 2, command: 0, other: 0 }),
+		` · ${i18n.t("activityCounterSearch", { count: "2" })}`,
+		"只有一个桶时同样只带一个前缀",
+	);
 });
 
 test("轮首状态行只报运行级时间：状态与耗时，不带计数与细节", () => {
@@ -218,7 +215,7 @@ test("思考行用当前动画帧，不出现改变填充比例的图形", () =>
 	assert.ok(!/[◌◔◕●]/.test(thoughtLine), `思考行不应出现填充比例图形：${thoughtLine}`);
 });
 
-test("当前动作与其输出尾巴各占一行，且都缩进在横条之下", () => {
+test("当前动作与其输出尾巴各占一行，都带细节缩进而不铺底色", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
 	const lines = buildActivityLines(renderInput({ snapshot }));
@@ -226,22 +223,20 @@ test("当前动作与其输出尾巴各占一行，且都缩进在横条之下",
 
 	assert.ok(joined.includes("npm test"), `应显示当前动作与参数：${joined}`);
 	assert.ok(joined.includes("12 passing"), `应显示最新输出：${joined}`);
-	assert.ok(lines[1]?.startsWith("    "), `动作行应缩进一级：${JSON.stringify(lines[1])}`);
-	assert.ok(lines[2]?.startsWith("      "), `输出尾巴应缩进两级：${JSON.stringify(lines[2])}`);
+	assert.ok(lines[0]?.startsWith("    "), `动作行应缩进一级：${JSON.stringify(lines[0])}`);
+	assert.ok(lines[1]?.startsWith("      "), `输出尾巴应缩进两级：${JSON.stringify(lines[1])}`);
 });
 
-test("行数预算收紧时优先保留块首行", () => {
+test("行数预算收紧时从尾部截断，先保住第一行", () => {
 	const snapshot = runningSnapshot();
 	snapshot.thought = "想一下";
 	const lines = buildActivityLines(renderInput({ snapshot, maxRows: 1 }));
+
 	assert.equal(lines.length, 1);
-	assert.ok(
-		lines[0]?.includes(i18n.t("activityCounterRead", { count: "4" })),
-		`第一行应是计数横条：${lines[0]}`,
-	);
+	assert.ok(lines[0]?.includes("想一下"), `第一行应是思考行：${lines[0]}`);
 });
 
-test("并行执行时轮首换成并行文案，块首行仍只报计数", () => {
+test("并行执行时轮首换成并行文案，活动块里不重复", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running.push({ toolCallId: "c2", label: i18n.t("activityRead"), detail: "b.ts" });
 	const lines = buildActivityLines(renderInput({ snapshot }));
@@ -249,7 +244,7 @@ test("并行执行时轮首换成并行文案，块首行仍只报计数", () =>
 
 	assert.ok(
 		!joined.includes(i18n.t("activityParallel")),
-		`并行文案只在轮首，块里不应重复：${joined}`,
+		`并行文案只在轮首，活动块里不应重复：${joined}`,
 	);
 	assert.ok(
 		buildRunStatusLines(renderInput({ snapshot }))[0]?.includes(i18n.t("activityParallel")),
@@ -259,14 +254,10 @@ test("并行执行时轮首换成并行文案，块首行仍只报计数", () =>
 	assert.ok(joined.includes("b.ts"), `应列出第二个动作：${joined}`);
 });
 
-test("没有正在执行的工具但有思考时，思考接在计数横条下面", () => {
+test("没有正在执行的工具但有思考时，只输出思考行", () => {
 	const snapshot = { ...runningSnapshot(), running: [], thought: "权衡方案" };
 	const lines = buildActivityLines(renderInput({ snapshot }));
 
-	assert.equal(lines.length, 2, `应只有计数行与思考行：${lines.join("\n")}`);
-	assert.ok(
-		lines[0]?.includes(i18n.t("activityCounterRead", { count: "4" })),
-		`首行应是计数横条：${lines[0]}`,
-	);
-	assert.ok(lines[1]?.includes("权衡方案"), `第二行应是思考：${lines[1]}`);
+	assert.equal(lines.length, 1, `没有动作时只应有思考行：${lines.join("\n")}`);
+	assert.ok(lines[0]?.includes("权衡方案"), `应输出思考：${lines[0]}`);
 });

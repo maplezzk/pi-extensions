@@ -4,15 +4,16 @@
  * 目标：运行期间用固定行数展示「现在在做什么」，而不是让 transcript 里的行反复增减。
  * 内容全部来自真实事件，不生成推测出来的进度。
  *
- * 屏幕上有两个位置报进度，分工固定，同一句话不会出现两次：
+ * 屏幕上有两个位置报进度，分工固定，不说同一句话：
  *
  * - 轮首槽位（整轮最上面，`buildRunStatusLines`）：只报运行级状态「在处理 + 跑了多久」，
- *   和运行结束后的「用时」横条是同一个槽位、同一种横条；
- * - 活动块（接在当前动作组最后一条可见行的下面，`buildActivityLines`）：首行只报本轮
- *   已完成的动作计数，后面依次是思考头部、正在执行的工具与其输出尾巴。
+ *   和运行结束后的「用时」横条是同一个槽位、同一种横条，也是屏幕上唯一一条铺底色的横条；
+ * - 活动块（接在当前动作组最后一条可见行的下面，`buildActivityLines`）：依次是思考头部、
+ *   正在执行的工具与其输出尾巴，全部是最新状态，不占条、不铺底色。
  *
- * 「处理中」和耗时只写在轮首，活动块首行只留计数 —— 两个位置都写一遍，用户看到的就是
- * 同一句话重复（两个「处理中」）。两处的首行都由 component-patches.ts 整行铺上底色。
+ * 分类计数（`formatActivityCountersSuffix`）也不单独占一行：它接在当前动作组的组头文案后面
+ * （`探索 · 12 步 · 读取 3 · 命令 2`）。单独占一行时，它和组头的步数在数同一件事，
+ * 加上顶部横条就变成三处在报进度。
  *
  * 活动块挂在最新那条动作的下面，因为最新状态必须落在列表最底下：挂在组头上方时，
  * 展开的组里它下面还压着整组成员行，看上去就悬在中段。
@@ -51,11 +52,11 @@ const COLOR_HEADING = "toolTitle";
 /** 从工具参数里尝试读取摘要的候选字段，按优先级排列。 */
 const TOOL_ARG_KEYS = ["command", "file_path", "path", "pattern", "query", "url"] as const;
 /**
- * 活动块的左缩进：与运行级「用时」横条的文案同列。
+ * 运行级横条的文案缩进：与组件补丁里折叠头（「用时 …」）的文案同列。
  *
- * 块首行（计数横条）铺底色时占的是同一列，运行中与运行结束切换时文案不会横向跳。
+ * 运行中与运行结束共用这一列，状态切换时文案不会横向跳；细节行再深一级。
  */
-const BLOCK_INDENT = "  ";
+const BAND_INDENT = "  ";
 /** 细节行（思考、当前动作）的缩进：比横条文案再深一级。 */
 const DETAIL_INDENT = "    ";
 /** 输出尾巴的缩进：让 `↳` 正好落在细节行文案的起始列。 */
@@ -301,19 +302,31 @@ export function extractThoughtHead(message: unknown): string | undefined {
 	return undefined;
 }
 
-/** 把非 0 的分类计数拼成一段文本；全为 0 时返回空串（不占版面）。 */
-function buildCounterText(counters: ActivityCounters): string {
-	const parts: string[] = [];
-	if (counters.read > 0) {
-		parts.push(i18n.t("activityCounterRead", { count: String(counters.read) }));
-	}
-	if (counters.search > 0) {
-		parts.push(i18n.t("activityCounterSearch", { count: String(counters.search) }));
-	}
-	if (counters.command > 0) {
-		parts.push(i18n.t("activityCounterCommand", { count: String(counters.command) }));
-	}
-	return parts.join(SEGMENT_SEPARATOR);
+/**
+ * 参与组头计数的分类桶，顺序即展示顺序（读取 → 搜索 → 命令）。
+ *
+ * 文案键写在这里而不是拆成几段 if：新增或去掉一个桶只改这张表，拼接逻辑不必跟着动。
+ */
+const COUNTER_BUCKETS = [
+	{ bucket: "read", messageKey: "activityCounterRead" },
+	{ bucket: "search", messageKey: "activityCounterSearch" },
+	{ bucket: "command", messageKey: "activityCounterCommand" },
+] as const satisfies ReadonlyArray<{
+	bucket: keyof ActivityCounters;
+	messageKey: Parameters<typeof i18n.t>[0];
+}>;
+
+/**
+ * 把非 0 的分类计数拼成组头后缀，例如 ` · 读取 3 · 命令 2`；没有计数时返回空串。
+ *
+ * 前缀分隔符也在这里拼，调用处直接接在组头文案后面就行，不必再判空或补分隔符。
+ * 计数为 0 的桶不显示 —— 刚开始跑时「读取 0 · 搜索 0 · 命令 0」全是噪音。
+ */
+export function formatActivityCountersSuffix(counters: ActivityCounters): string {
+	const parts = COUNTER_BUCKETS.filter(({ bucket }) => counters[bucket] > 0).map(
+		({ bucket, messageKey }) => i18n.t(messageKey, { count: String(counters[bucket]) }),
+	);
+	return parts.length > 0 ? `${SEGMENT_SEPARATOR}${parts.join(SEGMENT_SEPARATOR)}` : "";
 }
 
 /**
@@ -332,7 +345,7 @@ function buildRunStatusLine(input: ActivityRenderInput): string {
 		parts.push(paint.fg(COLOR_DETAIL, formatDuration(nowMs - snapshot.startedAtMs)));
 	}
 
-	return `${BLOCK_INDENT}${parts.join(SEGMENT_SEPARATOR)}`;
+	return `${BAND_INDENT}${parts.join(SEGMENT_SEPARATOR)}`;
 }
 
 /**
@@ -342,7 +355,7 @@ function buildRunStatusLine(input: ActivityRenderInput): string {
  * 东西，状态切换时只换文案，位置与版式都不动。细节行只出现在活动块里，
  * 所以进度贴在新动作旁边，而顶部不会重复一份。
  *
- * 「处理中」这句话归这里独占：活动块首行不再重复它，屏幕上只会出现一次。
+ * 「处理中」这句话归这里独占：活动块里不再重复它，屏幕上只会出现一次。
  */
 export function buildRunStatusLines(input: ActivityRenderInput): string[] {
 	if (!input.snapshot.active || input.maxRows <= 0) {
@@ -353,46 +366,9 @@ export function buildRunStatusLines(input: ActivityRenderInput): string[] {
 }
 
 /**
- * 组装活动块首行：本轮已完成的动作计数。
- *
- * 这一行会被渲染层整行铺上底色，是块里唯一带底色的行，所以它必须永远成立、
- * 不因思考或工具的进出而抖动；它也只报计数：「在处理 + 跑了多久」归轮首的运行级横条，
- * 这里再写一遍就是同一句话出现两次。
- *
- * 计数全为 0 时返回空数组：没有可报的进度，块直接从思考或正在跑的动作开始；
- * 渲染层靠 `isActivityHeadLine` 认出「这一行不是块首行」，不会铺出一条空底色块。
- */
-export function buildActivityHeadLines(input: ActivityRenderInput): string[] {
-	const counters = buildCounterText(input.snapshot.counters);
-	if (counters.length === 0) {
-		return [];
-	}
-
-	const glyph = input.paint.fg(
-		COLOR_GLYPH,
-		`${activityGlyph("working", input.frame, input.animated)} `,
-	);
-	return [`${BLOCK_INDENT}${glyph}${input.paint.fg(COLOR_DETAIL, counters)}`];
-}
-
-/**
- * 判断一行是不是活动块的块首行（要铺底色的计数横条）。
- *
- * 渲染层只给块首行铺底色，所以它必须能把「块首行」与「细节行」分开。两类行的区别就是
- * 缩进：块首行用块缩进（2 格），细节行一律用细节缩进（4 格）。两个常量都在本文件，
- * 改缩进时一起改，不会只改一半。
- *
- * 计数全为 0 时块里根本没有首行，`buildActivityLines` 直接以细节行开头；
- * 那时这里返回假，渲染层就不会在思考行或动作行上糊出一条色块。
- */
-export function isActivityHeadLine(line: string): boolean {
-	return line.startsWith(BLOCK_INDENT) && !line.startsWith(DETAIL_INDENT);
-}
-
-/**
  * 组装正在执行的工具行；并行时每个动作各占一行。
  *
- * 块首行的横条只报计数，具体在跑什么由这里逐条列出，带输出尾巴的动作紧跟着一行。
+ * 块里的动作行逐条列出，具体在跑什么由它负责，带输出尾巴的动作紧跟着一行。
  */
 function buildRunningLines(input: ActivityRenderInput): string[] {
 	const { snapshot, frame, animated, paint } = input;
@@ -426,9 +402,9 @@ function buildThoughtLine(input: ActivityRenderInput): string[] {
 /**
  * 组装活动块行。
  *
- * 首行是铺底色的计数横条（计数全为 0 时没有这一行），后面依次是思考头部、
- * 正在执行的工具与其输出尾巴。超出 maxRows 时从尾部截断：预算再紧也先保住
- * 「做了多少、正在跑什么」。
+ * 内容是思考头部、正在执行的工具与其输出尾巴，全部是最新状态：没有铺底色的横条，
+ * 也不重复顶部的时间与分类计数。超出 maxRows 时从尾部截断：预算再紧也先保住
+ * 「正在跑什么」。
  */
 export function buildActivityLines(input: ActivityRenderInput): string[] {
 	const { snapshot, maxRows } = input;
@@ -436,11 +412,7 @@ export function buildActivityLines(input: ActivityRenderInput): string[] {
 		return [];
 	}
 
-	const lines = [
-		...buildActivityHeadLines(input),
-		...buildThoughtLine(input),
-		...buildRunningLines(input),
-	];
+	const lines = [...buildThoughtLine(input), ...buildRunningLines(input)];
 
 	return lines.slice(0, maxRows);
 }

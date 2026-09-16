@@ -26,7 +26,6 @@ import {
 	TOOL_ROW_HIDDEN,
 	type ActionGroupMembership,
 } from "./action-groups.js";
-import { isActivityHeadLine } from "./activity.js";
 import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import type { HeaderStyler } from "./header-style.js";
@@ -150,10 +149,15 @@ export interface ComponentPatchDeps {
 	/** 该承载者是否就是当前「正在运行」那一轮的承载者。 */
 	isCurrentRunHost: (host: object) => boolean;
 	/**
-	 * 当前组的活动块；空数组表示不展示。首行是计数横条（计数为 0 时没有首行，
-	 * 块直接从思考或动作行开始），接在当前组最后一条可见行的下面。
+	 * 当前组的活动块：思考行与正在跑的动作行（首行就是细节行，不铺底色）；
+	 * 空数组表示不展示。接在当前组最后一条可见行的下面。
 	 */
 	getActivityLines: () => string[];
+	/**
+	 * 接在当前动作组组头文案后面的分类计数后缀，例如 ` · 读取 3 · 命令 2`；
+	 * 没有计数时为空串。只用在当前组上 —— 历史组显示本轮的累计数字是错的。
+	 */
+	getActivityCounters: () => string;
 	/**
 	 * 轮首槽位要展示的状态行：只含「在处理 + 跑了多久」，最多一行。
 	 *
@@ -205,15 +209,14 @@ function buildRunHeaderLine(
 }
 
 /**
- * 给活动块的首行铺上底色。
+ * 给运行级状态行铺上底色。
  *
- * 只给「块首行」铺色：块首行是计数横条（或轮首的运行级状态行），细节行不是。
- * 计数全为 0 时活动块直接从细节行开始，那行开头不是块缩进，不会被铺色 —— 否则会在
- * 思考行或动作行上糊出一条色块。
+ * 屏幕上只有这一条铺底色的横条（运行中是在处理 + 耗时，结束后是「用时 …」）。活动块由
+ * 普通行组成，不铺底色，因此这里不需要判断首行是哪一种。
  */
 function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDeps): string[] {
 	const [head, ...rest] = lines;
-	if (head === undefined || !isActivityHeadLine(head)) {
+	if (head === undefined) {
 		return lines;
 	}
 	return [deps.styler.band(head, width), ...rest];
@@ -444,11 +447,20 @@ const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
  */
 function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
 	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
-	const label = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY ? countLabel : (group.summary ?? countLabel);
+	const showsStepCount = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY;
+	const label = showsStepCount ? countLabel : (group.summary ?? countLabel);
+	// 分类计数接在步数后面（`探索 · 12 步 · 读取 3 · 命令 2`），不另占一行。
+	// 只有「汇总成 N 步」的组头才带它：单条动作的组头已经写清做了什么，再加个「· 命令 1」是废话。
+	// 也只给当前组带：计数是本轮累计值，历史组显示它会报出不属于它的数字。
+	const counters =
+		showsStepCount && deps.isCurrentActionGroup(group.membership.groupId)
+			? deps.getActivityCounters()
+			: "";
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
 	const content = [
 		HEADER_INDENT,
 		label,
+		counters,
 		ARROW_GAP,
 		deps.styler.accent(chevron),
 		CHIP_TRAILING_PAD,
@@ -472,8 +484,6 @@ interface ActivityTailInput {
 	group: ToolRowGroupInfo | undefined;
 	/** 补丁层依赖，用于取活动行。 */
 	deps: ComponentPatchDeps;
-	/** 渲染宽度，铺底色的活动首行要用。 */
-	width: number;
 }
 
 /**
@@ -484,10 +494,12 @@ interface ActivityTailInput {
  *
  * 组收起时成员行整行隐藏，组头是该组唯一可见的行，活动块就接在它下面；
  * 非当前组、或这一行不是最后一条可见行时原样返回。
+ *
+ * 块里全是普通行（思考、动作、输出尾巴），不铺底色：屏幕上只有轮首那条运行级横条。
  */
 function appendActivityTail(
 	lines: string[],
-	{ group, deps, width }: ActivityTailInput,
+	{ group, deps }: ActivityTailInput,
 ): string[] {
 	if (!group || !deps.isCurrentActionGroup(group.membership.groupId)) {
 		return lines;
@@ -504,7 +516,7 @@ function appendActivityTail(
 		return lines;
 	}
 
-	return [...lines, ...bandActivityHead(activity, width, deps)];
+	return [...lines, ...activity];
 }
 
 /**
@@ -680,7 +692,7 @@ function buildToolMessageRender(
 				// 收起时只留组头，没有正文可点，偏移归零避免鼠标透传算错行。
 				this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
 				this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
-				return appendActivityTail(headerLines, { group, deps, width });
+				return appendActivityTail(headerLines, { group, deps });
 			}
 			// 展开的组里，成员行本身就是一条命令，同样要带上可点击的箭头。
 			this[TOOL_ROW_BODY_OFFSET_KEY] = headerLines.length;
@@ -688,14 +700,14 @@ function buildToolMessageRender(
 				styler: deps.styler,
 				bodyOffset: headerLines.length,
 			});
-			return appendActivityTail([...headerLines, ...body], { group, deps, width });
+			return appendActivityTail([...headerLines, ...body], { group, deps });
 		}
 		this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
 		const rendered = withToolRowArrow(this, originalRender.call(this, width), {
 			styler: deps.styler,
 			bodyOffset: NO_BODY_OFFSET,
 		});
-		return appendActivityTail(rendered, { group, deps, width });
+		return appendActivityTail(rendered, { group, deps });
 	};
 }
 
