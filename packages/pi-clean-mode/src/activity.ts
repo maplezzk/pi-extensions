@@ -8,6 +8,10 @@
  * 正在执行的工具与其输出尾巴。第一行由 component-patches.ts 整行铺上底色，
  * 与运行结束后的「用时」横条共用同一列与同一套视觉。
  *
+ * 活动块只有一个正式槽位：当前动作组头的上方；那里的第一行带计数。轮首槽位是备用位置
+ * （本轮还没有工具行、或收起态看不到工具行时），它只拿到不带计数的状态行
+ * （`buildRunStatusLines`）—— 顶部只报运行级时间，细节不两面重复。
+ *
  * 关键约束：行每 tick 都会重算，但内容常常没变（耗时没走到下一秒、动画帧循环回同一
  * 格），因此行内容必须可比较、不变时要能整体跳过重绘；真正决定「要不要重绘」以及在
  * 哪里渲染的职责在 activity-area.ts 与 component-patches.ts。
@@ -313,8 +317,11 @@ function buildCounterText(counters: ActivityCounters): string {
  * 这一行会被渲染层整行铺上底色，成为与「用时」横条同款的横条，因此它是活动块里
  * 唯一常驻的一行：无论当前在思考还是在跑工具，第一行永远成立，块的高度就不会抖。
  * 计数为 0 的桶不显示 —— 刚开始跑时「读取 0 · 搜索 0 · 命令 0」全是噪音。
+ *
+ * `withCounters` 为假时只留「在处理 + 跑了多久」：轮首槽位（整轮最上面那个位置）用这个
+ * 形态，细节一律挂在当前动作组头上，两个位置不会出现同一句话。
  */
-function buildHeaderLine(input: ActivityRenderInput): string {
+function buildHeaderLine(input: ActivityRenderInput, withCounters: boolean): string {
 	const { snapshot, nowMs, frame, animated, paint } = input;
 	const glyph = activityGlyph("working", frame, animated);
 	const label = snapshot.running.length > 1 ? i18n.t("activityParallel") : i18n.t("activityWorking");
@@ -324,12 +331,29 @@ function buildHeaderLine(input: ActivityRenderInput): string {
 		parts.push(paint.fg(COLOR_DETAIL, formatDuration(nowMs - snapshot.startedAtMs)));
 	}
 
-	const counters = buildCounterText(snapshot.counters);
-	if (counters.length > 0) {
-		parts.push(paint.fg(COLOR_DETAIL, counters));
+	if (withCounters) {
+		const counters = buildCounterText(snapshot.counters);
+		if (counters.length > 0) {
+			parts.push(paint.fg(COLOR_DETAIL, counters));
+		}
 	}
 
 	return `${BLOCK_INDENT}${parts.join(SEGMENT_SEPARATOR)}`;
+}
+
+/**
+ * 组装轮首槽位的状态行：只报「在处理 + 跑了多久」，不报思考、工具和计数。
+ *
+ * 轮首是整轮最上面那个槽位，它的职责只有运行级时间：和运行结束后的「用时」横条是同一种
+ * 东西，状态切换时只换文案，位置与版式都不动。细节行只出现在当前动作组头上，
+ * 所以进度贴在新动作旁边，而顶部不会重复一份。
+ */
+export function buildRunStatusLines(input: ActivityRenderInput): string[] {
+	if (!input.snapshot.active || input.maxRows <= 0) {
+		return [];
+	}
+
+	return [buildHeaderLine(input, false)];
 }
 
 /**
@@ -379,7 +403,7 @@ export function buildActivityLines(input: ActivityRenderInput): string[] {
 	}
 
 	const lines = [
-		buildHeaderLine(input),
+		buildHeaderLine(input, true),
 		...buildThoughtLine(input),
 		...buildRunningLines(input),
 	];

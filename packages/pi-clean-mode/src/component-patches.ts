@@ -148,8 +148,15 @@ export interface ComponentPatchDeps {
 	claimRunHeaderHost: (host: object) => boolean;
 	/** 该承载者是否就是当前「正在运行」那一轮的承载者。 */
 	isCurrentRunHost: (host: object) => boolean;
-	/** 当前要展示的实时活动行；空数组表示不展示。 */
+	/** 当前要展示的实时活动块；空数组表示不展示。挂在当前动作组头上。 */
 	getActivityLines: () => string[];
+	/**
+	 * 轮首槽位要展示的状态行：只含「在处理 + 跑了多久」，最多一行。
+	 *
+	 * 轮首是整轮最上面那个位置，它只承担运行级时间信息；思考、正在跑什么、分类计数
+	 * 都属于当前动作组头。两块内容分开取，顶部就不会再出现一份思考或工具细节。
+	 */
+	getRunStatusLines: () => string[];
 	/**
 	 * 某个动作组是不是当前 turn 的组。
 	 *
@@ -160,8 +167,8 @@ export interface ComponentPatchDeps {
 	/**
 	 * 本轮是否已经登记过工具调用 —— 屏幕上是否已经有可以挂活动块的动作组头。
 	 *
-	 * 为假时（第一个工具调用之前）活动块退回轮首：否则运行刚开始那段时间里既没有
-	 * 工具行、又已经关掉 Pi 自带的 Working 提示，画面会一片空白。
+	 * 为假时（第一个工具调用之前）轮首退而展示运行级时间；否则运行刚开始那段时间里
+	 * 既没有工具行、又已经关掉 Pi 自带的 Working 提示，画面会一片空白。
 	 */
 	hasRunToolRows: () => boolean;
 	/** 查询某个承载者所属那一轮的耗时。 */
@@ -219,7 +226,7 @@ function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDe
  * 创建轮首子组件。
  *
  * 它占着「整轮最上面」这个槽位，两块内容共用：
- * - 运行中：实时活动行，但只在两种情况下留在这里（见 render 里的判定）；
+ * - 运行中：轮首状态行（在处理 + 耗时），但只在两种情况下留在这里（见 render 里的判定）；
  * - 运行结束：活动行被清空，同一个位置换成「用时 Ns」横条。
  *
  * 两者不会同时出现：耗时在 agent_settled 里才写入，写完活动行立刻被清空。
@@ -231,16 +238,17 @@ function createRunHeaderComponent(
 	deps: ComponentPatchDeps,
 ): Component {
 	const content: Component = {
-		/** 轮首槽位：运行中只在回落条件下画活动行，已结束时只画耗时横条。 */
+		/** 轮首槽位：运行中只在回落条件下画状态行，已结束时只画耗时横条。 */
 		render: (width: number): string[] => {
-			// 活动行平时挂在当前动作组头上（跟着最新动作走），只有两种回落：本轮还没
+			// 活动块平时挂在当前动作组头上（跟着最新动作走），只有两种回落：本轮还没
 			// 登记过工具调用（屏幕上没有组头可挂），或者收起态下工具行整行隐藏。
-			const activityAtHeader =
+			// 回落时轮首只画运行级时间：思考与工具细节仍然只属于组头，不往顶部搬。
+			const statusAtHeader =
 				deps.isCurrentRunHost(host) && (deps.getState().collapsed || !deps.hasRunToolRows());
-			const activity = activityAtHeader ? deps.getActivityLines() : [];
-			if (activity.length > 0) {
-				// 活动行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
-				return [HEADER_LEADING_BLANK, ...bandActivityHead(activity, width, deps)];
+			const status = statusAtHeader ? deps.getRunStatusLines() : [];
+			if (status.length > 0) {
+				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
+				return [HEADER_LEADING_BLANK, ...bandActivityHead(status, width, deps)];
 			}
 
 			const decision = resolveRunHeader({

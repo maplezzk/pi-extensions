@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
 	activityGlyph,
 	buildActivityLines,
+	buildRunStatusLines,
 	classifyToolActivity,
 	clampActivityText,
 	createActivitySnapshot,
@@ -164,6 +165,28 @@ test("计数全为 0 时首行只留状态与耗时", () => {
 		`  ${activityGlyph("working", 0, false)} ${i18n.t("activityWorking")} · 42s`,
 		`不应出现全 0 的计数：${lines[0]}`,
 	);
+});
+
+test("轮首状态行只报运行级时间：状态与耗时，不带计数与细节", () => {
+	const snapshot = { ...runningSnapshot(), thought: "正在追踪 token 失效路径" };
+	const lines = buildRunStatusLines(renderInput({ snapshot }));
+
+	assert.equal(lines.length, 1, `轮首只应有一行：${lines.join("\n")}`);
+	const line = lines[0] ?? "";
+	assert.ok(line.includes(i18n.t("activityWorking")), `应说明正在处理：${line}`);
+	assert.ok(line.includes("42s"), `应带耗时：${line}`);
+	assert.ok(
+		!line.includes(i18n.t("activityCounterRead", { count: "4" })),
+		`轮首不应带分类计数：${line}`,
+	);
+	assert.ok(!line.includes(i18n.t("activityThinking")), `轮首不应带思考细节：${line}`);
+	assert.ok(!line.includes("npm test"), `轮首不应带正在跑的工具：${line}`);
+});
+
+test("轮首状态行在未运行或行数预算为零时为空", () => {
+	const inactive = { ...createActivitySnapshot(), active: false };
+	assert.deepEqual(buildRunStatusLines(renderInput({ snapshot: inactive })), []);
+	assert.deepEqual(buildRunStatusLines(renderInput({ maxRows: 0 })), []);
 });
 
 test("思考行用当前动画帧，不出现改变填充比例的图形", () => {

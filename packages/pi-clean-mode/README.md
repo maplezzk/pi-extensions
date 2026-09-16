@@ -170,6 +170,8 @@ The block falls back to the very top of the run in two cases only:
 - the run has no tool call yet (there is no group header to attach to);
 - the work is collapsed (tool rows render zero lines).
 
+On that fallback the top shows **only the run-level status line** (`⠋ Working · 42s`): it says the run is alive and for how long, with no counters and none of the thinking or tool detail — those rows belong to the current group header and are never duplicated at the top.
+
 Otherwise it stays on the current group header — a new turn opens a new group, and the block travels down with it, so you never have to scroll back up. When the run settles the block is cleared and that position holds the `Took …` band instead: both start with a full-width band at the same column, so switching state changes the text, not the layout.
 
 The first row is always the status band (`Working` / `Parallel` plus the elapsed time and the action counters); zero-valued counters are omitted. Below it come the thinking head, then each running tool (one row per parallel call) with its latest output line. Contents come from real events only, never guessed progress.

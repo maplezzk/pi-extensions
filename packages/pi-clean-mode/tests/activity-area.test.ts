@@ -16,6 +16,8 @@ import { ACTIVITY_ROWS_DEFAULT } from "../src/types.ts";
 const MAX_ROWS = ACTIVITY_ROWS_DEFAULT;
 /** 默认的固定渲染行。 */
 const DEFAULT_LINES = ["│ ⠹ 运行命令"];
+/** 轮首状态行的默认内容；与活动块不同，轮首只有这一行。 */
+const DEFAULT_RUN_STATUS_LINES = ["│ ⠋ 在处理 · 1s"];
 /** 内容变化对比用的第一组行。 */
 const NPM_TEST_LINES = ["│ ⠹ 运行命令 npm test"];
 /** 内容变化对比用的第二组行。 */
@@ -71,6 +73,8 @@ function createDeps(snapshot: ActivitySnapshot, lines: string[] = DEFAULT_LINES)
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
 		renderLines: () => lines,
+		// 轮首状态行与本组用例无关，固定返回一行可辨识的内容。
+		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 默认假定本轮已有承载折叠头的组件；需要验证「承载者未就绪」的用例自行覆盖它。
 		hasRunHeaderHost: () => true,
 	};
@@ -114,6 +118,7 @@ test("内容变化时更新行并请求重绘", () => {
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
 		renderLines: () => lines,
+		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 本用例与本轮承载者无关，固定为已就绪。
 		hasRunHeaderHost: () => true,
 	};
@@ -179,6 +184,34 @@ test("承载者出现后接管并关掉 Pi 内置 Working 提示", () => {
 	assert.deepEqual(fake.workingVisible, [false], "承载者就绪后才关掉内置提示");
 });
 
+test("轮首状态行随刷新写入 runtime，清理后清空", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+
+	refreshActivityArea(runtime, fake.host, createDeps(activeSnapshot()));
+	assert.deepEqual(runtime.runStatusLines, DEFAULT_RUN_STATUS_LINES, "运行时应持有轮首状态行");
+
+	clearActivityArea(runtime, fake.host);
+	assert.deepEqual(runtime.runStatusLines, [], "清理后不应残留轮首状态行");
+});
+
+test("轮首状态行内容变化也触发重绘", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	let statusLines = ["│ ⠋ 在处理 · 1s"];
+	const deps = createDeps(activeSnapshot());
+	deps.renderRunStatusLines = () => statusLines;
+
+	refreshActivityArea(runtime, fake.host, deps);
+	const rendersAfterFirst = fake.calls.renders;
+
+	statusLines = ["│ ⠙ 在处理 · 2s"];
+	refreshActivityArea(runtime, fake.host, deps);
+
+	assert.equal(fake.calls.renders, rendersAfterFirst + 1, "只有状态行变也要重绘");
+	assert.deepEqual(runtime.runStatusLines, statusLines, "runtime 应持有最新状态行");
+});
+
 test("活动行清空后恢复 Pi 内置 Working 提示", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
@@ -227,6 +260,7 @@ test("运行期间活动块行数只增不减，避免内容高度抖动", () =>
 		isAnimated: () => true,
 		getMaxRows: () => MAX_ROWS,
 		renderLines: () => lines,
+		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 补位与承载者无关，固定为已就绪。
 		hasRunHeaderHost: () => true,
 	};
