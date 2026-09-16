@@ -1,16 +1,17 @@
 /**
  * 实时活动区的运行时。
  *
- * 活动行内联在对话里（见 component-patches.ts）：本轮已经有工具行时挂在当前动作组头上，
- * 跟着最新动作走；还没有工具行、或者收起态看不到工具行时，回落到轮首槽位。
+ * 活动行内联在对话里（见 component-patches.ts）：
+ * - 活动块接在当前组最后一条可见行的末尾，永远贴在最新状态下面；
+ * - 轮首槽位只拿状态行（在处理 + 耗时），顶部只回答「整轮一共跑了多久」。
  * 不用 Pi 的 widget：widget 固定在编辑器上下方，滚历史时它不动，看起来像钉在底部的一条状态。
  *
  * 为什么还要签名去重：活动行每 tick 都会重算，但内容常常没变（例如耗时没走到
  * 下一秒、动画帧循环回同一格）。内容不变时完全跳过重绘，让整屏刷新只发生在真正
  * 有新信息的时候；动画按固定节拍推进，并让定时器只在运行期间存在。
  *
- * 刷新只做两件事：更新 runtime.lines，再请求重绘。行从哪里渲染由 component-patches.ts
- * 决定（轮首子组件或当前组头的工具行）；这两个动作都是 ActivityUiHost 的必需成员，刻意不套
+ * 刷新只做三件事：更新 runtime.lines（和它里哪几行是动作名）、再请求重绘。行从哪里渲染
+ * 由 component-patches.ts 决定（轮首子组件或当前组头的工具行）；这两个动作都是 ActivityUiHost 的必需成员，刻意不套
  * safeUiCall：它们抛错说明扩展入口的适配层坏了，应当暴露而不是吞掉；safeUiCall
  * 只用于老版本 Pi 可能缺失的可选 UI 方法。
  *
@@ -20,7 +21,7 @@
  * 否则屏幕上什么都没有，看起来就是卡住。
  */
 
-import type { ActivityPainter, ActivitySnapshot } from "./activity.js";
+import type { ActivityLines, ActivityPainter, ActivitySnapshot } from "./activity.js";
 
 /** 开启动画时的刷新间隔：约 6.7fps，跟 cli-spinners 点状动画的手感对齐。 */
 const ANIMATED_INTERVAL_MS = 150;
@@ -52,9 +53,22 @@ export interface ActivityAreaRuntime {
 	 * 当前要展示在 transcript 末尾的行；空数组表示不展示。
 	 *
 	 * 本文件只负责写：每次重算后与 linesSignature 成对更新，由扩展入口通过
-	 * `getLines` 交给轮首子组件在渲染时读取。
+	 * `getLines` 交给当前组的工具行在渲染末尾接上。
 	 */
 	lines: string[];
+	/**
+	 * `lines` 里属于动作名的行号。
+	 *
+	 * 组头已经写出这条动作时（单条组），渲染层要把这几行去掉，只留思考与输出尾巴；
+	 * 补位空行只会追加在末尾，所以行号补齐后依然有效。
+	 */
+	actionRows: number[];
+	/**
+	 * 轮首槽位要展示的状态行（最多一行：在处理 + 耗时）；空数组表示不展示。
+	 *
+	 * 与 `lines` 分开存放：轮首只报运行级时间，思考与工具细节只在当前组头上出现。
+	 */
+	runStatusLines: string[];
 	/**
 	 * 本轮活动块见过的最大行数。
 	 *
@@ -80,8 +94,10 @@ export interface ActivityAreaDeps {
 	isAnimated: () => boolean;
 	/** 最多显示几行。 */
 	getMaxRows: () => number;
-	/** 用给定主题渲染活动区行。 */
-	renderLines: (input: ActivityLinesInput) => string[];
+	/** 用给定主题渲染活动块（含哪几行是动作名）。 */
+	renderLines: (input: ActivityLinesInput) => ActivityLines;
+	/** 用给定主题渲染轮首状态行（只含在处理与耗时）。 */
+	renderRunStatusLines: (input: ActivityLinesInput) => string[];
 	/**
 	 * 本轮是否已经有能承载活动行的轮首组件。
 	 *
@@ -106,7 +122,7 @@ export interface ActivityLinesInput {
 
 /** 创建活动区运行时状态。 */
 export function createActivityAreaRuntime(): ActivityAreaRuntime {
-	return { frame: 0, workingSuppressed: false, lines: [], paddedRows: 0 };
+	return { actionRows: [], frame: 0, workingSuppressed: false, lines: [], runStatusLines: [], paddedRows: 0 };
 }
 
 /** 安全调用 ui 上的可选方法；老版本或极简上下文可能不提供。 */
@@ -124,15 +140,40 @@ const PADDING_ROW = "";
 const SIGNATURE_HOST_READY = "host:ready";
 /** 去重签名里的「承载者还没出现」标记。 */
 const SIGNATURE_HOST_MISSING = "host:missing";
+/** 去重签名里分隔活动块与轮首状态行的标记，避免两块内容拼串后互相误命中。 */
+const SIGNATURE_RUN_STATUS = "run-status:";
+/** 去重签名里分隔活动块行与动作行号的标记。 */
+const SIGNATURE_ACTION_ROWS = "action-rows:";
+
+/** 去重签名要覆盖的三块内容：活动块行、动作行号、轮首状态行。 */
+interface LinesSignatureInput {
+	/** 活动块行（已补位）。 */
+	lines: string[];
+	/** 活动块里属于动作名的行号。 */
+	actionRows: number[];
+	/** 轮首状态行。 */
+	runStatusLines: string[];
+	/** 本轮是否已经有能承载活动行的轮首组件。 */
+	hostReady: boolean;
+}
 
 /**
- * 组装去重签名：行内容 + 承载者是否就绪。
+ * 组装去重签名：两块内容 + 动作行号 + 承载者是否就绪。
  *
  * 承载者就绪与否必须参与签名：内容一个字都没变但承载者刚从无到有时，也要让签名
  * 变化一次，下一个 tick 才能重新接管并关掉 Pi 的内置提示；否则会被去重挡住。
+ * 轮首状态行也要参与：它只在回落条件下渲染，块内容不变时它可能刚被清空或刚出现。
+ * 动作行号同样要参与：行内容一字未变但「哪行是动作名」变了（并行转单条），渲染层要换一种拼法。
  */
-function buildLinesSignature(lines: string[], hostReady: boolean): string {
-	return `${hostReady ? SIGNATURE_HOST_READY : SIGNATURE_HOST_MISSING}\n${lines.join("\n")}`;
+function buildLinesSignature({ lines, actionRows, runStatusLines, hostReady }: LinesSignatureInput): string {
+	return [
+		hostReady ? SIGNATURE_HOST_READY : SIGNATURE_HOST_MISSING,
+		...lines,
+		SIGNATURE_ACTION_ROWS,
+		actionRows.join(","),
+		SIGNATURE_RUN_STATUS,
+		...runStatusLines,
+	].join("\n");
 }
 
 /**
@@ -154,8 +195,38 @@ function padActivityLines(runtime: ActivityAreaRuntime, lines: string[]): string
 	return [...lines, ...new Array<string>(runtime.paddedRows - lines.length).fill(PADDING_ROW)];
 }
 
-/** 按当前主题与快照渲染活动行；未运行时返回空行集。 */
+/** 组装一次渲染的输入：同一个 tick 里两块内容共用同一帧、主题与行数预算。 */
+function buildRenderInput(
+	runtime: ActivityAreaRuntime,
+	host: ActivityUiHost,
+	deps: ActivityAreaDeps,
+): ActivityLinesInput {
+	return {
+		painter: host.ui.theme,
+		frame: runtime.frame,
+		maxRows: deps.getMaxRows(),
+		animated: deps.isAnimated(),
+	};
+}
+
+/** 按当前主题与快照渲染活动块；未运行时返回空块。 */
 function renderActivityLines(
+	runtime: ActivityAreaRuntime,
+	host: ActivityUiHost,
+	deps: ActivityAreaDeps,
+): ActivityLines {
+	if (!deps.getSnapshot().active) {
+		return { lines: [], actionRows: [] };
+	}
+	return deps.renderLines(buildRenderInput(runtime, host, deps));
+}
+
+/**
+ * 渲染轮首状态行；未运行时返回空行集。
+ *
+ * 不走 padActivityLines：轮首固定就是一行，补位只会往顶部铺空行。
+ */
+function renderRunStatusLines(
 	runtime: ActivityAreaRuntime,
 	host: ActivityUiHost,
 	deps: ActivityAreaDeps,
@@ -163,19 +234,15 @@ function renderActivityLines(
 	if (!deps.getSnapshot().active) {
 		return [];
 	}
-	return deps.renderLines({
-		painter: host.ui.theme,
-		frame: runtime.frame,
-		maxRows: deps.getMaxRows(),
-		animated: deps.isAnimated(),
-	});
+	return deps.renderRunStatusLines(buildRenderInput(runtime, host, deps));
 }
 
 /**
  * 刷新活动区。
  *
- * 行内容与上一 tick 完全一致时直接返回，不触发重绘；行有变化时先把新行写进
- * runtime.lines，再请求重绘（轮首的活动区子组件每次渲染都从这里取行）。
+ * 两块内容都渲染：当前组头用的活动块，以及轮首槽位用的状态行。行内容与上一 tick 完全
+ * 一致时直接返回，不触发重绘；有变化时先把新行写进 runtime，再请求重绘（两处渲染时都从
+ * runtime 取行）。
  */
 export function refreshActivityArea(
 	runtime: ActivityAreaRuntime,
@@ -185,17 +252,25 @@ export function refreshActivityArea(
 	runtime.lastHost = host;
 
 	const rendered = renderActivityLines(runtime, host, deps);
-	const lines = padActivityLines(runtime, rendered);
-	const signature = buildLinesSignature(lines, deps.hasRunHeaderHost());
+	const lines = padActivityLines(runtime, rendered.lines);
+	const runStatusLines = renderRunStatusLines(runtime, host, deps);
+	const signature = buildLinesSignature({
+		lines,
+		actionRows: rendered.actionRows,
+		runStatusLines,
+		hostReady: deps.hasRunHeaderHost(),
+	});
 
 	if (signature === runtime.linesSignature) {
 		return;
 	}
 
-	// lines 与 linesSignature 必须成对落盘：前者决定屏幕上画什么，后者决定下一
-	// tick 要不要重画。提前 return 之前不留下这两者不一致的窗口。
+	// 行、动作行号与 linesSignature 必须成对落盘：前者决定屏幕上画什么，后者决定下一 tick
+	// 要不要重画。提前 return 之前不留下它们不一致的窗口。
 	runtime.linesSignature = signature;
 	runtime.lines = lines;
+	runtime.actionRows = rendered.actionRows;
+	runtime.runStatusLines = runStatusLines;
 
 	if (lines.length === 0) {
 		host.requestRender();
@@ -231,6 +306,8 @@ export function clearActivityArea(runtime: ActivityAreaRuntime, host: ActivityUi
 	stopActivityTimer(runtime);
 	runtime.linesSignature = undefined;
 	runtime.lines = [];
+	runtime.actionRows = [];
+	runtime.runStatusLines = [];
 	runtime.paddedRows = 0;
 	host.requestRender();
 	restorePiWorkingIndicator(runtime, host);
@@ -261,7 +338,6 @@ export function startActivityTimer(
 		runtime.frame += 1;
 		refreshActivityArea(runtime, activeHost, deps);
 	}, intervalMs);
-
 	// 不让定时器拖住进程退出。
 	timer.unref?.();
 	runtime.timer = timer;
