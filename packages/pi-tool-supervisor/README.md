@@ -22,6 +22,68 @@ An edit tool can complete successfully while the resulting file still violates l
 
 It observes Pi's native events and does not register a replacement `edit` or `write` tool.
 
+## Review engines
+
+Each reviewer picks an engine with `backend`. Omitting it keeps the original behavior.
+
+| `backend` | Who judges | Cost and latency | Result shape |
+| --- | --- | --- | --- |
+| `model` (default) | A Pi chat model reads every rule and the diff in one prompt | One chat completion per reviewer | Free-form JSON: `passed`, `summary`, `findings` |
+| `typesafe` | TypeSafe System One answers one typed question per rule in a single batched request | Measured on a 3-rule reviewer: ~1-2 s, ~1,400 input tokens, about US$0.00006 per review | A calibrated `noul` probability per rule; code applies the thresholds |
+
+### TypeSafe backend
+
+The `typesafe` backend turns each rule file into one Noul question - "does code added or changed in `diff` violate this rule?" - answered as a probability. Every rule of one reviewer is asked in a single request, because TypeSafe answers all questions over the same state in parallel. Code owns everything else: `threshold` decides whether a rule counts as hit, `severity` decides whether a hit blocks, and a second, smaller Choice request locates the offending line among the lines the diff actually added.
+
+Because TypeSafe returns judgments and not prose, the fixing advice comes from the rule file's `## Fix` section, written once by the rule author. It is not generated per review.
+
+```json
+{
+  "name": "code-taste",
+  "backend": "typesafe",
+  "typesafeModel": "jev-latest",
+  "rulesFiles": ["/absolute/path/to/no-swallowed-error.md"],
+  "tools": ["edit", "write"],
+  "trigger": "after"
+}
+```
+
+Set `TYPESAFE_API_KEY` in the environment; `TYPESAFE_ENDPOINT` overrides the endpoint. A missing key, a failed request, or a rule that cannot be judged produces a visible `failed` audit entry and does not block the tool, which matches how a failed chat-model review behaves.
+
+A rule file for this backend needs a criteria section and should carry a fix hint:
+
+```markdown
+---
+name: no-swallowed-error
+severity: error
+threshold: 0.85
+---
+# Do not swallow failures
+
+## Criteria
+true: An added line catches an error and continues silently: empty catch, an ignored rejected promise, or a default/null/empty value that hides the failure
+false: The failure is surfaced by rethrowing, propagating, or logging; or the change adds no error handling
+
+## Fix
+Propagate the failure to the caller, or at least log it and return an explicit error value. Do not hide it behind a default.
+```
+
+`## Criteria` (`## 判据` works too) accepts `true:` and `false:` lines; an indented line continues the previous definition. `## Fix` (`## 修复提示`) becomes the finding text. A rule file without a criteria section cannot be judged: it is reported as a failed review with its file path, never silently skipped.
+
+Rule front matter additions for this backend:
+
+| Field | Meaning |
+| --- | --- |
+| `severity` | `error`, `warning`, or `info`. Only `error` blocks. Default `error`. |
+| `threshold` | Probability at which the rule counts as hit; greater than 0 and at most 1. Default `0.85`. Calibrate it per rule. |
+
+Limitations worth knowing before treating a `typesafe` reviewer as a gate:
+
+- Line localization needs the post-edit file. A `before` review only has it for `write`, so `edit` before-reviews report rule-level issues without a line number.
+- When the diff adds more than 40 lines, localization is skipped and reported as a warning; the rule-level issues are still reported.
+- The whole post-edit file is sent as context, bounded by `maxFileContextChars`. It roughly doubles the input tokens compared with a diff-only request.
+- A probability is a calibrated judgment, not a guarantee. Validate thresholds against your own rules, and expect borderline rules to drift.
+
 ## Install
 
 ```bash
@@ -73,7 +135,7 @@ Start from [`config.example.json`](./config.example.json):
 }
 ```
 
-Each reviewer must have a `provider/model` reference and either `rulesFile` or `rulesFiles`. Relative rule-file and condition-module paths are resolved from the current project working directory.
+Each reviewer must have either a `provider/model` reference (`model` backend) or a `typesafeModel` (`typesafe` backend), plus either `rulesFile` or `rulesFiles`. Relative rule-file and condition-module paths are resolved from the current project working directory.
 
 | Setting | Meaning |
 | --- | --- |
@@ -81,6 +143,8 @@ Each reviewer must have a `provider/model` reference and either `rulesFile` or `
 | `timeoutSeconds` | Maximum time allowed for each reviewer model call. |
 | `maxFileContextChars` | Maximum post-edit file context sent to reviewers. The default is 50,000 characters; oversized files use bounded, explicitly marked excerpts around changed lines. |
 | `maxRuleLines` | Maximum rule-file size accepted for a single review rule. |
+| `backend` | `model` (default) or `typesafe`. Selects the review engine. |
+| `typesafeModel` | TypeSafe model name used by the `typesafe` backend. Defaults to `jev-latest`. |
 | `condition` | Optional local TypeScript/ESM module path. Its default export receives the native Pi tool event, `ExtensionContext`, and `ToolConditionHelpers`; returning `false` skips this reviewer without a model call. |
 | `reviewers` | Reviewer name, model, rule files, `tools`, `trigger`, and optional condition module. Missing lifecycle fields keep the legacy `edit`/`write` + `after` behavior. |
 
@@ -146,7 +210,8 @@ When upgrading from `pi-file-edit-review`, the extension reads the legacy config
 ## Requirements
 
 - Node.js 22 or newer.
-- A configured Pi model for each enabled reviewer.
+- A configured Pi model for each enabled `model` reviewer.
+- A `TYPESAFE_API_KEY` for each enabled `typesafe` reviewer.
 - Rule files that describe the project-specific checks the reviewer should apply.
 
 ## License

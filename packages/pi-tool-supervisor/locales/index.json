@@ -190,5 +190,61 @@
   "conditionFailed": {
     "zh-CN": "条件模块 {path} 执行失败：{message}",
     "en-US": "Condition module {path} failed: {message}"
+  },
+  "backendModel": {
+    "zh-CN": "对话模型",
+    "en-US": "Chat model"
+  },
+  "backendTypesafe": {
+    "zh-CN": "TypeSafe 判断",
+    "en-US": "TypeSafe judgment"
+  },
+  "backendConfig": {
+    "zh-CN": "审查引擎：{value}",
+    "en-US": "Review engine: {value}"
+  },
+  "backendInput": {
+    "zh-CN": "审查引擎",
+    "en-US": "Review engine"
+  },
+  "typesafeModel": {
+    "zh-CN": "TypeSafe 模型：{value}",
+    "en-US": "TypeSafe model: {value}"
+  },
+  "typesafeModelInput": {
+    "zh-CN": "TypeSafe 模型名（留空使用默认值）",
+    "en-US": "TypeSafe model name (empty uses the default)"
+  },
+  "modelMissing": {
+    "zh-CN": "这个 reviewer 没有可用的审查模型。",
+    "en-US": "This reviewer has no usable review model."
+  },
+  "noJudgments": {
+    "zh-CN": "没有可判断的规则：所有规则文件都缺少「## 判据」段落。",
+    "en-US": "No judgable rules: every rule file is missing its \"## Criteria\" section."
+  },
+  "passedSummary": {
+    "zh-CN": "全部规则判断未命中。",
+    "en-US": "No rule judgment was hit."
+  },
+  "rejectedSummary": {
+    "zh-CN": "{count} 条规则命中：{details}",
+    "en-US": "{count} rule judgments were hit: {details}"
+  },
+  "advisorySummary": {
+    "zh-CN": "{count} 条规则命中，但都不是阻断级别：{details}",
+    "en-US": "{count} rule judgments were hit, none at blocking severity: {details}"
+  },
+  "unansweredJudgments": {
+    "zh-CN": "TypeSafe 没有返回 {count} 条规则的答案（{ids}），它们无法判定，本次审查按失败处理，不视为通过。",
+    "en-US": "TypeSafe returned no answer for {count} rules ({ids}); they could not be judged, so this review is reported as failed rather than passed."
+  },
+  "localizationSkipped": {
+    "zh-CN": "新增行超过 {count} 行，已跳过行号定位，只报告规则级别的问题。",
+    "en-US": "More than {count} added lines, so line localization was skipped and issues are reported at rule level only."
+  },
+  "localizationFailed": {
+    "zh-CN": "行号定位请求失败，只报告规则级别的问题：{message}",
+    "en-US": "The line localization request failed, so issues are reported at rule level only: {message}"
   }
 }

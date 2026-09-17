@@ -19,18 +19,39 @@ const DEFAULT_REVIEW_TOOLS = ["edit", "write"];
 const ALL_TOOLS = "*";
 const REVIEW_TRIGGERS = ["before", "after"] as const;
 const DEFAULT_REVIEW_TRIGGER: ReviewTrigger = "after";
+export const REVIEW_BACKENDS = ["model", "typesafe"] as const;
+/** 未配置 backend 时按对话模型审查，保持旧行为。 */
+const DEFAULT_REVIEW_BACKEND: ReviewBackend = "model";
+const RULE_SEVERITIES = ["error", "warning", "info"] as const;
+/** TypeSafe 模型名默认值；`typesafe/latest` 之类的别名由 TypeSafe 自行解析。 */
+export const DEFAULT_TYPESAFE_MODEL = "jev-latest";
+const DEFAULT_RULE_SEVERITY: RuleSeverity = "error";
+/** noul 达到该值即认为规则命中；按规则在 front matter 里覆盖。 */
+export const DEFAULT_RULE_THRESHOLD = 0.85;
 /** Severity that makes one finding actionable, and therefore blocking. */
 const BLOCKING_SEVERITY = "error";
 const INFO_SEVERITY = "info";
 /** Rule group reported by findings the supervisor synthesizes itself. */
 const SUPERVISOR_RULE_GROUP = "supervisor";
+const SECTION_HEADING = /^##\s+(.+?)\s*$/;
+const CRITERION_LINE = /^\s*[-*]?\s*(true|false)\s*[:：]\s*(.*)$/i;
+const CRITERIA_HEADINGS = new Set(["判据", "criteria"]);
+const FIX_HEADINGS = new Set(["修复提示", "fix"]);
 
 export type ReviewStatus = "passed" | "rejected" | "failed" | "skipped";
 export type ReviewTrigger = (typeof REVIEW_TRIGGERS)[number];
+/** 审查引擎：`model` 用 Pi 配置的对话模型，`typesafe` 用 TypeSafe System One 判断。 */
+export type ReviewBackend = (typeof REVIEW_BACKENDS)[number];
+export type RuleSeverity = (typeof RULE_SEVERITIES)[number];
 
 export interface FileEditReviewReviewerConfig {
   name: string;
-  model: string;
+  /** `model` backend 使用，格式为 `provider/model`；`typesafe` backend 不使用。 */
+  model?: string;
+  /** 审查引擎；省略时按 `model` 处理。 */
+  backend?: ReviewBackend;
+  /** `typesafe` backend 使用的 TypeSafe 模型名；省略时为 `jev-latest`。 */
+  typesafeModel?: string;
   /** 兼容旧配置：单个规则文件。 */
   rulesFile?: string;
   /** 新配置：一个 reviewer 一次加载多个规则文件。 */
@@ -55,12 +76,27 @@ export interface FileEditReviewRuleMetadata {
   filePatterns?: string[];
   complexity?: "local" | "context";
   consumers?: string[];
+  /** 规则命中时的问题级别；只有 `error` 会阻断。 */
+  severity?: RuleSeverity;
+  /** noul 达到该值即认为规则命中。 */
+  threshold?: number;
+}
+
+/** 规则正文里 TypeSafe 判断后端需要的结构化段落。 */
+export interface FileEditReviewRuleSections {
+  /** `## 判据` 的 `true:` 定义。 */
+  criterionTrue?: string;
+  /** `## 判据` 的 `false:` 定义。 */
+  criterionFalse?: string;
+  /** `## 修复提示` 的修正建议；作为 finding 文案，不需要模型生成。 */
+  fixHint?: string;
 }
 
 interface ParsedRuleFile {
   metadata: FileEditReviewRuleMetadata;
   content: string;
-  warning?: string;
+  sections: FileEditReviewRuleSections;
+  warnings: string[];
 }
 
 export interface FileEditReviewConfig {
@@ -82,6 +118,9 @@ export interface FileEditReviewRule {
   absolutePath: string;
   content: string;
   lineCount: number;
+  /** 规则 front matter 原文；判断后端用它决定规则标识。 */
+  metadata: FileEditReviewRuleMetadata;
+  sections: FileEditReviewRuleSections;
   warning?: string;
 }
 
@@ -113,6 +152,8 @@ export interface FileEditReviewResult {
   findings?: FileEditReviewFinding[];
   durationMs: number;
   error?: string;
+  /** 该 reviewer 自己产生的警告（例如规则缺判据、行定位被跳过）。 */
+  warnings?: string[];
 }
 
 export interface FileEditReviewAudit {
@@ -160,6 +201,18 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/** 只接受 (0, 1] 的概率阈值；其它值返回 undefined，由调用方明确报告。 */
+function probabilityValue(value: unknown): number | undefined {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) && numeric > 0 && numeric <= 1 ? numeric : undefined;
+}
+
+/** 解析 backend；字段缺失时用默认值，写了非法值返回 undefined 由调用方告警。 */
+function backendValue(value: unknown): ReviewBackend | undefined {
+  if (value === undefined) return DEFAULT_REVIEW_BACKEND;
+  return REVIEW_BACKENDS.find((backend) => backend === value);
+}
+
 function parseModel(value: unknown): string | undefined {
   const model = stringValue(value);
   if (!model) return undefined;
@@ -171,14 +224,30 @@ function parseModel(value: unknown): string | undefined {
 function normalizeReviewer(value: unknown, index: number, warnings: string[] = []): FileEditReviewReviewerConfig | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>;
+  const backend = backendValue(source.backend);
+  if (!backend) {
+    warnings.push(i18n.t("invalidBackendConfig", { index }));
+    return undefined;
+  }
   const model = parseModel(source.model);
+  let typesafeModel: string | undefined;
+  if (backend === "typesafe") {
+    typesafeModel = source.typesafeModel === undefined ? DEFAULT_TYPESAFE_MODEL : stringValue(source.typesafeModel);
+    if (!typesafeModel) {
+      warnings.push(i18n.t("invalidTypesafeModelConfig", { index }));
+      return undefined;
+    }
+    if (source.model !== undefined) warnings.push(i18n.t("modelIgnoredForTypesafe", { index }));
+  } else if (!model) {
+    return undefined;
+  }
   const rulesFile = stringValue(source.rulesFile);
   const rulesFiles = Array.isArray(source.rulesFiles)
     ? source.rulesFiles
       .filter((file): file is string => typeof file === "string" && Boolean(file.trim()))
       .map((file) => file.trim())
     : [];
-  if (!model || (Boolean(rulesFile) && rulesFiles.length > 0) || (!rulesFile && rulesFiles.length === 0)) return undefined;
+  if ((Boolean(rulesFile) && rulesFiles.length > 0) || (!rulesFile && rulesFiles.length === 0)) return undefined;
   const filePatterns = Array.isArray(source.filePatterns)
     ? source.filePatterns.filter((pattern): pattern is string => typeof pattern === "string" && Boolean(pattern.trim())).map((pattern) => pattern.trim())
     : [];
@@ -202,7 +271,8 @@ function normalizeReviewer(value: unknown, index: number, warnings: string[] = [
   }
   return {
     name: stringValue(source.name) ?? `reviewer-${index + 1}`,
-    model,
+    // 只在 typesafe 时写入 backend，避免把旧配置改写为带显式 model backend。
+    ...(backend === "typesafe" ? { backend, typesafeModel } : { model }),
     ...(rulesFile ? { rulesFile } : { rulesFiles }),
     enabled: source.enabled !== false,
     filePatterns,
@@ -260,7 +330,7 @@ export function loadFileEditReviewConfig(
   rawReviewers.forEach((entry, index) => {
     const reviewer = normalizeReviewer(entry, index, warnings);
     if (!reviewer) {
-      warnings.push(`审查配置 reviewers[${index}] 无效，必须包含 provider/model 格式的 model 和 rulesFile。`);
+      warnings.push(i18n.t("invalidReviewerConfig", { index }));
       return;
     }
     reviewers.push(reviewer);
@@ -308,14 +378,67 @@ function parseMetadataValue(value: string): string | boolean | undefined {
   return normalized.replace(/^([\"'])(.*)\1$/, "$2");
 }
 
-function parseRuleFile(rawContent: string): ParsedRuleFile {
-  if (!rawContent.startsWith("---\n") && !rawContent.startsWith("---\r\n")) {
-    return { metadata: {}, content: rawContent };
+function normalizeHeading(value: string): string {
+  return value.trim().replace(/[:：]\s*$/, "").toLowerCase();
+}
+
+/**
+ * 抽取 TypeSafe 判断后端需要的结构化段落。缺少判据不是解析错误：
+ * `model` backend 的旧规则文件本来就没有这两段。
+ */
+function parseRuleSections(content: string): FileEditReviewRuleSections {
+  const criterionLines: Record<"true" | "false", string[]> = { true: [], false: [] };
+  const fixLines: string[] = [];
+  let current: "criteria" | "fix" | undefined;
+  let continuation: "true" | "false" | undefined;
+  for (const line of content.split(/\r?\n/)) {
+    const heading = line.match(SECTION_HEADING);
+    if (heading) {
+      const name = normalizeHeading(heading[1] ?? "");
+      current = CRITERIA_HEADINGS.has(name) ? "criteria" : FIX_HEADINGS.has(name) ? "fix" : undefined;
+      continuation = undefined;
+      continue;
+    }
+    if (current === "fix") {
+      fixLines.push(line);
+      continue;
+    }
+    if (current !== "criteria") continue;
+    const criterion = line.match(CRITERION_LINE);
+    if (criterion) {
+      continuation = (criterion[1] ?? "").toLowerCase() as "true" | "false";
+      criterionLines[continuation].push((criterion[2] ?? "").trim());
+      continue;
+    }
+    // 缩进行是上一条判据的续行，避免把多行定义拆成两条。
+    if (continuation && /^\s+\S/.test(line)) {
+      const lines = criterionLines[continuation];
+      lines[lines.length - 1] = `${lines[lines.length - 1] ?? ""} ${line.trim()}`.trim();
+    }
   }
+  const join = (lines: string[]): string | undefined =>
+    lines.map((line) => line.trim()).filter(Boolean).join(" ").trim() || undefined;
+  return {
+    criterionTrue: join(criterionLines.true),
+    criterionFalse: join(criterionLines.false),
+    fixHint: join(fixLines),
+  };
+}
+
+function parseRuleFile(rawContent: string): ParsedRuleFile {
+  const warnings: string[] = [];
+  const bareFile: ParsedRuleFile = {
+    metadata: {},
+    content: rawContent,
+    sections: parseRuleSections(rawContent),
+    warnings,
+  };
+  if (!rawContent.startsWith("---\n") && !rawContent.startsWith("---\r\n")) return bareFile;
 
   const headerEnd = rawContent.search(/\r?\n---\r?\n/);
   if (headerEnd < 0) {
-    return { metadata: {}, content: rawContent, warning: "规则文件 front matter 未找到结束标记 ---，已按普通 Markdown 处理。" };
+    warnings.push(i18n.t("unterminatedFrontMatter"));
+    return bareFile;
   }
 
   const header = rawContent.slice(4, headerEnd);
@@ -345,10 +468,20 @@ function parseRuleFile(rawContent: string): ParsedRuleFile {
     if (key === "name" && typeof value === "string") metadata.name = value;
     if (key === "enabled" && typeof value === "boolean") metadata.enabled = value;
     if (key === "complexity" && (value === "local" || value === "context")) metadata.complexity = value;
+    if (key === "severity") {
+      const severity = RULE_SEVERITIES.find((candidate) => candidate === value);
+      if (severity) metadata.severity = severity;
+      else warnings.push(i18n.t("invalidRuleSeverity", { value: String(value ?? "") }));
+    }
+    if (key === "threshold") {
+      const threshold = probabilityValue(value);
+      if (threshold === undefined) warnings.push(i18n.t("invalidRuleThreshold", { value: String(value ?? "") }));
+      else metadata.threshold = threshold;
+    }
   }
   if (lists.filePatterns.length > 0) metadata.filePatterns = lists.filePatterns;
   if (lists.consumers.length > 0) metadata.consumers = lists.consumers;
-  return { metadata, content };
+  return { metadata, content, sections: parseRuleSections(content), warnings };
 }
 
 /** Converts the supported glob subset while preserving directory boundaries for a single star. */
@@ -385,6 +518,29 @@ function matchesFilePattern(filePath: string, pattern: string): boolean {
   const normalizedPath = normalizeFilePath(filePath);
   const normalizedPattern = normalizeFilePath(pattern);
   return filePatternToRegExp(normalizedPattern).test(normalizedPath);
+}
+
+/** 审查引擎；未配置时按 `model` 处理。 */
+export function reviewerBackend(reviewer: FileEditReviewReviewerConfig): ReviewBackend {
+  return reviewer.backend ?? "model";
+}
+
+/** 审计卡片和配置界面显示的模型标签；TypeSafe backend 用 `typesafe/<model>` 形式。 */
+export function reviewerModelLabel(reviewer: FileEditReviewReviewerConfig): string {
+  if (reviewerBackend(reviewer) === "typesafe") {
+    return `typesafe/${reviewer.typesafeModel ?? DEFAULT_TYPESAFE_MODEL}`;
+  }
+  return reviewer.model ?? "unknown";
+}
+
+/** 规则命中时的问题级别；省略时为 error。 */
+export function ruleSeverity(rule: FileEditReviewRule): RuleSeverity {
+  return rule.metadata.severity ?? DEFAULT_RULE_SEVERITY;
+}
+
+/** 规则命中阈值；省略时为 DEFAULT_RULE_THRESHOLD。 */
+export function ruleThreshold(rule: FileEditReviewRule): number {
+  return rule.metadata.threshold ?? DEFAULT_RULE_THRESHOLD;
 }
 
 export function reviewerAppliesToFile(
@@ -442,8 +598,16 @@ export function loadReviewRule(
   const lengthWarning = lineCount > maxRuleLines
     ? `规则文件 ${reviewer.rulesFile} 有 ${lineCount} 行，超过 ${maxRuleLines} 行；审查可能变慢且效果下降，建议拆分规则文件。`
     : undefined;
-  const warning = [parsed.warning, lengthWarning].filter(Boolean).join(" ") || undefined;
-  return { reviewer: effectiveReviewer, absolutePath, content, lineCount, warning };
+  const warning = [...parsed.warnings, lengthWarning].filter(Boolean).join(" ") || undefined;
+  return {
+    reviewer: effectiveReviewer,
+    absolutePath,
+    content,
+    lineCount,
+    metadata: parsed.metadata,
+    sections: parsed.sections,
+    warning,
+  };
 }
 
 export function loadReviewRules(
@@ -459,7 +623,7 @@ export function loadReviewRules(
     } catch (error) {
       errors.push({
         name: reviewer.name,
-        model: reviewer.model,
+        model: reviewerModelLabel(reviewer),
         rulesFile,
         status: "failed",
         durationMs: 0,

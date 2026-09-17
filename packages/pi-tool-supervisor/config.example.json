@@ -13,6 +13,16 @@
       "tools": ["edit", "write"],
       "trigger": "after",
       "condition": "/absolute/path/to/condition.ts"
+    },
+    {
+      "name": "code-taste",
+      "backend": "typesafe",
+      "typesafeModel": "jev-latest",
+      "rulesFiles": [
+        "/absolute/path/to/no-swallowed-error.md"
+      ],
+      "tools": ["edit", "write"],
+      "trigger": "after"
     }
   ]
 }

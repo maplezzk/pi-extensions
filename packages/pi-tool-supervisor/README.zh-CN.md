@@ -23,6 +23,68 @@
 
 它监听 Pi 原生事件，不会注册替代版 `edit` 或 `write` 工具。
 
+## 审查引擎
+
+每个 reviewer 用 `backend` 选择审查引擎；省略时保持原有行为。
+
+| `backend` | 由谁判断 | 开销 | 结果形态 |
+| --- | --- | --- | --- |
+| `model`（默认） | 一个 Pi 对话模型，把全部规则和 diff 放进一次 prompt 里读 | 每个 reviewer 一次对话补全 | 自由文本 JSON：`passed`、`summary`、`findings` |
+| `typesafe` | TypeSafe System One，一次批量请求里每条规则一个 typed question | 实测 3 条规则的 reviewer：约 1-2 秒、约 1,400 input token、每次审查约 US$0.00006 | 每条规则一个校准过的 `noul` 概率；阈值由代码判定 |
+
+### TypeSafe 引擎
+
+`typesafe` 把每个规则文件变成一条 Noul 问题——“`diff` 中新增或修改的代码是否违反这条规则？”——答案是概率。同一 reviewer 的全部规则放在一次请求里问，因为 TypeSafe 会对同一份 state 并行回答所有问题。剩下的都由代码控制：`threshold` 决定算不算命中，`severity` 决定命中是否阻断；命中后再用一次更小的 Choice 请求，把问题定位到 diff 真正新增的那几行里。
+
+因为 TypeSafe 只返回判断、不返回散文，修复建议来自规则文件的 `## 修复提示`，由规则作者写一次，不是每次审查现生成。
+
+```json
+{
+  "name": "code-taste",
+  "backend": "typesafe",
+  "typesafeModel": "jev-latest",
+  "rulesFiles": ["/absolute/path/to/no-swallowed-error.md"],
+  "tools": ["edit", "write"],
+  "trigger": "after"
+}
+```
+
+需要在环境里设置 `TYPESAFE_API_KEY`；`TYPESAFE_ENDPOINT` 可以覆盖服务地址。key 缺失、请求失败或规则无法判断都会产生可见的 `failed` 审计条目，不会阻断工具，与对话模型审查失败时的行为一致。
+
+这个引擎的规则文件必须有判据段落，并应该带上修复提示：
+
+```markdown
+---
+name: no-swallowed-error
+severity: error
+threshold: 0.85
+---
+# 不得静默吞掉异常
+
+## 判据
+true: 新增行捕获错误后静默继续：空 catch、忽略 Promise 拒绝，或用默认值/null/空串掩盖失败
+false: 通过抛出、向上传递或记录日志报告失败；或本次改动没有新增错误处理
+
+## 修复提示
+把失败显式抛给调用方，或至少记录日志并返回显式错误值，不要用默认值掩盖。
+```
+
+`## 判据`（也接受 `## Criteria`）下写 `true:` 和 `false:` 两行；缩进行是上一条定义的续行。`## 修复提示`（也接受 `## Fix`）就是 finding 的文案。缺少判据的规则文件无法判断：会被报成带文件路径的失败审查，不会静默跳过。
+
+这个引擎额外读取的 front matter 字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `severity` | `error`、`warning` 或 `info`；只有 `error` 会阻断。默认 `error`。 |
+| `threshold` | 达到多少概率算命中，必须大于 0 且不超过 1。默认 `0.85`，建议按规则分别校准。 |
+
+把 `typesafe` reviewer 当门禁之前需要知道的限制：
+
+- 行号定位需要修改后的文件内容。`before` 审查只有 `write` 拿得到，所以 `edit` 的 before 审查只报规则级问题、不给行号。
+- diff 新增超过 40 行时会跳过行定位，并在审计里给出警告；规则级问题仍然照常报告。
+- 会把整份修改后文件作为上下文发出，受 `maxFileContextChars` 限制；相比只发 diff，输入 token 大约翻倍。
+- 概率是校准过的判断，不是事实保证。请用你自己的规则验证阈值，边界规则会飘。
+
 ## 安装
 
 ```bash
@@ -74,7 +136,7 @@ pi install npm:pi-tool-supervisor
 }
 ```
 
-每个 reviewer 必须提供 `provider/model` 格式的模型，并提供 `rulesFile` 或 `rulesFiles`。相对规则文件和 condition 模块路径按当前项目工作目录解析。
+每个 reviewer 必须提供 `provider/model` 格式的模型（`model` 引擎）或 `typesafeModel`（`typesafe` 引擎），并提供 `rulesFile` 或 `rulesFiles`。相对规则文件和 condition 模块路径按当前项目工作目录解析。
 
 | 配置项 | 含义 |
 | --- | --- |
@@ -82,6 +144,8 @@ pi install npm:pi-tool-supervisor
 | `timeoutSeconds` | 每个 reviewer 模型调用的最长等待时间。 |
 | `maxFileContextChars` | 发送给 reviewer 的修改后文件上下文上限，默认 50,000 字符；超大文件仅发送首次和末次变更附近的有界片段并明确标记。 |
 | `maxRuleLines` | 单条审查规则允许读取的最大行数。 |
+| `backend` | `model`（默认）或 `typesafe`，选择审查引擎。 |
+| `typesafeModel` | `typesafe` 引擎使用的 TypeSafe 模型名，默认 `jev-latest`。 |
 | `reviewers` | reviewer 名称、模型、规则文件、`tools`、`trigger` 和可选的 condition 模块；省略生命周期字段时保持旧的 `edit`/`write` + `after` 行为。 |
 | `condition` | 可选的本地 TypeScript/ESM 模块路径。默认导出函数会收到 Pi 原生工具事件、`ExtensionContext` 和 `ToolConditionHelpers`；返回 `false` 时跳过该 reviewer，不调用模型。 |
 
@@ -147,7 +211,8 @@ condition 返回 `false` 时跳过该 reviewer，不读取其规则文件，也�
 ## 要求
 
 - Node.js 22 或更高版本。
-- 每个启用 reviewer 都需要一个已配置的 Pi 模型。
+- 每个启用的 `model` reviewer 需要一个已配置的 Pi 模型。
+- 每个启用的 `typesafe` reviewer 需要 `TYPESAFE_API_KEY`。
 - 需要提供描述项目级检查项的规则文件。
 
 ## 许可证

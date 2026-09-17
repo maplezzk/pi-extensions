@@ -94,5 +94,33 @@
   "toolInputSerializationFailed": {
     "zh-CN": "工具输入序列化失败：{message}",
     "en-US": "Tool input serialization failed: {message}"
+  },
+  "unterminatedFrontMatter": {
+    "zh-CN": "规则文件 front matter 未找到结束标记 ---，已按普通 Markdown 处理。",
+    "en-US": "The rule file front matter has no closing --- marker; it was treated as plain Markdown."
+  },
+  "invalidRuleSeverity": {
+    "zh-CN": "规则 front matter 的 severity 值 {value} 无效，已按 error 处理；只能是 error、warning 或 info。",
+    "en-US": "The rule front matter severity value {value} is invalid and was treated as error; use error, warning, or info."
+  },
+  "invalidRuleThreshold": {
+    "zh-CN": "规则 front matter 的 threshold 值 {value} 无效，已按默认阈值处理；必须是 0 到 1 之间的数字。",
+    "en-US": "The rule front matter threshold value {value} is invalid and the default threshold was used; it must be a number greater than 0 and at most 1."
+  },
+  "invalidBackendConfig": {
+    "zh-CN": "审查配置 reviewers[{index}].backend 无效，必须是 model 或 typesafe。",
+    "en-US": "Review configuration reviewers[{index}].backend is invalid; it must be model or typesafe."
+  },
+  "invalidTypesafeModelConfig": {
+    "zh-CN": "审查配置 reviewers[{index}].typesafeModel 无效，必须是非空 TypeSafe 模型名。",
+    "en-US": "Review configuration reviewers[{index}].typesafeModel is invalid; it must be a non-empty TypeSafe model name."
+  },
+  "modelIgnoredForTypesafe": {
+    "zh-CN": "审查配置 reviewers[{index}] 使用 typesafe backend，已忽略 model 字段。",
+    "en-US": "Review configuration reviewers[{index}] uses the typesafe backend; its model field was ignored."
+  },
+  "invalidReviewerConfig": {
+    "zh-CN": "审查配置 reviewers[{index}] 无效：model backend 需要 provider/model 格式的 model，typesafe backend 需要非空 typesafeModel；两者都必须有 rulesFile 或 rulesFiles。",
+    "en-US": "Review configuration reviewers[{index}] is invalid: the model backend needs a provider/model model, the typesafe backend needs a non-empty typesafeModel, and both need rulesFile or rulesFiles."
   }
 }
