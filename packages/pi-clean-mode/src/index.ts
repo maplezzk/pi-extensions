@@ -28,16 +28,17 @@ import { parseToggleValue, withBooleanConfigField } from "./config-fields.js";
 import { openConfigPanel } from "./config-panel.js";
 import { debugLog, debugLogPath } from "./debug-logger.js";
 import {
+	activityClassLabel,
 	buildActivityLines,
 	buildRunStatusLines,
 	classifyToolActivity,
 	createActivitySnapshot,
+	dominantActivityClass,
 	extractOutputTail,
 	extractThoughtHead,
 	formatActivityCountersSuffix,
 	toolActivityDetail,
 	toolActivityLabel,
-	withoutActionRows,
 	type ActivityCounters,
 	type ActivitySnapshot,
 } from "./activity.js";
@@ -57,6 +58,7 @@ import {
 	beginActionGroupStep,
 	createActionGroupState,
 	findActionGroupMembership,
+	getActionGroupActivityCounts,
 	getActionGroupSize,
 	hasNarrationText,
 	isActionGroupExpanded,
@@ -393,12 +395,23 @@ function registerToolAction(runtime: Runtime, action: ToolActionInput): void {
 	if (findActionGroupMembership(runtime.actionGroups, action.toolCallId)) {
 		return;
 	}
-	registerActionToolCall(
-		runtime.actionGroups,
-		action.toolCallId,
-		summarizeToolCall(action.toolName, action.args),
-	);
+	registerActionToolCall(runtime.actionGroups, {
+		toolCallId: action.toolCallId,
+		summary: summarizeToolCall(action.toolName, action.args),
+		activity: classifyToolActivity(action.toolName),
+	});
 	runtime.runToolCount += 1;
+}
+
+/**
+ * 取某个动作组的组头主词（如「运行命令」）。
+ *
+ * 组内有一类动作过半就用它命名，混在一起说不清时返回 undefined，由渲染层退回
+ * 通用词「探索 · N 步」。
+ */
+function lookupGroupActivityLabel(runtime: Runtime, groupId: number): string | undefined {
+	const dominant = dominantActivityClass(getActionGroupActivityCounts(runtime.actionGroups, groupId));
+	return dominant === undefined ? undefined : activityClassLabel(dominant);
 }
 
 /** 取一个工具行的动作组快照，供渲染决策使用。 */
@@ -439,11 +452,11 @@ function installPatches(runtime: Runtime): void {
 		claimRunHeaderHost: (host) => runtime.runDurations.claimOwner(host),
 		isCurrentRunHost: (host) => runtime.runDurations.isOwner(host),
 		getActivityLines: () => runtime.activityArea.lines,
-		getActivityDetailLines: () =>
-			withoutActionRows({ lines: runtime.activityArea.lines, actionRows: runtime.activityArea.actionRows }),
+		getActivityDetailLines: () => runtime.activityArea.detailLines,
 		getActivityCounters: () => formatActivityCountersSuffix(runtime.activity.counters),
 		getRunStatusLines: () => runtime.activityArea.runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === runtime.actionGroups.currentGroupId,
+		getGroupActivityLabel: (groupId) => lookupGroupActivityLabel(runtime, groupId),
 		getRunDuration: (host) => runtime.runDurations.getDuration(host),
 		getRunSteps: (host) => runtime.runDurations.getSteps(host),
 	});

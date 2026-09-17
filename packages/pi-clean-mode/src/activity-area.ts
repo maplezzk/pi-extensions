@@ -21,7 +21,15 @@
  * 否则屏幕上什么都没有，看起来就是卡住。
  */
 
-import type { ActivityLines, ActivityPainter, ActivitySnapshot } from "./activity.js";
+import {
+	blankActivityRow,
+	renderActivityRows,
+	withoutActionRows,
+	type ActivityLines,
+	type ActivityPainter,
+	type ActivityRow,
+	type ActivitySnapshot,
+} from "./activity.js";
 
 /** 开启动画时的刷新间隔：约 6.7fps，跟 cli-spinners 点状动画的手感对齐。 */
 const ANIMATED_INTERVAL_MS = 150;
@@ -56,6 +64,20 @@ export interface ActivityAreaRuntime {
 	 * `getLines` 交给当前组的工具行在渲染末尾接上。
 	 */
 	lines: string[];
+	/**
+	 * 同一批行的「去掉动作名」形态：组内只有一条时，组头已经写出这条动作。
+	 *
+	 * 与 `lines` 分开存：树形前缀要按最终留下的行重拼，去掉动作行之后原本的第二项
+	 * 才是最后一项，不能直接拿 `lines` 筛一遍字符串。
+	 */
+	detailLines: string[];
+	/**
+	 * `lines` 与 `detailLines` 的结构化来源（已补位）。
+	 *
+	 * 树形前缀的收口依赖「后面还有没有别的子项」，所以渲染推迟到这里：去掉动作行之后
+	 * 重拼一遍，分支符才会从 `├─` 换成 `└─`。
+	 */
+	rows: ActivityRow[];
 	/**
 	 * `lines` 里属于动作名的行号。
 	 *
@@ -122,7 +144,16 @@ export interface ActivityLinesInput {
 
 /** 创建活动区运行时状态。 */
 export function createActivityAreaRuntime(): ActivityAreaRuntime {
-	return { actionRows: [], frame: 0, workingSuppressed: false, lines: [], runStatusLines: [], paddedRows: 0 };
+	return {
+		actionRows: [],
+		detailLines: [],
+		frame: 0,
+		workingSuppressed: false,
+		lines: [],
+		rows: [],
+		runStatusLines: [],
+		paddedRows: 0,
+	};
 }
 
 /** 安全调用 ui 上的可选方法；老版本或极简上下文可能不提供。 */
@@ -134,21 +165,23 @@ function safeUiCall(action: () => void): void {
 	}
 }
 
-/** 补位用的空行：活动块只长高不缩短，多出来的行用空行占位。 */
-const PADDING_ROW = "";
 /** 去重签名里的「承载者已就绪」标记。 */
 const SIGNATURE_HOST_READY = "host:ready";
 /** 去重签名里的「承载者还没出现」标记。 */
 const SIGNATURE_HOST_MISSING = "host:missing";
 /** 去重签名里分隔活动块与轮首状态行的标记，避免两块内容拼串后互相误命中。 */
 const SIGNATURE_RUN_STATUS = "run-status:";
+/** 去重签名里分隔活动块行与其细节形态的标记。 */
+const SIGNATURE_DETAIL_LINES = "detail-lines:";
 /** 去重签名里分隔活动块行与动作行号的标记。 */
 const SIGNATURE_ACTION_ROWS = "action-rows:";
 
-/** 去重签名要覆盖的三块内容：活动块行、动作行号、轮首状态行。 */
+/** 去重签名要覆盖的四块内容：活动块行、细节形态、动作行号、轮首状态行。 */
 interface LinesSignatureInput {
 	/** 活动块行（已补位）。 */
 	lines: string[];
+	/** 活动块的「去掉动作名」形态（已补位）。 */
+	detailLines: string[];
 	/** 活动块里属于动作名的行号。 */
 	actionRows: number[];
 	/** 轮首状态行。 */
@@ -158,17 +191,20 @@ interface LinesSignatureInput {
 }
 
 /**
- * 组装去重签名：两块内容 + 动作行号 + 承载者是否就绪。
+ * 组装去重签名：两形态的行 + 动作行号 + 承载者是否就绪。
  *
  * 承载者就绪与否必须参与签名：内容一个字都没变但承载者刚从无到有时，也要让签名
  * 变化一次，下一个 tick 才能重新接管并关掉 Pi 的内置提示；否则会被去重挡住。
  * 轮首状态行也要参与：它只在回落条件下渲染，块内容不变时它可能刚被清空或刚出现。
  * 动作行号同样要参与：行内容一字未变但「哪行是动作名」变了（并行转单条），渲染层要换一种拼法。
+ * 细节形态也要参与：它是另一串最终文本，两串都得存下来才能跳过重复渲染。
  */
-function buildLinesSignature({ lines, actionRows, runStatusLines, hostReady }: LinesSignatureInput): string {
+function buildLinesSignature({ lines, detailLines, actionRows, runStatusLines, hostReady }: LinesSignatureInput): string {
 	return [
 		hostReady ? SIGNATURE_HOST_READY : SIGNATURE_HOST_MISSING,
 		...lines,
+		SIGNATURE_DETAIL_LINES,
+		...detailLines,
 		SIGNATURE_ACTION_ROWS,
 		actionRows.join(","),
 		SIGNATURE_RUN_STATUS,
@@ -177,22 +213,25 @@ function buildLinesSignature({ lines, actionRows, runStatusLines, hostReady }: L
 }
 
 /**
- * 把活动行补齐到本轮见过的最大行数。
+ * 把结构化活动行补齐到本轮见过的最大行数。
  *
  * 行数来回变化会让对话内容高度抖动，底部锚定被反复拉动；补齐后运行期间只会「长高」，
  * 不会先长后缩。传入空行集（未运行）时原样返回，并把补位高度归零交给下一轮重算。
  */
-function padActivityLines(runtime: ActivityAreaRuntime, lines: string[]): string[] {
-	if (lines.length === 0) {
+function padActivityRows(runtime: ActivityAreaRuntime, rows: ActivityRow[]): ActivityRow[] {
+	if (rows.length === 0) {
 		runtime.paddedRows = 0;
-		return lines;
+		return rows;
 	}
 
-	runtime.paddedRows = Math.max(runtime.paddedRows, lines.length);
-	if (runtime.paddedRows === lines.length) {
-		return lines;
+	runtime.paddedRows = Math.max(runtime.paddedRows, rows.length);
+	if (runtime.paddedRows === rows.length) {
+		return rows;
 	}
-	return [...lines, ...new Array<string>(runtime.paddedRows - lines.length).fill(PADDING_ROW)];
+	return [
+		...rows,
+		...Array.from({ length: runtime.paddedRows - rows.length }, () => blankActivityRow()),
+	];
 }
 
 /** 组装一次渲染的输入：同一个 tick 里两块内容共用同一帧、主题与行数预算。 */
@@ -209,14 +248,14 @@ function buildRenderInput(
 	};
 }
 
-/** 按当前主题与快照渲染活动块；未运行时返回空块。 */
+/** 按当前主题与快照渲染活动块的结构化行；未运行时返回空块。 */
 function renderActivityLines(
 	runtime: ActivityAreaRuntime,
 	host: ActivityUiHost,
 	deps: ActivityAreaDeps,
 ): ActivityLines {
 	if (!deps.getSnapshot().active) {
-		return { lines: [], actionRows: [] };
+		return { rows: [], actionRows: [] };
 	}
 	return deps.renderLines(buildRenderInput(runtime, host, deps));
 }
@@ -240,9 +279,10 @@ function renderRunStatusLines(
 /**
  * 刷新活动区。
  *
- * 两块内容都渲染：当前组头用的活动块，以及轮首槽位用的状态行。行内容与上一 tick 完全
- * 一致时直接返回，不触发重绘；有变化时先把新行写进 runtime，再请求重绘（两处渲染时都从
- * runtime 取行）。
+ * 两块内容都渲染：当前组头用的活动块，以及轮首槽位用的状态行。活动块补位后拼出两
+ * 形态（完整、去掉动作名），树形前缀在去掉动作行之后重新算，收口才不会错。行内容与
+ * 上一 tick 完全一致时直接返回，不触发重绘；有变化时先把新行写进 runtime，再请求重绘
+ * （两处渲染时都从 runtime 取行）。
  */
 export function refreshActivityArea(
 	runtime: ActivityAreaRuntime,
@@ -252,10 +292,18 @@ export function refreshActivityArea(
 	runtime.lastHost = host;
 
 	const rendered = renderActivityLines(runtime, host, deps);
-	const lines = padActivityLines(runtime, rendered.lines);
+	const rows = padActivityRows(runtime, rendered.rows);
+	const lines = renderActivityRows(rows, host.ui.theme);
+	// 单条组的组头已经写出这条动作，动作名从细节形态里去掉；去掉之后重拼前缀，
+	// 原本的第二项才成为最后一项。
+	const detailLines = renderActivityRows(
+		withoutActionRows({ rows, actionRows: rendered.actionRows }),
+		host.ui.theme,
+	);
 	const runStatusLines = renderRunStatusLines(runtime, host, deps);
 	const signature = buildLinesSignature({
 		lines,
+		detailLines,
 		actionRows: rendered.actionRows,
 		runStatusLines,
 		hostReady: deps.hasRunHeaderHost(),
@@ -265,10 +313,12 @@ export function refreshActivityArea(
 		return;
 	}
 
-	// 行、动作行号与 linesSignature 必须成对落盘：前者决定屏幕上画什么，后者决定下一 tick
-	// 要不要重画。提前 return 之前不留下它们不一致的窗口。
+	// 行、细节形态、动作行号与 linesSignature 必须成对落盘：前者决定屏幕上画什么，
+	// 后者决定下一 tick 要不要重画。提前 return 之前不留下它们不一致的窗口。
 	runtime.linesSignature = signature;
+	runtime.rows = rows;
 	runtime.lines = lines;
+	runtime.detailLines = detailLines;
 	runtime.actionRows = rendered.actionRows;
 	runtime.runStatusLines = runStatusLines;
 
@@ -306,6 +356,8 @@ export function clearActivityArea(runtime: ActivityAreaRuntime, host: ActivityUi
 	stopActivityTimer(runtime);
 	runtime.linesSignature = undefined;
 	runtime.lines = [];
+	runtime.detailLines = [];
+	runtime.rows = [];
 	runtime.actionRows = [];
 	runtime.runStatusLines = [];
 	runtime.paddedRows = 0;

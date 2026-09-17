@@ -149,12 +149,12 @@ export interface ComponentPatchDeps {
 	/** 该承载者是否就是当前「正在运行」那一轮的承载者。 */
 	isCurrentRunHost: (host: object) => boolean;
 	/**
-	 * 当前组的活动块：思考行与正在跑的动作行（首行就是细节行，不铺底色）；
+	 * 当前组的活动块：思考行与正在跑的动作行，行首带 `├─` / `└─` 竖折，不铺底色；
 	 * 空数组表示不展示。接在当前组最后一条可见行的下面。
 	 */
 	getActivityLines: () => string[];
 	/**
-	 * 活动块里去掉动作名后的形态：思考行与输出尾巴。
+	 * 活动块里去掉动作名后的形态：思考行与输出尾巴，竖折前缀已按剩下的行重拼。
 	 *
 	 * 组内只有一条时组头就是这条动作的摘要（`运行命令 npm test ▶`），活动块再列一次
 	 * 就变成同一句话出现两次 —— 那种情况用这个形态，动作名让给组头说。
@@ -179,6 +179,11 @@ export interface ComponentPatchDeps {
 	 * 最新动作旁边；靠组号区分当前组，历史组不会再显示一遍活动行。
 	 */
 	isCurrentActionGroup: (groupId: number) => boolean;
+	/**
+	 * 取某个动作组的组头主词（如「运行命令」）；组内没有过半分类时返回 undefined，
+	 * 组头退回通用词「探索 · N 步」。历史组也带自己的分类，所以不依赖「当前组」判断。
+	 */
+	getGroupActivityLabel: (groupId: number) => string | undefined;
 	/** 查询某个承载者所属那一轮的耗时。 */
 	getRunDuration: (host: object) => number | undefined;
 	/** 查询某个承载者所属那一轮的工具调用数。 */
@@ -219,7 +224,7 @@ function buildRunHeaderLine(
  * 给运行级状态行铺上底色。
  *
  * 屏幕上只有这一条铺底色的横条（运行中是在处理 + 耗时，结束后是「用时 …」）。活动块由
- * 普通行组成，不铺底色，因此这里不需要判断首行是哪一种。
+ * 普通行组成（只有竖折前缀，不铺底色），因此这里不需要判断首行是哪一种。
  */
 function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDeps): string[] {
 	const [head, ...rest] = lines;
@@ -443,19 +448,34 @@ const ACTION_GROUP_HEADER_BLANK = "";
 const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
 
 /**
+ * 多条组的组头文案：组内有一类动作过半就用它命名（`运行命令 · 12 步`）。
+ *
+ * 没有过半的分类时退回通用词（`探索 · 7 步`）：一类只多出一条却说成「读取文件 · 8 步」
+ * 是误导，不如不报。
+ */
+function buildSummaryLabel(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
+	const count = String(group.groupSize);
+	const activity = deps.getGroupActivityLabel(group.membership.groupId);
+	return activity === undefined
+		? i18n.t("actionGroupHeader", { count })
+		: i18n.t("actionGroupSteps", { label: activity, count });
+}
+
+/**
  * 组装收起的动作组头。
  *
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
- * 输出又不丢失「刚才做了什么」；两条以上才汇总成「探索 · N 步」。
+ * 输出又不丢失「刚才做了什么」；两条以上才汇总成「主词 · N 步」。
  *
  * 对齐口径：标签底色的左边缘与运行级横条的左边缘同列（都是第 0 列），标签里的
  * 文案与折叠头文案同列（都是第 2 列），箭头和折叠头一样紧跟在文案右边且留在底色内。
  * 底色只包住这一行自己的内容，不再另加左内边距，否则底色块会比横条右缩一格。
  */
 function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
-	const countLabel = i18n.t("actionGroupHeader", { count: String(group.groupSize) });
 	const showsStepCount = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY;
-	const label = showsStepCount ? countLabel : (group.summary ?? countLabel);
+	const label = showsStepCount
+		? buildSummaryLabel(group, deps)
+		: (group.summary ?? i18n.t("actionGroupHeader", { count: String(group.groupSize) }));
 	// 分类计数接在步数后面（`探索 · 12 步 · 读取 3 · 命令 2`），不另占一行。
 	// 只有「汇总成 N 步」的组头才带它：单条动作的组头已经写清做了什么，再加个「· 命令 1」是废话。
 	// 也只给当前组带：计数是本轮累计值，历史组显示它会报出不属于它的数字。
@@ -502,8 +522,9 @@ interface ActivityTailInput {
  * 组收起时成员行整行隐藏，组头是该组唯一可见的行，活动块就接在它下面；
  * 非当前组、或这一行不是最后一条可见行时原样返回。
  *
- * 块里全是普通行（思考、动作、输出尾巴），不铺底色：屏幕上只有轮首那条运行级横条。
- * 组内只有一条时组头已经写出这条动作，块里就去掉动作名，只留思考与输出尾巴。
+ * 块里全是普通行（思考、动作、输出尾巴），行首带 `├─` / `└─` 竖折，不铺底色：
+ * 屏幕上只有轮首那条运行级横条。组内只有一条时组头已经写出这条动作，块里就去掉
+ * 动作名，只留思考与输出尾巴（前缀已按剩下的行重拼）。
  */
 function appendActivityTail(
 	lines: string[],

@@ -13,8 +13,11 @@
  * - L1 折叠时整轮工作过程都隐藏，动作组不参与；
  * - 组内只有 1 条时也收成一行，文案直接用这条动作自己的摘要
  *   （例如「运行命令 ls -la」）——收起态不显示原始工具输出；
- * - 组内有 2 条及以上时收成「探索 · N 步」，展开后逐条显示。
+ * - 组内有 2 条及以上时收成汇总组头（`运行命令 · N 步`，没有过半分类时用通用词
+ *   `探索 · N 步`），展开后逐条显示。
  */
+
+import type { ActivityCounters } from "./activity.js";
 
 /** 某个工具调用在动作组里的归属。 */
 export interface ActionGroupMembership {
@@ -36,6 +39,13 @@ export interface ActionGroupState {
 	membershipByToolCallId: Map<string, ActionGroupMembership>;
 	/** 组号 -> 成员数。 */
 	memberCountByGroupId: Map<number, number>;
+	/**
+	 * 组号 -> 该组各类动作的出现次数。
+	 *
+	 * 组头主词按它选（组内过半的那一类），所以计数按组分开存，而不是只留本轮总计；
+	 * 历史组也要靠它才能说出「刚才那一组在干什么」。
+	 */
+	activityCountByGroupId: Map<number, Partial<ActivityCounters>>;
 	/** 已展开的组号。 */
 	expandedGroupIds: Set<number>;
 }
@@ -101,6 +111,7 @@ export function createActionGroupState(): ActionGroupState {
 		currentGroupId: 0,
 		membershipByToolCallId: new Map<string, ActionGroupMembership>(),
 		memberCountByGroupId: new Map<number, number>(),
+		activityCountByGroupId: new Map<number, Partial<ActivityCounters>>(),
 		expandedGroupIds: new Set<number>(),
 	};
 }
@@ -110,19 +121,28 @@ export function beginActionGroupStep(state: ActionGroupState): void {
 	state.currentGroupId = state.nextGroupId;
 	state.nextGroupId += 1;
 	state.memberCountByGroupId.set(state.currentGroupId, 0);
+	state.activityCountByGroupId.set(state.currentGroupId, {});
+}
+
+/** 登记一次工具调用需要的字段。 */
+export interface ActionToolCallInput {
+	/** 本次调用的唯一 id。 */
+	toolCallId: string;
+	/** 该动作的一行摘要（例如「运行命令 ls -la」）。 */
+	summary?: string;
+	/** 本次调用的分类，用于选组头主词。 */
+	activity?: keyof ActivityCounters;
 }
 
 /**
  * 把一个工具调用登记到当前组。原地修改 state，无返回值。
  *
  * 重复登记同一个 toolCallId 时保持原归属，避免 Pi 重发事件导致序号错乱；
- * 后一次带上了摘要而先前没带上时，只补摘要。
+ * 后一次带上了摘要而先前没带上时，只补摘要。分类计数只在新登记时累加，
+ * 重复登记不能把同一次调用数两遍。
  */
-export function registerActionToolCall(
-	state: ActionGroupState,
-	toolCallId: string,
-	summary?: string,
-): void {
+export function registerActionToolCall(state: ActionGroupState, input: ActionToolCallInput): void {
+	const { toolCallId, summary, activity } = input;
 	const existing = state.membershipByToolCallId.get(toolCallId);
 	if (existing) {
 		if (summary !== undefined && existing.summary === undefined) {
@@ -135,6 +155,20 @@ export function registerActionToolCall(
 	const index = state.memberCountByGroupId.get(groupId) ?? 0;
 	state.membershipByToolCallId.set(toolCallId, { groupId, index, ...(summary === undefined ? {} : { summary }) });
 	state.memberCountByGroupId.set(groupId, index + 1);
+
+	if (activity !== undefined) {
+		const counts = state.activityCountByGroupId.get(groupId) ?? {};
+		counts[activity] = (counts[activity] ?? 0) + 1;
+		state.activityCountByGroupId.set(groupId, counts);
+	}
+}
+
+/** 取某个组的分类计数；未知组返回 undefined。 */
+export function getActionGroupActivityCounts(
+	state: ActionGroupState,
+	groupId: number,
+): Partial<ActivityCounters> | undefined {
+	return state.activityCountByGroupId.get(groupId);
 }
 
 /** 查询某个工具调用的组归属；未登记时返回 undefined。 */

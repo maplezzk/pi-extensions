@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	activityClassLabel,
 	activityGlyph,
 	buildActivityLines,
 	buildRunStatusLines,
 	classifyToolActivity,
 	clampActivityText,
 	createActivitySnapshot,
+	dominantActivityClass,
 	extractOutputTail,
 	extractThoughtHead,
 	formatActivityCountersSuffix,
+	renderActivityRows,
 	toolActivityDetail,
 	toolActivityLabel,
 	withoutActionRows,
@@ -50,9 +53,9 @@ function renderInput(overrides: Partial<ActivityRenderInput> = {}): ActivityRend
 /** 思考动画一圈的帧数：半填充圆的四个朝向。 */
 const THINKING_FRAME_COUNT = 4;
 
-/** 只取活动块里的行；哪几行是动作名由专门的用例覆盖。 */
+/** 只取活动块里的行：结构化行按最终留下的行拼上竖折前缀。 */
 function blockLines(overrides: Partial<ActivityRenderInput> = {}): string[] {
-	return buildActivityLines(renderInput(overrides)).lines;
+	return renderActivityRows(buildActivityLines(renderInput(overrides)).rows, PLAIN_PAINTER);
 }
 
 test("静止模式下 thinking 与 working 使用不同标记", () => {
@@ -103,6 +106,31 @@ test("工具分类决定计数桶", () => {
 	assert.equal(classifyToolActivity("find"), "search");
 	assert.equal(classifyToolActivity("bash"), "command");
 	assert.equal(classifyToolActivity("weird_tool"), "other");
+});
+
+test("分类桶映射到动作标签", () => {
+	assert.equal(activityClassLabel("read"), i18n.t("activityRead"));
+	assert.equal(activityClassLabel("search"), i18n.t("activitySearch"));
+	assert.equal(activityClassLabel("command"), i18n.t("activityCommand"));
+	assert.equal(activityClassLabel("other"), i18n.t("activityTool"));
+});
+
+test("主导分类要严格过半，最多但不够半数就不给主词", () => {
+	assert.equal(dominantActivityClass({ command: 9, read: 3 }), "command", "9/12 严格过半");
+	assert.equal(dominantActivityClass({ read: 7, search: 1 }), "read", "7/8 严格过半");
+	assert.equal(
+		dominantActivityClass({ read: 3, command: 2, search: 1 }),
+		undefined,
+		"3/6 正好一半，「最多的一类」不算主导",
+	);
+	assert.equal(
+		dominantActivityClass({ read: 3, other: 4 }),
+		undefined,
+		"「调用工具」不当主词，但它算在分母里",
+	);
+	assert.equal(dominantActivityClass({ command: 4, other: 1 }), "command", "只有过半才忽略 other");
+	assert.equal(dominantActivityClass({}), undefined, "空计数没有主导");
+	assert.equal(dominantActivityClass(undefined), undefined, "未知组没有主导");
 });
 
 test("参数摘要优先取命令原文，缺失时退回工具名", () => {
@@ -221,7 +249,7 @@ test("思考行用当前动画帧，不出现改变填充比例的图形", () =>
 	assert.ok(!/[◌◔◕●]/.test(thoughtLine), `思考行不应出现填充比例图形：${thoughtLine}`);
 });
 
-test("当前动作与其输出尾巴各占一行，都带细节缩进而不铺底色", () => {
+test("当前动作与其输出尾巴各占一行，用竖折挂在组头下面", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
 	const lines = blockLines({ snapshot });
@@ -229,8 +257,10 @@ test("当前动作与其输出尾巴各占一行，都带细节缩进而不铺�
 
 	assert.ok(joined.includes("npm test"), `应显示当前动作与参数：${joined}`);
 	assert.ok(joined.includes("12 passing"), `应显示最新输出：${joined}`);
-	assert.ok(lines[0]?.startsWith("    "), `动作行应缩进一级：${JSON.stringify(lines[0])}`);
-	assert.ok(lines[1]?.startsWith("      "), `输出尾巴应缩进两级：${JSON.stringify(lines[1])}`);
+	// 只有这一条动作，它就是活动块里最后一个子项，分支符用 └─ 收口。
+	assert.ok(lines[0]?.startsWith("  └─ "), `动作行应带收口分支符：${JSON.stringify(lines[0])}`);
+	// 尾巴与分支符后的正文同列，不再深一级缩进。
+	assert.ok(lines[1]?.startsWith("     ↳ "), `输出尾巴应与动作正文同列：${JSON.stringify(lines[1])}`);
 });
 
 test("行数预算收紧时从尾部截断，先保住第一行", () => {
@@ -270,11 +300,30 @@ test("块里哪几行是动作名：并行列出行号，截断时丢掉越界�
 	assert.deepEqual(
 		block.actionRows,
 		[1, 3],
-		`思考占一行，第一条动作带输出尾巴，第二条动作落在第 3 行：${block.lines.join("\n")}`,
+		`思考占一行，第一条动作带输出尾巴，第二条动作落在第 3 行：${renderActivityRows(block.rows, PLAIN_PAINTER).join("\n")}`,
 	);
 
 	const truncated = buildActivityLines(renderInput({ snapshot, maxRows: 2 }));
-	assert.deepEqual(truncated.actionRows, [1], `被截掉的动作行不应再算动作名：${truncated.lines.join("\n")}`);
+	assert.deepEqual(
+		truncated.actionRows,
+		[1],
+		`被截掉的动作行不应再算动作名：${renderActivityRows(truncated.rows, PLAIN_PAINTER).join("\n")}`,
+	);
+});
+
+test("多行时分支符按「后面还有没有子项」收口，尾巴用竖线与后续子项贯通", () => {
+	const snapshot = runningSnapshot();
+	snapshot.thought = "权衡方案";
+	snapshot.running[0].outputTail = "12 passing";
+	snapshot.running.push({ toolCallId: "c2", label: i18n.t("activityRead"), detail: "b.ts" });
+
+	const lines = blockLines({ snapshot });
+
+	assert.equal(lines.length, 4, `应是思考 + 动作 + 尾巴 + 动作四行：${lines.join("\n")}`);
+	assert.ok(lines[0]?.startsWith("  ├─ "), `后面还有子项时用 ├─：${JSON.stringify(lines[0])}`);
+	assert.ok(lines[1]?.startsWith("  ├─ "), `第一条动作后面还有子项：${JSON.stringify(lines[1])}`);
+	assert.ok(lines[2]?.startsWith("  │  ↳ "), `续行的竖线要与分支符同列贯通：${JSON.stringify(lines[2])}`);
+	assert.ok(lines[3]?.startsWith("  └─ "), `最后一个子项收口成 └─：${JSON.stringify(lines[3])}`);
 });
 
 test("去掉动作名后只剩思考与输出尾巴", () => {
@@ -283,15 +332,15 @@ test("去掉动作名后只剩思考与输出尾巴", () => {
 	snapshot.thought = "权衡方案";
 
 	const block = buildActivityLines(renderInput({ snapshot }));
-	const detail = withoutActionRows(block);
+	const detail = renderActivityRows(withoutActionRows(block), PLAIN_PAINTER);
 
 	assert.deepEqual(
-		detail.map((line) => line.trimStart()),
+		detail,
 		[
-			`${activityGlyph("thinking", 0, false)} ${i18n.t("activityThinking")}  权衡方案`,
-			`↳ 12 passing`,
+			`  └─ ${activityGlyph("thinking", 0, false)} ${i18n.t("activityThinking")}  权衡方案`,
+			`     ↳ 12 passing`,
 		],
-		`动作名去掉后只留思考与尾巴：${detail.join("\n")}`,
+		`动作名去掉后只留思考与尾巴，思考收口成 └─：${detail.join("\n")}`,
 	);
 	assert.ok(
 		!detail.join("\n").includes("npm test"),
