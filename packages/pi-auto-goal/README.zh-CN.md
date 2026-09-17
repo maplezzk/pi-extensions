@@ -118,7 +118,7 @@ pi install npm:pi-auto-goal
 
 ### 命令
 
-- `/config:auto-goal` — TUI 配置菜单（别名：`/auto-goal`、`/pi-auto-goal-config`）；菜单里能开关、**选判定模型**、看状态。
+- `/config:auto-goal` — 打开 TUI 配置面板（别名：`/auto-goal`、`/pi-auto-goal-config`）；面板是设置列表：左边字段名、右边当前值，选中项下面给说明，回车改一项并立即存盘生效，包含启用判定、判定模型、干预上限、置信度阈值、判定输出上限、判定结论写入会话区。字段的完整清单用 `status` 看。
 - `/config:auto-goal enable|disable|status|reset` — 非交互式写法；`status` 显示生效配置与本会话已干预次数。配置命令改完立即生效。
 - `/config:auto-goal model` 看当前判定模型；`/config:auto-goal model provider/modelId` 指定判定模型；`/config:auto-goal model default` 改回复用当前会话模型。
 

@@ -117,7 +117,7 @@ The judge only needs one JSON verdict, but reasoning models spend output budget 
 
 ### Commands
 
-- `/config:auto-goal` — TUI menu (aliases: `/auto-goal`, `/pi-auto-goal-config`); the menu toggles the extension, **picks the judge model**, and prints the status.
+- `/config:auto-goal` — opens the TUI settings panel (aliases: `/auto-goal`, `/pi-auto-goal-config`); it is a settings list with the field name on the left and the current value on the right, a description under the selected row, and one change applied per Enter: judgement, judge model, continue limit, confidence threshold, judge output limit, and the verdict notice. Use `status` for the full field list.
 - `/config:auto-goal enable|disable|status|reset` — non-interactive variants; `status` prints the effective configuration and the interventions used in this session.
 - `/config:auto-goal model` prints the current judge model; `/config:auto-goal model provider/modelId` sets it; `/config:auto-goal model default` switches back to the current session model.
 
