@@ -8,6 +8,7 @@ import type { SessionResource } from "../src/collector.ts";
 import {
   isFullscreenTui,
   renderResourcePicker,
+  resourceButtonSegments,
   resourceTabSegments,
   type ResourcePickerTheme,
   SessionResourceEditor,
@@ -252,6 +253,20 @@ test("picker follows narrow and wide terminal widths without a fixed cap", () =>
   }
 });
 
+/** Strips ANSI escapes and OSC 8 sequences so tests can measure visible layout. */
+function plainText(text: string): string {
+  return text.replace(/\x1b\][^\x07]*\x07/g, "").replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+/** Locates the close label inside one rendered picker, as the pointer would see it. */
+function closeHitPoint(lines: string[]): { x: number; y: number } {
+  // The last line is the wrapped editor, then the bottom border, then the hint row.
+  const y = lines.length - 3;
+  const x = plainText(lines[y] ?? "").indexOf("✕");
+  assert.ok(y > 0 && x > 0, "the rendered hint row must expose a close label");
+  return { x, y };
+}
+
 /** Creates one wrapper with the given mouse-mode probe. */
 function createEditor(base: FakeEditor, isMouseEnabled: () => boolean): SessionResourceEditor {
   return new SessionResourceEditor(base, {
@@ -330,23 +345,122 @@ test("clicking a picker tab switches the resource type", () => {
   assert.equal(editor.getActiveKind(), "review");
 });
 
-test("resource rows keep Pi's native OSC 8 click and Shift+click inserts the reference", () => {
+test("the hint row close label closes the panel on click", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const editor = createEditor(new FakeEditor(), () => true);
+
+  // Without a panel the collapsed button has no close affordance.
+  assert.ok(!plainText(editor.render(72)[0] ?? "").includes("✕"));
+  editor.handleInput("#");
+
+  const lines = editor.render(72);
+  assert.ok(plainText(lines[lines.length - 3] ?? "").includes("✕ close"));
+  const { x, y } = closeHitPoint(lines);
+
+  const overClose = mouseEvent({ x, y });
+  assert.deepEqual(editor.handleMouse({ ...overClose, type: "move" }), { handled: true, render: true });
+  assert.ok((editor.render(72)[y] ?? "").includes(SELECTED_BACKGROUND_START));
+
+  assert.deepEqual(editor.handleMouse(overClose), { handled: true, focus: true });
+  assert.deepEqual(
+    editor.handleMouse({ ...overClose, type: "click" }),
+    { handled: true, focus: true, render: true },
+  );
+  assert.equal(editor.isPickerOpen(), false);
+  assert.ok((editor.render(72)[0] ?? "").includes("View resources"));
+});
+
+test("the picker renders no clickable close label without mouse input", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const editor = createEditor(new FakeEditor(), () => false);
+  editor.handleInput("#");
+  assert.equal(editor.isPickerOpen(), true);
+  const lines = editor.render(72);
+  assert.ok(!plainText(lines[lines.length - 3] ?? "").includes("✕"));
+  // Nothing in the hint row closes the picker when Pi keeps mouse input to itself.
+  assert.equal(editor.handleMouse(mouseEvent({ x: 40, y: lines.length - 3 })), undefined);
+  assert.equal(editor.isPickerOpen(), true);
+});
+
+test("clicking a count chip opens the picker directly on that type", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const editor = createEditor(new FakeEditor(), () => true);
+  const segment = resourceButtonSegments(resourceSet()).find((chip) => chip.kind === "review");
+  assert.ok(segment);
+
+  // The rendered chip must sit exactly on the columns the hit test uses.
+  assert.equal(plainText(editor.render(72)[0] ?? "").indexOf(segment.text), segment.start);
+
+  const overChip = mouseEvent({ x: segment.start + 1, y: 0 });
+  assert.deepEqual(editor.handleMouse(overChip), { handled: true, focus: true });
+  assert.deepEqual(
+    editor.handleMouse({ ...overChip, type: "click" }),
+    { handled: true, focus: true, render: true },
+  );
+  assert.equal(editor.isPickerOpen(), true);
+  assert.equal(editor.getActiveKind(), "review");
+});
+
+test("clicking the button label keeps the picker on its current type", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const editor = createEditor(new FakeEditor(), () => true);
+  editor.handleMouse(mouseEvent({ x: 4, y: 0 }));
+  editor.handleMouse(mouseEvent({ type: "click", x: 4, y: 0 }));
+  assert.equal(editor.isPickerOpen(), true);
+  assert.equal(editor.getActiveKind(), "file");
+});
+
+test("picker scrolls its window so matches beyond the visible limit stay reachable", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const many = Array.from({ length: 9 }, (_value, index) => resourceFixture({
+    key: `file:/workspace/project/src/file-${index}.ts`,
+    target: resolve(`/workspace/project/src/file-${index}.ts`),
+    label: `src/file-${index}.ts`,
+  }));
+  const editor = new SessionResourceEditor(new FakeEditor(), {
+    theme,
+    keybindings,
+    getResources: () => many,
+    isEnabled: () => true,
+    isMouseEnabled: () => false,
+    requestRender: () => {},
+  });
+  editor.handleInput("#");
+
+  const first = editor.render(72);
+  assert.equal(first.length, 13);
+  assert.ok(first.some((line) => line.includes("src/file-0.ts")));
+  assert.ok(!first.some((line) => line.includes("src/file-6.ts")));
+  assert.ok(first.some((line) => line.includes("1/9")));
+
+  for (let step = 0; step < 8; step += 1) editor.handleInput("\x1b[B");
+  const last = editor.render(72);
+  assert.equal(last.length, 13);
+  assert.ok(last.some((line) => line.includes("src/file-8.ts")));
+  assert.ok(!last.some((line) => line.includes("src/file-0.ts")));
+  assert.ok(last.some((line) => line.includes("9/9")));
+  assert.ok(last.slice(0, -1).every((line) => visibleWidth(line) === 72));
+
+  // Selection wraps back to the first match, so the window follows it.
+  editor.handleInput("\x1b[B");
+  assert.ok(editor.render(72).some((line) => line.includes("src/file-0.ts")));
+});
+
+test("resource rows keep Pi's native OSC 8 click behavior", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const base = new FakeEditor();
   const editor = createEditor(base, () => true);
   editor.handleInput("#");
 
-  // A plain press stays unhandled so Pi's fullscreen renderer can open the OSC 8 target.
+  // A press stays unhandled so Pi's fullscreen renderer can open the OSC 8 target.
   assert.equal(editor.handleMouse(mouseEvent({ y: 3 })), undefined);
   assert.equal(editor.getText(), "#");
 
-  assert.deepEqual(
-    editor.handleMouse(mouseEvent({ y: 3, shift: true })),
-    { handled: true, focus: true },
-  );
-  editor.handleMouse(mouseEvent({ type: "click", y: 3, shift: true }));
-  assert.equal(editor.isPickerOpen(), false);
-  assert.equal(editor.getText(), "#src/index.ts ");
+  // Modifiers no longer change the gesture: the extension leaves rows entirely to Pi.
+  assert.equal(editor.handleMouse(mouseEvent({ y: 3, shift: true })), undefined);
+  assert.equal(editor.handleMouse(mouseEvent({ type: "click", y: 3, shift: true })), undefined);
+  assert.equal(editor.isPickerOpen(), true);
+  assert.equal(editor.getText(), "#");
 });
 
 test("mouse input below the header is forwarded to the editor with translated coordinates", () => {
