@@ -5,12 +5,12 @@ description: 配置与排查 pi-auto-goal 的提前停止判定、判定模型�
 
 # 配置 pi-auto-goal / Configure pi-auto-goal
 
-读取 `<pi-agent-dir>/extensions/pi-auto-goal/config.json`，遵守 `PI_CODING_AGENT_DIR`。用 `/config:auto-goal` 打开 TUI 菜单（可开关、**选判定模型**、看状态），参数 `enable`、`disable`、`status`、`reset` 执行对应动作，`model [provider/modelId|default]` 直接读写判定模型；配置命令改完立即生效，手改文件才需 `/reload`。
+读取 `<pi-agent-dir>/extensions/pi-auto-goal/config.json`，遵守 `PI_CODING_AGENT_DIR`。用 `/config:auto-goal` 打开 TUI 设置面板（设置列表：左边字段名、右边当前值，选中项下面给说明；可改启用判定、判定模型、干预上限、置信度阈值、判定输出上限、判定结论写入会话区；回车改一项并立即存盘生效），参数 `enable`、`disable`、`status`、`reset` 执行对应动作，`model [provider/modelId|default]` 直接读写判定模型，`status` 看全部字段；配置命令改完立即生效，手改文件才需 `/reload`。
 
-Read `<pi-agent-dir>/extensions/pi-auto-goal/config.json` and respect `PI_CODING_AGENT_DIR`. Use `/config:auto-goal` for the TUI menu (toggle, **pick the judge model**, status), or the `enable`, `disable`, `status`, `reset`, and `model [provider/modelId|default]` arguments; configuration through that command takes effect immediately, while hand-edited files need `/reload`.
+Read `<pi-agent-dir>/extensions/pi-auto-goal/config.json` and respect `PI_CODING_AGENT_DIR`. Use `/config:auto-goal` for the TUI settings panel (a settings list with the field name on the left, the current value on the right, and a description under the selected row: judgement, judge model, continue limit, confidence threshold, judge output limit, verdict notice; one Enter applies one change immediately), or the `enable`, `disable`, `status`, `reset`, and `model [provider/modelId|default]` arguments (`status` prints every field); configuration through that command takes effect immediately, while hand-edited files need `/reload`.
 
 - `enabled` 关闭整个判定，不产生任何模型调用。`enabled` turns off all judgement and model calls.
-- `model` 为 `provider/modelId` 时用专用模型判定，留空则复用当前会话模型；模型不存在会明确报错。界面上可在 `/config:auto-goal` 菜单里从当前可用模型列表选，或 `/config:auto-goal model provider/modelId`（`default` 改回复用会话模型）。A non-empty `model` (`provider/modelId`) uses a dedicated judge model; empty reuses the current session model, and a missing model is reported as an error. Pick it from the `/config:auto-goal` menu, or set it with `/config:auto-goal model provider/modelId` (`default` switches back).
+- `model` 为 `provider/modelId` 时用专用模型判定，留空则复用当前会话模型；模型不存在会明确报错。界面上可在 `/config:auto-goal` 面板里从当前可用模型列表选，或 `/config:auto-goal model provider/modelId`（`default` 改回复用会话模型）。A non-empty `model` (`provider/modelId`) uses a dedicated judge model; empty reuses the current session model, and a missing model is reported as an error. Pick it from the `/config:auto-goal` panel, or set it with `/config:auto-goal model provider/modelId` (`default` switches back).
 - `maxAutoContinues` 限制同一条用户请求的自动干预次数，`0` 表示不限制；用户发出新输入后重置。`maxAutoContinues` caps interventions per user request; `0` means unlimited, and new user input resets it.
 - `confidenceThreshold` 是触发干预所需的最低置信度。`notifyOnStopDecision` 已废弃（每轮只发一条结论块，字段保留但不再起作用）。
   `confidenceThreshold` is the minimum confidence required to intervene. `notifyOnStopDecision` is deprecated (one verdict block per turn; the field is still accepted but has no effect).

@@ -128,16 +128,60 @@
     "en-US": "Configure premature-stop judgement (pi-auto-goal)"
   },
   "configCommandUsage": {
-    "zh-CN": "用法：/config:auto-goal（打开配置菜单，可直接选判定模型）、enable、disable、status、reset，或 model [provider/modelId|default]",
-    "en-US": "Usage: /config:auto-goal (open settings and pick the judge model), enable, disable, status, reset, or model [provider/modelId|default]"
+    "zh-CN": "用法：/config:auto-goal（打开配置面板）、enable、disable、status、reset，或 model [provider/modelId|default]",
+    "en-US": "Usage: /config:auto-goal (open settings), enable, disable, status, reset, or model [provider/modelId|default]"
   },
   "configMenuTitle": {
     "zh-CN": "自动催停配置",
     "en-US": "Auto-continue settings"
   },
-  "configEnabled": {
-    "zh-CN": "启用判定：{value}",
-    "en-US": "Judgement enabled: {value}"
+  "configLabelEnabled": {
+    "zh-CN": "启用判定",
+    "en-US": "Judgement"
+  },
+  "configDescEnabled": {
+    "zh-CN": "判定 agent 是否擅自早停；关闭后既不判定也不自动催停。",
+    "en-US": "Judge whether the agent stopped early; when off, neither judging nor auto-continue happens."
+  },
+  "configLabelModel": {
+    "zh-CN": "判定模型",
+    "en-US": "Judge model"
+  },
+  "configDescModel": {
+    "zh-CN": "用来判定的模型；「当前会话模型」表示复用本轮对话所用的模型。",
+    "en-US": "Model used for judging; \"current session model\" reuses the model of this conversation."
+  },
+  "configLabelMaxAutoContinues": {
+    "zh-CN": "干预上限",
+    "en-US": "Continue limit"
+  },
+  "configDescMaxAutoContinues": {
+    "zh-CN": "同一条用户请求最多自动催停几次；「不限制」表示不设次数上限。",
+    "en-US": "How many times one user request may be auto-continued; \"unlimited\" removes the cap."
+  },
+  "configLabelConfidence": {
+    "zh-CN": "置信度阈值",
+    "en-US": "Confidence threshold"
+  },
+  "configDescConfidence": {
+    "zh-CN": "判定为「提前停止」所需的最低置信度，低于该值不催停。",
+    "en-US": "Minimum confidence required to treat a stop as premature; below it nothing is sent."
+  },
+  "configLabelJudgeTokens": {
+    "zh-CN": "判定输出上限",
+    "en-US": "Judge output limit"
+  },
+  "configDescJudgeTokens": {
+    "zh-CN": "单次判定调用的输出 token 上限；调高可避免推理占满预算后只剩空响应。",
+    "en-US": "Max output tokens per judging call; raise it when reasoning exhausts the budget and leaves an empty reply."
+  },
+  "configLabelVerdictNotice": {
+    "zh-CN": "判定结论写入会话区",
+    "en-US": "Verdict in transcript"
+  },
+  "configDescVerdictNotice": {
+    "zh-CN": "把最近一次判定结论写到会话区（消息下方，Ctrl+O 展开理由）。",
+    "en-US": "Write the latest verdict into the transcript below the message (Ctrl+O expands the reason)."
   },
   "configOn": {
     "zh-CN": "开",
@@ -146,10 +190,6 @@
   "configOff": {
     "zh-CN": "关",
     "en-US": "off"
-  },
-  "configDone": {
-    "zh-CN": "完成",
-    "en-US": "Done"
   },
   "configUnlimited": {
     "zh-CN": "不限制",
@@ -187,17 +227,9 @@
     "zh-CN": "判定模型：{value}",
     "en-US": "Judge model: {value}"
   },
-  "configModelReuse": {
-    "zh-CN": "复用当前会话模型",
-    "en-US": "Use the current session model"
-  },
-  "configModelTitle": {
-    "zh-CN": "选择判定模型（当前：{value}）",
-    "en-US": "Select the judge model (current: {value})"
-  },
-  "configModelEmpty": {
-    "zh-CN": "当前没有可用模型，无法选择；可直接编辑 config.json 里的 model。",
-    "en-US": "No models are available to pick from; edit `model` in config.json instead."
+  "configSaveFailed": {
+    "zh-CN": "自动催停配置保存失败：{error}",
+    "en-US": "Failed to save auto-continue configuration: {error}"
   },
   "configModelInvalid": {
     "zh-CN": "模型标识不合法：{value}（{error}）。请用 provider/modelId，或用 default 表示复用当前会话模型。",

@@ -32,7 +32,8 @@ import {
   buildVerdictNotice,
   type VerdictNotice,
 } from "./verdict-notice.ts";
-import { buildModelChoices, formatModelValue, modelFromChoice } from "./model-choice.ts";
+import { formatModelValue } from "./model-choice.ts";
+import { openConfigPanel } from "./config-panel.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
 const NOTICE_INFO: NoticeLevel = "info";
@@ -167,30 +168,6 @@ function judgeModelLabel(runtime: AutoGoalRuntime): string {
   return formatModelValue(runtime.config.model, i18n.t("configModelCurrent"));
 }
 
-/**
- * 交互式选择判定模型：列出当前可用模型，首项是「复用当前会话模型」。
- * 没有可用模型时明确报出，不静默什么都不做。
- */
-async function chooseJudgeModel(runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): Promise<void> {
-  const current = judgeModelLabel(runtime);
-  const choices = buildModelChoices(ctx.modelRegistry.getAvailable(), i18n.t("configModelReuse"));
-  if (choices.length <= 1) {
-    notifyWithSource({
-      ctx,
-      source: NOTICE_SOURCE,
-      level: NOTICE_WARNING,
-      message: i18n.t("configModelEmpty"),
-    });
-    return;
-  }
-  const selected = await ctx.ui.select(
-    i18n.t("configModelTitle", { value: current }),
-    choices.map((choice) => choice.label),
-  );
-  if (selected === undefined) return;
-  applyConfig({ ...runtime.config, model: modelFromChoice(selected, choices) }, runtime, ctx);
-}
-
 /** 处理 /config:auto-goal model：无值时显示当前模型，有值时设置。 */
 function runModelArgument(value: string, runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): void {
   if (value === "") {
@@ -216,33 +193,33 @@ function runModelArgument(value: string, runtime: AutoGoalRuntime, ctx: Extensio
   }
 }
 
-/** 处理交互式菜单选择。 */
-async function runConfigMenu(runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): Promise<void> {
-  const toggleChoice = i18n.t("configEnabled", {
-    value: i18n.t(runtime.config.enabled ? "configOff" : "configOn"),
+/**
+ * 保存面板里改动的配置并让它立即生效。
+ *
+ * 存盘失败也要先把新配置用在本次会话里，用户不至于改了没反应；失败必须报错而不是静默。
+ * 成功不提示：面板里逐项切换会刷屏，面板关闭即已生效。
+ */
+function applyPanelConfig(next: AutoGoalConfig, runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): void {
+  runtime.config = next;
+  try {
+    saveConfig(next);
+  } catch (error) {
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: NOTICE_ERROR,
+      message: i18n.t("configSaveFailed", { error: errorText(error) }),
+    });
+  }
+}
+
+/** 打开配置面板（TUI 设置列表）。 */
+async function openAutoGoalConfigPanel(runtime: AutoGoalRuntime, ctx: ExtensionCommandContext): Promise<void> {
+  await openConfigPanel(ctx, {
+    getConfig: () => runtime.config,
+    getModels: () => ctx.modelRegistry.getAvailable(),
+    onChange: (config) => applyPanelConfig(config, runtime, ctx),
   });
-  const modelChoice = i18n.t("configStatusModel", { value: judgeModelLabel(runtime) });
-  const statusChoice = i18n.t("configStatusTitle");
-  const doneChoice = i18n.t("configDone");
-  const selected = await ctx.ui.select(i18n.t("configMenuTitle"), [
-    toggleChoice,
-    modelChoice,
-    statusChoice,
-    doneChoice,
-  ]);
-  if (selected === undefined || selected === doneChoice) return;
-  if (selected === statusChoice) {
-    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_INFO, message: buildStatusText(runtime) });
-    return;
-  }
-  if (selected === modelChoice) {
-    await chooseJudgeModel(runtime, ctx);
-    return;
-  }
-  const enabled = selected === toggleChoice
-    ? !runtime.config.enabled
-    : runtime.config.enabled;
-  applyConfig({ ...runtime.config, enabled }, runtime, ctx);
 }
 
 /** 处理带参数的配置命令。 */
@@ -287,7 +264,7 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
         notifyWithSource({ ctx, source: NOTICE_SOURCE, level: NOTICE_WARNING, message: i18n.t("configCommandInteractiveOnly") });
         return;
       }
-      await runConfigMenu(runtime, ctx);
+      await openAutoGoalConfigPanel(runtime, ctx);
     },
   };
   for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);

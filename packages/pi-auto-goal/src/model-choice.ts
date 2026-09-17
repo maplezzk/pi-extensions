@@ -1,7 +1,7 @@
 /**
- * 判定模型的选择项换算：把「可用模型列表」变成可选项，再把选择结果换算回配置值。
+ * 判定模型的选择项换算：把「可用模型列表」变成可选项，再由面板把选中的值写回配置。
  *
- * 与 UI 解耦：菜单只负责拿列表、显示选项、把结果写回配置，这里的规则可以独立测试。
+ * 与 UI 解耦：面板只负责拿列表、显示选项、把结果写回配置，这里的规则可以独立测试。
  */
 
 /** 选择列表里第一项固定是「复用当前会话模型」，所以这里要能识别它。 */
@@ -34,14 +34,6 @@ export function buildModelChoices(
     choices.push({ label: reference, value: reference });
   }
   return choices;
-}
-
-/**
- * 把用户选中的展示文本换算成配置值。
- * 选到未知项（例如列表已变化）时按「复用当前会话模型」处理，不会写入非法模型。
- */
-export function modelFromChoice(choice: string, choices: readonly ModelChoice[]): string {
-  return choices.find((item) => item.label === choice)?.value ?? "";
 }
 
 /** 配置值对应的展示文本：空值表示复用当前会话模型。 */
