@@ -28,6 +28,8 @@ export const DEFAULT_TYPESAFE_MODEL = "jev-latest";
 const DEFAULT_RULE_SEVERITY: RuleSeverity = "error";
 /** noul 达到该值即认为规则命中；按规则在 front matter 里覆盖。 */
 export const DEFAULT_RULE_THRESHOLD = 0.85;
+/** 规则文件去掉扩展名时认识的扩展名。 */
+const RULE_FILE_EXTENSION = /\.(md|markdown|txt)$/i;
 /** Severity that makes one finding actionable, and therefore blocking. */
 const BLOCKING_SEVERITY = "error";
 const INFO_SEVERITY = "info";
@@ -37,6 +39,15 @@ const SECTION_HEADING = /^##\s+(.+?)\s*$/;
 const CRITERION_LINE = /^\s*[-*]?\s*(true|false)\s*[:：]\s*(.*)$/i;
 const CRITERIA_HEADINGS = new Set(["判据", "criteria"]);
 const FIX_HEADINGS = new Set(["修复提示", "fix"]);
+/**
+ * 规则块标题：`## 规则：<name>` / `## Rule: <name>`。
+ * 分隔符必填，否则 `## 规则说明` 这类普通标题会被误当成规则块。
+ */
+const RULE_BLOCK_HEADING = /^##\s+(?:规则\s*(?:[:：]\s*|\s+)|rule\s*[:：]\s*)(\S.*?)\s*$/i;
+/** 段落标记的键值写法：`判据：`、`修复提示：文本`。 */
+const SECTION_LABEL = /^(判据|criteria|修复提示|fix)\s*[:：]\s*(.*)$/i;
+/** 规则块内的 `severity:` / `threshold:` 覆盖行。 */
+const BLOCK_METADATA_FIELD = /^([A-Za-z][A-Za-z0-9_-]*)\s*[:：]\s*(.*)$/;
 
 export type ReviewStatus = "passed" | "rejected" | "failed" | "skipped";
 export type ReviewTrigger = (typeof REVIEW_TRIGGERS)[number];
@@ -92,11 +103,42 @@ export interface FileEditReviewRuleSections {
   fixHint?: string;
 }
 
+/**
+ * 一条规则块。文件用 `## 规则：<name>` 分块时每个标题开一条；没有块标题时整文件只有一条隐式规则。
+ * `severity` 和 `threshold` 已按“块内覆盖 > front matter > 默认值”解析完毕。
+ */
+export interface FileEditReviewRuleBlock {
+  /** 判断标识，同时作为 finding 的 ruleGroup 与审计里显示的规则名。 */
+  name: string;
+  severity: RuleSeverity;
+  threshold: number;
+  sections: FileEditReviewRuleSections;
+}
+
 interface ParsedRuleFile {
   metadata: FileEditReviewRuleMetadata;
   content: string;
-  sections: FileEditReviewRuleSections;
+  blocks: FileEditReviewRuleBlock[];
   warnings: string[];
+}
+
+/** 解析中途的规则块草稿；判据和修复提示先按行累积，最后拼成字符串。 */
+interface RuleBlockDraft {
+  /** 显式块标题；隐式单规则块为 undefined。 */
+  title?: string;
+  criterionTrue: string[];
+  criterionFalse: string[];
+  fixLines: string[];
+  severity?: RuleSeverity;
+  threshold?: number;
+}
+
+/** 拼好段落、但尚未补规则名与默认值的规则块。 */
+interface ParsedRuleBlock {
+  title?: string;
+  sections: FileEditReviewRuleSections;
+  severity?: RuleSeverity;
+  threshold?: number;
 }
 
 export interface FileEditReviewConfig {
@@ -120,7 +162,8 @@ export interface FileEditReviewRule {
   lineCount: number;
   /** 规则 front matter 原文；判断后端用它决定规则标识。 */
   metadata: FileEditReviewRuleMetadata;
-  sections: FileEditReviewRuleSections;
+  /** 文件里的全部规则块；没有 `## 规则：` 标题时只有一条隐式规则。 */
+  blocks: FileEditReviewRuleBlock[];
   warning?: string;
 }
 
@@ -382,68 +425,152 @@ function normalizeHeading(value: string): string {
   return value.trim().replace(/[:：]\s*$/, "").toLowerCase();
 }
 
+function createBlockDraft(title?: string): RuleBlockDraft {
+  return title === undefined
+    ? { criterionTrue: [], criterionFalse: [], fixLines: [] }
+    : { title, criterionTrue: [], criterionFalse: [], fixLines: [] };
+}
+
+/** 把累积的行拼成段落文本；空段落返回 undefined 而不是空串。 */
+function joinSection(lines: string[]): string | undefined {
+  return lines.map((line) => line.trim()).filter(Boolean).join(" ").trim() || undefined;
+}
+
 /**
- * 抽取 TypeSafe 判断后端需要的结构化段落。缺少判据不是解析错误：
- * `model` backend 的旧规则文件本来就没有这两段。
+ * 把规则正文切成规则块。
+ *
+ * `## 规则：<name>` / `## Rule: <name>` 开一个新块，块内可重复出现 `判据` 和 `修复提示` 段落，
+ * 并可用 `severity:` / `threshold:` 覆盖 front matter。文件里没有块标题时，整文件是一条隐式规则，
+ * 行为与新增分块能力之前完全一致。
  */
-function parseRuleSections(content: string): FileEditReviewRuleSections {
-  const criterionLines: Record<"true" | "false", string[]> = { true: [], false: [] };
-  const fixLines: string[] = [];
-  let current: "criteria" | "fix" | undefined;
+function parseRuleBlocks(content: string): { blocks: ParsedRuleBlock[]; warnings: string[]; hasExplicitBlocks: boolean } {
+  const warnings: string[] = [];
+  const topLevel = createBlockDraft();
+  const drafts: RuleBlockDraft[] = [];
+  let current = topLevel;
+  let section: "criteria" | "fix" | undefined;
   let continuation: "true" | "false" | undefined;
   for (const line of content.split(/\r?\n/)) {
-    const heading = line.match(SECTION_HEADING);
-    if (heading) {
-      const name = normalizeHeading(heading[1] ?? "");
-      current = CRITERIA_HEADINGS.has(name) ? "criteria" : FIX_HEADINGS.has(name) ? "fix" : undefined;
+    const blockHeading = line.match(RULE_BLOCK_HEADING);
+    if (blockHeading) {
+      current = createBlockDraft((blockHeading[1] ?? "").trim());
+      drafts.push(current);
+      section = undefined;
       continuation = undefined;
       continue;
     }
-    if (current === "fix") {
-      fixLines.push(line);
+    const heading = line.match(SECTION_HEADING);
+    if (heading) {
+      const name = normalizeHeading(heading[1] ?? "");
+      section = CRITERIA_HEADINGS.has(name) ? "criteria" : FIX_HEADINGS.has(name) ? "fix" : undefined;
+      continuation = undefined;
       continue;
     }
-    if (current !== "criteria") continue;
+    const label = line.match(SECTION_LABEL);
+    if (label) {
+      const name = normalizeHeading(label[1] ?? "");
+      const rest = (label[2] ?? "").trim();
+      section = CRITERIA_HEADINGS.has(name) ? "criteria" : "fix";
+      continuation = undefined;
+      if (section === "fix" && rest) current.fixLines.push(rest);
+      continue;
+    }
     const criterion = line.match(CRITERION_LINE);
-    if (criterion) {
+    if (section === "criteria" && criterion) {
       continuation = (criterion[1] ?? "").toLowerCase() as "true" | "false";
-      criterionLines[continuation].push((criterion[2] ?? "").trim());
+      const target = continuation === "true" ? current.criterionTrue : current.criterionFalse;
+      target.push((criterion[2] ?? "").trim());
+      continue;
+    }
+    // 块内 `severity:` / `threshold:` 覆盖 front matter；单规则文件只认 front matter，
+    // 避免把正文里讨论阈值的散句当成配置。
+    if (current !== topLevel) {
+      const field = line.match(BLOCK_METADATA_FIELD);
+      if (field && (field[1] === "severity" || field[1] === "threshold")) {
+        const key = field[1];
+        const value = parseMetadataValue(field[2] ?? "");
+        if (key === "severity") {
+          const severity = RULE_SEVERITIES.find((candidate) => candidate === value);
+          if (severity) current.severity = severity;
+          else warnings.push(i18n.t("invalidBlockSeverity", { value: String(value ?? "") }));
+        } else {
+          const threshold = probabilityValue(value);
+          if (threshold === undefined) warnings.push(i18n.t("invalidBlockThreshold", { value: String(value ?? "") }));
+          else current.threshold = threshold;
+        }
+        continue;
+      }
+    }
+    if (section === "fix") {
+      current.fixLines.push(line);
       continue;
     }
     // 缩进行是上一条判据的续行，避免把多行定义拆成两条。
-    if (continuation && /^\s+\S/.test(line)) {
-      const lines = criterionLines[continuation];
-      lines[lines.length - 1] = `${lines[lines.length - 1] ?? ""} ${line.trim()}`.trim();
+    if (section === "criteria" && continuation && /^\s+\S/.test(line)) {
+      const target = continuation === "true" ? current.criterionTrue : current.criterionFalse;
+      target[target.length - 1] = `${target[target.length - 1] ?? ""} ${line.trim()}`.trim();
     }
   }
-  const join = (lines: string[]): string | undefined =>
-    lines.map((line) => line.trim()).filter(Boolean).join(" ").trim() || undefined;
+  const implicitHasCriteria = topLevel.criterionTrue.length > 0 || topLevel.criterionFalse.length > 0;
+  if (drafts.length > 0 && (implicitHasCriteria || topLevel.fixLines.length > 0)) {
+    warnings.push(i18n.t("topLevelSectionsIgnored"));
+  }
+  const used = drafts.length > 0 ? drafts : [topLevel];
   return {
-    criterionTrue: join(criterionLines.true),
-    criterionFalse: join(criterionLines.false),
-    fixHint: join(fixLines),
+    blocks: used.map((draft) => ({
+      ...(draft.title === undefined ? {} : { title: draft.title }),
+      sections: {
+        criterionTrue: joinSection(draft.criterionTrue),
+        criterionFalse: joinSection(draft.criterionFalse),
+        fixHint: joinSection(draft.fixLines),
+      },
+      ...(draft.severity === undefined ? {} : { severity: draft.severity }),
+      ...(draft.threshold === undefined ? {} : { threshold: draft.threshold }),
+    })),
+    warnings,
+    hasExplicitBlocks: drafts.length > 0,
   };
 }
 
-function parseRuleFile(rawContent: string): ParsedRuleFile {
+/** 补上规则名与默认 severity/threshold，把解析结果定稿成可用规则块。 */
+function resolveRuleBlocks(
+  parsed: { blocks: ParsedRuleBlock[]; hasExplicitBlocks: boolean },
+  metadata: FileEditReviewRuleMetadata,
+  fallbackName: string,
+): FileEditReviewRuleBlock[] {
+  const fallback = metadata.name ?? fallbackName;
+  return parsed.blocks.map((block) => ({
+    name: parsed.hasExplicitBlocks ? (block.title ?? fallback) : fallback,
+    severity: block.severity ?? metadata.severity ?? DEFAULT_RULE_SEVERITY,
+    threshold: block.threshold ?? metadata.threshold ?? DEFAULT_RULE_THRESHOLD,
+    sections: block.sections,
+  }));
+}
+
+function parseRuleFile(rawContent: string, fallbackName: string): ParsedRuleFile {
   const warnings: string[] = [];
+  const metadata: FileEditReviewRuleMetadata = {};
+  const parsedBlocks = parseRuleBlocks(rawContent);
   const bareFile: ParsedRuleFile = {
-    metadata: {},
+    metadata,
     content: rawContent,
-    sections: parseRuleSections(rawContent),
+    blocks: resolveRuleBlocks(parsedBlocks, metadata, fallbackName),
     warnings,
   };
-  if (!rawContent.startsWith("---\n") && !rawContent.startsWith("---\r\n")) return bareFile;
+  if (!rawContent.startsWith("---\n") && !rawContent.startsWith("---\r\n")) {
+    warnings.push(...parsedBlocks.warnings);
+    return bareFile;
+  }
 
   const headerEnd = rawContent.search(/\r?\n---\r?\n/);
   if (headerEnd < 0) {
     warnings.push(i18n.t("unterminatedFrontMatter"));
+    warnings.push(...parsedBlocks.warnings);
     return bareFile;
   }
 
   const header = rawContent.slice(4, headerEnd);
   const content = rawContent.slice(headerEnd).replace(/^\r?\n---\r?\n/, "");
-  const metadata: FileEditReviewRuleMetadata = {};
   const lists: Record<"filePatterns" | "consumers", string[]> = {
     filePatterns: [],
     consumers: [],
@@ -481,7 +608,12 @@ function parseRuleFile(rawContent: string): ParsedRuleFile {
   }
   if (lists.filePatterns.length > 0) metadata.filePatterns = lists.filePatterns;
   if (lists.consumers.length > 0) metadata.consumers = lists.consumers;
-  return { metadata, content, sections: parseRuleSections(content), warnings };
+  return {
+    metadata,
+    content,
+    blocks: resolveRuleBlocks(parseRuleBlocks(content), metadata, fallbackName),
+    warnings,
+  };
 }
 
 /** Converts the supported glob subset while preserving directory boundaries for a single star. */
@@ -533,16 +665,6 @@ export function reviewerModelLabel(reviewer: FileEditReviewReviewerConfig): stri
   return reviewer.model ?? "unknown";
 }
 
-/** 规则命中时的问题级别；省略时为 error。 */
-export function ruleSeverity(rule: FileEditReviewRule): RuleSeverity {
-  return rule.metadata.severity ?? DEFAULT_RULE_SEVERITY;
-}
-
-/** 规则命中阈值；省略时为 DEFAULT_RULE_THRESHOLD。 */
-export function ruleThreshold(rule: FileEditReviewRule): number {
-  return rule.metadata.threshold ?? DEFAULT_RULE_THRESHOLD;
-}
-
 export function reviewerAppliesToFile(
   reviewer: FileEditReviewReviewerConfig,
   filePath: string,
@@ -572,6 +694,12 @@ export function resolveRulesFilePath(rulesFile: string, cwd: string): string {
   return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
 }
 
+/** 规则文件的去掉扩展名的文件名；单规则文件没有 front matter name 时用它当规则名。 */
+function ruleFileName(absolutePath: string): string {
+  const fileName = absolutePath.split(/[\\/]/).pop() ?? absolutePath;
+  return fileName.replace(RULE_FILE_EXTENSION, "");
+}
+
 export function getReviewerRulesFiles(reviewer: FileEditReviewReviewerConfig): string[] {
   if (reviewer.rulesFiles && reviewer.rulesFiles.length > 0) return reviewer.rulesFiles;
   return reviewer.rulesFile ? [reviewer.rulesFile] : [];
@@ -584,7 +712,7 @@ export function loadReviewRule(
 ): FileEditReviewRule {
   const absolutePath = resolveRulesFilePath(reviewer.rulesFile, cwd);
   const rawContent = readFileSync(absolutePath, "utf8");
-  const parsed = parseRuleFile(rawContent);
+  const parsed = parseRuleFile(rawContent, ruleFileName(absolutePath));
   const effectiveReviewer: FileEditReviewReviewerConfig = {
     ...reviewer,
     name: parsed.metadata.name ?? reviewer.name,
@@ -605,7 +733,7 @@ export function loadReviewRule(
     content,
     lineCount,
     metadata: parsed.metadata,
-    sections: parsed.sections,
+    blocks: parsed.blocks,
     warning,
   };
 }

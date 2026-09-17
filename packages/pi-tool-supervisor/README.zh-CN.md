@@ -34,24 +34,59 @@
 
 ### TypeSafe 引擎
 
-`typesafe` 把每个规则文件变成一条 Noul 问题——“`diff` 中新增或修改的代码是否违反这条规则？”——答案是概率。同一 reviewer 的全部规则放在一次请求里问，因为 TypeSafe 会对同一份 state 并行回答所有问题。剩下的都由代码控制：`threshold` 决定算不算命中，`severity` 决定命中是否阻断；命中后再用一次更小的 Choice 请求，把问题定位到 diff 真正新增的那几行里。
+`typesafe` 把每条规则变成一条 Noul 问题——“`diff` 中新增或修改的代码是否违反这条规则？”——答案是概率。同一 reviewer 的全部规则放在一次请求里问，因为 TypeSafe 会对同一份 state 并行回答所有问题。剩下的都由代码控制：`threshold` 决定算不算命中，`severity` 决定命中是否阻断；命中后再用一次更小的 Choice 请求，把问题定位到 diff 真正新增的那几行里。
 
-因为 TypeSafe 只返回判断、不返回散文，修复建议来自规则文件的 `## 修复提示`，由规则作者写一次，不是每次审查现生成。
+因为 TypeSafe 只返回判断、不返回散文，修复建议来自规则的 `## 修复提示`，由规则作者写一次，不是每次审查现生成。
 
-```json
-{
-  "name": "code-taste",
-  "backend": "typesafe",
-  "typesafeModel": "jev-latest",
-  "rulesFiles": ["/absolute/path/to/no-swallowed-error.md"],
-  "tools": ["edit", "write"],
-  "trigger": "after"
-}
+**一个规则文件可以写多条规则，也可以只写一条。** 两种写法共用同一套判据语法。
+
+#### 多条规则：用 `## 规则：` 分块
+
+```markdown
+---
+name: javascript-typescript
+filePatterns: ["*.ts", "*.tsx"]
+---
+# JS/TS 代码质量
+
+（文件级说明）
+
+## 规则：no-magic-number
+severity: error
+threshold: 0.85
+
+判据：
+  true: 新增行在业务逻辑里直接写超时或限制类字面量，没有提取为有语义的常量
+  false: 已提取为常量，或者本次改动没有新增此类字面量
+
+修复提示：把字面量提取成具名常量。
+
+## 规则：no-swallowed-error
+severity: warning
+threshold: 0.90
+
+## 判据
+true: 新增行捕获错误后静默继续：空 catch、忽略 Promise 拒绝
+false: 通过抛出、向上传递或记录日志报告失败
+
+## 修复提示
+把失败显式抛给调用方，或至少记录日志。
 ```
 
-需要在环境里设置 `TYPESAFE_API_KEY`；`TYPESAFE_ENDPOINT` 可以覆盖服务地址。key 缺失、请求失败或规则无法判断都会产生可见的 `failed` 审计条目，不会阻断工具，与对话模型审查失败时的行为一致。
+每个 `## 规则：<名>`（也接受 `## Rule: <名>`）开一条独立规则，块名就是审计里显示的规则名。**每条规则有自己的概率、阈值、severity、行定位和 finding**，不会互相干扰：
 
-这个引擎的规则文件必须有判据段落，并应该带上修复提示：
+| 块 | 判据 | 阈值 | 命中 | 结果 |
+| --- | --- | --- | --- | --- |
+| `no-magic-number` | `true:` 魔法字面量 | 0.85 | 0.92 | error → 阻断，定位到第 9 行 |
+| `no-swallowed-error` | `true:` 静默吞异常 | 0.90 | 0.31 | 未命中，不报 |
+
+两条规则的判据是**两个独立的 Noul 问题，在同一次请求里并行回答**，所以规则变多几乎不增加延迟：实测 10 条规则批量一次 1.1 秒 / 1,351 input token，拆成 10 次请求则是 4.3 秒 / 7,525 input token。
+
+块内可用 `severity:` 和 `threshold:` 覆盖文件 front matter 的同名字段；没写的沿用 front matter，再没有就用默认值。
+
+#### 单条规则：整个文件就是一条
+
+文件里没有 `## 规则：` 标题时，整文件算一条规则，行为与新增分块能力之前完全一致：
 
 ```markdown
 ---
@@ -69,17 +104,29 @@ false: 通过抛出、向上传递或记录日志报告失败；或本次改动�
 把失败显式抛给调用方，或至少记录日志并返回显式错误值，不要用默认值掩盖。
 ```
 
-`## 判据`（也接受 `## Criteria`）下写 `true:` 和 `false:` 两行；缩进行是上一条定义的续行。`## 修复提示`（也接受 `## Fix`）就是 finding 的文案。缺少判据的规则文件无法判断：会被报成带文件路径的失败审查，不会静默跳过。
+单规则文件的 `severity` 和 `threshold` 只从 front matter 读，避免把正文里讨论阈值的散句当成配置。
 
-这个引擎额外读取的 front matter 字段：
+#### 判据语法
+
+- 判据段落由 `## 判据`（或 `## Criteria`、`判据：`、`criteria:`）开始，写 `true:` 和 `false:` 行；缩进行是上一条定义的续行。
+- 修复提示段落由 `## 修复提示`（或 `## Fix`、`修复提示：文本`）开始，内容就是 finding 的文案；没写时回退到 `true:` 判据描述。
+- `## 规则：` 分块必填分隔符，`## 规则说明` 这类普通标题不会被误当成规则块。
+- 文件同时有分块和顶层判据时，顶层判据被忽略并给出警告，不会静默合并。
+- 缺判据的**那一条规则**报成带文件路径和规则名的失败审查，同一文件的其他规则照常判断。
+
+#### 全局 front matter 字段
 
 | 字段 | 含义 |
 | --- | --- |
 | `severity` | `error`、`warning` 或 `info`；只有 `error` 会阻断。默认 `error`。 |
 | `threshold` | 达到多少概率算命中，必须大于 0 且不超过 1。默认 `0.85`，建议按规则分别校准。 |
 
+#### 限制
+
 把 `typesafe` reviewer 当门禁之前需要知道的限制：
 
+- **判据必须具体到可判。** “不要写烂代码”这类散文判据判不准，要拆成一条条可判的具体条件。
+- **阈值要按规则分别校准。** 实测 `no-magic-number` 对 `const timeout = 30000;` 只给 0.70，用默认 0.85 就是漏报。迁移的真实成本是把散文规则编译成具体判据加逐条校准，不是写代码。
 - 行号定位需要修改后的文件内容。`before` 审查只有 `write` 拿得到，所以 `edit` 的 before 审查只报规则级问题、不给行号。
 - diff 新增超过 40 行时会跳过行定位，并在审计里给出警告；规则级问题仍然照常报告。
 - 会把整份修改后文件作为上下文发出，受 `maxFileContextChars` 限制；相比只发 diff，输入 token 大约翻倍。
@@ -131,6 +178,16 @@ pi install npm:pi-tool-supervisor
       "tools": ["edit", "write"],
       "trigger": "after",
       "condition": "/absolute/path/to/condition.ts"
+    },
+    {
+      "name": "code-taste",
+      "backend": "typesafe",
+      "typesafeModel": "jev-latest",
+      "rulesFiles": [
+        "/absolute/path/to/javascript-typescript.md"
+      ],
+      "tools": ["edit", "write"],
+      "trigger": "after"
     }
   ]
 }

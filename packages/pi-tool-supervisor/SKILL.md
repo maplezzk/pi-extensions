@@ -19,6 +19,7 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 - reviewer `enabled`；
 - 规则 frontmatter 的 `enabled`、`filePatterns`、`complexity`、`consumers`；
 - `typesafe` 引擎的规则 frontmatter 还需要 `severity` 和 `threshold`，以及正文里的 `## 判据`（`true:`/`false:`）和可选 `## 修复提示`。
+- 一个规则文件可以写多条规则：每个 `## 规则：<名>` 开一条独立规则，块名就是审计里显示的规则名，块内可用 `severity:` / `threshold:` 覆盖 front matter。文件里没有 `## 规则：` 时整文件算一条规则，行为与旧格式一致。
 
 相对规则文件路径和 condition 模块路径从当前项目 cwd 解析。配置在每次工具调用前重读。
 
@@ -28,12 +29,14 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 
 - `没有找到 TypeSafe API key`：环境里没有 `TYPESAFE_API_KEY`；这是失败而非跳过，不会阻断工具。
 - `TypeSafe 请求失败（HTTP …）`：401/422 不重试，直接报错；429/529 会按 `retry-after` 退避后重试。
-- `缺少「## 判据」段落`：该规则文件不能被 TypeSafe 判断。它只让对应规则失效，其他规则照常判断。
+- `缺少「## 判据」段落`：提示里会带上规则名，便于在一个文件多条规则时定位是哪个块。它只让对应规则失效，其他规则照常判断。
 - `TypeSafe 没有返回 N 条规则的答案`：这些规则无法判定，整个 reviewer 记为 failed，**不视为通过**。
 - `新增行超过 40 行，已跳过行号定位`：只报规则级问题。想恢复行定位就拆小改动。
 - `行号定位请求失败`：规则级结论仍然有效，只是没有行号。
 
-命中的 noul 值写在该 reviewer 的 `summary` 里，形如 `1 条规则命中：no-swallowed-error=0.97`。阈值偏低导致误报时，先调规则 frontmatter 的 `threshold`，不要直接改 `severity` 成非 error，否则问题会变成只提示不阻断。
+- `顶层判据已被忽略`：文件同时有 `## 规则：` 分块和顶层判据段落；把判据写进对应的规则块。
+
+一个文件多条规则时，命中的 noul 值逐条列在该 reviewer 的 `summary` 里，形如 `2 条规则命中：no-swallowed-error=0.97, no-magic-number=0.92`；每条命中各自产生一条带规则名的 finding，行定位也是逐条独立请求。阈值偏低导致误报时，先调对应规则块的 `threshold`，不要直接改 `severity` 成非 error，否则问题会变成只提示不阻断。
 
 ## 修改
 
@@ -46,7 +49,7 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 - 带 `filePatterns` 的规则只用于文件审查，通用工具规则不要设置 `filePatterns`；
 - `complexity: context` 或 `consumers` 不含 `editor-review` 的规则不会被本地审查消费。
 
-规则应可判定、可定位、可修复；超过 `maxRuleLines` 时按主题拆分。一个规则文件对应 TypeSafe 引擎里的一条判断，所以不要让一个文件装多条规则。不要把审查扩展描述成 OS 沙箱或回滚机制。
+规则应可判定、可定位、可修复；超过 `maxRuleLines` 时按主题拆分。TypeSafe 引擎里一个规则块对应一条判断：一个文件写多条规则时用 `## 规则：<名>` 分块，每条规则各自一句判据，不要把多句判据堆进同一个 `true:`（那会合并成一个概率，认不出是哪条命中，行定位也会因候选行分散而降级）。不要把审查扩展描述成 OS 沙箱或回滚机制。
 
 ## 验证
 

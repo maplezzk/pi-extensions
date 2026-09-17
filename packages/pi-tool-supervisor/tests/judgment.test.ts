@@ -232,3 +232,117 @@ test("未命中的判断不产生 finding", async () => {
   const judgment = await compileOne(SWALLOWED_ERROR_RULE);
   assert.deepEqual(buildJudgmentFindings([{ judgment, noul: 0.1, hit: false, blocking: false }], new Map()), []);
 });
+
+const MULTI_BLOCK_RULE = `---
+name: javascript-typescript
+severity: warning
+threshold: 0.5
+filePatterns:
+  - "*.ts"
+---
+# JS/TS 代码质量
+
+## 规则：no-magic-number
+severity: error
+threshold: 0.85
+
+判据：
+  true: 新增行在业务逻辑里直接写超时或限制类字面量，未提取为有语义常量
+  false: 已提取为常量，或本次改动没有新增此类字面量
+
+修复提示：把字面量提取成具名常量。
+
+## 规则：no-swallowed-error
+threshold: 0.9
+
+## 判据
+true: 新增行捕获错误后静默继续
+false: 抛出、向上传递或记录日志
+
+## 修复提示
+把失败显式抛给调用方。
+`;
+
+/** 编译一个文件里的全部规则块，并断言没有编译错误。 */
+async function compileAll(content: string): Promise<RuleJudgment[]> {
+  const rules = await loadRules([{ name: "rule.md", content }]);
+  const compiled = compileJudgments(rules);
+  assert.deepEqual(compiled.errors, []);
+  return compiled.judgments;
+}
+
+test("一个文件里的多个「## 规则：」块编译成多个独立判断", async () => {
+  const judgments = await compileAll(MULTI_BLOCK_RULE);
+
+  assert.deepEqual(judgments.map((judgment) => judgment.id), ["no-magic-number", "no-swallowed-error"]);
+  assert.deepEqual(judgments.map((judgment) => judgment.ruleName), ["no-magic-number", "no-swallowed-error"]);
+  // 两条规则共享同一个规则文件路径，但判据和修复提示互不串味。
+  assert.equal(judgments[0]?.rulesFile, judgments[1]?.rulesFile);
+  assert.match(judgments[0]?.criterionTrue ?? "", /超时或限制类字面量/);
+  assert.doesNotMatch(judgments[0]?.criterionTrue ?? "", /静默继续/);
+  assert.match(judgments[1]?.criterionTrue ?? "", /静默继续/);
+  assert.equal(judgments[0]?.fixHint, "把字面量提取成具名常量。");
+  assert.equal(judgments[1]?.fixHint, "把失败显式抛给调用方。");
+});
+
+test("块内 severity 和 threshold 覆盖 front matter，未覆盖的沿用文件级值", async () => {
+  const judgments = await compileAll(MULTI_BLOCK_RULE);
+
+  // 第一块写了两项：块内值生效。
+  assert.equal(judgments[0]?.severity, "error");
+  assert.equal(judgments[0]?.threshold, 0.85);
+  // 第二块只写了 threshold，severity 回退到 front matter 的 warning。
+  assert.equal(judgments[1]?.severity, "warning");
+  assert.equal(judgments[1]?.threshold, 0.9);
+});
+
+test("每个规则块发一个独立的 Noul 问题，互不合并", async () => {
+  const judgments = await compileAll(MULTI_BLOCK_RULE);
+  const questions = buildJudgmentQuestions(judgments);
+
+  assert.deepEqual(Object.keys(questions), ["no-magic-number", "no-swallowed-error"]);
+  for (const judgment of judgments) {
+    assert.equal(questions[judgment.id]?.type, "noul");
+    assert.equal(questions[judgment.id]?.criteria.true, judgment.criterionTrue);
+  }
+});
+
+test("某个规则块缺判据时只报该块的错误，其他块照常编译", async () => {
+  const rules = await loadRules([{
+    name: "rule.md",
+    content: `# 规则\n\n## 规则：good\n\n## 判据\ntrue: 违反\nfalse: 未违反\n\n## 规则：broken\n\n## 修复提示\n没有判据。\n`,
+  }]);
+  const compiled = compileJudgments(rules);
+
+  assert.deepEqual(compiled.judgments.map((judgment) => judgment.id), ["good"]);
+  assert.equal(compiled.errors.length, 1);
+  // 错误必须指明是哪个块，否则一个文件多规则时无法定位。
+  assert.match(compiled.errors[0]?.message ?? "", /broken/);
+});
+
+test("文件同时有分块和顶层判据时忽略顶层判据并给出警告", async () => {
+  const rules = await loadRules([{
+    name: "rule.md",
+    content: `# 规则\n\n## 判据\ntrue: 顶层判据\nfalse: 未违反\n\n## 规则：blocked\n\n## 判据\ntrue: 块内判据\nfalse: 未违反\n`,
+  }]);
+
+  assert.match(rules[0]?.warning ?? "", /顶层判据/);
+  const judgments = compileJudgments(rules).judgments;
+  assert.deepEqual(judgments.map((judgment) => judgment.id), ["blocked"]);
+  assert.equal(judgments[0]?.criterionTrue, "块内判据");
+});
+
+test("「## 规则说明」这类普通标题不会被当成规则块", async () => {
+  const judgments = await compileAll(`# 规则\n\n## 规则说明\n这里是散文说明。\n\n## 判据\ntrue: 违反\nfalse: 未违反\n`);
+
+  assert.equal(judgments.length, 1);
+  assert.equal(judgments[0]?.id, "rule");
+  assert.equal(judgments[0]?.criterionTrue, "违反");
+});
+
+test("多个规则块重名时自动去重，并保留各自判据", async () => {
+  const judgments = await compileAll(`# 规则\n\n## 规则：shared\n\n## 判据\ntrue: 第一个\nfalse: 未违反\n\n## 规则：shared\n\n## 判据\ntrue: 第二个\nfalse: 未违反\n`);
+
+  assert.deepEqual(judgments.map((judgment) => judgment.id), ["shared", "shared_2"]);
+  assert.deepEqual(judgments.map((judgment) => judgment.criterionTrue), ["第一个", "第二个"]);
+});

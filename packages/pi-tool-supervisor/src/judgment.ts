@@ -13,8 +13,6 @@
 import { diffLines } from "diff";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 import {
-  ruleSeverity,
-  ruleThreshold,
   type FileEditReviewFinding,
   type FileEditReviewRule,
   type RuleSeverity,
@@ -31,7 +29,6 @@ const MAX_JUDGMENT_ID_CHARS = 60;
 /** 行定位置信度低于该值时只报规则、不报行号，避免指错行。 */
 const MIN_LOCALIZATION_CONFIDENCE = 0.5;
 const JUDGMENT_ID_SEPARATOR = /[^A-Za-z0-9_-]+/g;
-const RULE_FILE_EXTENSION = /\.(md|markdown|txt)$/i;
 const LINE_SUFFIX = "__line";
 const NO_LINE_CHOICE = "none";
 
@@ -95,13 +92,6 @@ export interface JudgmentReadResult {
   unanswered: RuleJudgment[];
 }
 
-/** 从规则名或文件名推导判断 id；两者都可能重复，由 compileJudgments 去重。 */
-function baseJudgmentId(rule: FileEditReviewRule): string {
-  if (rule.metadata.name) return rule.metadata.name;
-  const fileName = rule.absolutePath.split(/[\\/]/).pop() ?? rule.absolutePath;
-  return fileName.replace(RULE_FILE_EXTENSION, "");
-}
-
 function sanitizeJudgmentId(value: string): string {
   const sanitized = value
     .trim()
@@ -126,35 +116,37 @@ export function compileJudgments(rules: FileEditReviewRule[]): JudgmentCompileRe
   const warnings: string[] = [];
   const usedIds = new Set<string>();
   for (const rule of rules) {
-    const criterionTrue = rule.sections.criterionTrue;
-    if (!criterionTrue) {
-      errors.push({
+    for (const block of rule.blocks) {
+      const criterionTrue = block.sections.criterionTrue;
+      if (!criterionTrue) {
+        errors.push({
+          rulesFile: rule.absolutePath,
+          message: i18n.t("missingCriteria", { name: block.name }),
+        });
+        continue;
+      }
+      const baseId = sanitizeJudgmentId(block.name);
+      let id = baseId;
+      let suffix = 2;
+      while (usedIds.has(id)) {
+        id = `${baseId}_${suffix}`;
+        suffix += 1;
+      }
+      if (id !== baseId) {
+        warnings.push(i18n.t("duplicateJudgmentId", { id: baseId, resolved: id, file: rule.absolutePath }));
+      }
+      usedIds.add(id);
+      judgments.push({
+        id,
+        ruleName: block.name,
         rulesFile: rule.absolutePath,
-        message: i18n.t("missingCriteria", { name: rule.reviewer.name }),
+        severity: block.severity,
+        threshold: block.threshold,
+        criterionTrue,
+        criterionFalse: block.sections.criterionFalse ?? i18n.t("fallbackCriterionFalse"),
+        ...(block.sections.fixHint ? { fixHint: block.sections.fixHint } : {}),
       });
-      continue;
     }
-    const baseId = sanitizeJudgmentId(baseJudgmentId(rule));
-    let id = baseId;
-    let suffix = 2;
-    while (usedIds.has(id)) {
-      id = `${baseId}_${suffix}`;
-      suffix += 1;
-    }
-    if (id !== baseId) {
-      warnings.push(i18n.t("duplicateJudgmentId", { id: baseId, resolved: id, file: rule.absolutePath }));
-    }
-    usedIds.add(id);
-    judgments.push({
-      id,
-      ruleName: rule.reviewer.name,
-      rulesFile: rule.absolutePath,
-      severity: ruleSeverity(rule),
-      threshold: ruleThreshold(rule),
-      criterionTrue,
-      criterionFalse: rule.sections.criterionFalse ?? i18n.t("fallbackCriterionFalse"),
-      ...(rule.sections.fixHint ? { fixHint: rule.sections.fixHint } : {}),
-    });
   }
   return { judgments, errors, warnings };
 }

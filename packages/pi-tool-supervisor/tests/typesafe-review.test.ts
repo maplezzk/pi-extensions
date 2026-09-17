@@ -28,6 +28,35 @@ const PROSE_ONLY_RULE = `# 只有散文规则
 1. 不要吞异常。
 `;
 
+/** 一个文件里两条规则：一条阻断、一条只提示。 */
+const MULTI_BLOCK_RULE = `---
+name: js-quality
+---
+# JS/TS 代码质量
+
+## 规则：no-swallowed-error
+severity: error
+threshold: 0.85
+
+## 判据
+true: 新增行捕获错误后静默继续，例如空 catch 或用默认值掩盖失败
+false: 通过抛出或记录日志报告失败
+
+## 修复提示
+把失败显式抛给调用方，不要用默认值掩盖。
+
+## 规则：no-magic-number
+severity: warning
+threshold: 0.85
+
+## 判据
+true: 新增行直接写了魔法数字
+false: 已经提取成具名常量
+
+## 修复提示
+把魔法数字提取成具名常量。
+`;
+
 /** 测试用的最小 Pi 扩展宿主；只覆盖 supervisor 实际调用的方法。 */
 type Handler = (...args: unknown[]) => unknown;
 
@@ -78,6 +107,8 @@ type Fixture = {
   targetContent: string;
   fetchStub: typeof fetch;
   requests: string[];
+  /** 每轮请求里的问题 id；用来验证一个文件的多条规则确实合并成一次请求。 */
+  questionIdBatches: string[][];
 };
 
 const TARGET_CONTENT = "let result;\ntry {\n  result = run();\n} catch {\n  // ignore\n}\n";
@@ -87,6 +118,10 @@ async function createFixture(options: {
   rules: string;
   noul?: number;
   chosenLine?: string;
+  /** 按判断 id 覆盖 noul；未列出的用 options.noul。 */
+  noulById?: Record<string, number>;
+  /** 按行定位问题 id（`<判断 id>__line`）覆盖选项；未列出的用 options.chosenLine。 */
+  lineById?: Record<string, string>;
 }): Promise<Fixture> {
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-typesafe-"));
   const projectDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-typesafe-project-"));
@@ -102,25 +137,36 @@ async function createFixture(options: {
   );
 
   const requests: string[] = [];
+  const questionIdBatches: string[][] = [];
   const fetchStub: typeof fetch = async (_input, init) => {
     const body = JSON.parse(String(init?.body)) as { questions: Record<string, { type: string }> };
-    const types = Object.values(body.questions).map((question) => question.type);
+    const entries = Object.entries(body.questions);
+    const types = entries.map(([, question]) => question.type);
     requests.push(types.join(","));
+    questionIdBatches.push(entries.map(([id]) => id));
     if (types.every((type) => type === "noul")) {
-      return new Response(
-        JSON.stringify({ answers: { "no-swallowed-error": { type: "noul", noul: options.noul ?? 0 } } }),
-        { status: 200 },
-      );
+      const answers = Object.fromEntries(entries.map(([id]) => [
+        id,
+        { type: "noul", noul: options.noulById?.[id] ?? options.noul ?? 0 },
+      ]));
+      return new Response(JSON.stringify({ answers }), { status: 200 });
     }
-    return new Response(
-      JSON.stringify({
-        answers: { "no-swallowed-error__line": { type: "choice", choice: options.chosenLine ?? "none", confidence: 0.95 } },
-      }),
-      { status: 200 },
-    );
+    const answers = Object.fromEntries(entries.map(([id]) => [
+      id,
+      { type: "choice", choice: options.lineById?.[id] ?? options.chosenLine ?? "none", confidence: 0.95 },
+    ]));
+    return new Response(JSON.stringify({ answers }), { status: 200 });
   };
 
-  return { agentDir, projectDir, target: join(projectDir, "example.ts"), targetContent: TARGET_CONTENT, fetchStub, requests };
+  return {
+    agentDir,
+    projectDir,
+    target: join(projectDir, "example.ts"),
+    targetContent: TARGET_CONTENT,
+    fetchStub,
+    requests,
+    questionIdBatches,
+  };
 }
 
 /** 走一次完整的 write 工具调用（tool_call + 真实写盘 + tool_result）。 */
@@ -354,5 +400,62 @@ test("规则文件缺少判据时报 failed 并说明原因，不发起 TypeSafe
     assert.equal(audit?.status, "failed");
     assert.match(audit?.reviewers?.[0]?.error ?? "", /判据/);
     assert.deepEqual(fixture.requests, []);
+  });
+});
+
+test("一个文件里的多条规则合并成一次请求，并各自报出独立的规则名和行", async () => {
+  const fixture = await createFixture({
+    rules: MULTI_BLOCK_RULE,
+    noulById: { "no-swallowed-error": 0.96, "no-magic-number": 0.93 },
+    lineById: { "no-swallowed-error__line": "5" },
+  });
+  await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
+    const result = await runWriteTool(fixture);
+    const audit = result.details?.fileEditReview;
+    const reviewer = audit?.reviewers?.[0];
+
+    assert.equal(audit?.status, "rejected");
+    // 两条规则一次 Noul 批量问完；只有 error 级那条需要行定位。
+    assert.deepEqual(fixture.questionIdBatches, [["no-swallowed-error", "no-magic-number"], ["no-swallowed-error__line"]]);
+    assert.deepEqual(fixture.requests, ["noul,noul", "choice"]);
+    // 两条规则各自得到一条 finding，而不是合并成一条。
+    assert.deepEqual(reviewer?.findings?.map((finding) => finding.ruleGroup), ["no-swallowed-error", "no-magic-number"]);
+    assert.deepEqual(reviewer?.findings?.map((finding) => finding.severity), ["error", "warning"]);
+    assert.equal(reviewer?.findings?.[0]?.line, 5);
+    assert.match(reviewer?.findings?.[0]?.message ?? "", /把失败显式抛给调用方/);
+    assert.match(reviewer?.findings?.[1]?.message ?? "", /把魔法数字提取成具名常量/);
+    // summary 必须两条都列出来，否则看不出哪条命中。
+    assert.match(reviewer?.summary ?? "", /no-swallowed-error=0\.96/);
+    assert.match(reviewer?.summary ?? "", /no-magic-number=0\.93/);
+  });
+});
+
+test("多规则文件里只有 warning 级命中时不阻断，也不发第二次请求", async () => {
+  const fixture = await createFixture({
+    rules: MULTI_BLOCK_RULE,
+    noulById: { "no-swallowed-error": 0.2, "no-magic-number": 0.93 },
+  });
+  await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
+    const result = await runWriteTool(fixture);
+    const audit = result.details?.fileEditReview;
+
+    assert.equal(audit?.status, "passed");
+    // 两条规则仍然合并成一次请求，只是都不需要行定位。
+    assert.deepEqual(fixture.requests, ["noul,noul"]);
+    assert.deepEqual(audit?.reviewers?.[0]?.findings?.map((finding) => finding.ruleGroup), ["no-magic-number"]);
+    assert.equal(result.content.length, 1);
+  });
+});
+
+test("多规则文件里某个块缺判据时报 failed，并指名是哪个块", async () => {
+  const brokenBlockRule = MULTI_BLOCK_RULE.replace("## 判据\ntrue: 新增行直接写了魔法数字\nfalse: 已经提取成具名常量\n", "");
+  const fixture = await createFixture({ rules: brokenBlockRule, noul: 0.96, chosenLine: "5" });
+  await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
+    const result = await runWriteTool(fixture);
+    const audit = result.details?.fileEditReview;
+
+    assert.equal(audit?.status, "rejected");
+    // 阻断和“某个块缺判据”同时发生：阻断优先，但缺判据仍然要在 warnings 里指名。
+    assert.match(audit?.reviewers?.[0]?.warnings?.join(" ") ?? "", /no-magic-number/);
   });
 });
