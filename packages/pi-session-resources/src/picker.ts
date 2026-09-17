@@ -42,8 +42,8 @@ const DESCRIPTION_WIDTH_RATIO = 0.28;
 const ITEM_COLUMN_GAP = 2;
 /** Joins the per-type counts in the collapsed resource button. */
 const BUTTON_SUMMARY_SEPARATOR = " · ";
-/** Clickable close button drawn right-aligned inside the picker's top border. */
-const CLOSE_BUTTON_LABEL = " ✕ ";
+/** Joins the hint row's own items: hint text, scroll counter, close label. */
+const HINT_ITEM_SEPARATOR = " · ";
 /** Panel rows above the resource list: top border, tab row, divider. */
 const PANEL_HEADER_ROWS = 3;
 /** Panel rows below the resource list: divider, hint row, bottom border. */
@@ -120,11 +120,21 @@ export interface ResourceButtonSegment {
   width: number;
 }
 
-/** Right-aligned close button inside the picker's top border. */
+/** Clickable close label drawn at the end of the picker's hint row. */
 export interface ResourceCloseSegment {
-  /** Zero-based column where the close button starts. */
+  /** Zero-based panel column where the label starts. */
   start: number;
   width: number;
+}
+
+/** Hint row layout while the picker panel is open, shared by rendering and hit testing. */
+interface HintRowLayout {
+  /** Plain hint text; the row draws it after one leading space. */
+  hint: string;
+  /** Right-aligned scroll counter, present only while matches stay off-window. */
+  counter?: string;
+  /** Clickable close label; absent without mouse input or horizontal room. */
+  close?: ResourceCloseSegment & { label: string };
 }
 
 /** Header cell under the pointer. */
@@ -143,8 +153,8 @@ interface PanelHeaderLayout {
   height: number;
   width: number;
   segments: readonly ResourceTabSegment[];
-  /** Clickable close button; absent when mouse input or horizontal room is missing. */
-  close?: ResourceCloseSegment;
+  /** Hint row content, including the clickable close label. */
+  hintRow: HintRowLayout;
   /** Resource rows rendered at once. */
   itemCount: number;
   /** Index of the first rendered resource row. */
@@ -170,8 +180,8 @@ export interface RenderResourcePickerOptions {
   theme: ResourcePickerTheme;
   /** Pre-computed tab layout so hit testing and rendering cannot drift apart. */
   segments?: readonly ResourceTabSegment[];
-  /** Pre-computed close-button layout; omitted when mouse input is unavailable. */
-  closeSegment?: ResourceCloseSegment;
+  /** Pre-computed hint row layout, including its clickable close label. */
+  hintRow?: HintRowLayout;
   /** Index of the first rendered resource row; the picker scrolls a fixed-size window. */
   windowStart?: number;
   /** Header cell that currently renders its hover highlight. */
@@ -221,48 +231,14 @@ function framedLine(content: string, innerWidth: number, accentKind: ResourceKin
   return `${kindAccent(accentKind, "│")}${fitted}${kindAccent(accentKind, "│")}`;
 }
 
-/** Plain picker title drawn into the top border. */
-function resourcePanelTitleText(): string {
-  return `─ ${i18n.t("pickerTitle")} `;
-}
-
-/**
- * Right-aligned close button geometry in the picker's top border.
- * Returns undefined when the title and the button cannot share the inner width.
- */
-export function resourceCloseSegment(width: number): ResourceCloseSegment | undefined {
-  const buttonWidth = visibleWidth(CLOSE_BUTTON_LABEL);
+/** Renders the picker title inside a rounded accent border. */
+function renderTopBorder(width: number, accentKind: ResourceKind): string {
   const innerWidth = Math.max(0, width - PANEL_BORDER_WIDTH);
-  if (innerWidth < visibleWidth(resourcePanelTitleText()) + buttonWidth) return undefined;
-  return { start: width - 1 - buttonWidth, width: buttonWidth };
-}
-
-/** Options for the picker's top border, which carries the title and the close button. */
-interface RenderTopBorderOptions {
-  width: number;
-  accentKind: ResourceKind;
-  theme: ResourcePickerTheme;
-  /** Clickable close button; absent when the picker has no mouse input or room. */
-  close?: ResourceCloseSegment;
-  /** Draws the close button with the hover background. */
-  closeHovered?: boolean;
-}
-
-/** Renders the picker title and close button inside a rounded accent border. */
-function renderTopBorder(options: RenderTopBorderOptions): string {
-  const { width, accentKind, theme, close, closeHovered } = options;
-  const innerWidth = Math.max(0, width - PANEL_BORDER_WIDTH);
-  const title = resourcePanelTitleText();
+  const title = `─ ${i18n.t("pickerTitle")} `;
   const titleWidth = Math.min(visibleWidth(title), innerWidth);
   const fittedTitle = truncateToWidth(title, titleWidth, "");
-  const buttonWidth = close?.width ?? 0;
-  const fill = "─".repeat(Math.max(0, innerWidth - visibleWidth(fittedTitle) - buttonWidth));
-  const left = kindAccent(accentKind, `╭${fittedTitle}${fill}`);
-  if (!close) return `${left}${kindAccent(accentKind, "╮")}`;
-  const button = closeHovered
-    ? theme.bg(THEME_BACKGROUND.selected, CLOSE_BUTTON_LABEL)
-    : theme.fg(THEME_COLOR.muted, CLOSE_BUTTON_LABEL);
-  return `${left}${button}${kindAccent(accentKind, "╮")}`;
+  const border = `╭${fittedTitle}${"─".repeat(Math.max(0, innerWidth - visibleWidth(fittedTitle)))}╮`;
+  return kindAccent(accentKind, border);
 }
 
 /** Renders a horizontal accent divider at the current panel width. */
@@ -316,8 +292,8 @@ function hitHeaderTarget(layout: HeaderLayout, column: number, row: number): Hea
     );
     return segment ? { kind: "buttonCount", segment } : { kind: "button" };
   }
-  if (row === 0) {
-    const close = layout.close;
+  if (row === layout.height - (PANEL_FOOTER_ROWS - 1)) {
+    const close = layout.hintRow.close;
     return close && column >= close.start && column < close.start + close.width
       ? { kind: "close" }
       : { kind: "empty" };
@@ -344,6 +320,35 @@ function matchedItems(
     resources.filter((resource) => resource.kind === kind),
     query,
   ).map(resourceItem);
+}
+
+/** Right-aligned `n/total` scroll counter, absent while every match fits on screen. */
+function scrollCounter(selectedIndex: number, total: number): string | undefined {
+  return total > RESOURCE_PICKER_VISIBLE_LIMIT ? `${selectedIndex + 1}/${total}` : undefined;
+}
+
+/**
+ * Lays out the hint row once so rendering and mouse hit testing cannot drift apart.
+ * The close label is only offered when the hint, the label, and the counter all fit.
+ */
+function hintRowLayout(options: {
+  mouseEnabled: boolean;
+  counter: string | undefined;
+  innerWidth: number;
+}): HintRowLayout {
+  const { mouseEnabled, counter, innerWidth } = options;
+  const layout: HintRowLayout = { hint: i18n.t(mouseEnabled ? "pickerHintMouse" : "pickerHint") };
+  if (counter) layout.counter = counter;
+  if (!mouseEnabled) return layout;
+
+  const label = i18n.t("pickerClose");
+  const start = PANEL_CONTENT_START_COLUMN + 1
+    + visibleWidth(layout.hint) + visibleWidth(HINT_ITEM_SEPARATOR);
+  const width = visibleWidth(label);
+  const counterWidth = counter ? visibleWidth(counter) + 1 : 0;
+  if (start + width > innerWidth - counterWidth) return layout;
+  layout.close = { label, start, width };
+  return layout;
 }
 
 /** Renders per-type counts; the active type is inverted, inactive types stay muted. */
@@ -448,23 +453,6 @@ export function renderResourceButton(options: RenderResourceButtonOptions): stri
   return [padToWidth(truncateToWidth(`${labelRow}${chips}`, width, ""), width)];
 }
 
-/** Renders the hint row with an optional right-aligned `n/total` scroll counter. */
-function renderHintRow(options: {
-  hint: string;
-  counter: string | undefined;
-  innerWidth: number;
-  theme: ResourcePickerTheme;
-  accentKind: ResourceKind;
-}): string {
-  const { hint, counter, innerWidth, theme, accentKind } = options;
-  const tail = counter ? ` ${counter}` : "";
-  const hintWidth = Math.max(0, innerWidth - visibleWidth(tail));
-  const fittedHint = padToWidth(truncateToWidth(` ${hint}`, hintWidth, ""), hintWidth);
-  const row = `${theme.fg(THEME_COLOR.muted, fittedHint)}${
-    counter ? theme.fg(THEME_COLOR.dim, tail) : ""}`;
-  return framedLine(row, innerWidth, accentKind);
-}
-
 /** Renders the bordered, tabbed picker directly above the wrapped editor. */
 export function renderResourcePicker(options: RenderResourcePickerOptions): string[] {
   const { resources, activeKind, theme } = options;
@@ -480,17 +468,12 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
   );
   const windowStart = resourceWindowStart(matches.length, selectedIndex);
   const items = matches.slice(windowStart, windowStart + RESOURCE_PICKER_VISIBLE_LIMIT);
-  const close = options.closeSegment
-    ?? (options.mouseEnabled ? resourceCloseSegment(panelWidth) : undefined);
+  const counter = scrollCounter(selectedIndex, matches.length);
+  const hintRow = options.hintRow
+    ?? hintRowLayout({ mouseEnabled: options.mouseEnabled === true, counter, innerWidth });
   const hover = options.hoverTarget;
   const lines = [
-    renderTopBorder({
-      width: panelWidth,
-      accentKind: activeKind,
-      theme,
-      close,
-      closeHovered: hover?.kind === "close",
-    }),
+    renderTopBorder(panelWidth, activeKind),
     framedLine(
       renderTabs({
         segments,
@@ -538,16 +521,46 @@ export function renderResourcePicker(options: RenderResourcePickerOptions): stri
 
   lines.push(renderDivider(panelWidth, activeKind));
   lines.push(renderHintRow({
-    hint: i18n.t(options.mouseEnabled ? "pickerHintMouse" : "pickerHint"),
-    counter: matches.length > RESOURCE_PICKER_VISIBLE_LIMIT
-      ? `${selectedIndex + 1}/${matches.length}`
-      : undefined,
+    layout: hintRow,
     innerWidth,
     theme,
     accentKind: activeKind,
+    closeHovered: hover?.kind === "close",
   }));
   lines.push(renderBottomBorder(panelWidth, activeKind));
   return lines;
+}
+
+/** Renders one hint row with its optional right-aligned counter and clickable close label. */
+function renderHintRow(options: {
+  layout: HintRowLayout;
+  innerWidth: number;
+  theme: ResourcePickerTheme;
+  accentKind: ResourceKind;
+  closeHovered: boolean;
+}): string {
+  const { layout, innerWidth, theme, accentKind, closeHovered } = options;
+  const { hint, counter, close } = layout;
+  const label = close?.label ?? "";
+  const separator = close ? HINT_ITEM_SEPARATOR : "";
+  const counterTail = counter ? ` ${counter}` : "";
+  const closeWidth = visibleWidth(separator + label);
+  // The close label keeps its laid-out column, so the hint shrinks instead of shifting it.
+  const hintWidth = Math.max(0, innerWidth - visibleWidth(counterTail) - closeWidth);
+  const fittedHint = truncateToWidth(` ${hint}`, hintWidth, "");
+  const gap = " ".repeat(Math.max(
+    0,
+    innerWidth - visibleWidth(fittedHint) - closeWidth - visibleWidth(counterTail),
+  ));
+  const styledClose = close
+    ? (closeHovered
+      ? theme.bg(THEME_BACKGROUND.selected, theme.fg(THEME_COLOR.muted, label))
+      : theme.fg(THEME_COLOR.muted, label))
+    : "";
+  const row = `${theme.fg(THEME_COLOR.muted, fittedHint)}${
+    theme.fg(THEME_COLOR.muted, separator)}${styledClose}${gap}${
+    counter ? theme.fg(THEME_COLOR.dim, counterTail) : ""}`;
+  return framedLine(row, innerWidth, accentKind);
 }
 
 /** Decodes Kitty printable keys while excluding escape and control input. */
@@ -762,7 +775,7 @@ export class SessionResourceEditor implements EditorComponent {
       width,
       theme: this.options.theme,
       segments: layout.segments,
-      closeSegment: layout.close,
+      hintRow: layout.hintRow,
       windowStart: layout.windowStart,
       hoverTarget,
       mouseEnabled: this.options.isMouseEnabled(),
@@ -903,12 +916,17 @@ export class SessionResourceEditor implements EditorComponent {
       const matches = matchedItems(resources, this.activeKind, this.query);
       const windowStart = resourceWindowStart(matches.length, this.selectedIndex);
       const itemCount = Math.min(matches.length, RESOURCE_PICKER_VISIBLE_LIMIT);
+      const itemRows = Math.max(1, itemCount);
       return {
         kind: "panel",
-        height: PANEL_HEADER_ROWS + Math.max(1, itemCount) + PANEL_FOOTER_ROWS,
+        height: PANEL_HEADER_ROWS + itemRows + PANEL_FOOTER_ROWS,
         width,
         segments: resourceTabSegments(resources),
-        close: this.options.isMouseEnabled() ? resourceCloseSegment(width) : undefined,
+        hintRow: hintRowLayout({
+          mouseEnabled: this.options.isMouseEnabled(),
+          counter: scrollCounter(this.selectedIndex, matches.length),
+          innerWidth: width - PANEL_BORDER_WIDTH,
+        }),
         itemCount,
         windowStart,
       };

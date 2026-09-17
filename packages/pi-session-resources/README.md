@@ -60,7 +60,7 @@ Pi only routes mouse input to components in fullscreen mode, so start Pi with `p
 
 - Click the button label to open the picker without typing `#`. The picker then opens with an empty query, so typing goes back to the editor instead of filtering.
 - Click a count chip such as `PR/MR 1` to open the picker directly on that type instead of switching tabs afterwards.
-- Click the `✕` at the right end of the panel's top border to close the picker, which is the same result as Esc.
+- Click `✕ close` at the end of the hint row to close the picker; the label is its own click target and does the same as Esc.
 - Enter still inserts the selected reference, so keyboard and mouse stay interchangeable.
 - Click a tab to switch resource type; the pointer highlights the tab, the chips, the rows, and the button while hovering.
 - Click a resource row to open it, which is the same result as Cmd+click on an OSC 8 link: Pi's fullscreen renderer runs its own URL opener for the clicked link.
