@@ -760,6 +760,13 @@ interface RunningSubagent {
   interactive: boolean;
   /** 新分屏的来源 pane ID，用于在 TUI 中展示 */
   splitFrom?: string;
+  /**
+   * When true, the agent stays in `runningSubagents` (watching, interrupting and
+   * result steering keep working) but is left out of the Subagents widget.
+   * Set by orchestration layers that render their own agent panel — currently
+   * pi-dynamic-workflows, whose agents are already shown in the Workflow panel.
+   */
+  hiddenFromWidget?: boolean;
 }
 
 /** All currently running subagents, keyed by id. */
@@ -868,10 +875,16 @@ function renderSubagentWidgetLines(agents: RunningSubagent[], width: number): st
   return lines;
 }
 
+/** Running subagents that belong in the Subagents widget. */
+function widgetSubagents(): RunningSubagent[] {
+  return Array.from(runningSubagents.values()).filter((agent) => !agent.hiddenFromWidget);
+}
+
 function updateWidget() {
   if (!latestCtx?.hasUI) return;
 
-  if (runningSubagents.size === 0) {
+  const visible = widgetSubagents();
+  if (visible.length === 0) {
     latestCtx.ui.setWidget("subagent-status", undefined);
     if (widgetInterval) {
       clearInterval(widgetInterval);
@@ -887,7 +900,7 @@ function updateWidget() {
       return {
         invalidate() {},
         render(width: number) {
-          return renderSubagentWidgetLines(Array.from(runningSubagents.values()), width);
+          return renderSubagentWidgetLines(widgetSubagents(), width);
         },
       };
     },
@@ -1593,6 +1606,11 @@ export const __test__ = {
   resolveResultPresentation,
   resolveResumeLaunchBehavior,
   runningSubagents,
+  widgetSubagents,
+  updateWidget,
+  setLatestCtxForTest: (ctx: ExtensionContext | null) => {
+    latestCtx = ctx;
+  },
 };
 
 function startWidgetRefresh() {
@@ -1609,11 +1627,14 @@ function startWidgetRefresh() {
  * sends it. Returns a RunningSubagent — does NOT poll.
  *
  * Call watchSubagent() on the returned object to observe completion.
+ *
+ * `options.hiddenFromWidget` keeps the agent out of the Subagents status widget
+ * for callers that render the same agents in their own panel.
  */
 async function launchSubagent(
   params: typeof SubagentParams.static,
   ctx: { sessionManager: { getSessionFile(): string | null; getSessionId(): string; getSessionDir(): string }; cwd: string },
-  options?: { surface?: string },
+  options?: { surface?: string; hiddenFromWidget?: boolean },
 ): Promise<RunningSubagent> {
   const startTime = Date.now();
   const id = Math.random().toString(16).slice(2, 10);
@@ -1748,6 +1769,7 @@ async function launchSubagent(
       sentinelFile,
       interactive: effectiveInteractive,
       splitFrom,
+      hiddenFromWidget: options?.hiddenFromWidget ?? false,
       statusState: createStatusState({
         source: "claude",
         startTimeMs: startTime,
@@ -1878,6 +1900,7 @@ async function launchSubagent(
     activityFile,
     interactive: effectiveInteractive,
     splitFrom,
+    hiddenFromWidget: options?.hiddenFromWidget ?? false,
     statusState: createStatusState({
       source: "pi",
       startTimeMs: startTime,

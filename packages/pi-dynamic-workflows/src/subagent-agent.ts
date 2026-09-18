@@ -75,7 +75,7 @@ interface SubagentApi {
   launchSubagent(
     params: Record<string, unknown>,
     ctx: SubagentCtx,
-    options?: { surface?: string },
+    options?: { surface?: string; hiddenFromWidget?: boolean },
   ): Promise<RunningSubagent>;
   watchSubagent(running: RunningSubagent, signal: AbortSignal): Promise<SubagentResult>;
 }
@@ -95,6 +95,13 @@ function getSubagentApi(): SubagentApi {
  * 因此带 schema 的 agent() 直接禁用 caller_ping，让子 agent 只能走 subagent_done。
  */
 const CALLER_PING_TOOL = "caller_ping";
+
+/**
+ * workflow 把每个 agent() 都画在自己的 Workflow 面板里。这些子 agent 再进
+ * pi-interactive-subagents 的 Subagents 面板只会重复展示同一批 agent，因此从
+ * 面板里隐藏；watchSubagent、中断和结果回传不受影响。
+ */
+const HIDE_FROM_SUBAGENT_WIDGET = { hiddenFromWidget: true } as const;
 
 // ── options ──
 export interface SubagentWorkflowAgentOptions {
@@ -168,6 +175,7 @@ export class SubagentWorkflowAgent {
           : {}),
       },
       this.launchCtx,
+      HIDE_FROM_SUBAGENT_WIDGET,
     );
     this.notify(`"${options.label ?? "workflow-agent"}" launched (${Date.now() - launchedAt}ms)`, "info");
 
