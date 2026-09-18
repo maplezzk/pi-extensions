@@ -38,14 +38,13 @@ function expandedState(): CleanModeState {
 	};
 }
 
-/** 造一条 assistant 消息的渲染输入，默认是「非承载者、耗时已知」的工作过程消息。 */
+/** 造一条 assistant 消息的渲染输入，默认是「非承载者」的工作过程消息。 */
 function assistantInput(overrides: Partial<AssistantRenderInput> = {}): AssistantRenderInput {
 	return {
 		state: expandedState(),
 		config: { ...DEFAULT_CLEAN_MODE_CONFIG },
 		kind: "work",
 		isRunHeaderHost: false,
-		durationMs: KNOWN_DURATION_MS,
 		...overrides,
 	};
 }
@@ -103,23 +102,28 @@ test("折叠头只在承载者上显示，工作过程被折叠时仍然输出",
 	assert.equal(nonOwner.showHeader, false, "非承载者不应重复显示折叠头");
 });
 
-test("耗时为未知或关闭开关时不显示折叠头", () => {
+test("轮首槽位不依赖耗时：运行中（耗时还没写入）也必须输出", () => {
 	const state = collapsedState();
 
 	assert.equal(
-		resolveAssistantMessageRender(
-			assistantInput({ state, isRunHeaderHost: true, durationMs: undefined }),
-		).showHeader,
-		false,
+		resolveAssistantMessageRender(assistantInput({ state, isRunHeaderHost: true })).showHeader,
+		true,
+		"运行中耗时还没写入，槽位跟着消失就是整屏空白（槽位里此时装的是「处理中」状态横条）",
 	);
+});
+
+test("关闭 showRunHeader 只挡耗时横条，不挡运行中的状态横条", () => {
+	const config = { ...DEFAULT_CLEAN_MODE_CONFIG, showRunHeader: false };
+
+	// 槽位依旧输出（里面可能装着运行中的状态横条），只是耗时横条不可见。
 	assert.equal(
 		resolveAssistantMessageRender(
-			assistantInput({
-				state,
-				config: { ...DEFAULT_CLEAN_MODE_CONFIG, showRunHeader: false },
-				isRunHeaderHost: true,
-			}),
+			assistantInput({ state: collapsedState(), config, isRunHeaderHost: true }),
 		).showHeader,
+		true,
+	);
+	assert.equal(
+		resolveRunHeader({ config, durationMs: KNOWN_DURATION_MS, collapsed: true }).visible,
 		false,
 	);
 });
