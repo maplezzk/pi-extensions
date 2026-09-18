@@ -216,6 +216,7 @@ export interface TailCompactionData {
   /** 原始完整后缀所在旧 branch 的 leaf。 */
   sourceLeafId: string;
   fromUserInputIndex: number;
+  /** 完整快照文本（continuation 指令 + 任务状态正文），与消息 content 一致；UI 用 stripContinuationInstruction 取正文。 */
   summary: string;
   tokensBefore: number;
 }
@@ -364,6 +365,29 @@ export function listSquashCandidates(
   return listUserInputs(branch, imagePlaceholder);
 }
 
+/**
+ * continuation 指令段的开头标记（中英各一份）。
+ *
+ * 落盘的 summary 是「给模型的指令 + 空行 + 任务状态正文」；UI 只该画正文。
+ * 按标记识别而不是按当前 locale 的文案匹配，这样切换语言后旧条目照样能剥干净。
+ */
+const CONTINUATION_INSTRUCTION_MARKERS = ["【任务状态快照】", "[Task state snapshot]"] as const;
+
+/**
+ * 剥掉只给接手模型看的 continuation 指令段，返回任务状态正文。
+ *
+ * 没有指令段（例如用户直接提交的自由格式摘要）时原样返回。
+ */
+export function stripContinuationInstruction(summary: string): string {
+  const body = summary.trim();
+  for (const marker of CONTINUATION_INSTRUCTION_MARKERS) {
+    if (!body.startsWith(marker)) continue;
+    const separator = body.indexOf("\n\n");
+    return separator === -1 ? body : body.slice(separator + 2).trim();
+  }
+  return body;
+}
+
 /** 校验 custom message details 是否包含完整、可用的尾部压缩元数据。 */
 function isTailCompactionData(value: unknown): value is TailCompactionData {
   if (!value || typeof value !== "object") return false;
@@ -375,6 +399,11 @@ function isTailCompactionData(value: unknown): value is TailCompactionData {
     typeof data.summary === "string" &&
     typeof data.tokensBefore === "number"
   );
+}
+
+/** 读取尾部压缩元数据；结构不完整时返回 undefined，由调用方决定降级方式。 */
+export function readTailCompactionData(value: unknown): TailCompactionData | undefined {
+  return isTailCompactionData(value) ? value : undefined;
 }
 
 /** 从 active branch 中读取已经应用的尾部折叠消息。 */
