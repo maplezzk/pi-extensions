@@ -2347,6 +2347,28 @@ describe("subagent startup delay", () => {
     }
   });
 });
+/** Widget filter fixtures: one user-spawned agent, one workflow-launched agent. */
+const VISIBLE_AGENT_ID = "visible-agent-id";
+const VISIBLE_AGENT_NAME = "Scout: widget filter";
+const HIDDEN_AGENT_ID = "hidden-agent-id";
+const HIDDEN_AGENT_NAME = "workflow-agent";
+const SUBAGENT_WIDGET_KEY = "subagent-status";
+
+/** Minimal RunningSubagent fixture; id/name/hiddenFromWidget are what the filter reads. */
+function createWidgetAgentFixture(overrides: Record<string, unknown>) {
+  const startTime = Date.now();
+  return {
+    id: "agent-id",
+    name: "agent",
+    task: "",
+    surface: "surface-1",
+    startTime,
+    sessionFile: "session-1.jsonl",
+    statusState: createStatusState({ source: "pi", startTimeMs: startTime }),
+    ...overrides,
+  };
+}
+
 describe("subagents widget rendering", () => {
   it("keeps every rendered line within a very narrow width", () => {
     const testApi = (subagentsModule as any).__test__;
@@ -2430,6 +2452,86 @@ describe("subagents widget rendering", () => {
           `expected line width <= ${width}, got ${visibleWidth(line)} for ${JSON.stringify(line)}`,
         );
       }
+    }
+  });
+
+  it("excludes agents hidden from the widget while keeping them running", () => {
+    const testApi = (subagentsModule as any).__test__;
+    assert.ok(testApi, "expected subagents test helpers to be exported");
+    assert.equal(typeof testApi.widgetSubagents, "function");
+
+    const visible = createWidgetAgentFixture({ id: VISIBLE_AGENT_ID, name: VISIBLE_AGENT_NAME });
+    const hidden = createWidgetAgentFixture({
+      id: HIDDEN_AGENT_ID,
+      name: HIDDEN_AGENT_NAME,
+      hiddenFromWidget: true,
+    });
+
+    testApi.runningSubagents.set(visible.id, visible);
+    testApi.runningSubagents.set(hidden.id, hidden);
+    try {
+      assert.deepEqual(
+        testApi.widgetSubagents().map((agent: { id: string }) => agent.id),
+        [VISIBLE_AGENT_ID],
+        "workflow-launched agents must stay out of the Subagents widget",
+      );
+
+      testApi.runningSubagents.delete(visible.id);
+      assert.deepEqual(
+        testApi.widgetSubagents(),
+        [],
+        "a workflow-only run leaves nothing for the Subagents widget to render",
+      );
+      assert.ok(
+        testApi.runningSubagents.has(hidden.id),
+        "hiding is display-only; the agent must stay watched and interruptible",
+      );
+    } finally {
+      testApi.runningSubagents.delete(visible.id);
+      testApi.runningSubagents.delete(hidden.id);
+    }
+  });
+
+  it("hides the whole panel when every running agent is hidden", () => {
+    const testApi = (subagentsModule as any).__test__;
+    assert.equal(typeof testApi.updateWidget, "function");
+
+    const calls: Array<{ key: string; value: unknown }> = [];
+    testApi.setLatestCtxForTest({
+      hasUI: true,
+      ui: {
+        setWidget(key: string, value: unknown) {
+          calls.push({ key, value });
+        },
+      },
+    });
+
+    const hidden = createWidgetAgentFixture({
+      id: HIDDEN_AGENT_ID,
+      name: HIDDEN_AGENT_NAME,
+      hiddenFromWidget: true,
+    });
+    const visible = createWidgetAgentFixture({ id: VISIBLE_AGENT_ID, name: VISIBLE_AGENT_NAME });
+
+    try {
+      testApi.runningSubagents.set(hidden.id, hidden);
+      testApi.updateWidget();
+      assert.deepEqual(
+        calls,
+        [{ key: SUBAGENT_WIDGET_KEY, value: undefined }],
+        "a workflow-only run must remove the Subagents widget above the editor",
+      );
+
+      calls.length = 0;
+      testApi.runningSubagents.set(visible.id, visible);
+      testApi.updateWidget();
+      assert.equal(calls.length, 1, "a normal subagent still renders the widget");
+      assert.equal(calls[0].key, SUBAGENT_WIDGET_KEY);
+      assert.equal(typeof calls[0].value, "function", "the widget stays a lazy renderer");
+    } finally {
+      testApi.runningSubagents.delete(hidden.id);
+      testApi.runningSubagents.delete(visible.id);
+      testApi.setLatestCtxForTest(null);
     }
   });
 });

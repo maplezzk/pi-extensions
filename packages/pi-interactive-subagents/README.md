@@ -142,6 +142,8 @@ Multiple subagents run concurrently — each steers its result back independentl
 
 Completion messages render with a colored background and are expandable with `Ctrl+O` to show the full summary and session file path.
 
+**Orchestrated agents stay out of this widget.** Agents launched programmatically through the `__pi_subagents` bridge with `hiddenFromWidget: true` — currently every `agent()` run by `pi-dynamic-workflows` — are excluded from the Subagents widget, because that orchestrator renders the same agents in its own panel. Hiding is display-only: the agent stays in the running set, so watching, status classification, interrupting, and result steering are unaffected. A run whose only subagents come from a workflow shows no Subagents widget at all.
+
 ### In-progress status updates
 
 The widget tracks each Pi-backed sub-agent from a child-written runtime snapshot and labels it with a coarse state:
