@@ -188,11 +188,23 @@ interface PatchHarness {
 	groupToggles: () => number;
 }
 
+/** `withPatches` 的可选行为开关。 */
+interface PatchOptions {
+	/**
+	 * 承载者是否直接拿到已知耗时；默认 true。
+	 *
+	 * 运行中的用例设为 false：真实运行期间耗时还没写入（`agent_settled` 才记），
+	 * 轮首槽位里应当装的是「处理中」状态横条，而不是耗时横条。
+	 */
+	runHeaderHasDuration?: boolean;
+}
+
 /** 装一次补丁、跑断言或渲染、无论成败都还原，避免测试间互相污染。 */
 function withPatches<T>(
 	state: CleanModeState,
 	config: CleanModeConfig,
 	run: (harness: PatchHarness) => T,
+	options: PatchOptions = {},
 ): T {
 	const actionGroups = createActionGroupState();
 	const durations = new WeakMap<object, number>();
@@ -233,13 +245,15 @@ function withPatches<T>(
 			groupToggleCount += 1;
 		},
 		claimRunHeaderHost: (host) => {
-			// 每轮只让第一个来认领的实例成为承载者，并直接给它已知耗时。
+			// 每轮只让第一个来认领的实例成为承载者；耗时已知时顺便记上。
 			if (runHeaderAssigned) {
 				return false;
 			}
 			runHeaderAssigned = true;
 			runHeaderHost = host;
-			durations.set(host, RUN_DURATION_MS);
+			if (options.runHeaderHasDuration ?? true) {
+				durations.set(host, RUN_DURATION_MS);
+			}
 			return true;
 		},
 		isCurrentRunHost: (host) => host === runHeaderHost,
@@ -551,6 +565,29 @@ test("折叠时承载折叠头的工作过程消息只输出折叠头", () => {
 		assert.ok(rendered.includes(HEADER_FRAGMENT), `折叠头应在整轮最前面：${rendered}`);
 		assert.ok(!rendered.includes(WORK_TEXT), `工作过程正文应隐藏：${rendered}`);
 	});
+});
+
+test("运行中收起后仍输出「处理中」状态横条，不出现整屏空白", () => {
+	withPatches(
+		COLLAPSED_STATE,
+		{ ...DEFAULT_CLEAN_MODE_CONFIG },
+		(harness) => {
+			harness.runStatusLines.push(RUN_STATUS_ROW);
+			const lines = linesOf(new AssistantMessageComponent(workMessage()));
+
+			assert.deepEqual(
+				lines.map((line) => line.trimEnd()),
+				["", RUN_STATUS_ROW],
+				"运行中耗时还没写入，槽位必须继续输出：否则整个屏幕上没有任何「还在跑」的信息",
+			);
+			assert.equal(
+				visibleWidth(lines[ACTIVITY_HEAD_ROW] ?? ""),
+				WIDTH,
+				`状态横条应铺满整行：${JSON.stringify(lines[ACTIVITY_HEAD_ROW])}`,
+			);
+		},
+		{ runHeaderHasDuration: false },
+	);
 });
 
 test("折叠时非承载者的工作过程消息渲染为 0 行", () => {
