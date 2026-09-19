@@ -19,8 +19,9 @@ Expanded, the work rows come back and the header shows `⌄` instead of `›`.
 
 | Level | Row | Behaviour |
 |---|---|---|
-| Run | `Took 4m 26s ›` | Hides the whole run's work; only the final answer stays |
-| Action group | `▸ Explored · 3 steps` | Hides a turn's tool calls behind one summary row |
+| Run | `[clean] Took 4m 26s ›` | Hides the whole run's work; only the final answer stays |
+| Action group | `[clean] ▸ Explored · 3 steps` | Hides a turn's tool calls behind one summary row |
+| Member row | `├─ Ran npm test ▶` | An expanded group lists one command per row; click a row to show that command's original output |
 | Tool row | `$ find . -name '*.ts'` | Pi's own per-row output expansion (`ctrl+o`, or click the result) |
 
 Group boundaries follow **narration**: an assistant message with text starts a new group, and consecutive tool-only turns merge into the current one. So a burst of work reads as one row even when the model emits one tool call per turn — which is the common case.
@@ -28,20 +29,33 @@ Group boundaries follow **narration**: an assistant message with text starts a n
 Groups with a single member are never collapsed — the tool row itself is shown, so a lone command still reads as itself.
 
 ```
-Took 11s ⌄
+[clean] Took 11s ⌄
 I'll check the restock data first.
 
-探索 · 3 steps ▶          ← collapsed group
+[clean] 探索 · 3 steps ▶          ← collapsed group
 
-Took 11s ⌄
+[clean] Took 11s ⌄
 I'll check the restock data first.
 
-  $ find . -name '*.ts'       ← expanded group
-  $ wc -l src/*.ts
-  $ git status
+[clean] 探索 · 3 steps ▼          ← expanded group: one command per row
+  ├─ Read src/index.ts ▶
+  ├─ Ran pnpm test ▶
+  └─ Searched "handleMouse" ▶
 ```
 
-Group state and run state are independent: expanding the run shows groups in whatever state you left them.
+To read one command's raw output, click that row and it opens in place (click again to fold it back):
+
+```
+[clean] 探索 · 3 steps ▼
+  ├─ Read src/index.ts ▶
+  ├─ Ran pnpm test ▼
+  │   pnpm test                    ← Pi's own rendering
+  │   Tests 42 passed
+  │   ... (18 more lines, ctrl+o to expand)
+  └─ Searched "handleMouse" ▶
+```
+
+Group state and run state are independent: expanding the run shows groups in whatever state you left them, including which commands were opened.
 
 ## Interaction
 
@@ -51,6 +65,7 @@ Group state and run state are independent: expanding the run shows groups in wha
 | `shift+f2` | Expand or collapse every action group |
 | Mouse click on the run header | Same as `f2`, **fullscreen TUI mode only** |
 | Mouse click on a group header | Expand or collapse that one action group, **fullscreen TUI mode only** |
+| Mouse click on a member command row | Open or fold that one command's raw output in place (the whole row is clickable), **fullscreen TUI mode only** |
 | `/clean` | Same as the shortcut |
 | `/clean config` | Open the interactive settings panel |
 | `/config:clean-mode` | Open the interactive settings panel |
@@ -157,20 +172,29 @@ While the agent runs, the layout splits in two: **the very top only answers "how
 
 ```
 user: help me fix xxx
-  ⠋ Working · 42s                     ← top: run-level state + time (the only band on screen)
- Explored · 5 steps · read 4 · search 3 ▶  ← current group header: step count + this run's counters
- Run Command ls -la ▶
- Run Command npm test                  ← newest action (the block attaches below it)
-  ├─ ◐ Thinking  tracing the token expiry path…   ← block: thinking
+  [clean] ⠋ Working · 42s             ← top: run-level state + time (the only band on screen)
+ [clean] Explored · 5 steps · read 4 · search 3 ▶  ← current group header: step count + this run's counters
+  ├─ ◐ Thinking  tracing the token expiry path…   ← block: thinking, a sibling of the command rows
   └─ ⠋ Run Command npm test                        ← block: the action running now
      ↳ 12 passing                                  ← its latest output
 ```
 
+With the group expanded the same list reads as commands, and the thinking row still closes it:
+
+```
+ [clean] Explored · 5 steps ▼
+  ├─ Read src/index.ts ▶
+  ├─ Ran ls -la ▶
+  ├─ Ran npm test ▶
+  └─ ◐ Thinking  tracing the token expiry path…   ← same level as the commands, at the bottom
+```
+
 - **Top (run-level band)**: state plus run-level time only — no counters, no thinking or tool detail. While running it reads `[clean] ⠋ Working · 42s`; when the run settles the same slot holds `[clean] Took 42s · 3 steps ▶`, so switching state changes the text, not the layout.
 - **Group header chip**: the leading word follows what the group actually did — when one kind of action is over half the group it names it (`Run Command · 12 steps`), and only a group with no majority falls back to the generic `Explored · N steps`. The counters after it (`· read 3 · command 2`) are this run's totals: they do not take a row of their own — on its own row the counters simply count the same thing as the step count, and with the top band that makes three places reporting progress — and only the current group shows them.
-- **An action is named once**: with a single member the group header *is* that action's summary (`Run Command npm test ▶`), so the block does not list the action again — it only adds the thinking head and the output tail. A multi-member header is a summary line without action names, so there the block lists what is running.
+- **An action is named once**: with a single member the group header *is* that action's summary (`Run Command npm test ▶`), so the block does not list the action again — it only adds the thinking head and the output tail. A collapsed multi-member header is a summary line without action names, so there the block lists what is running; once the group is expanded the commands are already listed one per row, so the block drops the action name again.
 - **Activity block**: attached below the current group's **last visible row**. With the group expanded that is its last member; with the group collapsed the member rows render zero lines and the group header is the only visible row, so the block follows it. Either way it sits at the bottom of the list instead of hanging in the middle.
 - **The block hangs off the group header with tree lines**: each item starts with `├─` (another item follows) or `└─` (the last one), an output tail sits at the column after the branch, and a continuation whose owner still has siblings gets a `│`. Indentation alone does not say which row above an item belongs to; dropping the action name (single-member group) recomputes the closing branch, so the thinking row takes over as the last item.
+- **The thinking row is a sibling of the command rows**: member rows of an expanded group use the same tree prefix, so the thinking row reads as the last item of that list (the last command yields its `└─` to it) instead of hanging under some command's multi-line output.
 
 At any moment, the newest state is at the bottom of what you see. When the run itself is collapsed (tool rows render zero lines) the block is not drawn at all and only the top band remains — collapsing means folding the process away.
 
@@ -183,7 +207,7 @@ Two implementation constraints matter:
 
 While the area shows the current action, Pi's own `Working...` line is suppressed so the two do not say the same thing twice.
 
-Rendering is split in three places that share the same row data (`runtime.activityArea.rows` is padded to the largest height seen, then rendered into the full `lines` and the action-name-free `detailLines`): the current group's tool rows append the block after themselves (`appendActivityTail` in `component-patches.ts`; only the last visible row appends), the run-header component emits run-level time only (`createRunHeaderComponent`, reading `getRunStatusLines`), and the group chip gets its leading word from `getGroupActivityLabel` (the group's majority class, via `dominantActivityClass`) plus this run's counters from `getActivityCounters` (built by `formatActivityCountersSuffix`) — counts accumulate per group (the `activity` field of `registerActionToolCall`), so historical groups still describe themselves. A single-member group uses the action-name-free form and keeps thinking plus output tails; multi-member groups list what is running. All three only accept "the current group" and "the current run's header host", so historical turns never repeat the same content. Only the run-level band gets a background (`bandActivityHead`); block rows carry their tree prefix and padding rows still render as blank.
+Rendering is split in three places that share the same row data (`runtime.activityArea.rows` is padded to the largest height seen, then rendered into the full `lines` and the action-name-free `detailLines`): the current group's tool rows append the block after themselves (`appendActivityTail` in `component-patches.ts`; only the last visible row appends), the run-header component emits run-level time only (`createRunHeaderComponent`, reading `getRunStatusLines`), and the group chip gets its leading word from `getGroupActivityLabel` (the group's majority class, via `dominantActivityClass`) plus this run's counters from `getActivityCounters` (built by `formatActivityCountersSuffix`) — counts accumulate per group (the `activity` field of `registerActionToolCall`), so historical groups still describe themselves. A single-member group and an expanded multi-member group both use the action-name-free form (`resolveActivityTail`; the expanded list already names every command), while a collapsed multi-member group lists what is running. Every activity row is truncated to the current render width before it is appended (`clampLinesToWidth`): in main-screen mode pi-tui throws and stops on a line wider than the terminal, and in fullscreen mode the line is clipped. All three only accept "the current group" and "the current run's header host", so historical turns never repeat the same content. Only the run-level band gets a background (`bandActivityHead`); block rows carry their tree prefix and padding rows still render as blank.
 
 ## Compatibility
 

@@ -14,8 +14,7 @@ import {
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import type { TuiMouseEvent } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import {
+import { visibleWidth } from "@earendil-works/pi-tui";import {
 	beginActionGroupStep,
 	createActionGroupState,
 	findActionGroupMembership,
@@ -25,6 +24,11 @@ import {
 	toggleActionGroup,
 	type ActionGroupState,
 } from "../src/action-groups.ts";
+import {
+	BRANCH_LAST,
+	BRANCH_MIDDLE,
+	TREE_INDENT,
+} from "../src/activity.ts";
 import { installComponentPatches } from "../src/component-patches.ts";
 import { formatDuration } from "../src/duration.ts";
 import { createHeaderStyler, type ThemePainter } from "../src/header-style.ts";
@@ -60,6 +64,23 @@ const SINGLE_ACTION_SUMMARY = "运行命令 ls -la";
 const ACTIVITY_ROW = "    │ ⠹ 运行命令 npm test";
 /** 活动块里跟在动作行后面的输出尾巴。 */
 const ACTIVITY_TAIL_ROW = "      │ ↳ 12 passing";
+/**
+ * 展开的组里接在命令行下面的思考行。
+ *
+ * 它和成员命令行用同一段缩进（`  ├─ ` / `  └─ `），所以活动块看起来是列表的末项，
+ * 而不是挂在某条命令正文底下的子项。
+ */
+const THOUGHT_ROW = `  ${BRANCH_LAST} ◐ ${i18n.t("activityThinking")}  想点事`;
+/** 展开的组里一条成员命令的摘要文案。 */
+const MEMBER_SUMMARIES = ["读取 a.ts", "运行命令 npm test", "搜索 handleMouse"];
+/** 树形行的正文列号：`  ├─ ` 之后。 */
+const TREE_TEXT_COLUMN = visibleWidth(`${TREE_INDENT}${BRANCH_MIDDLE} `);
+/** 组头块占的行数（前导空行 + 组头行）：展开的组里首条成员的摘要行排在它下面。 */
+const HEADER_BLOCK_HEIGHT = 2;
+/** 超出渲染宽度的活动行：用来验证超宽行被截到终端宽度。 */
+const OVERLONG_ACTIVITY_ROW = `  ${BRANCH_LAST} ◐ ${i18n.t("activityThinking")}  ${"长".repeat(WIDTH)}`;
+/** 超长的命令摘要：摘要行必须自己截断，不能把箭头挤出屏幕。 */
+const OVERLONG_SUMMARY = `运行命令 ${"x".repeat(WIDTH * 2)}`;
 /**
  * 轮首槽位的状态行：只报在处理与耗时。
  *
@@ -189,6 +210,8 @@ interface PatchHarness {
 	runToggles: () => number;
 	/** 动作组被切换的次数。 */
 	groupToggles: () => number;
+	/** 补丁层请求重绘的次数（成员行切换原文时应当加一）。 */
+	renderRequests: () => number;
 }
 
 /** `withPatches` 的可选行为开关。 */
@@ -222,6 +245,7 @@ function withPatches<T>(
 	let runHeaderHost: object | undefined;
 	let runToggleCount = 0;
 	let groupToggleCount = 0;
+	let renderRequestCount = 0;
 	const restore = installComponentPatches({
 		getState: () => state,
 		getConfig: () => config,
@@ -246,6 +270,9 @@ function withPatches<T>(
 		onToggleActionGroup: (groupId) => {
 			toggleActionGroup(actionGroups, groupId);
 			groupToggleCount += 1;
+		},
+		requestRender: () => {
+			renderRequestCount += 1;
 		},
 		claimRunHeaderHost: (host) => {
 			// 每轮只让第一个来认领的实例成为承载者；耗时已知时顺便记上。
@@ -289,6 +316,7 @@ function withPatches<T>(
 			runStatusLines,
 			runToggles: () => runToggleCount,
 			groupToggles: () => groupToggleCount,
+			renderRequests: () => renderRequestCount,
 		});
 	} finally {
 		restore();
@@ -447,7 +475,8 @@ test("当前组展开时，活动块接在末位成员行下面", () => {
 		registerActionToolCall(harness.actionGroups, { toolCallId: "call-1", summary: SINGLE_ACTION_SUMMARY });
 		registerActionToolCall(harness.actionGroups, { toolCallId: "call-2", summary: SINGLE_ACTION_SUMMARY });
 		toggleActionGroup(harness.actionGroups, harness.actionGroups.currentGroupId);
-		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
+		// 展开的组里命令行已经逐条列出，活动块只补思考与输出尾巴。
+		seedActivityBlock(harness, [ACTIVITY_ROW, ACTIVITY_TAIL_ROW]);
 
 		const headText = linesOf(toolComponent("call-1")).map(stripAnsi).join("\n");
 		const lastLines = linesOf(toolComponent("call-2")).map(stripAnsi);
@@ -917,31 +946,9 @@ test("工具行的首行带上可点击箭头，点击该行切换 Pi 自己的�
 	});
 });
 
-test("展开的组里点成员箭头只切换这条工具行，不折叠整组", () => {
+test("展开的组里点组头折叠整组，点首条成员的摘要行只切换它自己", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const ids = seedActionGroup(harness.actionGroups, 3);
-		toggleActionGroup(harness.actionGroups, 1);
-
-		const head = toolComponent(ids[0]);
-		const lines = linesOf(head);
-		// 组头行用的是展开态箭头 ▼，成员行自己的箭头才是 ▶，据此定位成员行。
-		const arrowRow = lines.findIndex((line) => stripAnsi(line).trimEnd().endsWith(COLLAPSED_CHEVRON));
-		assert.ok(arrowRow >= 0, `前置条件：展开的组里成员行应带箭头：${lines.join("\n")}`);
-
-		head.handleMouse(clickAt(arrowRow, lines.length));
-		assert.equal(harness.groupToggles(), 0, "点成员箭头不应折叠整组");
-
-		const after = linesOf(head);
-		assert.ok(
-			stripAnsi(after[arrowRow] ?? "").trimEnd().endsWith(EXPANDED_CHEVRON),
-			`点箭头后该工具行应变成展开态：${JSON.stringify(stripAnsi(after[arrowRow] ?? ""))}`,
-		);
-	});
-});
-
-test("展开的组里点组头可折叠整组，点成员正文不折叠整组", () => {
-	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const ids = seedActionGroup(harness.actionGroups, 3);
+		const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
 		toggleActionGroup(harness.actionGroups, 1);
 
 		const head = toolComponent(ids[0]);
@@ -950,9 +957,10 @@ test("展开的组里点组头可折叠整组，点成员正文不折叠整组",
 		head.handleMouse(clickAt(HEADER_BLANK_ROW, lines.length));
 		assert.equal(harness.groupToggles(), 1, "组头上方的空行属于同一点击块，应能折叠整组");
 
-		// 组头下面的行属于工具行自己，鼠标要透传给 Pi，不能当成组头。
-		head.handleMouse(clickAt(lines.length - 1, lines.length));
-		assert.equal(harness.groupToggles(), 1, "点成员正文不应折叠整组");
+		// 组头下面那行是首条成员自己的摘要行，属于那条工具行，不能当组头。
+		head.handleMouse(clickAt(HEADER_BLOCK_HEIGHT, lines.length));
+		assert.equal(harness.groupToggles(), 1, "点首条成员的摘要行不应折叠整组");
+		assert.equal(harness.renderRequests(), 1, "点摘要行应切换它的原文展开");
 	});
 });
 
@@ -968,19 +976,20 @@ test("组展开后点击组头仍能收起该组", () => {
 	});
 });
 
-test("鼠标点击组头切换该动作组，非组头行透传给 Pi", () => {
+test("点击组头切换该动作组，点成员摘要行不会折叠整组", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const ids = seedActionGroup(harness.actionGroups, 2);
+		const ids = seedActionGroup(harness.actionGroups, 2, MEMBER_SUMMARIES);
+		toggleActionGroup(harness.actionGroups, 1);
 
 		const head = toolComponent(ids[0]);
 		linesOf(head);
-		head.handleMouse(clickAt(0, 1));
+		head.handleMouse(clickAt(HEADER_ROW, HEADER_BLOCK_HEIGHT));
 		assert.equal(harness.groupToggles(), 1, "点击组头应触发一次动作组切换");
 
 		const member = toolComponent(ids[1]);
-		linesOf(member);
-		member.handleMouse(clickAt(0, 1));
-		assert.equal(harness.groupToggles(), 1, "点击组内成员不应切换动作组");
+		const memberLines = linesOf(member);
+		member.handleMouse(clickAt(0, memberLines.length));
+		assert.equal(harness.groupToggles(), 1, "点成员摘要行不应切换动作组");
 	});
 });
 

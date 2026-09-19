@@ -61,16 +61,17 @@ const TOOL_ARG_KEYS = ["command", "file_path", "path", "pattern", "query", "url"
  */
 const BAND_INDENT = "  ";
 /**
- * 活动块树形前缀的缩进：与组头 chip 里的文案同列。
+ * 活动块树形前缀的缩进：与组头 chip 的**左边缘**同列。
  *
- * 组头用组件补丁的 `HEADER_INDENT` 把文案推到第 3 列，活动块的竖折就从这一列起画，
- * 看上去像是从组头文字下面长出来的。
+ * 组头用组件补丁的 `HEADER_INDENT` 把标签推到第 3 列（标签里的文案前面还有 `[clean]`
+ * 来源前缀），活动块的竖折就从标签左边缘这一列起画，看上去像是从组头下面长出来的。
+ * 展开的动作组里「每条命令一行」也用这一列，思考行才是和命令平级的兄弟项。
  */
-const TREE_INDENT = "  ";
+export const TREE_INDENT = "  ";
 /** 子项前的分支符：它后面还有别的子项时用这个。 */
-const BRANCH_MIDDLE = "├─";
+export const BRANCH_MIDDLE = "├─";
 /** 最后一个子项的分支符：整块到这里收口。 */
-const BRANCH_LAST = "└─";
+export const BRANCH_LAST = "└─";
 /** 子项续行的宽度占位：与分支符 `├─ ` 同宽，正文才对得齐。 */
 const BRANCH_CONTINUATION_PADDING = "  ";
 /** 续行所属的子项后面还有子项时，用竖线把它和后续子项贯通起来。 */
@@ -500,6 +501,32 @@ export function blankActivityRow(): ActivityRow {
 	return { kind: "blank", text: "" };
 }
 
+/** 这一项的分支符：后面还有别的子项时用 `├─`，否则用 `└─` 收口。 */
+export function treeBranch(isLast: boolean): string {
+	return isLast ? BRANCH_LAST : BRANCH_MIDDLE;
+}
+
+/**
+ * 拼一条树形行：`  ├─ 正文`。
+ *
+ * 展开的动作组里「每条命令一行」与活动块里的思考行共用它，缩进与分支符才不会各写
+ * 一套；两套写法一旦漂移，命令行和思考行就不再是同一棵树里的兄弟项。
+ */
+export function renderTreeRow(
+	text: string,
+	options: { isLast: boolean; paintBranch: (branch: string) => string },
+): string {
+	return `${renderTreePrefix(options.isLast, options.paintBranch)}${text}`;
+}
+
+/** 树形行的前缀（`  ├─ ` / `  └─ `）：正文从这一列之后开始。 */
+export function renderTreePrefix(
+	isLast: boolean,
+	paintBranch: (branch: string) => string,
+): string {
+	return `${TREE_INDENT}${paintBranch(treeBranch(isLast))} `;
+}
+
 /** 从 `index` 往后还有没有别的子项；续行与补位空行都不算。 */
 function hasItemAfter(rows: ActivityRow[], index: number): boolean {
 	return rows.slice(index + 1).some((row) => row.kind === "item");
@@ -528,8 +555,10 @@ export function renderActivityRows(rows: ActivityRow[], paint: ActivityPainter):
 		}
 
 		if (row.kind === "item") {
-			const branch = hasItemAfter(rows, index) ? BRANCH_MIDDLE : BRANCH_LAST;
-			return `${TREE_INDENT}${paint.fg(COLOR_DIM, branch)} ${row.text}`;
+			return renderTreeRow(row.text, {
+				isLast: !hasItemAfter(rows, index),
+				paintBranch: (branch) => paint.fg(COLOR_DIM, branch),
+			});
 		}
 
 		const owner = ownerItemIndex(rows, index);
