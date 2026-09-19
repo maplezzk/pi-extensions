@@ -24,6 +24,8 @@ const COLOR_ACCENT = "accent";
 const COLOR_PRIMARY = "text";
 /** 弱化色：次要信息与右侧提示。 */
 const COLOR_MUTED = "muted";
+/** 更弱的颜色：树形分支符这类纯结构字符，只用来勾出层级。 */
+const COLOR_DIM = "dim";
 /** 横条宽度下限：宽度为 0 时不能去截断，直接给空行。 */
 const MIN_BAND_WIDTH = 0;
 /** 横条被截断时的省略号。 */
@@ -48,6 +50,8 @@ export interface HeaderStyler {
 	primary(text: string): string;
 	/** 次要信息与右侧快捷键提示。 */
 	muted(text: string): string;
+	/** 结构字符（例如树形分支符 `├─`），比 muted 更弱。 */
+	dim(text: string): string;
 	/** 铺满整行宽度的底色横条；宽度不够时截断，不会撑破布局。 */
 	band(text: string, width: number): string;
 	/** 只包住这一行内容的底色标签；内部不再补留白，对齐由调用方控制。 */
@@ -104,6 +108,7 @@ export function createHeaderStyler(theme: ThemePainter): HeaderStyler {
 	const accent = probeForeground(theme, COLOR_ACCENT) ?? identity;
 	const primary = probeForeground(theme, COLOR_PRIMARY) ?? identity;
 	const muted = probeForeground(theme, COLOR_MUTED) ?? identity;
+	const dim = probeForeground(theme, COLOR_DIM) ?? identity;
 	const bandPaint = probeBackground(theme, COLOR_BAND);
 	const chipPaint = probeBackground(theme, COLOR_CHIP);
 
@@ -111,6 +116,7 @@ export function createHeaderStyler(theme: ThemePainter): HeaderStyler {
 		accent,
 		primary,
 		muted,
+		dim,
 		/** 按宽度截断（ANSI 安全）并补齐到整宽，再压底色。 */
 		band: (text, width) => {
 			const line = padToWidth(text, width);

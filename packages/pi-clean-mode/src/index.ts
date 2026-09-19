@@ -449,6 +449,7 @@ function installPatches(runtime: Runtime): void {
 			toggleActionGroup(runtime.actionGroups, groupId);
 			requestRender(runtime);
 		},
+		requestRender: () => requestRender(runtime),
 		claimRunHeaderHost: (host) => runtime.runDurations.claimOwner(host),
 		isCurrentRunHost: (host) => runtime.runDurations.isOwner(host),
 		getActivityLines: () => runtime.activityArea.lines,

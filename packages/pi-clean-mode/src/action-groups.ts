@@ -12,9 +12,11 @@
  * 渲染策略（与 L1 运行级折叠叠加）：
  * - L1 折叠时整轮工作过程都隐藏，动作组不参与；
  * - 组内只有 1 条时也收成一行，文案直接用这条动作自己的摘要
- *   （例如「运行命令 ls -la」）——收起态不显示原始工具输出；
+ *   （例如「运行命令 ls -la」）——收起态不显示原始工具输出，
+ *   展开时直接露出这条工具的原文（组头本身就是它的摘要）；
  * - 组内有 2 条及以上时收成汇总组头（`运行命令 · N 步`，没有过半分类时用通用词
- *   `探索 · N 步`），展开后逐条显示。
+ *   `探索 · N 步`），展开后逐条列出：一条命令一行摘要，点某一行才在该行下面
+ *   展开这条工具的原文，其余成员继续保持一行。
  */
 
 import type { ActivityCounters } from "./activity.js";
@@ -61,12 +63,20 @@ export const TOOL_ROW_HIDDEN = "hidden";
 export const TOOL_ROW_NORMAL = "normal";
 /** 工具行充当动作组组头，只输出一行组头文案。 */
 export const TOOL_ROW_GROUP_HEADER = "group-header";
+/**
+ * 工具行是展开的组里的一名成员：只输出一行命令摘要，点它才露出原文。
+ *
+ * 展开的组不再把每条工具的原始输出一次性铺开：一组几十条调用时那是一屏又一屏的正文，
+ * 「刚才跑了哪几条」反而看不出来。一条命令一行，要看哪条的原文再点哪条。
+ */
+export const TOOL_ROW_SUMMARY = "summary";
 
 /** 工具行在当前位置的渲染方式。 */
 export type ToolRowMode =
 	| typeof TOOL_ROW_HIDDEN
 	| typeof TOOL_ROW_NORMAL
-	| typeof TOOL_ROW_GROUP_HEADER;
+	| typeof TOOL_ROW_GROUP_HEADER
+	| typeof TOOL_ROW_SUMMARY;
 
 /** 判断单个内容块是否为非空正文文本块。 */
 function isNonEmptyTextBlock(block: unknown): boolean {
