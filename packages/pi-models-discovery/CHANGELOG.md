@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.1](https://github.com/maplezzk/pi-extensions/compare/pi-models-discovery-v1.3.0...pi-models-discovery-v1.3.1) (2026-09-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [1.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-models-discovery-v1.2.0...pi-models-discovery-v1.3.0) (2026-09-14)
 
 

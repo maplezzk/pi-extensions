@@ -1,6 +1,6 @@
 {
   "name": "pi-auto-goal",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Pi stop guard: judges premature agent stops with a second model and continues the task",
   "type": "module",
   "main": "./index.ts",
@@ -62,7 +62,7 @@
     "@earendil-works/pi-tui": ">=0.80.0"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.6.0"
+    "pi-extensions-i18n": "^0.7.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.85.1",

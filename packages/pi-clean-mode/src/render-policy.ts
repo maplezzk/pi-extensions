@@ -25,17 +25,15 @@ export interface AssistantRenderInput {
 	config: CleanModeConfig;
 	/** 调用方给出的消息分类；分类规则见组件补丁层。 */
 	kind: AssistantMessageKind;
-	/** 本体是否承载本轮的耗时折叠头（每轮只有第一条 assistant 消息承载）。 */
+	/** 本体是否承载本轮的轮首折叠头槽位（每轮只有第一条 assistant 消息承载）。 */
 	isRunHeaderHost: boolean;
-	/** 本轮耗时；未知时不显示折叠头。 */
-	durationMs?: number;
 }
 
 /** assistant 消息的渲染结果。 */
 export interface AssistantRenderDecision {
 	/** 本条消息自身的内容是否隐藏（工作过程在折叠时隐藏）。 */
 	hideContent: boolean;
-	/** 是否渲染耗时折叠头。 */
+	/** 内容被隐藏时是否仍然输出轮首槽位。 */
 	showHeader: boolean;
 }
 
@@ -74,20 +72,26 @@ export interface RunHeaderInput {
  * 折叠头挂在每轮第一条 assistant 消息上，因此它总是出现在整轮最前面，展开后也
  * 保持在顶部，形成「耗时 → 过程 → 答案」的树形结构。
  *
- * 承载折叠头的那一条即使自身内容被隐藏（它是工作过程消息），也仍然输出折叠头，
+ * 承载折叠头的那一条即使自身内容被隐藏（它是工作过程消息），也仍然输出轮首槽位，
  * 否则收起后就什么提示都没有了。
+ *
+ * 这里**刻意不判耗时**：运行中耗时还没写入（`agent_settled` 才记），而槽位里此时装的
+ * 是「处理中 · Ns」状态横条。拿耗时当开关会让槽位连同状态横条一起消失 —— 运行中
+ * 收起后屏幕上就只剩被隐藏的正文，也就是整屏空白，看起来像卡死。槽位里到底画状态
+ * 横条、耗时横条还是什么都不画，由组件层（`createRunHeaderComponent` 与
+ * `resolveRunHeader`）按运行状态决定。
  */
 export function resolveAssistantMessageRender(
 	input: AssistantRenderInput,
 ): AssistantRenderDecision {
-	const { state, config, kind, isRunHeaderHost, durationMs } = input;
+	const { state, config, kind, isRunHeaderHost } = input;
 	const hideContent = config.enabled && state.collapsed && kind === "work";
 
 	if (!config.enabled || !isRunHeaderHost) {
 		return { hideContent, showHeader: false };
 	}
 
-	return { hideContent, showHeader: config.showRunHeader && durationMs !== undefined };
+	return { hideContent, showHeader: true };
 }
 
 /**

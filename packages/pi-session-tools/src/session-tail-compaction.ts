@@ -53,6 +53,7 @@ import {
   type TailStartErrorCode,
 } from "./session-tail-compaction-utils.ts";
 import { i18n } from "./i18n.ts";
+import { registerSquashMessageRenderer } from "./squash-message-renderer.ts";
 import {
   notifyWithSource,
   type NoticeColor,
@@ -361,6 +362,9 @@ function textResult(text: string, isError = false) {
 export default function contextFoldExtension(pi: ExtensionAPI) {
   let latestAgentRunStoppedNormally = false;
   let forceState: ForceSquashState | null = null;
+
+  // 摘要消息默认收起为一行，Ctrl+O 展开；否则长快照会把压缩前的最后一条回答顶出屏幕。
+  registerSquashMessageRenderer(pi);
 
   /** 退出强制模式并恢复进入前的活动工具集合。 */
   function restoreToolsAfterForce(): void {

@@ -12,6 +12,10 @@
 - 异步后台执行模式，带实时状态 widget
 - 通过 `/config:workflow` 斜杠命令配置（持久化到 JSON）
 
+每个 `agent()` 只在 Workflow 面板中展示。使用 `subagent` 后端时，workflow 会启动真实的
+`pi-interactive-subagents` 子会话，但这些 agent 会从 Subagents widget 中隐藏，避免同一批
+agent 被列两次；它们在各自的终端分屏中照常运行，也可以正常中断。
+
 ## 安装
 
 ```bash

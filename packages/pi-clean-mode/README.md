@@ -65,9 +65,9 @@ Pi's built-in `/settings` only manages core options and has no extension registr
 - the selected row shows its description, and the current value is on the right
 - each change is written to the config file immediately; a failed write shows an error notice instead of silently keeping the value only in memory
 
-Mouse support needs `pi --tui-mode fullscreen`; in regular mode the terminal owns mouse input and scrolling, so Pi never receives the click. The clickable area is the header line plus the blank line above it. Clicking the answer body does nothing.
+Mouse support needs `pi --tui-mode fullscreen`; in regular mode the terminal owns mouse input and scrolling, so Pi never receives the click. The clickable area is the header line (the `Working · Ns` band while a run is active) plus the blank line above it. Clicking the answer body does nothing.
 
-If you toggle the state yourself during a run, that run is not collapsed automatically at the end — your choice is respected until the next run starts.
+If you toggle the state yourself during a run, that run is not collapsed automatically at the end — your choice is respected until the next run starts. Collapsing by hand folds the work away only: the top `Working · Ns` band keeps showing until the run settles and it becomes `Took …`.
 
 ## What a collapsed run looks like
 
@@ -111,7 +111,7 @@ Hidden rows render zero lines, so the duration header lands directly above the f
 
 The transcript stays expanded while the agent is running — otherwise a collapsed run would show nothing until the answer arrives. When the run settles (`agent_settled`) the work collapses automatically. Automatic collapsing is suppressed for the rest of the run if you toggled the state yourself.
 
-The header only appears once the run duration is known, so it does not show during streaming.
+Collapsing by hand while the run is still going (mouse click on the band, `f2`, or `/clean`) folds the work and the activity block away but **keeps the `Working · Ns` band at the top of the run**: it is the only thing that says the agent is still running, and with everything else folded away the screen would otherwise look dead. The `Took …` band needs a duration, which is only written when the run settles; until then that same slot holds the running status band.
 
 ## Resumed sessions
 

@@ -12,6 +12,11 @@ Claude-Code-style dynamic workflow orchestration for Pi.
 - Async background execution mode with live status widget
 - Configurable via `/config:workflow` slash command (persisted to JSON)
 
+Each `agent()` is shown in the Workflow panel only. With the `subagent` backend the
+workflow launches real `pi-interactive-subagents` sessions, but those agents are
+hidden from the Subagents widget so the same run is not listed twice; the agent
+still appears in its own terminal pane and can be interrupted normally.
+
 ## Installation
 
 ```bash

@@ -8,6 +8,8 @@
 
 调用 `subagent()` 后**立即返回**，子 agent 在自己的终端分屏中运行。输入框上方的实时 widget 展示所有运行中的 agent 及其状态（`starting`、`active`、`waiting`、`stalled`、`running`）。子 agent 完成后，结果以异步通知形式**回流**到主会话，触发新一轮处理。完成提醒仅在模型正常停止后注入；用户手动终止或提供方异常不会触发。
 
+由编排器启动的 agent 不出现在这个 widget 里：通过 `__pi_subagents` 桥并带上 `hiddenFromWidget: true` 启动的子 agent（目前是 `pi-dynamic-workflows` 的每个 `agent()`）会被排除，因为这些 agent 已由 Workflow 面板展示。隐藏只影响展示，子 agent 仍在运行集合中，监听、状态判定、中断和结果回流都照常工作。如果本次运行只有 workflow 子 agent，就完全不显示 Subagents widget。
+
 ```typescript
 subagent({ name: "Scout: Auth", agent: "scout", task: "分析 auth 模块" });
 subagent({ name: "Scout: DB", agent: "scout", task: "梳理数据库 schema" });

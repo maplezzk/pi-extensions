@@ -238,12 +238,13 @@ function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDe
  * 创建轮首子组件。
  *
  * 它占着「整轮最上面」这个槽位，两块内容共用：
- * - 运行中：轮首状态行（在处理 + 耗时），但只在两种情况下留在这里（见 render 里的判定）；
+ * - 运行中：轮首状态行（在处理 + 耗时）—— 收起态也照常输出，它是「还在跑」的唯一凭据；
  * - 运行结束：活动行被清空，同一个位置换成「用时 Ns」横条。
  *
  * 两者不会同时出现：耗时在 agent_settled 里才写入，写完活动行立刻被清空。
- * 只有当前那一轮的承载者才输出这些内容，否则同一块活动行会在每个带折叠头的
- * 历史轮次里重复出现。
+ * 只有当前那一轮的承载者才输出状态行，否则同一块活动行会在每个带折叠头的
+ * 历史轮次里重复出现；耗时横条按承载者自己那一轮的耗时画，所以历史轮次也保留。
+ * 槽位本身是否输出由 `resolveAssistantMessageRender` 决定，它不依赖耗时。
  */
 function createRunHeaderComponent(
 	host: AssistantMessageHost,
@@ -295,6 +296,9 @@ function getOrCreateRunHeader(host: AssistantMessageHost, deps: ComponentPatchDe
  * 高度表也就只能有折叠头 —— 否则会沿用上一帧的旧表（那一帧折叠头还没出现，高度记的
  * 是 0），点击被派发到正文子容器上，表现为「点了没反应」。
  *
+ * 槽位里的内容可能为空（历史轮次既没有耗时也没有运行状态），此时输出 0 行、高度记 0，
+ * 既不会留下可点的幽灵热区，也不丢「正文隐藏」这个语义。
+ *
  * 这里刻意不跑一遍容器渲染去刷新高度表：那会把每条已收起消息的正文（markdown）每帧
  * 重渲一次再丢掉，长会话下明显卡顿。收起态实际只输出折叠头，直接写这份表等价且是
  * 常数开销。
@@ -326,7 +330,6 @@ function buildAssistantMessageRender(
 			config: deps.getConfig(),
 			kind: classifyAssistantMessage(this.hasToolCalls === true),
 			isRunHeaderHost: this[RUN_HEADER_OWNER_KEY] === true,
-			durationMs: deps.getRunDuration(this),
 		});
 
 		if (!decision.hideContent) {

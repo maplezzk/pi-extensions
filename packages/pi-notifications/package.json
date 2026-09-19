@@ -1,6 +1,6 @@
 {
   "name": "pi-notifications",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Configurable external notifications for Pi agent lifecycle events",
   "type": "module",
   "main": "./index.ts",
@@ -62,7 +62,7 @@
     "@earendil-works/pi-coding-agent": ">=0.80.0"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.6.0"
+    "pi-extensions-i18n": "^0.7.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.85.1",

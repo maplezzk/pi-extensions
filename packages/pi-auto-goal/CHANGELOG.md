@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-auto-goal-v0.5.0...pi-auto-goal-v0.6.0) (2026-09-19)
+
+
+### Features
+
+* **pi-auto-goal:** 判定模型可以在菜单和命令里直接选 ([dc57eb4](https://github.com/maplezzk/pi-extensions/commit/dc57eb4215c220fd69bdc7c661d01eac4d1a29da))
+* **pi-auto-goal:** 判定模型可在菜单和命令里直接选 ([236aeef](https://github.com/maplezzk/pi-extensions/commit/236aeefb88efe491175074435be379caf8481dcb))
+* 判定上下文默认不带工具轨迹 ([b285130](https://github.com/maplezzk/pi-extensions/commit/b28513037737fcfd5b8078bc1311531095af51f0))
+* 判定可停止的理由直接写进提示正文 ([83ceafd](https://github.com/maplezzk/pi-extensions/commit/83ceafdac277fd1f8cbff9b46e38352b10a6548c))
+
+
+### Bug Fixes
+
+* **pi-auto-goal:** 判定理由回到默认收起 ([6b59e1a](https://github.com/maplezzk/pi-extensions/commit/6b59e1a4b4c8083bc818dd54bf475b73de9400eb))
+* **pi-auto-goal:** 等后台任务时判为可停止，判定默认只看最后输出 ([bc0c280](https://github.com/maplezzk/pi-extensions/commit/bc0c28017bf9db1fd583c431a81bf6c90dd278c0))
+* 判定可停止的理由改为默认显示在结论下一行 ([8ca4003](https://github.com/maplezzk/pi-extensions/commit/8ca4003205f4c758b2af90452383975fac8b50b2))
+* 判定提示写清置信度百分比并换双宽图标 ([113eae9](https://github.com/maplezzk/pi-extensions/commit/113eae95774af53af9f0ec39b403b67b3d16d6cc))
+* 判定提示写清置信度百分比并换双宽图标 ([13d0ea0](https://github.com/maplezzk/pi-extensions/commit/13d0ea0e1bea16754a83b9961eff8e32a330b420))
+* 后台任务在跑时不再把停止判为提前停止 ([90eb7cd](https://github.com/maplezzk/pi-extensions/commit/90eb7cd19e26154b4925b14c6224dc8aec33e647))
+* 后台任务规则改为只看 agent 最后输出 ([4fd4daf](https://github.com/maplezzk/pi-extensions/commit/4fd4dafbf6402fa92362fd0ce23a01a876bc99de))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-auto-goal-v0.4.0...pi-auto-goal-v0.5.0) (2026-09-14)
 
 
