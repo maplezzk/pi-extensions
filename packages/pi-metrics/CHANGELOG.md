@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.7.0...pi-metrics-v0.7.1) (2026-09-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.6.0...pi-metrics-v0.7.0) (2026-09-19)
 
 

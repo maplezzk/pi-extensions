@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-clean-mode-v0.2.0...pi-clean-mode-v0.3.0) (2026-09-19)
+
+
+### Features
+
+* clean mode 展开动作组时每条命令一行，点开才看原文 ([a456d96](https://github.com/maplezzk/pi-extensions/commit/a456d96ff78103fb1f647db6a4b865562b358ceb))
+* **clean-mode:** 展开动作组时每条命令一行，点开才看原文 ([c9b9793](https://github.com/maplezzk/pi-extensions/commit/c9b97934e5842fcc36ec840cc875de3f5603f61a))
+* **clean-mode:** 折叠头加 [clean] 来源前缀 ([1a75f6b](https://github.com/maplezzk/pi-extensions/commit/1a75f6b8e6d7239a15d7e8d228a2b24b9466ce10))
+* 块头统一 [xxx] 来源前缀，展开方向统一用箭头 ([8cae968](https://github.com/maplezzk/pi-extensions/commit/8cae9688341fa2f47de1014b17ca606acac98694))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [0.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-clean-mode-v0.1.0...pi-clean-mode-v0.2.0) (2026-09-19)
 
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.8.1...pi-tool-supervisor-v0.9.0) (2026-09-19)
+
+
+### Features
+
+* **tool-supervisor:** TypeSafe judgment review backend ([ac44951](https://github.com/maplezzk/pi-extensions/commit/ac449518843d49e98914b8967fba110782fcb44e))
+* **tool-supervisor:** 支持在 config.json 里配置 TypeSafe API Key ([131f98d](https://github.com/maplezzk/pi-extensions/commit/131f98d5919904563a24ce7c4bfb8fd3ad466adc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+    * pi-extensions-tool-display bumped from ^1.3.1 to ^1.3.2
+
 ## [0.8.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.8.0...pi-tool-supervisor-v0.8.1) (2026-09-19)
 
 

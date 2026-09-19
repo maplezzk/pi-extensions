@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.7.0...pi-extensions-i18n-v0.8.0) (2026-09-19)
+
+
+### Features
+
+* **i18n:** 提示块行尾加展开箭头 ([6d00e4b](https://github.com/maplezzk/pi-extensions/commit/6d00e4b29d8c2fa211e39a070e65736c4ba0db5b))
+* 块头统一 [xxx] 来源前缀，展开方向统一用箭头 ([8cae968](https://github.com/maplezzk/pi-extensions/commit/8cae9688341fa2f47de1014b17ca606acac98694))
+
 ## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.6.0...pi-extensions-i18n-v0.7.0) (2026-09-19)
 
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.2](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.4.1...pi-dynamic-workflows-v1.4.2) (2026-09-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [1.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.4.0...pi-dynamic-workflows-v1.4.1) (2026-09-19)
 
 
