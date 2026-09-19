@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { askTypeSafe, resolveTypeSafeEndpoint } from "../src/typesafe-client.ts";
+import { askTypeSafe, resolveTypeSafeApiKey, resolveTypeSafeEndpoint } from "../src/typesafe-client.ts";
 
 process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
 
@@ -188,4 +188,55 @@ test("整体超时后报告超时，而不是网络错误", async () => {
 test("endpoint 默认官方地址，可由环境变量覆盖", () => {
   assert.equal(resolveTypeSafeEndpoint({}), "https://api.typesafe.ai/v1/systemone");
   assert.equal(resolveTypeSafeEndpoint({ TYPESAFE_ENDPOINT: "http://127.0.0.1:9/v1" }), "http://127.0.0.1:9/v1");
+});
+
+test("config.json 里配的 API Key 和端点优先于环境变量", async () => {
+  let url = "";
+  let authorization: string | null = null;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    url = String(input);
+    authorization = new Headers(init?.headers).get("Authorization");
+    return jsonResponse({ answers: {} });
+  };
+
+  await askTypeSafe({
+    state: { diff: "" },
+    questions: { rule: QUESTION },
+    model: "jev-latest",
+    timeoutMs: 1000,
+    apiKey: "apik-from-config",
+    endpoint: "http://127.0.0.1:9/v1/systemone",
+    env: { TYPESAFE_API_KEY: "apik-from-env", TYPESAFE_ENDPOINT: "http://env.example/v1" },
+    fetchImpl,
+  });
+
+  assert.equal(url, "http://127.0.0.1:9/v1/systemone");
+  assert.equal(authorization, "Bearer apik-from-config");
+});
+
+test("只配 API Key 时端点仍回退到环境变量", async () => {
+  let url = "";
+  const fetchImpl: typeof fetch = async (input) => {
+    url = String(input);
+    return jsonResponse({ answers: {} });
+  };
+
+  await askTypeSafe({
+    state: { diff: "" },
+    questions: { rule: QUESTION },
+    model: "jev-latest",
+    timeoutMs: 1000,
+    apiKey: "apik-from-config",
+    env: { TYPESAFE_ENDPOINT: "http://env.example/v1" },
+    fetchImpl,
+  });
+
+  assert.equal(url, "http://env.example/v1");
+});
+
+test("API Key 解析：配置优先，未配则读环境变量", () => {
+  assert.equal(resolveTypeSafeApiKey({}, "apik-config"), "apik-config");
+  assert.equal(resolveTypeSafeApiKey({ TYPESAFE_API_KEY: "apik-env" }), "apik-env");
+  assert.equal(resolveTypeSafeApiKey({ TYPESAFE_API_KEY: "  " }), undefined);
+  assert.equal(resolveTypeSafeApiKey({}, "  "), undefined);
 });

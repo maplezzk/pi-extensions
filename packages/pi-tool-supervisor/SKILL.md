@@ -7,7 +7,7 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 
 ## 诊断
 
-定位实际 Pi agent 目录下的 `extensions/pi-tool-supervisor/config.json`；仅当新路径不存在时读取旧 `extensions/pi-file-edit-review/config.json`。确认顶层 `enabled`、`timeoutSeconds`、`maxFileContextChars`、`maxRuleLines`、`reviewers`。
+定位实际 Pi agent 目录下的 `extensions/pi-tool-supervisor/config.json`；仅当新路径不存在时读取旧 `extensions/pi-file-edit-review/config.json`。确认顶层 `enabled`、`timeoutSeconds`、`maxFileContextChars`、`maxRuleLines`、`typesafe`（可选，含 `apiKey` / `endpoint`，未配置时回退到同名环境变量）、`reviewers`。
 
 每个 reviewer 必须有 `provider/model`（`model` 引擎）或 `typesafeModel`（`typesafe` 引擎），以及唯一的 `rulesFile|rulesFiles`，并检查：
 
@@ -27,7 +27,7 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 
 `typesafe` reviewer 报 failed 时按顺序看审计里的 `error` 和 `warnings`：
 
-- `没有找到 TypeSafe API key`：环境里没有 `TYPESAFE_API_KEY`；这是失败而非跳过，不会阻断工具。
+- `没有找到 TypeSafe API key`：`typesafe.apiKey` 和 `TYPESAFE_API_KEY` 都没配；这是失败而非跳过，不会阻断工具。
 - `TypeSafe 请求失败（HTTP …）`：401/422 不重试，直接报错；429/529 会按 `retry-after` 退避后重试。
 - `切不出编号条款`：规则文件里没有 `1. 正文` 形式的条款（比如整份都是散文，或者用无序列表写的），报 failed 并带文件路径，**不视为通过**。这是启用 typesafe 后规则静默失效的唯一入口，优先看这条。
 - `TypeSafe 没有返回 N 条条款的答案`：这些条款无法判定，整个 reviewer 记为 failed，**不视为通过**。

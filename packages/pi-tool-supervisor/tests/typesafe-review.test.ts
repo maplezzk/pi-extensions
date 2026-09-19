@@ -114,6 +114,8 @@ async function createFixture(options: {
   noulById?: Record<string, number>;
   /** 按行定位问题 id（`<判断 id>__line`）覆盖选项；未列出的用 options.chosenLine。 */
   lineById?: Record<string, string>;
+  /** 写入 config.json 顶层的 typesafe 连接设置；用来验证 key 不经环境变量也能生效。 */
+  typesafe?: { apiKey?: string; endpoint?: string };
 }): Promise<Fixture> {
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-typesafe-"));
   const projectDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-typesafe-project-"));
@@ -124,6 +126,7 @@ async function createFixture(options: {
     join(agentDir, "extensions", "pi-tool-supervisor", "config.json"),
     JSON.stringify({
       enabled: true,
+      ...(options.typesafe === undefined ? {} : { typesafe: options.typesafe }),
       reviewers: [{ name: "taste", backend: "typesafe", typesafeModel: "jev-latest", rulesFiles: [rulesFile] }],
     }),
   );
@@ -248,7 +251,7 @@ test("typesafe reviewer 同时写 model 时忽略该字段并警告", async () =
   assert.match(loaded.warnings.join(" "), /忽略/);
 });
 
-test("typesafe reviewer 命中规则时阻断，并用规则自带的修复提示加行定位诊断", async () => {
+test("typesafe reviewer 命中规则时阻断，并用条款正文加行定位诊断", async () => {
   const fixture = await createFixture({ rules: SWALLOWED_ERROR_RULE, noul: 0.96, chosenLine: "5" });
   await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
     const result = await runWriteTool(fixture);
@@ -444,6 +447,36 @@ test("多规则文件里只有一条命中时，只报那一条", async () => {
     // 两条规则仍然合并成一次请求；只有命中那条需要行定位。
     assert.deepEqual(fixture.requests, ["noul,noul", "choice"]);
     assert.deepEqual(audit?.reviewers?.[0]?.findings?.map((finding) => finding.ruleGroup), ["必须遵守 2 禁止魔法值"]);
+  });
+});
+
+test("config.json 里配的 API Key 不经环境变量也能发起审查", async () => {
+  const fixture = await createFixture({
+    rules: SWALLOWED_ERROR_RULE,
+    noul: 0.96,
+    typesafe: { apiKey: "apik-from-config" },
+  });
+  // 环境变量刻意清空：key 只能来自 config.json。
+  await withEnvironment({ agentDir: fixture.agentDir, apiKey: undefined, fetchImpl: fixture.fetchStub }, async () => {
+    delete process.env.TYPESAFE_API_KEY;
+    const result = await runWriteTool(fixture);
+    const reviewer = result.details?.fileEditReview?.reviewers?.[0];
+
+    assert.equal(reviewer?.status, "rejected");
+    assert.deepEqual(fixture.requests, ["noul", "choice"]);
+  });
+});
+
+test("config.json 里没配 key 且环境变量也没有时报 failed，不当作通过", async () => {
+  const fixture = await createFixture({ rules: SWALLOWED_ERROR_RULE, noul: 0.96 });
+  await withEnvironment({ agentDir: fixture.agentDir, apiKey: undefined, fetchImpl: fixture.fetchStub }, async () => {
+    delete process.env.TYPESAFE_API_KEY;
+    const result = await runWriteTool(fixture);
+    const reviewer = result.details?.fileEditReview?.reviewers?.[0];
+
+    assert.equal(reviewer?.status, "failed");
+    assert.match(reviewer?.error ?? "", /TYPESAFE_API_KEY/);
+    assert.deepEqual(fixture.requests, []);
   });
 });
 

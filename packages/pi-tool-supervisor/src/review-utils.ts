@@ -119,9 +119,23 @@ interface ClauseDraft {
   lines: string[];
 }
 
+/**
+ * TypeSafe 连接设置；写在 config.json 里，不必依赖环境变量。
+ *
+ * 两个字段都可省略，省略时回退到对应环境变量（常量定义在 `typesafe-client.ts`）。
+ */
+export interface FileEditReviewTypeSafeConfig {
+  /** TypeSafe API Key。 */
+  apiKey?: string;
+  /** TypeSafe 端点。 */
+  endpoint?: string;
+}
+
 export interface FileEditReviewConfig {
   enabled: boolean;
   reviewers: FileEditReviewReviewerConfig[];
+  /** TypeSafe 后端共用的连接设置。 */
+  typesafe?: FileEditReviewTypeSafeConfig;
   timeoutSeconds: number;
   maxFileContextChars: number;
   maxRuleLines: number;
@@ -242,6 +256,23 @@ function parseModel(value: unknown): string | undefined {
 }
 
 /** Normalizes one reviewer while preserving legacy defaults and reporting invalid lifecycle fields. */
+/**
+ * 解析 config.json 顶层的 typesafe 块。
+ *
+ * 不在这里校验字段是否齐全：两个字段都省略时返回 undefined，由连接层回退到环境变量。
+ */
+function parseTypeSafeConfig(value: unknown): FileEditReviewTypeSafeConfig | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const apiKey = stringValue(source.apiKey);
+  const endpoint = stringValue(source.endpoint);
+  if (apiKey === undefined && endpoint === undefined) return undefined;
+  return {
+    ...(apiKey === undefined ? {} : { apiKey }),
+    ...(endpoint === undefined ? {} : { endpoint }),
+  };
+}
+
 function normalizeReviewer(value: unknown, index: number, warnings: string[] = []): FileEditReviewReviewerConfig | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>;
@@ -346,6 +377,7 @@ export function loadFileEditReviewConfig(
   }
 
   const source = raw as Record<string, unknown>;
+  const typesafe = parseTypeSafeConfig(source.typesafe);
   const rawReviewers = Array.isArray(source.reviewers) ? source.reviewers : [];
   const reviewers: FileEditReviewReviewerConfig[] = [];
   rawReviewers.forEach((entry, index) => {
@@ -365,6 +397,7 @@ export function loadFileEditReviewConfig(
     config: {
       enabled: source.enabled !== false && reviewers.some((reviewer) => reviewer.enabled !== false),
       reviewers,
+      ...(typesafe ? { typesafe } : {}),
       timeoutSeconds: positiveInteger(
         source.timeoutSeconds,
         typeof source.timeoutMs === "number"

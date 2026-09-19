@@ -38,7 +38,7 @@
 
 **规则文件是引擎无关的：换 backend 只改一行 config，规则文件一个字符都不用动。** 不需要 `## 判据` 段落，不需要声明 severity，不需要分块标题。
 
-需要在环境里设置 `TYPESAFE_API_KEY`；`TYPESAFE_ENDPOINT` 可以覆盖服务地址。key 缺失、请求失败或规则文件切不出条款都会产生可见的 `failed` 审计条目，不会阻断工具，与对话模型审查失败时的行为一致。
+API Key 优先从 `config.json` 顶层的 `typesafe.apiKey` 读取，没配时回退到 `TYPESAFE_API_KEY` 环境变量；`typesafe.endpoint` 同理，没配时回退到 `TYPESAFE_ENDPOINT`，都没有就用官方地址。key 缺失、请求失败或规则文件切不出条款都会产生可见的 `failed` 审计条目，不会阻断工具，与对话模型审查失败时的行为一致。
 
 #### 它怎么读你的规则文件
 
@@ -155,6 +155,10 @@ pi install npm:pi-tool-supervisor
   "timeoutSeconds": 10,
   "maxFileContextChars": 50000,
   "maxRuleLines": 100,
+  "typesafe": {
+    "apiKey": "<your-typesafe-api-key>",
+    "endpoint": "https://api.typesafe.ai/v1/systemone"
+  },
   "reviewers": [
     {
       "name": "project-rules",
@@ -188,6 +192,7 @@ pi install npm:pi-tool-supervisor
 | `timeoutSeconds` | 每个 reviewer 模型调用的最长等待时间。 |
 | `maxFileContextChars` | 发送给 reviewer 的修改后文件上下文上限，默认 50,000 字符；超大文件仅发送首次和末次变更附近的有界片段并明确标记。 |
 | `maxRuleLines` | 单条审查规则允许读取的最大行数。 |
+| `typesafe` | TypeSafe 引擎的连接设置；有 `apiKey` 和 `endpoint` 两个字段，都可省略并回退到同名环境变量。 |
 | `backend` | `model`（默认）或 `typesafe`，选择审查引擎。 |
 | `typesafeModel` | `typesafe` 引擎使用的 TypeSafe 模型名，默认 `jev-latest`。 |
 | `reviewers` | reviewer 名称、模型、规则文件、`tools`、`trigger` 和可选的 condition 模块；省略生命周期字段时保持旧的 `edit`/`write` + `after` 行为。 |
@@ -258,7 +263,7 @@ condition 返回 `false` 时跳过该 reviewer，不读取其规则文件，也�
 
 - Node.js 22 或更高版本。
 - 每个启用的 `model` reviewer 需要一个已配置的 Pi 模型。
-- 每个启用的 `typesafe` reviewer 需要 `TYPESAFE_API_KEY`。
+- 每个启用的 `typesafe` reviewer 需要一个 TypeSafe API Key：优先读 `config.json` 里的 `typesafe.apiKey`，未配置时读 `TYPESAFE_API_KEY`。
 - 需要提供描述项目级检查项的规则文件。
 
 ## 许可证

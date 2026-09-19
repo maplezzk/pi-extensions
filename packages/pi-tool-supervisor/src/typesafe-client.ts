@@ -41,6 +41,14 @@ export interface TypeSafeResponse {
   usage?: TypeSafeUsage;
 }
 
+/** 一次审查里复用的 TypeSafe 连接设置；两个字段都省略时读环境变量。 */
+export interface TypeSafeConnection {
+  /** config.json 里配置的 API Key。 */
+  apiKey?: string;
+  /** config.json 里配置的端点。 */
+  endpoint?: string;
+}
+
 export interface AskTypeSafeOptions {
   /** 待判断的状态；字符串、数组或 JSON 对象。 */
   state: unknown;
@@ -49,19 +57,24 @@ export interface AskTypeSafeOptions {
   model: string;
   /** 单次调用（含重试）的最大耗时。 */
   timeoutMs: number;
+  /** config.json 里配置的 API Key；省略时回退到环境变量。 */
+  apiKey?: string;
+  /** config.json 里配置的端点；省略时回退到环境变量。 */
+  endpoint?: string;
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
 }
 
-export function resolveTypeSafeEndpoint(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env[TYPESAFE_ENDPOINT_ENV];
-  return configured && configured.trim() ? configured.trim() : DEFAULT_TYPESAFE_ENDPOINT;
+/** 显式配置优先于环境变量：写在 config.json 里就是明确意图。 */
+export function resolveTypeSafeEndpoint(env: NodeJS.ProcessEnv = process.env, configured?: string): string {
+  const value = configured ?? env[TYPESAFE_ENDPOINT_ENV];
+  return value && value.trim() ? value.trim() : DEFAULT_TYPESAFE_ENDPOINT;
 }
 
-export function resolveTypeSafeApiKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const apiKey = env[TYPESAFE_API_KEY_ENV];
-  return apiKey && apiKey.trim() ? apiKey.trim() : undefined;
+export function resolveTypeSafeApiKey(env: NodeJS.ProcessEnv = process.env, configured?: string): string | undefined {
+  const value = configured ?? env[TYPESAFE_API_KEY_ENV];
+  return value && value.trim() ? value.trim() : undefined;
 }
 
 /** 读取响应正文用于报错；正文不可读时给出明确占位，不假装成功。 */
@@ -166,14 +179,14 @@ function parseResponse(payload: unknown): TypeSafeResponse {
 
 export async function askTypeSafe(options: AskTypeSafeOptions): Promise<TypeSafeResponse> {
   const env = options.env ?? process.env;
-  const apiKey = resolveTypeSafeApiKey(env);
+  const apiKey = resolveTypeSafeApiKey(env, options.apiKey);
   if (!apiKey) {
     throw new Error(i18n.t("missingApiKey", { env: TYPESAFE_API_KEY_ENV }));
   }
   if (options.signal?.aborted) throw new Error(i18n.t("aborted"));
 
   const fetchImpl = options.fetchImpl ?? fetch;
-  const endpoint = resolveTypeSafeEndpoint(env);
+  const endpoint = resolveTypeSafeEndpoint(env, options.endpoint);
   const body = JSON.stringify({ model: options.model, state: options.state, questions: options.questions });
   const deadline = Date.now() + options.timeoutMs;
   const timeoutController = new AbortController();

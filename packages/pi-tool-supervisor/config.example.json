@@ -3,6 +3,10 @@
   "timeoutSeconds": 10,
   "maxFileContextChars": 50000,
   "maxRuleLines": 100,
+  "typesafe": {
+    "apiKey": "<your-typesafe-api-key>",
+    "endpoint": "https://api.typesafe.ai/v1/systemone"
+  },
   "reviewers": [
     {
       "name": "java-safety-local",

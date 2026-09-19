@@ -37,7 +37,7 @@ The `typesafe` backend turns every numbered clause of a rule file into one Noul 
 
 **Rule files are engine-independent: switching backends changes one config line and not a single character of a rule file.** There is no `## Criteria` section to write, no severity to declare, and no block heading to add.
 
-Set `TYPESAFE_API_KEY` in the environment; `TYPESAFE_ENDPOINT` overrides the endpoint. A missing key, a failed request, or a rule file with no clause to judge produces a visible `failed` audit entry and does not block the tool, which matches how a failed chat-model review behaves.
+The API key is read from `typesafe.apiKey` in `config.json` first and falls back to the `TYPESAFE_API_KEY` environment variable; `typesafe.endpoint` falls back to `TYPESAFE_ENDPOINT` and then to the official endpoint. A missing key, a failed request, or a rule file with no clause to judge produces a visible `failed` audit entry and does not block the tool, which matches how a failed chat-model review behaves.
 
 #### How it reads your rule file
 
@@ -153,6 +153,10 @@ Start from [`config.example.json`](./config.example.json):
   "timeoutSeconds": 10,
   "maxFileContextChars": 50000,
   "maxRuleLines": 100,
+  "typesafe": {
+    "apiKey": "<your-typesafe-api-key>",
+    "endpoint": "https://api.typesafe.ai/v1/systemone"
+  },
   "reviewers": [
     {
       "name": "project-rules",
@@ -186,6 +190,7 @@ Each reviewer must have either a `provider/model` reference (`model` backend) or
 | `timeoutSeconds` | Maximum time allowed for each reviewer model call. |
 | `maxFileContextChars` | Maximum post-edit file context sent to reviewers. The default is 50,000 characters; oversized files use bounded, explicitly marked excerpts around changed lines. |
 | `maxRuleLines` | Maximum rule-file size accepted for a single review rule. |
+| `typesafe` | Connection settings for the `typesafe` backend: `apiKey` and `endpoint`, both optional and both falling back to the matching environment variable. |
 | `backend` | `model` (default) or `typesafe`. Selects the review engine. |
 | `typesafeModel` | TypeSafe model name used by the `typesafe` backend. Defaults to `jev-latest`. |
 | `condition` | Optional local TypeScript/ESM module path. Its default export receives the native Pi tool event, `ExtensionContext`, and `ToolConditionHelpers`; returning `false` skips this reviewer without a model call. |
@@ -256,7 +261,7 @@ When upgrading from `pi-file-edit-review`, the extension reads the legacy config
 
 - Node.js 22 or newer.
 - A configured Pi model for each enabled `model` reviewer.
-- A `TYPESAFE_API_KEY` for each enabled `typesafe` reviewer.
+- A TypeSafe API key for each enabled `typesafe` reviewer: `typesafe.apiKey` in `config.json`, or the `TYPESAFE_API_KEY` environment variable.
 - Rule files that describe the project-specific checks the reviewer should apply.
 
 ## License

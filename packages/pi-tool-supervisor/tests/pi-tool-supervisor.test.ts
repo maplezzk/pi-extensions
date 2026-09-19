@@ -51,6 +51,37 @@ test("只加载有效的侧边审查配置，并提供默认参数", async () =>
   assert.deepEqual(loaded.warnings, []);
 });
 
+test("解析 config.json 顶层的 typesafe 连接设置", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-typesafe-config-"));
+  const configFile = join(directory, "config.json");
+  await writeFile(configFile, JSON.stringify({
+    enabled: true,
+    typesafe: { apiKey: "apik-from-config", endpoint: "http://127.0.0.1:9/v1" },
+    reviewers: [{ name: "taste", backend: "typesafe", rulesFile: "rules.md" }],
+  }));
+
+  const loaded = loadFileEditReviewConfig(configFile);
+  assert.deepEqual(loaded.config.typesafe, {
+    apiKey: "apik-from-config",
+    endpoint: "http://127.0.0.1:9/v1",
+  });
+});
+
+test("typesafe 块缺失、空值或非对象时都不写入 config.typesafe", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-typesafe-empty-"));
+  const configFile = join(directory, "config.json");
+  const reviewers = [{ name: "taste", backend: "typesafe", rulesFile: "rules.md" }];
+
+  await writeFile(configFile, JSON.stringify({ enabled: true, reviewers }));
+  assert.equal(loadFileEditReviewConfig(configFile).config.typesafe, undefined);
+
+  await writeFile(configFile, JSON.stringify({ enabled: true, typesafe: { apiKey: "  " }, reviewers }));
+  assert.equal(loadFileEditReviewConfig(configFile).config.typesafe, undefined);
+
+  await writeFile(configFile, JSON.stringify({ enabled: true, typesafe: "not-an-object", reviewers }));
+  assert.equal(loadFileEditReviewConfig(configFile).config.typesafe, undefined);
+});
+
 test("兼容旧 timeoutMs、当前 timeoutSeconds 和文件上下文上限配置", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-timeout-"));
   const configFile = join(directory, "config.json");
