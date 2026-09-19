@@ -17,8 +17,8 @@ import {
 /** 测试用来源标签。 */
 const SOURCE: NoticeSource = { tag: "naming", color: "accent" };
 
-/** 渲染宽度：足够宽，保证提示不被折行，断言只看内容。 */
-const RENDER_WIDTH = 60;
+/** 渲染宽度：足够宽，保证提示不被折行，断言只看内容（假主题的颜色标记也会被算进可见宽度）。 */
+const RENDER_WIDTH = 120;
 
 /** 测试用主题：把颜色名包成可断言的标记，不依赖真实 ANSI。 */
 const THEME = {
@@ -166,6 +166,30 @@ test("warning/error 级别用黄色/红色正文，语义色覆盖优先", () =>
   assert.match(warning, /<warning>被拦截<\/>/);
   assert.match(failed, /<error>被拦截<\/>/);
   assert.match(overridden, /<dim>已打断，未判定<\/>/);
+});
+
+test("有细节行的提示在行尾带展开箭头，展开后箭头反向", () => {
+  /** 一条判定结论：正文一行，理由放在细节里。 */
+  const entry = { tag: "auto-goal", color: "warning", level: "info", message: "⚖️ 判定可停止", details: ["理由：已完成"] };
+  const collapsed = renderNoticeLines(entry);
+  const expanded = renderNoticeLines(entry, true);
+
+  // 收起用右三角、展开用下三角；强调色是为了让箭头不被 dim 正文吃掉。
+  assert.match(collapsed, /<accent>▶<\/\>/);
+  assert.doesNotMatch(collapsed, /▼/);
+  assert.match(expanded, /<accent>▼<\/\>/);
+  assert.doesNotMatch(expanded, /▶/);
+  // 不再写按键提示：两种模式区分不出来，箭头才是两种模式下都成立的说法。
+  assert.doesNotMatch(collapsed, /Ctrl\+O/);
+  // 提示仍然只占一行：加了箭头也不能把会话顶满。
+  assert.equal(renderNoticeEntry({ data: entry }, ENTRY_THEME, false).render(RENDER_WIDTH).length, 1);
+});
+
+test("没有细节行的提示不带展开箭头，不会指一个点了没反应的入口", () => {
+  const lines = renderNoticeLines({ tag: "naming", color: "accent", level: "info", message: "已重命名" });
+
+  assert.doesNotMatch(lines, /[▶▼]/);
+  assert.match(lines, /<customMessageText>已重命名<\/\>/);
 });
 
 test("提示块不留上下空白，细节行只在展开时显示", () => {
