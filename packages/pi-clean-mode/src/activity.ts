@@ -27,6 +27,7 @@
 
 import { formatDuration } from "./duration.js";
 import { i18n } from "./i18n.js";
+import { PREFIX_TAG } from "./source-tag.js";
 
 /**
  * 思考动画帧：半填充圆按顺时针转，四帧一循环。
@@ -60,11 +61,11 @@ const TOOL_ARG_KEYS = ["command", "file_path", "path", "pattern", "query", "url"
  */
 const BAND_INDENT = "  ";
 /**
- * 活动块树形前缀的缩进：与组头 chip 里的文案同列。
+ * 活动块树形前缀的缩进：与组头 chip 的**左边缘**同列。
  *
- * 组头用组件补丁的 `HEADER_INDENT` 把文案推到第 3 列，活动块的竖折就从这一列起画，
- * 看上去像是从组头文字下面长出来的。展开的动作组里「每条命令一行」也用这一列，
- * 思考行才是和命令平级的兄弟项。
+ * 组头用组件补丁的 `HEADER_INDENT` 把标签推到第 3 列（标签里的文案前面还有 `[clean]`
+ * 来源前缀），活动块的竖折就从标签左边缘这一列起画，看上去像是从组头下面长出来的。
+ * 展开的动作组里「每条命令一行」也用这一列，思考行才是和命令平级的兄弟项。
  */
 export const TREE_INDENT = "  ";
 /** 子项前的分支符：它后面还有别的子项时用这个。 */
@@ -387,13 +388,18 @@ export function formatActivityCountersSuffix(counters: ActivityCounters): string
  *
  * 这一行由渲染层整行铺上底色，和运行结束后的「用时」横条共用同一列与同一套视觉，
  * 因此它是整轮最上面那个槽位里唯一的内容，越往下的细节都不归它。
+ *
+ * 行首带 `[clean]` 来源前缀，与「用时」横条、动作组头保持同一种版式；
+ * 前缀后面只隔一个空格，后续分段才用 `·` 连接，免得读成「[clean] 是一个分段」。
  */
 function buildRunStatusLine(input: ActivityRenderInput): string {
 	const { snapshot, nowMs, frame, animated, paint } = input;
 	const glyph = activityGlyph("working", frame, animated);
 	const label = snapshot.running.length > 1 ? i18n.t("activityParallel") : i18n.t("activityWorking");
 
-	const parts = [`${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, label))}`];
+	const parts = [
+		`${paint.fg(COLOR_DETAIL, PREFIX_TAG)} ${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, label))}`,
+	];
 	if (snapshot.startedAtMs !== undefined) {
 		parts.push(paint.fg(COLOR_DETAIL, formatDuration(nowMs - snapshot.startedAtMs)));
 	}

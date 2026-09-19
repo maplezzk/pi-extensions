@@ -21,7 +21,6 @@ import {
 	installNoticeRenderer,
 	notifyWithSource,
 	type NoticeColor,
-	type NoticeSource,
 } from "pi-extensions-i18n";
 import { loadConfig, saveConfig } from "./config-store.js";
 import { parseToggleValue, withBooleanConfigField } from "./config-fields.js";
@@ -69,6 +68,7 @@ import {
 	type ActionGroupState,
 } from "./action-groups.js";
 import { i18n } from "./i18n.js";
+import { NOTICE_SOURCE } from "./source-tag.js";
 import {
 	applyCollapsed,
 	createInitialState,
@@ -111,10 +111,6 @@ const NO_CONTENT_COMPONENT: Component = {
 	/** 无缓存状态，无需清理。 */
 	invalidate: () => {},
 };
-/** 提示来源标签与颜色。 */
-const NOTICE_TAG = "clean";
-const NOTICE_COLOR: NoticeColor = "muted";
-const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 /**
  * 主题还没拿到时的占位画笔。
  *

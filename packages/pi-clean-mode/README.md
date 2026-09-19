@@ -19,8 +19,8 @@ Expanded, the work rows come back and the header shows `⌄` instead of `›`.
 
 | Level | Row | Behaviour |
 |---|---|---|
-| Run | `Took 4m 26s ›` | Hides the whole run's work; only the final answer stays |
-| Action group | `▸ Explored · 3 steps` | Hides a turn's tool calls behind one summary row |
+| Run | `[clean] Took 4m 26s ›` | Hides the whole run's work; only the final answer stays |
+| Action group | `[clean] ▸ Explored · 3 steps` | Hides a turn's tool calls behind one summary row |
 | Member row | `├─ Ran npm test ▶` | An expanded group lists one command per row; click a row to show that command's original output |
 | Tool row | `$ find . -name '*.ts'` | Pi's own per-row output expansion (`ctrl+o`, or click the result) |
 
@@ -29,15 +29,15 @@ Group boundaries follow **narration**: an assistant message with text starts a n
 Groups with a single member are never collapsed — the tool row itself is shown, so a lone command still reads as itself.
 
 ```
-Took 11s ⌄
+[clean] Took 11s ⌄
 I'll check the restock data first.
 
-探索 · 3 steps ▶          ← collapsed group
+[clean] 探索 · 3 steps ▶          ← collapsed group
 
-Took 11s ⌄
+[clean] Took 11s ⌄
 I'll check the restock data first.
 
-探索 · 3 steps ▼          ← expanded group: one command per row
+[clean] 探索 · 3 steps ▼          ← expanded group: one command per row
   ├─ Read src/index.ts ▶
   ├─ Ran pnpm test ▶
   └─ Searched "handleMouse" ▶
@@ -46,7 +46,7 @@ I'll check the restock data first.
 To read one command's raw output, click that row and it opens in place (click again to fold it back):
 
 ```
-探索 · 3 steps ▼
+[clean] 探索 · 3 steps ▼
   ├─ Read src/index.ts ▶
   ├─ Ran pnpm test ▼
   │   pnpm test                    ← Pi's own rendering
@@ -172,8 +172,8 @@ While the agent runs, the layout splits in two: **the very top only answers "how
 
 ```
 user: help me fix xxx
-  ⠋ Working · 42s                     ← top: run-level state + time (the only band on screen)
- Explored · 5 steps · read 4 · search 3 ▶  ← current group header: step count + this run's counters
+  [clean] ⠋ Working · 42s             ← top: run-level state + time (the only band on screen)
+ [clean] Explored · 5 steps · read 4 · search 3 ▶  ← current group header: step count + this run's counters
   ├─ ◐ Thinking  tracing the token expiry path…   ← block: thinking, a sibling of the command rows
   └─ ⠋ Run Command npm test                        ← block: the action running now
      ↳ 12 passing                                  ← its latest output
@@ -182,14 +182,14 @@ user: help me fix xxx
 With the group expanded the same list reads as commands, and the thinking row still closes it:
 
 ```
- Explored · 5 steps ▼
+ [clean] Explored · 5 steps ▼
   ├─ Read src/index.ts ▶
   ├─ Ran ls -la ▶
   ├─ Ran npm test ▶
   └─ ◐ Thinking  tracing the token expiry path…   ← same level as the commands, at the bottom
 ```
 
-- **Top (run-level band)**: state plus run-level time only — no counters, no thinking or tool detail. While running it reads `⠋ Working · 42s`; when the run settles the same slot holds `Took 42s · 3 steps ▶`, so switching state changes the text, not the layout.
+- **Top (run-level band)**: state plus run-level time only — no counters, no thinking or tool detail. While running it reads `[clean] ⠋ Working · 42s`; when the run settles the same slot holds `[clean] Took 42s · 3 steps ▶`, so switching state changes the text, not the layout.
 - **Group header chip**: the leading word follows what the group actually did — when one kind of action is over half the group it names it (`Run Command · 12 steps`), and only a group with no majority falls back to the generic `Explored · N steps`. The counters after it (`· read 3 · command 2`) are this run's totals: they do not take a row of their own — on its own row the counters simply count the same thing as the step count, and with the top band that makes three places reporting progress — and only the current group shows them.
 - **An action is named once**: with a single member the group header *is* that action's summary (`Run Command npm test ▶`), so the block does not list the action again — it only adds the thinking head and the output tail. A collapsed multi-member header is a summary line without action names, so there the block lists what is running; once the group is expanded the commands are already listed one per row, so the block drops the action name again.
 - **Activity block**: attached below the current group's **last visible row**. With the group expanded that is its last member; with the group collapsed the member rows render zero lines and the group header is the only visible row, so the block follows it. Either way it sits at the bottom of the list instead of hanging in the middle.
