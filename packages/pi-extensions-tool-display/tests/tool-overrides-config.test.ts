@@ -206,23 +206,23 @@ test("current local-style config keeps read/search/MCP output modes distinct", a
 
 	assert.equal(
 		renderToolResult(registeredTools.find((tool) => tool.name === "read"), "alpha\nbeta\n"),
-		"↳ loaded 2 lines • Ctrl+O to expand",
+		"loaded 2 lines • Ctrl+O to expand",
 	);
 	assert.equal(
 		renderToolResult(registeredTools.find((tool) => tool.name === "grep"), "a.txt:1\nb.txt:2\n"),
-		"↳ 2 matches returned • Ctrl+O to expand",
+		"2 matches returned • Ctrl+O to expand",
 	);
 	assert.equal(
 		renderToolResult(registeredTools.find((tool) => tool.name === "find"), "a.txt\nb.txt\n"),
-		"↳ 2 results returned • Ctrl+O to expand",
+		"2 results returned • Ctrl+O to expand",
 	);
 	assert.equal(
 		renderToolResult(registeredTools.find((tool) => tool.name === "ls"), "a.txt\nb.txt\n"),
-		"↳ 2 entries returned • Ctrl+O to expand",
+		"2 entries returned • Ctrl+O to expand",
 	);
 	assert.equal(
 		renderToolResult(mcpTool, "one\ntwo\n"),
-		"↳ 2 lines returned • Ctrl+O to expand",
+		"2 lines returned • Ctrl+O to expand",
 	);
 	assert.equal(
 		renderToolResult(registeredTools.find((tool) => tool.name === "read"), {
@@ -311,7 +311,7 @@ test("read-only ownership keeps summary line counts confined to read", async () 
 	);
 	assert.equal(
 		renderToolResult(registeredTools[0], "single line\n"),
-		"↳ loaded 1 line • Ctrl+O to expand",
+		"loaded 1 line • Ctrl+O to expand",
 	);
 });
 
@@ -342,21 +342,21 @@ test("showTruncationHints=false suppresses backend truncation summaries across r
 			text: "alpha\n",
 			details: { truncation: { truncated: true } },
 		}),
-		"↳ loaded 1 line • Ctrl+O to expand",
+		"loaded 1 line • Ctrl+O to expand",
 	);
 	assert.equal(
 		renderToolResult(registeredTools.find((tool) => tool.name === "grep"), {
 			text: "a.txt:1\n",
 			details: { truncation: { truncated: true } },
 		}),
-		"↳ 1 match returned • Ctrl+O to expand",
+		"1 match returned • Ctrl+O to expand",
 	);
 	assert.equal(
 		renderToolResult(mcpTool, {
 			text: "alpha\n",
 			details: { truncation: { truncated: true } },
 		}),
-		"↳ 1 line returned • Ctrl+O to expand",
+		"1 line returned • Ctrl+O to expand",
 	);
 });
 
@@ -491,7 +491,7 @@ test("bash output modes stay distinct across opencode, summary, and preview", as
 	await summaryStub.eventHandlers.before_agent_start?.();
 	assert.equal(
 		renderToolResult(summaryStub.registeredTools.find((tool) => tool.name === "bash"), output),
-		"↳ 3 lines returned • Ctrl+O to expand",
+		"3 lines returned • Ctrl+O to expand",
 	);
 	assert.equal(
 		renderToolResult(summaryStub.registeredTools.find((tool) => tool.name === "bash"), {
@@ -628,6 +628,6 @@ test("bash errors render with an explicit failure header and preview", async () 
 			text: "npm ERR! missing script: test\nSee npm help run-script\n",
 			isError: true,
 		}),
-		"↳ command failed\nnpm ERR! missing script: test\nSee npm help run-script",
+		"command failed\nnpm ERR! missing script: test\nSee npm help run-script",
 	);
 });

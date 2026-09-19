@@ -591,7 +591,7 @@ test("renderWriteDiffResult reports overwritten file header", () => {
 	);
 	const lines = renderInsideToolBox(component, 80);
 	const joined = lines.join("");
-	assert.ok(joined.includes("overwritten") || joined.includes("↳"));
+	assert.ok(joined.includes("overwritten"));
 });
 
 // ─── renderWriteDiffResult with undefined / null content ────────────────────
@@ -793,13 +793,13 @@ test("buildDiffSummaryText returns progressively shorter candidates for limited 
 	assert.ok(medium.length > 0);
 
 	const wide = buildDiffSummaryText(stats, 120);
-	assert.ok(wide.startsWith("↳ diff"));
+	assert.ok(wide.startsWith("diff"));
 });
 
 test("buildDiffSummaryText handles zero stats", () => {
 	const stats = { added: 0, removed: 0, hunks: 0, files: 0 };
 	const result = buildDiffSummaryText(stats, 80);
-	// With zero stats, the first candidate "↳ diff +0 -0 • 0 hunks • 0 files" fits
+	// With zero stats, the first candidate "diff +0 -0 • 0 hunks • 0 files" fits
 	assert.ok(result.includes("+0"));
 	assert.ok(result.includes("-0"));
 });
