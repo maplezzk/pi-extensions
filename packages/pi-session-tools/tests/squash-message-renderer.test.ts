@@ -90,8 +90,8 @@ test("默认收起：只留一行状态，压缩正文不占屏幕", () => {
   assert.match(text, /压缩快照/);
   assert.match(text, /从 #3 起/);
   assert.match(text, /41\.4k tokens/);
-  // 行首带来源前缀，和提示块、其它扩展块头统一；前缀在箭头与标题之前。
-  assert.match(text, /<accent>\[session\]<\/\> <accent>▶<\/\> <accent>压缩快照<\/\>/);
+  // 行首带来源前缀，和提示块、其它扩展块头统一；前缀统一用弱化色，来源靠 tag 文本区分。
+  assert.match(text, /<muted>\[session\]<\/\> <accent>▶<\/\> <accent>压缩快照<\/\>/);
   // 展开方向用箭头而不是写按键：两种模式区分不出来，箭头在两种模式下都成立。
   assert.doesNotMatch(text, /Ctrl\+O/);
   // 收起态不该出现快照正文，也不该出现只给模型的指令段。
@@ -111,7 +111,7 @@ test("展开后显示任务状态正文，剥掉只给模型的指令段", () =>
   assert.match(text, /Current focus/);
   // 展开态行首依然带前缀，版式不随展开方向变，只换箭头。
   const header = renderComponent(squashMessage(), true)?.render(RENDER_WIDTH)[0] ?? "";
-  assert.match(header, /<accent>\[session\]<\/\> <accent>▼<\/\>/);
+  assert.match(header, /<muted>\[session\]<\/\> <accent>▼<\/\>/);
   assert.doesNotMatch(text, /不是新的用户需求/);
 });
 

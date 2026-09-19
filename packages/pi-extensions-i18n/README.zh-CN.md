@@ -14,7 +14,7 @@ Pi 扩展公共国际化运行时。它提供基于 catalog 的小型 API，支�
 - 提供 `/config:language` 交互式命令，也支持 `/config:language en-US` 直接设置。
 - 加载并校验 catalog，要求每个消息 key 同时提供两种语言。
 - 为 UI、命令描述和 Agent prompt 提供用户文案插值。
-- 提供统一的用户提示出口 `notifyWithSource`：把提示画成会话区里的**带底色消息块**（用户消息同款底色，见下条），并配上「来源标签 + 固定颜色」，解决 Pi 对 `info` 级提示只显示暗灰无前缀文本、用户既分不清来源也不容易注意到的问题。
+- 提供统一的用户提示出口 `notifyWithSource`：把提示画成会话区里的**带底色消息块**（用户消息同款底色，见下条），并配上 `[tag]` 来源标签，解决 Pi 对 `info` 级提示只显示暗灰无前缀文本、用户既分不清来源也不容易注意到的问题。所有包用同一个弱化色标标签（`NOTICE_TAG_COLOR`）：来源靠 tag 文本，不靠颜色 —— 9 个色槽分给 16 个包必然撞车，撞车后颜色反而误导。
 - 提示落在消息下方、不进 LLM 上下文：通过 Pi 的自定义条目（`appendEntry` + `registerEntryRenderer`）实现，条目只在本地渲染，不消耗上下文窗口。
 - 提示块里的细节行（`details`）默认收起、只占一行，行尾带展开箭头（收起态 `▶`、展开态 `▼`，强调色）：全屏模式下直接点这条提示块切换，常规模式用 `Ctrl+O`（pi-tui 太老没有 `MouseRegion` 时自动退化成只能键盘展开）。用箭头而不是写「`Ctrl+O` 展开」：全屏与常规模式在条目渲染时区分不出来，箭头在两种模式下都成立，而且与清爽模式的折叠头用同一个字形。没有 `details` 的提示不带箭头，不会指一个点了没反应的入口。
 
@@ -29,19 +29,19 @@ pi install npm:pi-extensions-i18n
 ## 统一的提示出口
 
 ```ts
-import { notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { NOTICE_TAG_COLOR, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 /** 本扩展的提示标签；短且唯一。 */
 const NOTICE_TAG = "distill";
-/** 提示标签颜色；与其它扩展错开。 */
-const NOTICE_COLOR: NoticeColor = "muted";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
 /** 本扩展的提示来源。 */
 const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("failed") });
 ```
 
-输出是一个和用户消息同款的**实心底色块**，首行是 `[distill] 提示正文`：标签按扩展固定色，正文颜色由 `level` 决定（`warning` 黄、`error` 红、`info` 用扩展消息正文色），也可以用 `textColor` 覆盖成结论行自带的语义色（`dim`/`success` 等）。
+输出是一个和用户消息同款的**实心底色块**，首行是 `[distill] 提示正文`：标签统一用共享的弱化色 `NOTICE_TAG_COLOR`，正文颜色由 `level` 决定（`warning` 黄、`error` 红、`info` 用扩展消息正文色），也可以用 `textColor` 覆盖成结论行自带的语义色（`dim`/`success` 等）。级别色是语义色，保持不变；只有来源标签不再用颜色当身份标识。
 
 渲染细节：
 

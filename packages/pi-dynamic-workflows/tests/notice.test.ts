@@ -3,10 +3,10 @@ import test from "node:test";
 import { formatNotice, notifyWithSource, type NoticeContext } from "pi-extensions-i18n";
 import { NOTICE_COLOR, NOTICE_SOURCE, NOTICE_TAG } from "../src/notice.ts";
 
-test("workflow notice source uses a stable tag and accent color", () => {
+test("workflow notice source uses a stable tag and the shared muted label color", () => {
   assert.equal(NOTICE_TAG, "workflow");
-  assert.equal(NOTICE_COLOR, "accent");
-  assert.deepEqual(NOTICE_SOURCE, { tag: "workflow", color: "accent" });
+  assert.equal(NOTICE_COLOR, "muted");
+  assert.deepEqual(NOTICE_SOURCE, { tag: "workflow", color: "muted" });
 });
 
 test("non-TUI notice renders the workflow tag without ANSI escapes", () => {
@@ -32,5 +32,5 @@ test("notifyWithSource prefixes the tag and preserves the level", () => {
   };
 
   notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: "workflow failed" });
-  assert.deepEqual(seen, [{ message: "<accent>[workflow]</> workflow failed", level: "warning" }]);
+  assert.deepEqual(seen, [{ message: "<muted>[workflow]</> workflow failed", level: "warning" }]);
 });

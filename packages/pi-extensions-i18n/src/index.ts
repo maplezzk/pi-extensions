@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
+  NOTICE_TAG_COLOR,
   installNoticeRenderer,
   notifyWithSource,
   type NoticeColor,
@@ -198,8 +199,8 @@ const commandMessages = loadCatalog(
 
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
 const NOTICE_TAG = "language";
-/** 提示标签颜色；与其它扩展错开。 */
-const NOTICE_COLOR: NoticeColor = "accent";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
 /** 本扩展的提示来源。 */
 const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
@@ -286,6 +287,7 @@ export default function piI18n(pi: ExtensionAPI): void {
 export {
   formatNotice,
   notifyWithSource,
+  NOTICE_TAG_COLOR,
   installNoticeRenderer,
   hasNoticeRenderer,
   resetNoticeRenderer,

@@ -9,13 +9,13 @@
  * 引入注册函数，渲染器再反过来引它就成环了。
  */
 
-import type { NoticeColor, NoticeSource } from "pi-extensions-i18n";
+import { NOTICE_TAG_COLOR, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 /** 本扩展的短标签，同时用作提示来源的 tag。 */
 export const NOTICE_TAG = "session";
 
-/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
-export const NOTICE_COLOR: NoticeColor = "accent";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+export const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
 
 /** 本扩展的提示来源。 */
 export const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
