@@ -22,6 +22,7 @@
     "packages/pi-notifications": {},
     "packages/pi-naming": {},
     "packages/pi-auto-goal": {},
-    "packages/pi-clean-mode": {}
+    "packages/pi-clean-mode": {},
+    "packages/pi-gen-ui": {}
   }
 }

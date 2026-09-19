@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "maxResultLines": 60,
+  "interactiveView": "auto",
+  "composition": {
+    "enabled": true,
+    "model": "typesafe-ai/jev",
+    "timeoutMs": 10000
+  }
+}

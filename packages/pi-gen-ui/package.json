@@ -1,0 +1,79 @@
+{
+  "name": "pi-gen-ui",
+  "version": "0.1.0",
+  "description": "Render json-render JSON specs as native Pi TUI panels through render_ui and compose_ui tools",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "locales",
+    "config.example.json",
+    "README.md",
+    "README.zh-CN.md",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck",
+    "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts",
+      "../pi-extensions-i18n/index.ts"
+    ],
+    "skills": [
+      "./SKILL.md"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "maplezzk",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-gen-ui",
+  "bugs": "https://github.com/maplezzk/pi-extensions/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maplezzk/pi-extensions.git",
+    "directory": "packages/pi-gen-ui"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "coding-agent",
+    "json-render",
+    "generative-ui",
+    "tui"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.80.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
+    "@earendil-works/pi-tui": ">=0.80.0"
+  },
+  "dependencies": {
+    "@json-render/core": "0.21.0",
+    "pi-extensions-i18n": "^0.7.0",
+    "typebox": "*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
+    "@types/node": "24.12.4",
+    "tsx": "4.23.1",
+    "typebox": "latest",
+    "typescript": "5.9.3"
+  }
+}

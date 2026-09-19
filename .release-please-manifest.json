@@ -15,5 +15,6 @@
   "packages/pi-notifications": "0.4.1",
   "packages/pi-naming": "0.5.1",
   "packages/pi-auto-goal": "0.6.0",
-  "packages/pi-clean-mode": "0.2.0"
+  "packages/pi-clean-mode": "0.2.0",
+  "packages/pi-gen-ui": "0.1.0"
 }
