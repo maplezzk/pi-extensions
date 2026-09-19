@@ -178,5 +178,21 @@
   "done": {
     "zh-CN": "压缩完成，已生成总结（原对话可用 /tree 找回）。",
     "en-US": "Squash complete; a summary was generated (use /tree to go back)."
+  },
+  "squashMessageTitle": {
+    "zh-CN": "压缩快照",
+    "en-US": "Squash snapshot"
+  },
+  "squashMessageMeta": {
+    "zh-CN": "从 #{from} 起 · 压缩前 {tokens} tokens",
+    "en-US": "from #{from} · {tokens} tokens before"
+  },
+  "squashMessageExpandHint": {
+    "zh-CN": "Ctrl+O 展开",
+    "en-US": "Ctrl+O to expand"
+  },
+  "squashMessageCollapseHint": {
+    "zh-CN": "Ctrl+O 收起",
+    "en-US": "Ctrl+O to collapse"
   }
 }
