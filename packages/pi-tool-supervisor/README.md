@@ -22,6 +22,127 @@ An edit tool can complete successfully while the resulting file still violates l
 
 It observes Pi's native events and does not register a replacement `edit` or `write` tool.
 
+## Review engines
+
+Each reviewer picks an engine with `backend`. Omitting it keeps the original behavior.
+
+| `backend` | Who judges | Cost and latency | Result shape |
+| --- | --- | --- | --- |
+| `model` (default) | A Pi chat model reads every rule and the diff in one prompt | One chat completion per reviewer | Free-form JSON: `passed`, `summary`, `findings` |
+| `typesafe` | TypeSafe System One answers one typed question per rule in a single batched request | Measured on a 3-rule reviewer: ~1-2 s, ~1,400 input tokens, about US$0.00006 per review | A calibrated `noul` probability per rule; code applies the thresholds |
+
+### TypeSafe backend
+
+The `typesafe` backend turns every numbered clause of a rule file into one Noul question - "does code added or changed in `diff` violate this clause?" - answered as a probability. Every clause of one reviewer is asked in a single request, because TypeSafe answers all questions over the same state in parallel. Code owns the rest: `threshold` decides whether a clause counts as hit, and a second, smaller Choice request locates the offending line among the lines the diff actually added.
+
+**Rule files are engine-independent: switching backends changes one config line and not a single character of a rule file.** There is no `## Criteria` section to write, no severity to declare, and no block heading to add.
+
+The API key is read from `typesafe.apiKey` in `config.json` first and falls back to the `TYPESAFE_API_KEY` environment variable; `typesafe.endpoint` falls back to `TYPESAFE_ENDPOINT` and then to the official endpoint. A missing key, a failed request, or a rule file with no clause to judge produces a visible `failed` audit entry and does not block the tool, which matches how a failed chat-model review behaves.
+
+#### Enabling it
+
+1. Make sure the installed version carries this backend (`pi update --extensions`).
+2. Add the TypeSafe connection settings at the top level of `config.json` (`endpoint` is optional and defaults to the official endpoint):
+
+```json
+"typesafe": {
+  "apiKey": "<your-typesafe-api-key>"
+}
+```
+
+3. Switch the reviewer you want to the `typesafe` engine (drop the `model` field):
+
+```json
+{
+  "name": "code-taste",
+  "backend": "typesafe",
+  "typesafeModel": "jev-latest",
+  "rulesFiles": ["/absolute/path/to/javascript-typescript.md"],
+  "tools": ["edit", "write"],
+  "trigger": "after"
+}
+```
+
+No rule file changes are needed. Restart the Pi session (or `/reload`) to apply it; start with one rule file for a few days and watch for false positives and misses before switching the rest.
+
+#### How it reads your rule file
+
+```markdown
+---
+name: javascript-typescript
+filePatterns: ["**/*.ts"]
+---
+# JavaScript / TypeScript rules
+
+## Ownership and severity (takes precedence)
+
+1. `ruleGroup` may only use clause names or numbers that appear in this file.  ← reporting, not judged
+2. Do not report rules this file does not contain.                             ← reporting, not judged
+
+## Requirements
+
+1. [error] **No magic values**: non-obvious numbers in business logic must be extracted into a semantic `const` or shared configuration.
+2. [warning] **At most 3 parameters**: a declaration with 4 or more parameters must use a parameter object.
+3. **No `any`**: prefer concrete types; use `unknown` and narrow it at the boundary.
+   Do not bypass type checking with `as any` or `any[]`.
+```
+
+This becomes **3 independent rules**:
+
+| Judgment id | Rule name (the `ruleGroup` in each finding) | Criterion | `noul` | Outcome |
+| --- | --- | --- | --- | --- |
+| `rule_1` | `Requirements 1 No magic values` | clause text | 0.52 | below threshold |
+| `rule_2` | `Requirements 2 At most 3 parameters` | clause text | 0.03 | below threshold |
+| `rule_3` | `Requirements 3 No any` | clause text | **0.97** | blocks, located at line 3 |
+
+A clause's text is **both the criterion and the finding text**. The three clauses are three independent Noul questions **answered in the same request**.
+
+#### Splitting rules
+
+| What you write | How it is treated |
+| --- | --- |
+| A `1. text` numbered clause | One rule; indented continuation lines join the same clause |
+| Numbered items inside a `## Ownership and severity…` section | **Not judged** - those are reporting requirements, not code rules |
+| A leading `[error]` / `[warning]` on a clause | Stripped from the criterion; this backend has no levels, so **every hit blocks** |
+| A `**bold**` phrase in a clause | Used as the rule name, combined as `{section} {number} {title}` - this is the `ruleGroup` |
+| `threshold` in front matter | Hit threshold for every clause in that file; default `0.85` |
+| Other prose, `## Output` style sections | Does not affect judging |
+
+The `## Ownership and severity` heading is a fixed convention in common rule files; numbered items inside it are always skipped, so requirements like "`ruleGroup` may only use clause names that appear in this file" never turn into code rules.
+
+#### You can see which rule failed
+
+Every hit clause produces its own finding, named the way your file names it:
+
+```
+Found 2 must-fix problems
+- [Requirements 1 No magic values] line 5: non-obvious numbers in business logic must be extracted…
+  Offending line: const fallback = 30000;
+- [Requirements 4 No any] line 3: prefer concrete types; use `unknown`…
+  Offending line: const raw = (config as any).timeout;
+```
+
+The reviewer `summary` also lists every `noul`, as in `2 rules hit: Requirements 1 No magic values=0.92, Requirements 4 No any=0.97`.
+
+One request asks N clauses, so adding clauses barely adds latency: measured 6 clauses at 2,438 input tokens, and 10 rules batched into one request at 1.1 s / 1,351 input tokens, against 4.3 s / 7,525 input tokens for 10 separate requests.
+
+#### No clauses is an error, not a pass
+
+When a rule file yields no numbered clause at all (say it is all prose, or the items are bullets), the review reports `failed` with the file path and is **never treated as passing**. Otherwise enabling typesafe would silently disable a rule file.
+
+#### Limitations
+
+Limitations worth knowing before treating a `typesafe` reviewer as a gate:
+
+- **The more specific the clause, the better the judgment.** When a probability is off, fix how the sentence is written (spell out the exemptions) rather than changing the format. Measured: "non-obvious numbers must be extracted into a semantic constant" is too subjective about "semantic", so `const fallback = 30000;` scored 0.52, while the sharp-edged "no `any`" scored 0.97.
+- **The threshold is per file.** Clause quality varies within one file, and there is no per-clause override; sharpen the clause instead.
+- **No severity levels.** A `[warning]` clause that only advises under the `model` backend blocks under the `typesafe` backend.
+- Line localization needs the post-edit file. A `before` review only has it for `write`, so `edit` before-reviews report rule-level issues without a line number.
+- When the diff adds more than 40 lines, localization is skipped and reported as a warning; the rule-level issues are still reported.
+- The whole post-edit file is sent as context, bounded by `maxFileContextChars`. It roughly doubles the input tokens compared with a diff-only request.
+- Every clause body is sent, so detailed clauses raise input tokens (measured about 2.4k input tokens for 6 clauses).
+- A probability is a calibrated judgment, not a guarantee.
+
 ## Install
 
 ```bash
@@ -58,6 +179,10 @@ Start from [`config.example.json`](./config.example.json):
   "timeoutSeconds": 10,
   "maxFileContextChars": 50000,
   "maxRuleLines": 100,
+  "typesafe": {
+    "apiKey": "<your-typesafe-api-key>",
+    "endpoint": "https://api.typesafe.ai/v1/systemone"
+  },
   "reviewers": [
     {
       "name": "project-rules",
@@ -68,12 +193,22 @@ Start from [`config.example.json`](./config.example.json):
       "tools": ["edit", "write"],
       "trigger": "after",
       "condition": "/absolute/path/to/condition.ts"
+    },
+    {
+      "name": "code-taste",
+      "backend": "typesafe",
+      "typesafeModel": "jev-latest",
+      "rulesFiles": [
+        "/absolute/path/to/javascript-typescript.md"
+      ],
+      "tools": ["edit", "write"],
+      "trigger": "after"
     }
   ]
 }
 ```
 
-Each reviewer must have a `provider/model` reference and either `rulesFile` or `rulesFiles`. Relative rule-file and condition-module paths are resolved from the current project working directory.
+Each reviewer must have either a `provider/model` reference (`model` backend) or a `typesafeModel` (`typesafe` backend), plus either `rulesFile` or `rulesFiles`. Relative rule-file and condition-module paths are resolved from the current project working directory.
 
 | Setting | Meaning |
 | --- | --- |
@@ -81,6 +216,9 @@ Each reviewer must have a `provider/model` reference and either `rulesFile` or `
 | `timeoutSeconds` | Maximum time allowed for each reviewer model call. |
 | `maxFileContextChars` | Maximum post-edit file context sent to reviewers. The default is 50,000 characters; oversized files use bounded, explicitly marked excerpts around changed lines. |
 | `maxRuleLines` | Maximum rule-file size accepted for a single review rule. |
+| `typesafe` | Connection settings for the `typesafe` backend: `apiKey` and `endpoint`, both optional and both falling back to the matching environment variable. |
+| `backend` | `model` (default) or `typesafe`. Selects the review engine. |
+| `typesafeModel` | TypeSafe model name used by the `typesafe` backend. Defaults to `jev-latest`. |
 | `condition` | Optional local TypeScript/ESM module path. Its default export receives the native Pi tool event, `ExtensionContext`, and `ToolConditionHelpers`; returning `false` skips this reviewer without a model call. |
 | `reviewers` | Reviewer name, model, rule files, `tools`, `trigger`, and optional condition module. Missing lifecycle fields keep the legacy `edit`/`write` + `after` behavior. |
 
@@ -99,6 +237,8 @@ consumers:
 ```
 
 `filePatterns` uses a simplified glob syntax: `*` does not cross `/`, `**` does, and `**/` at any position matches zero or more directory levels. Backslashes are normalized to `/`, and a leading `./` is ignored.
+
+`threshold` is an optional front matter field used only by the `typesafe` backend, defaulting to `0.85`; the `model` backend ignores it.
 
 ### Condition modules
 
@@ -146,7 +286,8 @@ When upgrading from `pi-file-edit-review`, the extension reads the legacy config
 ## Requirements
 
 - Node.js 22 or newer.
-- A configured Pi model for each enabled reviewer.
+- A configured Pi model for each enabled `model` reviewer.
+- A TypeSafe API key for each enabled `typesafe` reviewer: `typesafe.apiKey` in `config.json`, or the `TYPESAFE_API_KEY` environment variable.
 - Rule files that describe the project-specific checks the reviewer should apply.
 
 ## License

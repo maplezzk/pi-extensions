@@ -1,0 +1,42 @@
+{
+  "fallbackJudgmentId": {
+    "zh-CN": "rule",
+    "en-US": "rule"
+  },
+  "missingClauses": {
+    "zh-CN": "规则文件里没有切出任何编号条款，TypeSafe 无法判断它。规则条款写成 `1. 正文` 这种编号列表；如果编号条目在「## 归属与 severity」段落里，它们只是报告要求，不参与判断。",
+    "en-US": "The rule file has no numbered clause TypeSafe can judge. Write clauses as a numbered list like `1. ...`; numbered items inside a `## 归属与 severity` section are reporting requirements and are not judged."
+  },
+  "duplicateJudgmentId": {
+    "zh-CN": "多条规则的编号都是 {id}，{file} 已改用 {resolved}。同一个文件里的条款编号应当唯一。",
+    "en-US": "Several clauses share the number {id}; {file} uses {resolved} instead. Clause numbers should be unique within one file."
+  },
+  "judgmentInstructions": {
+    "zh-CN": "`diff` 中新增或修改的代码是否违反规则「{rule}」？只判断新增和修改的行，不要判断未改动的代码。\n规则原文：{criterion}",
+    "en-US": "Does code added or changed in `diff` violate the rule \"{rule}\"? Judge only added and modified lines, never untouched code.\nRule text: {criterion}"
+  },
+  "criterionTrue": {
+    "zh-CN": "新增或修改的代码违反了这条规则：{criterion}",
+    "en-US": "Added or modified code violates this rule: {criterion}"
+  },
+  "criterionFalse": {
+    "zh-CN": "新增或修改的代码没有违反这条规则，或者这次改动根本没有涉及这条规则约束的写法。",
+    "en-US": "No added or modified line violates this rule, or the change does not touch anything the rule governs."
+  },
+  "localizeInstructions": {
+    "zh-CN": "`candidate_lines` 里哪一行新增或修改的代码最直接地违反规则「{rule}」？规则含义：{criterion}。如果违规点不落在任何一个候选行上，选 {none}。",
+    "en-US": "Which line in `candidate_lines` most directly violates the rule \"{rule}\"? Rule meaning: {criterion}. Choose {none} when the violation does not fall on any candidate line."
+  },
+  "candidateLine": {
+    "zh-CN": "第 {line} 行：{text}",
+    "en-US": "Line {line}: {text}"
+  },
+  "candidateNone": {
+    "zh-CN": "以上候选行都不是，或者违规点不落在某一行上",
+    "en-US": "None of the candidate lines; the violation is not attributable to one line"
+  },
+  "hitLine": {
+    "zh-CN": "命中代码：{text}",
+    "en-US": "Offending line: {text}"
+  }
+}

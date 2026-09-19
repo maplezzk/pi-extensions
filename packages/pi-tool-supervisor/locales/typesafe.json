@@ -1,0 +1,42 @@
+{
+  "missingApiKey": {
+    "zh-CN": "没有找到 TypeSafe API key：请设置环境变量 {env}，或把该 reviewer 的 backend 改回 model。",
+    "en-US": "No TypeSafe API key found: set the {env} environment variable, or switch this reviewer's backend back to model."
+  },
+  "requestFailed": {
+    "zh-CN": "TypeSafe 请求失败（HTTP {status}）：{body}",
+    "en-US": "TypeSafe request failed with HTTP {status}: {body}"
+  },
+  "networkFailed": {
+    "zh-CN": "TypeSafe 请求无法建立连接：{message}",
+    "en-US": "The TypeSafe request could not reach the service: {message}"
+  },
+  "timeout": {
+    "zh-CN": "TypeSafe 请求在 {seconds} 秒内没有完成。",
+    "en-US": "The TypeSafe request did not finish within {seconds} seconds."
+  },
+  "aborted": {
+    "zh-CN": "上级请求已终止，TypeSafe 请求已取消。",
+    "en-US": "The parent request was aborted, so the TypeSafe request was cancelled."
+  },
+  "invalidResponse": {
+    "zh-CN": "TypeSafe 响应格式不正确：{message}",
+    "en-US": "The TypeSafe response had an unexpected shape: {message}"
+  },
+  "responseNotObject": {
+    "zh-CN": "响应不是 JSON 对象",
+    "en-US": "the response was not a JSON object"
+  },
+  "responseMissingAnswers": {
+    "zh-CN": "响应缺少 answers 对象",
+    "en-US": "the response had no answers object"
+  },
+  "unreadableErrorBody": {
+    "zh-CN": "错误正文无法读取：{message}",
+    "en-US": "the error body could not be read: {message}"
+  },
+  "noAttemptsLeft": {
+    "zh-CN": "重试次数已用尽",
+    "en-US": "retry attempts were exhausted"
+  }
+}

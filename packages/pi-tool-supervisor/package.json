@@ -17,7 +17,7 @@
     "SKILL.md"
   ],
   "scripts": {
-    "test": "tsx --test tests/condition-utils.test.ts tests/condition-integration.test.ts tests/pi-tool-supervisor.test.ts",
+    "test": "tsx --test tests/condition-utils.test.ts tests/condition-integration.test.ts tests/judgment.test.ts tests/typesafe-client.test.ts tests/typesafe-review.test.ts tests/pi-tool-supervisor.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"

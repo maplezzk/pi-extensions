@@ -38,14 +38,18 @@ import {
   buildEditFallbackDiff,
   buildFileEditReviewDiff,
   buildMergedReviewPrompt,
+  DEFAULT_TYPESAFE_MODEL,
   getPiSupervisorConfigPath,
   getOverallReviewStatus,
   loadFileEditReviewConfig,
   loadReviewRules,
   parseReviewResponse,
+  REVIEW_BACKENDS,
   reviewerAppliesToFile,
+  reviewerBackend,
   reviewerIsEditorLocal,
   reviewerMatchesTool,
+  reviewerModelLabel,
   reviewerTrigger,
   safeSerialize,
   type CurrentFileContext,
@@ -54,8 +58,23 @@ import {
   type FileEditReviewReviewerConfig,
   type FileEditReviewResult,
   type FileEditReviewRule,
+  type ReviewBackend,
   type ReviewTrigger,
 } from "./review-utils.ts";
+import { askTypeSafe, type TypeSafeConnection } from "./typesafe-client.ts";
+import {
+  buildJudgmentFindings,
+  buildJudgmentQuestions,
+  buildLocalizationQuestions,
+  compileJudgments,
+  extractChangedLines,
+  MAX_LOCALIZATION_CANDIDATES,
+  readJudgmentVerdicts,
+  readLocatedLines,
+  type JudgmentState,
+  type LocatedLine,
+  type RuleJudgment,
+} from "./judgment.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
@@ -81,9 +100,18 @@ const CONFIG_TIMEOUT_CHOICE_INDEX = 1;
 const CONFIG_FILE_CONTEXT_CHOICE_INDEX = 2;
 const CONFIG_RULES_CHOICE_INDEX = 3;
 const CONFIG_REVIEWER_CHOICE_OFFSET = 4;
-const REVIEWER_CONDITION_CHOICE_INDEX = 6;
-const REVIEWER_PATTERNS_CHOICE_INDEX = 7;
-const REVIEWER_DELETE_CHOICE_INDEX = 8;
+const REVIEWER_STATUS_CHOICE_INDEX = 0;
+const REVIEWER_NAME_CHOICE_INDEX = 1;
+const REVIEWER_BACKEND_CHOICE_INDEX = 2;
+const REVIEWER_MODEL_CHOICE_INDEX = 3;
+const REVIEWER_RULES_CHOICE_INDEX = 4;
+const REVIEWER_TOOLS_CHOICE_INDEX = 5;
+const REVIEWER_TRIGGER_CHOICE_INDEX = 6;
+const REVIEWER_CONDITION_CHOICE_INDEX = 7;
+const REVIEWER_PATTERNS_CHOICE_INDEX = 8;
+const REVIEWER_DELETE_CHOICE_INDEX = 9;
+/** `REVIEW_BACKENDS` 里的 TypeSafe 取值；用常量避免散落的字面量比较。 */
+const TYPE_SAFE_BACKEND: ReviewBackend = REVIEW_BACKENDS[1];
 const CONDITION_NOT_MATCHED_MESSAGE_KEY = "conditionNotMatched";
 const CONDITION_FAILED_MESSAGE_KEY = "conditionFailed";
 type ToolResult = {
@@ -142,7 +170,7 @@ function buildConditionResult(
   if (evaluation.status === CONDITION_NOT_MATCHED_STATUS) {
     return {
       name: reviewer.name,
-      model: reviewer.model,
+      model: reviewerModelLabel(reviewer),
       ...ruleReference,
       status: SKIPPED_STATUS,
       durationMs: evaluation.durationMs,
@@ -152,7 +180,7 @@ function buildConditionResult(
 
   return {
     name: reviewer.name,
-    model: reviewer.model,
+    model: reviewerModelLabel(reviewer),
     ...ruleReference,
     status: REJECTED_STATUS,
     durationMs: evaluation.durationMs,
@@ -274,25 +302,38 @@ function createReviewRejectionDiagnostic(
   return lines.join("\n");
 }
 
-/** Executes one reviewer with parent cancellation and timeout fail-open behavior. */
-async function reviewWithModel(options: {
+/** 一次审查任务：引擎无关的输入，由 runReviewer 按 reviewer 配置的 backend 分发。 */
+interface RunReviewerOptions {
   context: FileReviewExecutionContext;
   config: FileEditReviewConfig;
-  reviewer: FileEditReviewRule["reviewer"];
+  reviewer: FileEditReviewReviewerConfig;
   rules: FileEditReviewRule[];
   toolName: string;
   filePath?: string;
   diff: string;
   currentFileContext?: CurrentFileContext;
   trigger?: ReviewTrigger;
-}): Promise<FileEditReviewResult> {
+  /** 修改前的文件内容；只有 TypeSafe 行定位会用到，其它 backend 忽略。 */
+  beforeContent?: string;
+  /** 修改后的文件内容；只有 TypeSafe 行定位会用到，其它 backend 忽略。 */
+  afterContent?: string;
+}
+
+/** Executes one reviewer with parent cancellation and timeout fail-open behavior. */
+async function reviewWithModel(options: RunReviewerOptions): Promise<FileEditReviewResult> {
   const { context, config, reviewer, rules, toolName, filePath, diff, currentFileContext, trigger = AFTER_TRIGGER } = options;
   const startedAt = performance.now();
   const base = {
     name: reviewer.name,
-    model: reviewer.model,
+    model: reviewerModelLabel(reviewer),
     rulesFiles: rules.map((rule) => rule.reviewer.rulesFile).filter((file): file is string => Boolean(file)),
   };
+  const failed = (error: string): FileEditReviewResult => ({
+    ...base,
+    status: "failed",
+    durationMs: Math.round(performance.now() - startedAt),
+    error,
+  });
   /** Reports parent cancellation as a skipped review rather than a provider failure. */
   const createAbortedResult = (): FileEditReviewResult => ({
     ...base,
@@ -301,17 +342,13 @@ async function reviewWithModel(options: {
     error: i18n.t("reviewAborted"),
   });
   if (context.signal?.aborted) return createAbortedResult();
+  if (!reviewer.model) return failed(i18n.t("modelMissing"));
   const separator = reviewer.model.indexOf("/");
   const modelProvider = reviewer.model.slice(0, separator);
   const modelId = reviewer.model.slice(separator + 1);
   const model = context.ctx.modelRegistry.find(modelProvider, modelId);
   if (!model) {
-    return {
-      ...base,
-      status: "failed",
-      durationMs: Math.round(performance.now() - startedAt),
-      error: `审查模型不存在：${reviewer.model}`,
-    };
+    return failed(`审查模型不存在：${reviewer.model}`);
   }
 
   const controller = new AbortController();
@@ -358,16 +395,190 @@ async function reviewWithModel(options: {
     };
   } catch (error) {
     if (context.signal?.aborted) return createAbortedResult();
-    return {
-      ...base,
-      status: "failed",
-      durationMs: Math.round(performance.now() - startedAt),
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return failed(error instanceof Error ? error.message : String(error));
   } finally {
     clearTimeout(timeout);
     context.signal?.removeEventListener("abort", abortFromParent);
   }
+}
+
+/**
+ * 从 config.json 取 TypeSafe 连接设置。
+ *
+ * config 里没配的字段留空，由连接层回退到环境变量；key 不回显、不写日志。
+ */
+function typeSafeConnection(config: FileEditReviewConfig): TypeSafeConnection {
+  const typesafe = config.typesafe;
+  return {
+    ...(typesafe?.apiKey === undefined ? {} : { apiKey: typesafe.apiKey }),
+    ...(typesafe?.endpoint === undefined ? {} : { endpoint: typesafe.endpoint }),
+  };
+}
+
+/**
+ * 用 TypeSafe 判断后端执行一次审查。
+ *
+ * 一条规则 = 一个 Noul 问题，一次请求批量问完（同一份 state 下 TypeSafe 并行回答）；
+ * 有条款命中时再做一次 Choice 请求，把问题定位到具体新增行。
+ * 阈值和阻断与否都由本模块决定，模型只提供概率；本后端不分级，命中即阻断。
+ */
+async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEditReviewResult> {
+  const {
+    context, config, reviewer, rules, toolName, filePath, diff,
+    currentFileContext, trigger = AFTER_TRIGGER, beforeContent, afterContent,
+  } = options;
+  const startedAt = performance.now();
+  const base = {
+    name: reviewer.name,
+    model: reviewerModelLabel(reviewer),
+    rulesFiles: rules.map((rule) => rule.reviewer.rulesFile).filter((file): file is string => Boolean(file)),
+  };
+  const elapsedMs = () => Math.round(performance.now() - startedAt);
+  if (context.signal?.aborted) {
+    return { ...base, status: SKIPPED_STATUS, durationMs: elapsedMs(), error: i18n.t("reviewAborted") };
+  }
+
+  const compiled = compileJudgments(rules);
+  const unparsableRules = compiled.errors.map((entry) => `${entry.rulesFile}: ${entry.message}`);
+  if (compiled.judgments.length === 0) {
+    return {
+      ...base,
+      status: "failed",
+      durationMs: elapsedMs(),
+      error: unparsableRules.length > 0 ? unparsableRules.join(" | ") : i18n.t("noJudgments"),
+    };
+  }
+
+  const typesafeModel = reviewer.typesafeModel ?? DEFAULT_TYPESAFE_MODEL;
+  const connection = typeSafeConnection(config);
+  const timeoutMs = config.timeoutSeconds * MILLISECONDS_PER_SECOND;
+  const state: JudgmentState = {
+    tool: toolName,
+    trigger,
+    diff,
+    ...(filePath ? { file: filePath } : {}),
+    ...(currentFileContext
+      ? { current_file: currentFileContext.content, current_file_truncated: currentFileContext.truncated }
+      : {}),
+  };
+
+  let answers: Record<string, { type?: string; noul?: number }>;
+  try {
+    const response = await askTypeSafe({
+      state,
+      questions: buildJudgmentQuestions(compiled.judgments),
+      model: typesafeModel,
+      timeoutMs,
+      ...connection,
+      signal: context.signal,
+    });
+    answers = response.answers;
+  } catch (error) {
+    if (context.signal?.aborted) {
+      return { ...base, status: SKIPPED_STATUS, durationMs: elapsedMs(), error: i18n.t("reviewAborted") };
+    }
+    return {
+      ...base,
+      status: "failed",
+      durationMs: elapsedMs(),
+      error: error instanceof Error ? error.message : String(error),
+      ...(compiled.warnings.length > 0 ? { warnings: compiled.warnings } : {}),
+    };
+  }
+
+  const { verdicts, unanswered } = readJudgmentVerdicts(compiled.judgments, answers);
+  // 本后端不分级：条款定义了就要遵守，命中即阻断，也就要做行定位。
+  const hits = verdicts.filter((verdict) => verdict.hit);
+  const localization = await locateJudgmentLines({
+    context,
+    judgments: hits.map((verdict) => verdict.judgment),
+    diff,
+    beforeContent,
+    afterContent,
+    timeoutMs,
+    typesafeModel,
+    connection,
+  });
+  // 缺答案和切不出条款的文件不能当成通过：它们列进 failed 和 warnings。
+  const unresolved = [
+    ...unparsableRules,
+    ...(unanswered.length > 0
+      ? [i18n.t("unansweredJudgments", {
+        count: unanswered.length,
+        ids: unanswered.map((judgment) => judgment.id).join(", "),
+      })]
+      : []),
+  ];
+  const status = hits.length > 0 ? "rejected" : unresolved.length > 0 ? "failed" : "passed";
+  const hitDetails = hits.map((verdict) => `${verdict.judgment.ruleName}=${verdict.noul.toFixed(2)}`).join(", ");
+  const summary = status === "rejected"
+    ? i18n.t("rejectedSummary", { count: hits.length, details: hitDetails })
+    : i18n.t("passedSummary");
+  const result: FileEditReviewResult = {
+    ...base,
+    status,
+    summary,
+    findings: buildJudgmentFindings(hits, localization.located),
+    durationMs: elapsedMs(),
+    ...(status === "failed" ? { error: unresolved.join(" | ") } : {}),
+  };
+  const warnings = [...compiled.warnings, ...localization.warnings, ...unresolved];
+  return warnings.length > 0 ? { ...result, warnings } : result;
+}
+
+/**
+ * 命中 error 级规则后再发一次 Choice 请求，把问题定位到具体新增行。
+ * 没有修改后的文件内容时跳过定位：此时只有规则级问题可报，不是静默降级。
+ */
+async function locateJudgmentLines(options: {
+  context: FileReviewExecutionContext;
+  judgments: RuleJudgment[];
+  diff: string;
+  beforeContent?: string;
+  afterContent?: string;
+  timeoutMs: number;
+  typesafeModel: string;
+  connection: TypeSafeConnection;
+}): Promise<{ located: Map<string, LocatedLine>; warnings: string[] }> {
+  const { context, judgments, diff, beforeContent, afterContent, timeoutMs, typesafeModel, connection } = options;
+  const located = new Map<string, LocatedLine>();
+  const warnings: string[] = [];
+  if (judgments.length === 0 || afterContent === undefined) return { located, warnings };
+  const scan = extractChangedLines(beforeContent, afterContent);
+  if (scan.truncated) {
+    warnings.push(i18n.t("localizationSkipped", { count: MAX_LOCALIZATION_CANDIDATES }));
+    return { located, warnings };
+  }
+  if (scan.lines.length === 0) return { located, warnings };
+  try {
+    const response = await askTypeSafe({
+      state: {
+        diff,
+        candidate_lines: Object.fromEntries(scan.lines.map((candidate) => [String(candidate.line), candidate.text])),
+      },
+      questions: buildLocalizationQuestions(judgments, scan.lines),
+      model: typesafeModel,
+      timeoutMs,
+      ...connection,
+      signal: context.signal,
+    });
+    return { located: readLocatedLines(judgments, response.answers, scan.lines), warnings };
+  } catch (error) {
+    // 行定位失败不影响规则级结论，但必须在审计里可见。
+    if (!context.signal?.aborted) {
+      warnings.push(i18n.t("localizationFailed", {
+        message: error instanceof Error ? error.message : String(error),
+      }));
+    }
+    return { located, warnings };
+  }
+}
+
+/** 按 reviewer 的 backend 分发；两种引擎的失败语义一致：非阻断，只在审计卡片里可见。 */
+async function runReviewer(options: RunReviewerOptions): Promise<FileEditReviewResult> {
+  return reviewerBackend(options.reviewer) === TYPE_SAFE_BACKEND
+    ? reviewWithJudgments(options)
+    : reviewWithModel(options);
 }
 
 /** Captures the pre-tool file state and a fallback edit payload. */
@@ -437,7 +648,7 @@ async function reviewToolResult(options: {
   if (isFailedToolResult(result)) {
     const skippedAfter = configuredAfterReviewers.map((reviewer) => ({
       name: reviewer.name,
-      model: reviewer.model,
+      model: reviewerModelLabel(reviewer),
       status: SKIPPED_STATUS,
       durationMs: 0,
       error: i18n.t("failedAfterReview"),
@@ -523,7 +734,7 @@ async function reviewToolResult(options: {
   const reviewResults = await Promise.all([
     ...conditionResults,
     ...applicableGroups.map((group) =>
-      reviewWithModel({
+      runReviewer({
         context,
         config,
         reviewer: group.reviewer,
@@ -532,11 +743,16 @@ async function reviewToolResult(options: {
         filePath: snapshot.filePath,
         diff,
         currentFileContext,
+        beforeContent: snapshot.before,
+        afterContent: snapshot.after,
       }),
     ),
     ...applicableErrors.map((error) => Promise.resolve(error)),
   ]);
-  const auditWarnings = withReviewAbortedWarning(warnings, context.signal);
+  const auditWarnings = withReviewAbortedWarning(
+    [...warnings, ...reviewResults.flatMap((result) => result.warnings ?? [])],
+    context.signal,
+  );
   const audit: FileEditReviewAudit = {
     ...auditBase,
     status: getOverallReviewStatus(reviewResults),
@@ -596,7 +812,8 @@ async function runBeforeReview(options: {
     ? { text: buildFileEditReviewDiff(selectedFilePath, undefined, typeof context.params.content === "string" ? context.params.content : undefined, fallbackDiff) }
     : safeSerialize(context.params, MAX_REVIEW_PAYLOAD_CHARS);
   const warnings = [...loaded.warnings];
-  for (const reviewer of reviewers) {
+  // 逐个 reviewer 并发执行，但保持 results 的顺序与配置顺序一致。
+  const perReviewer = await Promise.all(reviewers.map(async (reviewer) => {
     const loadedRules = loadReviewRules(reviewer, context.ctx.cwd, loaded.config.maxRuleLines);
     const rules = loadedRules.rules.filter((rule) => {
       if (rule.reviewer.enabled === false || !reviewerIsEditorLocal(rule.reviewer)) return false;
@@ -604,21 +821,48 @@ async function runBeforeReview(options: {
         ? reviewerAppliesToFile(rule.reviewer, selectedFilePath)
         : (rule.reviewer.filePatterns ?? []).length === 0;
     });
-    warnings.push(...rules.flatMap((rule) => rule.warning ? [rule.warning] : []));
-    results.push(...loadedRules.errors);
+    const produced: FileEditReviewResult[] = [...loadedRules.errors];
     if (rules.length > 0 && serializedPayload.error) {
-      results.push({
+      produced.push({
         name: reviewer.name,
-        model: reviewer.model,
+        model: reviewerModelLabel(reviewer),
         status: "failed",
         durationMs: 0,
         error: serializedPayload.error,
       });
     } else if (rules.length > 0) {
-      results.push(await reviewWithModel({ context, config: loaded.config, reviewer, rules, toolName: context.toolName, filePath: selectedFilePath, diff: serializedPayload.text ?? "", trigger: BEFORE_TRIGGER }));
+      produced.push(await runReviewer({
+        context,
+        config: loaded.config,
+        reviewer,
+        rules,
+        toolName: context.toolName,
+        filePath: selectedFilePath,
+        diff: serializedPayload.text ?? "",
+        trigger: BEFORE_TRIGGER,
+        // before 阶段只有 write 拿得到修改后的文件内容，edit 没有新文件可定位。
+        afterContent: typeof context.params.content === "string" ? context.params.content : undefined,
+      }));
     } else if (loadedRules.errors.length === 0) {
-      results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: i18n.t("noApplicableRules") });
+      produced.push({
+        name: reviewer.name,
+        model: reviewerModelLabel(reviewer),
+        status: "skipped",
+        durationMs: 0,
+        error: i18n.t("noApplicableRules"),
+      });
     }
+    return {
+      produced,
+      reviewerWarnings: [
+        ...rules.flatMap((rule) => rule.warning ? [rule.warning] : []),
+        ...produced.flatMap((result) => result.warnings ?? []),
+      ],
+    };
+  }));
+  for (const entry of perReviewer) {
+    results.push(...entry.produced);
+    warnings.push(...entry.reviewerWarnings);
   }
   return { status: getOverallReviewStatus(results), filePath, toolName: context.toolName, trigger: BEFORE_TRIGGER, reviewers: results, durationMs: Math.round(performance.now() - startedAt), warnings: withReviewAbortedWarning(warnings, context.signal) };
 }
@@ -668,7 +912,7 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
   if (isFailedToolResult(result)) {
     results.push(...configuredReviewers.map((reviewer) => ({
       name: reviewer.name,
-      model: reviewer.model,
+      model: reviewerModelLabel(reviewer),
       status: SKIPPED_STATUS,
       durationMs: 0,
       error: i18n.t("failedAfterReview"),
@@ -691,18 +935,22 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
       const rules = loadedRules.rules.filter((rule) => rule.reviewer.enabled !== false && reviewerIsEditorLocal(rule.reviewer) && (rule.reviewer.filePatterns ?? []).length === 0);
       results.push(...loadedRules.errors);
       if (rules.length > 0 && serializedPayload.error) {
-        results.push({ name: reviewer.name, model: reviewer.model, status: "failed", durationMs: 0, error: serializedPayload.error });
+        results.push({ name: reviewer.name, model: reviewerModelLabel(reviewer), status: "failed", durationMs: 0, error: serializedPayload.error });
       } else if (rules.length > 0) {
-        results.push(await reviewWithModel({ context, config: pending.loaded.config, reviewer, rules, toolName: context.toolName, diff: serializedPayload.text ?? "", trigger: AFTER_TRIGGER }));
+        results.push(await runReviewer({ context, config: pending.loaded.config, reviewer, rules, toolName: context.toolName, diff: serializedPayload.text ?? "", trigger: AFTER_TRIGGER }));
       } else if (loadedRules.errors.length === 0) {
-        results.push({ name: reviewer.name, model: reviewer.model, status: "skipped", durationMs: 0, error: i18n.t("noApplicableGenericRules") });
+        results.push({ name: reviewer.name, model: reviewerModelLabel(reviewer), status: "skipped", durationMs: 0, error: i18n.t("noApplicableGenericRules") });
       }
     }
   }
   const reviewersWithBefore = [...(pending.beforeAudit?.reviewers ?? []), ...results];
   const afterDurationMs = Math.round(performance.now() - startedAt);
   const warnings = withReviewAbortedWarning(
-    [...pending.loaded.warnings, ...(pending.beforeAudit?.warnings ?? [])],
+    [
+      ...pending.loaded.warnings,
+      ...(pending.beforeAudit?.warnings ?? []),
+      ...results.flatMap((result) => result.warnings ?? []),
+    ],
     context.signal,
   );
   const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings };
@@ -779,6 +1027,35 @@ async function inputList(
   return items;
 }
 
+/** 引擎选项的本地化标签，以及把选中标签反查回 backend。 */
+function backendChoice(labels: Record<ReviewBackend, string>): { labels: string[]; resolve: (selected: string) => ReviewBackend | undefined } {
+  return {
+    labels: REVIEW_BACKENDS.map((backend) => labels[backend]),
+    resolve: (selected) => REVIEW_BACKENDS.find((backend) => labels[backend] === selected),
+  };
+}
+
+/** 切换审查引擎；切到 model 时必须先拿到可用的 provider/model，否则保持原设置。 */
+async function switchReviewerBackend(
+  ctx: ExtensionCommandContext,
+  reviewer: FileEditReviewReviewerConfig,
+): Promise<void> {
+  const choices = backendChoice({ model: i18n.t("backendModel"), typesafe: i18n.t("backendTypesafe") });
+  const selected = choices.resolve((await ctx.ui.select(i18n.t("backendInput"), choices.labels)) ?? "");
+  if (!selected || selected === reviewerBackend(reviewer)) return;
+  if (selected === TYPE_SAFE_BACKEND) {
+    delete reviewer.model;
+    reviewer.backend = TYPE_SAFE_BACKEND;
+    reviewer.typesafeModel ??= DEFAULT_TYPESAFE_MODEL;
+    return;
+  }
+  const model = await inputModel(ctx, reviewer.model ?? "");
+  if (!model) return;
+  delete reviewer.backend;
+  delete reviewer.typesafeModel;
+  reviewer.model = model;
+}
+
 /** Edits reviewer lifecycle fields and persists validated user choices through the caller. */
 async function editReviewer(
   ctx: ExtensionCommandContext,
@@ -786,10 +1063,14 @@ async function editReviewer(
 ): Promise<"deleted" | "back"> {
   while (true) {
     const rulesFiles = reviewer.rulesFiles ?? (reviewer.rulesFile ? [reviewer.rulesFile] : []);
+    const isTypesafe = reviewerBackend(reviewer) === TYPE_SAFE_BACKEND;
     const choices = [
       i18n.t("status", { value: reviewer.enabled === false ? i18n.t("disabled") : i18n.t("enabled") }),
       i18n.t("name", { value: reviewer.name }),
-      i18n.t("model", { value: reviewer.model }),
+      i18n.t("backendConfig", { value: isTypesafe ? i18n.t("backendTypesafe") : i18n.t("backendModel") }),
+      isTypesafe
+        ? i18n.t("typesafeModel", { value: reviewer.typesafeModel ?? DEFAULT_TYPESAFE_MODEL })
+        : i18n.t("model", { value: reviewer.model ?? "" }),
       i18n.t("rules", { value: rulesFiles.join(", ") }),
       i18n.t("tools", { value: (reviewer.tools ?? DEFAULT_REVIEW_TOOLS).join(", ") }),
       i18n.t("triggerConfig", { value: reviewerTrigger(reviewer) }),
@@ -801,24 +1082,32 @@ async function editReviewer(
     const choice = await ctx.ui.select(i18n.t("editReviewer", { name: reviewer.name }), choices);
     if (choice === undefined || choice === i18n.t("back")) return "back";
 
-    if (choice === choices[0]) {
+    if (choice === choices[REVIEWER_STATUS_CHOICE_INDEX]) {
       reviewer.enabled = reviewer.enabled === false;
-    } else if (choice === choices[1]) {
+    } else if (choice === choices[REVIEWER_NAME_CHOICE_INDEX]) {
       const value = await ctx.ui.input(i18n.t("reviewerName"), reviewer.name);
       if (value?.trim()) reviewer.name = value.trim();
-    } else if (choice === choices[2]) {
-      const value = await inputModel(ctx, reviewer.model);
-      if (value !== undefined) reviewer.model = value;
-    } else if (choice === choices[3]) {
+    } else if (choice === choices[REVIEWER_BACKEND_CHOICE_INDEX]) {
+      await switchReviewerBackend(ctx, reviewer);
+    } else if (choice === choices[REVIEWER_MODEL_CHOICE_INDEX]) {
+      if (isTypesafe) {
+        const value = await ctx.ui.input(i18n.t("typesafeModelInput"), reviewer.typesafeModel ?? DEFAULT_TYPESAFE_MODEL);
+        const typesafeModel = value?.trim();
+        if (typesafeModel) reviewer.typesafeModel = typesafeModel;
+      } else {
+        const value = await inputModel(ctx, reviewer.model ?? "");
+        if (value !== undefined) reviewer.model = value;
+      }
+    } else if (choice === choices[REVIEWER_RULES_CHOICE_INDEX]) {
       const value = await inputList(ctx, i18n.t("listInput"), rulesFiles, true);
       if (value !== undefined) {
         delete reviewer.rulesFile;
         reviewer.rulesFiles = value;
       }
-    } else if (choice === choices[4]) {
+    } else if (choice === choices[REVIEWER_TOOLS_CHOICE_INDEX]) {
       const value = await inputList(ctx, i18n.t("toolsInput"), reviewer.tools ?? DEFAULT_REVIEW_TOOLS, true);
       if (value !== undefined) reviewer.tools = value.includes(ALL_TOOLS) ? [ALL_TOOLS] : value;
-    } else if (choice === choices[5]) {
+    } else if (choice === choices[REVIEWER_TRIGGER_CHOICE_INDEX]) {
       const value = await ctx.ui.select(i18n.t("triggerInput"), REVIEW_TRIGGERS);
       if (value) reviewer.trigger = value as ReviewTrigger;
     } else if (choice === choices[REVIEWER_CONDITION_CHOICE_INDEX]) {
@@ -860,6 +1149,25 @@ async function addReviewer(
 ): Promise<boolean> {
   const name = await ctx.ui.input(i18n.t("reviewerName"), `reviewer-${reviewers.length + 1}`);
   if (!name?.trim()) return false;
+  const choices = backendChoice({ model: i18n.t("backendModel"), typesafe: i18n.t("backendTypesafe") });
+  const backend = choices.resolve((await ctx.ui.select(i18n.t("backendInput"), choices.labels)) ?? "");
+  if (!backend) return false;
+  if (backend === TYPE_SAFE_BACKEND) {
+    const model = await ctx.ui.input(i18n.t("typesafeModelInput"), DEFAULT_TYPESAFE_MODEL);
+    if (model === undefined) return false;
+    const rulesFiles = await inputList(ctx, i18n.t("listInput"), [], true);
+    if (!rulesFiles) return false;
+    reviewers.push({
+      name: name.trim(),
+      backend: TYPE_SAFE_BACKEND,
+      typesafeModel: model.trim() || DEFAULT_TYPESAFE_MODEL,
+      rulesFiles,
+      enabled: true,
+      tools: [...DEFAULT_REVIEW_TOOLS],
+      trigger: AFTER_TRIGGER,
+    });
+    return true;
+  }
   const model = await inputModel(ctx, "llm-proxy/LOW");
   if (!model) return false;
   const rulesFiles = await inputList(ctx, i18n.t("listInput"), [], true);
@@ -880,7 +1188,7 @@ async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: strin
 
   while (true) {
     const reviewerChoices = config.reviewers.map(
-      (reviewer) => `${reviewer.enabled === false ? "○" : "●"} ${reviewer.name} · ${reviewer.model}`,
+      (reviewer) => `${reviewer.enabled === false ? "○" : "●"} ${reviewer.name} · ${reviewerModelLabel(reviewer)}`,
     );
     const choices = [
       i18n.t("enabledConfig", { value: config.enabled ? i18n.t("enabled") : i18n.t("disabled") }),

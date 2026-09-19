@@ -19,18 +19,49 @@ const DEFAULT_REVIEW_TOOLS = ["edit", "write"];
 const ALL_TOOLS = "*";
 const REVIEW_TRIGGERS = ["before", "after"] as const;
 const DEFAULT_REVIEW_TRIGGER: ReviewTrigger = "after";
+export const REVIEW_BACKENDS = ["model", "typesafe"] as const;
+/** 未配置 backend 时按对话模型审查，保持旧行为。 */
+const DEFAULT_REVIEW_BACKEND: ReviewBackend = "model";
+/** TypeSafe 模型名默认值；`typesafe/latest` 之类的别名由 TypeSafe 自行解析。 */
+export const DEFAULT_TYPESAFE_MODEL = "jev-latest";
+/** noul 达到该值即认为条款命中；可在规则文件 front matter 里覆盖。 */
+export const DEFAULT_RULE_THRESHOLD = 0.85;
+/** 规则文件去掉扩展名的认得的扩展名。 */
+const RULE_FILE_EXTENSION = /\.(md|markdown|txt)$/i;
 /** Severity that makes one finding actionable, and therefore blocking. */
 const BLOCKING_SEVERITY = "error";
 const INFO_SEVERITY = "info";
 /** Rule group reported by findings the supervisor synthesizes itself. */
 const SUPERVISOR_RULE_GROUP = "supervisor";
+/** 二级标题；用来识别元指令段落边界。 */
+const RULE_SECTION_HEADING = /^##\s+(.+?)\s*$/;
+/** 编号条款：`1. 正文`。同一文件里的编号连续递增。 */
+const CLAUSE_LINE = /^(\d+)\.\s+(\S.*)$/;
+/** 条款正文里的粗体片段当规则名；没有时回退到编号。 */
+const CLAUSE_TITLE = /\*\*(.+?)\*\*/;
+/** 条款开头的历史 severity 标注；本后端不读它，但要从判据里剔掉。 */
+const CLAUSE_SEVERITY_MARK = /^\[(?:error|warning|info)\]\s*/i;
+/**
+ * 元指令段落：讲的是「怎么报告」，不是「什么代码算违规」。
+ * 这些段落里的编号条款不参与判断，否则 `ruleGroup 只能填…` 这类报告要求会被当成代码规则。
+ */
+const META_SECTION_PREFIX = "归属";
 
 export type ReviewStatus = "passed" | "rejected" | "failed" | "skipped";
 export type ReviewTrigger = (typeof REVIEW_TRIGGERS)[number];
+/** 审查引擎：`model` 用 Pi 配置的对话模型，`typesafe` 用 TypeSafe System One 判断。 */
+export type ReviewBackend = (typeof REVIEW_BACKENDS)[number];
+/** 对话模型后端返回的 finding 级别；TypeSafe 后端不分级，命中即阻断。 */
+export type RuleSeverity = "error" | "warning" | "info";
 
 export interface FileEditReviewReviewerConfig {
   name: string;
-  model: string;
+  /** `model` backend 使用，格式为 `provider/model`；`typesafe` backend 不使用。 */
+  model?: string;
+  /** 审查引擎；省略时按 `model` 处理。 */
+  backend?: ReviewBackend;
+  /** `typesafe` backend 使用的 TypeSafe 模型名；省略时为 `jev-latest`。 */
+  typesafeModel?: string;
   /** 兼容旧配置：单个规则文件。 */
   rulesFile?: string;
   /** 新配置：一个 reviewer 一次加载多个规则文件。 */
@@ -55,17 +86,56 @@ export interface FileEditReviewRuleMetadata {
   filePatterns?: string[];
   complexity?: "local" | "context";
   consumers?: string[];
+  /** noul 达到该值即认为条款命中。 */
+  threshold?: number;
+}
+
+/**
+ * 规则文件里的一条编号条款。
+ *
+ * 规则文件是引擎无关的：条款正文就是判据，`## 归属与 severity` 这类元指令段落里的编号不参与判断。
+ * `group` 沿用规则文件自己的叫法（如「必须遵守 1」），所以两个后端的 finding 看起来一致。
+ */
+export interface FileEditReviewRuleClause {
+  /** 判断标识，形式为 `rule_<编号>`，同一文件内唯一。 */
+  id: string;
+  /** 审计和 finding 里显示的规则名，如「必须遵守 1 禁止魔法值」。 */
+  group: string;
+  /** 条款正文去掉 severity 标注后的文本；既当判据也当修复提示。 */
+  text: string;
 }
 
 interface ParsedRuleFile {
   metadata: FileEditReviewRuleMetadata;
   content: string;
-  warning?: string;
+  clauses: FileEditReviewRuleClause[];
+  warnings: string[];
+}
+
+/** 解析中途的条款草稿；正文按行累积，遇到下一条款或下一个二级标题才收尾。 */
+interface ClauseDraft {
+  number: number;
+  section?: string;
+  lines: string[];
+}
+
+/**
+ * TypeSafe 连接设置；写在 config.json 里，不必依赖环境变量。
+ *
+ * 两个字段都可省略，省略时回退到对应环境变量（常量定义在 `typesafe-client.ts`）。
+ */
+export interface FileEditReviewTypeSafeConfig {
+  /** TypeSafe API Key。 */
+  apiKey?: string;
+  /** TypeSafe 端点。 */
+  endpoint?: string;
 }
 
 export interface FileEditReviewConfig {
   enabled: boolean;
   reviewers: FileEditReviewReviewerConfig[];
+  /** TypeSafe 后端共用的连接设置。 */
+  typesafe?: FileEditReviewTypeSafeConfig;
   timeoutSeconds: number;
   maxFileContextChars: number;
   maxRuleLines: number;
@@ -82,6 +152,10 @@ export interface FileEditReviewRule {
   absolutePath: string;
   content: string;
   lineCount: number;
+  /** 规则 front matter 原文；判断后端用它决定规则标识。 */
+  metadata: FileEditReviewRuleMetadata;
+  /** 文件里切出的全部编号条款；元指令段落里的编号不在这里。 */
+  clauses: FileEditReviewRuleClause[];
   warning?: string;
 }
 
@@ -113,6 +187,8 @@ export interface FileEditReviewResult {
   findings?: FileEditReviewFinding[];
   durationMs: number;
   error?: string;
+  /** 该 reviewer 自己产生的警告（例如规则缺判据、行定位被跳过）。 */
+  warnings?: string[];
 }
 
 export interface FileEditReviewAudit {
@@ -160,6 +236,18 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/** 只接受 (0, 1] 的概率阈值；其它值返回 undefined，由调用方明确报告。 */
+function probabilityValue(value: unknown): number | undefined {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) && numeric > 0 && numeric <= 1 ? numeric : undefined;
+}
+
+/** 解析 backend；字段缺失时用默认值，写了非法值返回 undefined 由调用方告警。 */
+function backendValue(value: unknown): ReviewBackend | undefined {
+  if (value === undefined) return DEFAULT_REVIEW_BACKEND;
+  return REVIEW_BACKENDS.find((backend) => backend === value);
+}
+
 function parseModel(value: unknown): string | undefined {
   const model = stringValue(value);
   if (!model) return undefined;
@@ -168,17 +256,50 @@ function parseModel(value: unknown): string | undefined {
 }
 
 /** Normalizes one reviewer while preserving legacy defaults and reporting invalid lifecycle fields. */
+/**
+ * 解析 config.json 顶层的 typesafe 块。
+ *
+ * 不在这里校验字段是否齐全：两个字段都省略时返回 undefined，由连接层回退到环境变量。
+ */
+function parseTypeSafeConfig(value: unknown): FileEditReviewTypeSafeConfig | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const apiKey = stringValue(source.apiKey);
+  const endpoint = stringValue(source.endpoint);
+  if (apiKey === undefined && endpoint === undefined) return undefined;
+  return {
+    ...(apiKey === undefined ? {} : { apiKey }),
+    ...(endpoint === undefined ? {} : { endpoint }),
+  };
+}
+
 function normalizeReviewer(value: unknown, index: number, warnings: string[] = []): FileEditReviewReviewerConfig | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>;
+  const backend = backendValue(source.backend);
+  if (!backend) {
+    warnings.push(i18n.t("invalidBackendConfig", { index }));
+    return undefined;
+  }
   const model = parseModel(source.model);
+  let typesafeModel: string | undefined;
+  if (backend === "typesafe") {
+    typesafeModel = source.typesafeModel === undefined ? DEFAULT_TYPESAFE_MODEL : stringValue(source.typesafeModel);
+    if (!typesafeModel) {
+      warnings.push(i18n.t("invalidTypesafeModelConfig", { index }));
+      return undefined;
+    }
+    if (source.model !== undefined) warnings.push(i18n.t("modelIgnoredForTypesafe", { index }));
+  } else if (!model) {
+    return undefined;
+  }
   const rulesFile = stringValue(source.rulesFile);
   const rulesFiles = Array.isArray(source.rulesFiles)
     ? source.rulesFiles
       .filter((file): file is string => typeof file === "string" && Boolean(file.trim()))
       .map((file) => file.trim())
     : [];
-  if (!model || (Boolean(rulesFile) && rulesFiles.length > 0) || (!rulesFile && rulesFiles.length === 0)) return undefined;
+  if ((Boolean(rulesFile) && rulesFiles.length > 0) || (!rulesFile && rulesFiles.length === 0)) return undefined;
   const filePatterns = Array.isArray(source.filePatterns)
     ? source.filePatterns.filter((pattern): pattern is string => typeof pattern === "string" && Boolean(pattern.trim())).map((pattern) => pattern.trim())
     : [];
@@ -202,7 +323,8 @@ function normalizeReviewer(value: unknown, index: number, warnings: string[] = [
   }
   return {
     name: stringValue(source.name) ?? `reviewer-${index + 1}`,
-    model,
+    // 只在 typesafe 时写入 backend，避免把旧配置改写为带显式 model backend。
+    ...(backend === "typesafe" ? { backend, typesafeModel } : { model }),
     ...(rulesFile ? { rulesFile } : { rulesFiles }),
     enabled: source.enabled !== false,
     filePatterns,
@@ -255,12 +377,13 @@ export function loadFileEditReviewConfig(
   }
 
   const source = raw as Record<string, unknown>;
+  const typesafe = parseTypeSafeConfig(source.typesafe);
   const rawReviewers = Array.isArray(source.reviewers) ? source.reviewers : [];
   const reviewers: FileEditReviewReviewerConfig[] = [];
   rawReviewers.forEach((entry, index) => {
     const reviewer = normalizeReviewer(entry, index, warnings);
     if (!reviewer) {
-      warnings.push(`审查配置 reviewers[${index}] 无效，必须包含 provider/model 格式的 model 和 rulesFile。`);
+      warnings.push(i18n.t("invalidReviewerConfig", { index }));
       return;
     }
     reviewers.push(reviewer);
@@ -274,6 +397,7 @@ export function loadFileEditReviewConfig(
     config: {
       enabled: source.enabled !== false && reviewers.some((reviewer) => reviewer.enabled !== false),
       reviewers,
+      ...(typesafe ? { typesafe } : {}),
       timeoutSeconds: positiveInteger(
         source.timeoutSeconds,
         typeof source.timeoutMs === "number"
@@ -308,19 +432,91 @@ function parseMetadataValue(value: string): string | boolean | undefined {
   return normalized.replace(/^([\"'])(.*)\1$/, "$2");
 }
 
-function parseRuleFile(rawContent: string): ParsedRuleFile {
-  if (!rawContent.startsWith("---\n") && !rawContent.startsWith("---\r\n")) {
-    return { metadata: {}, content: rawContent };
+function normalizeHeading(value: string): string {
+  return value.trim().replace(/[:：]\s*$/, "").toLowerCase();
+}
+
+/** 条款所属的二级标题是否是元指令段落。 */
+function isMetaSection(section: string | undefined): boolean {
+  return section !== undefined && normalizeHeading(section).startsWith(META_SECTION_PREFIX);
+}
+
+/** 从条款正文提取规则名：取第一个粗体片段，没有就用编号。 */
+function clauseLabel(draft: ClauseDraft, section: string | undefined): string {
+  const body = draft.lines.join(" ");
+  const title = CLAUSE_TITLE.exec(body)?.[1]?.trim();
+  const numbered = section === undefined ? `规则 ${draft.number}` : `${section} ${draft.number}`;
+  return title ? `${numbered} ${title}` : numbered;
+}
+
+/**
+ * 把规则文件切成编号条款。
+ *
+ * 规则文件是引擎无关的：不要求 `## 判据`、不要求 severity 标注，也不要求分块标题。
+ * 一条 `N. 正文` 就是一条规则，正文既当判据、也当修复提示；`## 归属与 severity`
+ * 这类元指令段落里编号的是「怎么报告」，不参与判断。
+ */
+function parseRuleClauses(content: string): FileEditReviewRuleClause[] {
+  const drafts: ClauseDraft[] = [];
+  let section: string | undefined;
+  let current: ClauseDraft | undefined;
+  for (const line of content.split(/\r?\n/)) {
+    const heading = line.match(RULE_SECTION_HEADING);
+    if (heading) {
+      section = (heading[1] ?? "").trim();
+      current = undefined;
+      continue;
+    }
+    const clause = line.match(CLAUSE_LINE);
+    if (clause) {
+      current = {
+        number: Number(clause[1]),
+        ...(section === undefined ? {} : { section }),
+        lines: [stripSeverityMark((clause[2] ?? "").trim())],
+      };
+      drafts.push(current);
+      continue;
+    }
+    // 条款正文可能续行；空行和紧跟的缩进行都归上一条，到下一个编号或标题才收尾。
+    if (current && (line.trim() === "" || /^\s+\S/.test(line))) {
+      current.lines.push(line.trim());
+      continue;
+    }
   }
+  return drafts
+    .filter((draft) => !isMetaSection(draft.section))
+    .map((draft) => ({
+      id: `rule_${draft.number}`,
+      group: clauseLabel(draft, draft.section),
+      text: draft.lines.map((line) => line.trim()).filter(Boolean).join(" ").trim(),
+    }))
+    .filter((clause) => clause.text !== "");
+}
+
+/** 剔掉条款开头的 `[error]` / `[warning]` 标注；本后端不分级，标注留在判据里会和行为矛盾。 */
+function stripSeverityMark(value: string): string {
+  return value.replace(CLAUSE_SEVERITY_MARK, "");
+}
+
+function parseRuleFile(rawContent: string): ParsedRuleFile {
+  const warnings: string[] = [];
+  const metadata: FileEditReviewRuleMetadata = {};
+  const bareFile: ParsedRuleFile = {
+    metadata,
+    content: rawContent,
+    clauses: parseRuleClauses(rawContent),
+    warnings,
+  };
+  if (!rawContent.startsWith("---\n") && !rawContent.startsWith("---\r\n")) return bareFile;
 
   const headerEnd = rawContent.search(/\r?\n---\r?\n/);
   if (headerEnd < 0) {
-    return { metadata: {}, content: rawContent, warning: "规则文件 front matter 未找到结束标记 ---，已按普通 Markdown 处理。" };
+    warnings.push(i18n.t("unterminatedFrontMatter"));
+    return bareFile;
   }
 
   const header = rawContent.slice(4, headerEnd);
   const content = rawContent.slice(headerEnd).replace(/^\r?\n---\r?\n/, "");
-  const metadata: FileEditReviewRuleMetadata = {};
   const lists: Record<"filePatterns" | "consumers", string[]> = {
     filePatterns: [],
     consumers: [],
@@ -345,10 +541,20 @@ function parseRuleFile(rawContent: string): ParsedRuleFile {
     if (key === "name" && typeof value === "string") metadata.name = value;
     if (key === "enabled" && typeof value === "boolean") metadata.enabled = value;
     if (key === "complexity" && (value === "local" || value === "context")) metadata.complexity = value;
+    if (key === "threshold") {
+      const threshold = probabilityValue(value);
+      if (threshold === undefined) warnings.push(i18n.t("invalidRuleThreshold", { value: String(value ?? "") }));
+      else metadata.threshold = threshold;
+    }
   }
   if (lists.filePatterns.length > 0) metadata.filePatterns = lists.filePatterns;
   if (lists.consumers.length > 0) metadata.consumers = lists.consumers;
-  return { metadata, content };
+  return {
+    metadata,
+    content,
+    clauses: parseRuleClauses(content),
+    warnings,
+  };
 }
 
 /** Converts the supported glob subset while preserving directory boundaries for a single star. */
@@ -385,6 +591,19 @@ function matchesFilePattern(filePath: string, pattern: string): boolean {
   const normalizedPath = normalizeFilePath(filePath);
   const normalizedPattern = normalizeFilePath(pattern);
   return filePatternToRegExp(normalizedPattern).test(normalizedPath);
+}
+
+/** 审查引擎；未配置时按 `model` 处理。 */
+export function reviewerBackend(reviewer: FileEditReviewReviewerConfig): ReviewBackend {
+  return reviewer.backend ?? "model";
+}
+
+/** 审计卡片和配置界面显示的模型标签；TypeSafe backend 用 `typesafe/<model>` 形式。 */
+export function reviewerModelLabel(reviewer: FileEditReviewReviewerConfig): string {
+  if (reviewerBackend(reviewer) === "typesafe") {
+    return `typesafe/${reviewer.typesafeModel ?? DEFAULT_TYPESAFE_MODEL}`;
+  }
+  return reviewer.model ?? "unknown";
 }
 
 export function reviewerAppliesToFile(
@@ -442,8 +661,16 @@ export function loadReviewRule(
   const lengthWarning = lineCount > maxRuleLines
     ? `规则文件 ${reviewer.rulesFile} 有 ${lineCount} 行，超过 ${maxRuleLines} 行；审查可能变慢且效果下降，建议拆分规则文件。`
     : undefined;
-  const warning = [parsed.warning, lengthWarning].filter(Boolean).join(" ") || undefined;
-  return { reviewer: effectiveReviewer, absolutePath, content, lineCount, warning };
+  const warning = [...parsed.warnings, lengthWarning].filter(Boolean).join(" ") || undefined;
+  return {
+    reviewer: effectiveReviewer,
+    absolutePath,
+    content,
+    lineCount,
+    metadata: parsed.metadata,
+    clauses: parsed.clauses,
+    warning,
+  };
 }
 
 export function loadReviewRules(
@@ -459,7 +686,7 @@ export function loadReviewRules(
     } catch (error) {
       errors.push({
         name: reviewer.name,
-        model: reviewer.model,
+        model: reviewerModelLabel(reviewer),
         rulesFile,
         status: "failed",
         durationMs: 0,
