@@ -31,8 +31,8 @@ import {
 import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import type { HeaderStyler } from "./header-style.js";
+import { GROUP_GUTTER, GUTTER_GAP, RUN_GUTTER } from "./header-style.js";
 import { i18n } from "./i18n.js";
-import { PREFIX_TAG } from "./source-tag.js";
 import {
 	resolveAssistantMessageRender,
 	resolveRunHeader,
@@ -46,21 +46,10 @@ import type { CleanModeConfig, CleanModeState } from "./types.js";
 const COLLAPSED_CHEVRON = "▶";
 /** 展开态的箭头：实心下三角，提示点击后收起。 */
 const EXPANDED_CHEVRON = "▼";
-/** 折叠头左缩进：运行级与动作组的文案共用同一个起始列。 */
-const HEADER_INDENT = "  ";
-/**
- * 来源前缀与文案之间的间距。
- *
- * 两级折叠头的文案列必须相等，所以前缀插在文案前面而不是后面：行首固定是
- * `缩进 + [clean] + 空格`，两级前缀宽度相同，文案自然对齐。
- */
-const PREFIX_GAP = " ";
 /** 折叠头文案与箭头之间的间距。 */
 const ARROW_GAP = " ";
 /** 文本被截断时的省略号。 */
 const TRUNCATION_ELLIPSIS = "…";
-/** 组头标签右侧的收尾留白，让底色块收得不至于贴着箭头。 */
-const CHIP_TRAILING_PAD = " ";
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
@@ -204,11 +193,6 @@ export interface ComponentPatchDeps {
 	 */
 	getActivityDetailLines: () => string[];
 	/**
-	 * 接在当前动作组组头文案后面的分类计数后缀，例如 ` · 读取 3 · 命令 2`；
-	 * 没有计数时为空串。只用在当前组上 —— 历史组显示本轮的累计数字是错的。
-	 */
-	getActivityCounters: () => string;
-	/**
 	 * 轮首槽位要展示的状态行：只含「在处理 + 跑了多久」，最多一行。
 	 *
 	 * 轮首只承担「整轮一共跑了多久」；思考、正在跑什么、分类计数都属于最新动作那一头，
@@ -220,6 +204,7 @@ export interface ComponentPatchDeps {
 	 *
 	 * 活动块接在当前组的最后一条可见行下面（而不是挂在整轮最上面），所以它总是紧跟在
 	 * 最新动作旁边；靠组号区分当前组，历史组不会再显示一遍活动行。
+	 * 分类计数也挂在活动块上，所以这个判断同时保证了「计数只报当前组」。
 	 */
 	isCurrentActionGroup: (groupId: number) => boolean;
 	/**
@@ -239,45 +224,27 @@ function classifyAssistantMessage(hasToolCalls: boolean): AssistantMessageKind {
 }
 
 /**
- * 组装运行级折叠头。「用时」在左，展开快捷键右对齐，整行铺底色成一条横带。
+ * 组装运行级折叠头。「用时」在左，箭头紧随其后。
  *
- * 底色是这级折叠头的主要识别信号：正文从不铺底色，所以一眼就能看出「这里收了一整轮」。
- * 行首带 `[clean]` 来源前缀，与提示块、动作组头保持同一种版式。
+ * 行首是粗竖条 `▌`（加粗 + 主文字色），整条左侧轨道最强的一档：正文从不画竖条，
+ * 所以一眼就能看出「这里收了一整轮」。
  */
 function buildRunHeaderLine(
 	host: AssistantMessageHost,
 	deps: ComponentPatchDeps,
-	width: number,
 ): string {
 	const duration = formatDuration(deps.getRunDuration(host) ?? 0);
 	const chevron = deps.getState().collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
 	// 箭头紧跟在文案右边：先看到「这一轮用了多久」，紧接着就知道这行能点开。
-	const line = [
-		HEADER_INDENT,
-		deps.styler.muted(PREFIX_TAG),
-		PREFIX_GAP,
-		deps.styler.primary(i18n.t("runHeader", { duration })),
+	return [
+		deps.styler.bold(deps.styler.primary(RUN_GUTTER)),
+		GUTTER_GAP,
+		deps.styler.bold(deps.styler.primary(i18n.t("runHeader", { duration }))),
 		" ",
 		deps.styler.muted(i18n.t("runHeaderSteps", { count: String(deps.getRunSteps(host) ?? 0) })),
 		ARROW_GAP,
 		deps.styler.accent(chevron),
 	].join("");
-
-	return deps.styler.band(line, width);
-}
-
-/**
- * 给运行级状态行铺上底色。
- *
- * 屏幕上只有这一条铺底色的横条（运行中是在处理 + 耗时，结束后是「用时 …」）。活动块由
- * 普通行组成（只有竖折前缀，不铺底色），因此这里不需要判断首行是哪一种。
- */
-function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDeps): string[] {
-	const [head, ...rest] = lines;
-	if (head === undefined) {
-		return lines;
-	}
-	return [deps.styler.band(head, width), ...rest];
 }
 
 /**
@@ -297,14 +264,15 @@ function createRunHeaderComponent(
 	deps: ComponentPatchDeps,
 ): Component {
 	const content: Component = {
-		/** 轮首槽位：运行中只画整轮时间，已结束时只画耗时横条。 */
+		/** 轮首槽位：运行中只画整轮时间，已结束时只画耗时头。 */
 		render: (width: number): string[] => {
-			// 轮首只回答「整轮一共跑了多久」：运行中是状态横条（在处理 + 耗时），
+			// 轮首只回答「整轮一共跑了多久」：运行中是状态行（在处理 + 耗时），
 			// 结束后是「用时 N 步」。活动块不在顶部，它接在最新动作的下面。
 			const status = deps.isCurrentRunHost(host) ? deps.getRunStatusLines() : [];
 			if (status.length > 0) {
-				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
-				return [HEADER_LEADING_BLANK, ...bandActivityHead(status, width, deps)];
+				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画耗时头。
+				// 状态行与耗时头同列同款（都是 `▌ + 文案`），所以这里不用再包装一层。
+				return [HEADER_LEADING_BLANK, ...status];
 			}
 
 			const decision = resolveRunHeader({
@@ -312,7 +280,7 @@ function createRunHeaderComponent(
 				durationMs: deps.getRunDuration(host),
 				collapsed: deps.getState().collapsed,
 			});
-			return decision.visible ? [HEADER_LEADING_BLANK, buildRunHeaderLine(host, deps, width)] : [];
+			return decision.visible ? [HEADER_LEADING_BLANK, buildRunHeaderLine(host, deps)] : [];
 		},
 		/** 无缓存状态，渲染时实时读取当前折叠状态与活动行。 */
 		invalidate: () => {},
@@ -516,35 +484,24 @@ function buildSummaryLabel(group: ToolRowGroupInfo, deps: ComponentPatchDeps): s
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
  * 输出又不丢失「刚才做了什么」；两条以上才汇总成「主词 · N 步」。
  *
- * 对齐口径：标签底色的左边缘与运行级横条的左边缘同列（都是第 0 列），行首都是
- * `缩进 + [clean] + 空格`，所以标签里的文案与折叠头文案也同列（都是第 10 列），
- * 箭头和折叠头一样紧跟在文案右边且留在底色内。
- * 底色只包住这一行自己的内容，不再另加左内边距，否则底色块会比横条右缩一格。
+ * 行首是细竖条 `│`（弱化色），与运行级粗竖条同列，构成一条连续的左侧轨道；
+ * 层级在这里靠竖直的粗细与色档区分，而不是底色块。
+ *
+ * 分类计数不在这里：它跟着活动块走作为尾注，免得组头、活动块、轮首三处都在报进度。
  */
 function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
 	const showsStepCount = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY;
 	const label = showsStepCount
 		? buildSummaryLabel(group, deps)
 		: (group.summary ?? i18n.t("actionGroupHeader", { count: String(group.groupSize) }));
-	// 分类计数接在步数后面（`探索 · 12 步 · 读取 3 · 命令 2`），不另占一行。
-	// 只有「汇总成 N 步」的组头才带它：单条动作的组头已经写清做了什么，再加个「· 命令 1」是废话。
-	// 也只给当前组带：计数是本轮累计值，历史组显示它会报出不属于它的数字。
-	const counters =
-		showsStepCount && deps.isCurrentActionGroup(group.membership.groupId)
-			? deps.getActivityCounters()
-			: "";
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
-	const content = [
-		HEADER_INDENT,
-		deps.styler.muted(PREFIX_TAG),
-		PREFIX_GAP,
+	return [
+		deps.styler.muted(GROUP_GUTTER),
+		GUTTER_GAP,
 		label,
-		counters,
 		ARROW_GAP,
 		deps.styler.accent(chevron),
-		CHIP_TRAILING_PAD,
 	].join("");
-	return deps.styler.chip(content);
 }
 
 /**
