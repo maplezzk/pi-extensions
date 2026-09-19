@@ -16,7 +16,7 @@ pi install npm:pi-session-tools
 
 - 当 bash 管道中使用 `grep`、`tail` 或 `head` 过滤输出时，将过滤前的完整输出写入系统临时目录下的 `pi-pipe-cache/`，并在结果中给出路径，可以直接对缓存文件重新过滤而不用重跑命令。
 - 提供 `session_log`：按原索引列出 active branch 的用户消息和可选起点。已经作为压缩起点保留的 user anchor 仍可重复选择，从而把上次快照之后新增的自动续接内容折叠进下一份快照；原分支仍可通过 `/tree` 找回。
-- 提供 `session_squash`：接收总结和接续模式，并把从指定消息开始的对话压缩为该总结。原对话不删，可通过 Pi 的 `/tree` 找回。生成的快照消息默认收起成一行（`▸ 压缩快照 · 从 #N 起 · 压缩前 X tokens`），按 `Ctrl+O` 或点击这一行展开完整快照；这样压缩前的最后一条回答不会被一份长快照顶出屏幕。展开时只显示任务状态正文，不显示只给接手模型看的指令段。
+- 提供 `session_squash`：接收总结和接续模式，并把从指定消息开始的对话压缩为该总结。原对话不删，可通过 Pi 的 `/tree` 找回。生成的快照消息默认收起成一行（`[session] ▶ 压缩快照 · 从 #N 起 · 压缩前 X tokens`），按 `Ctrl+O` 或点击这一行展开完整快照（展开后箭头变 `▼`）；这样压缩前的最后一条回答不会被一份长快照顶出屏幕。行首的 `[session]` 与其它扩展的提示块是同一种来源前缀；展开方向用箭头而不是写 `Ctrl+O`，因为全屏与常规模式在渲染时区分不出来，箭头在两种模式下都成立。展开时只显示任务状态正文，不显示只给接手模型看的指令段。
 - 总结由主 agent 基于完整对话上下文生成，并直接随 `session_squash` 调用提交（不发独立 LLM 请求，也没有 finalize 步骤）；被压缩范围内修改过的文件会自动附上，读取过的文件不会批量复制到快照。
 
 调用 `session_squash` 前先调用 `session_log`，用已完成回合的编号作为 `from`，并把完整任务状态快照传给 `session_squash`。summary 支持自由格式，不会因缺少标题、章节或 `User`/`Agent` 时间线而拒绝压缩；如需便于接手，可以按 `# Handoff: <topic>`、`Timeline of user and agent work`、`Current focus`、`Errors and resolutions`、`Code and artifact state`、`Environment and repository state`、`Completed work and decisions`、`Active issues and next actions`、`Important context and boundaries` 和 `Suggested skills` 组织。若未提供标题或时间线，扩展会自动补齐一份标题或紧凑事实时间线；自动时间线只保留 User 与 Agent 的文本，不记录工具调用或工具结果。选中的 user turn 会作为新分支锚点保留，以维持后续 user turn 索引稳定；任务状态快照作为被压缩后缀的权威状态，并在下一轮模型上下文中以 Pi 原生 compaction summary 语义呈现，明确告知接手 Agent 从快照继续。该锚点会继续出现在后续 `session_log` 中，可重复选择，从而让新快照吸收“上次快照之后、下一条 user turn 之前”的自动续接内容；也可以从更早索引重新压缩更大范围。

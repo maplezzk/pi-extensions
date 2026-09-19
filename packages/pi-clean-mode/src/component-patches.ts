@@ -30,6 +30,7 @@ import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import type { HeaderStyler } from "./header-style.js";
 import { i18n } from "./i18n.js";
+import { PREFIX_TAG } from "./source-tag.js";
 import {
 	resolveAssistantMessageRender,
 	resolveRunHeader,
@@ -45,6 +46,13 @@ const COLLAPSED_CHEVRON = "▶";
 const EXPANDED_CHEVRON = "▼";
 /** 折叠头左缩进：运行级与动作组的文案共用同一个起始列。 */
 const HEADER_INDENT = "  ";
+/**
+ * 来源前缀与文案之间的间距。
+ *
+ * 两级折叠头的文案列必须相等，所以前缀插在文案前面而不是后面：行首固定是
+ * `缩进 + [clean] + 空格`，两级前缀宽度相同，文案自然对齐。
+ */
+const PREFIX_GAP = " ";
 /** 折叠头文案与箭头之间的间距。 */
 const ARROW_GAP = " ";
 /** 组头标签右侧的收尾留白，让底色块收得不至于贴着箭头。 */
@@ -199,6 +207,7 @@ function classifyAssistantMessage(hasToolCalls: boolean): AssistantMessageKind {
  * 组装运行级折叠头。「用时」在左，展开快捷键右对齐，整行铺底色成一条横带。
  *
  * 底色是这级折叠头的主要识别信号：正文从不铺底色，所以一眼就能看出「这里收了一整轮」。
+ * 行首带 `[clean]` 来源前缀，与提示块、动作组头保持同一种版式。
  */
 function buildRunHeaderLine(
 	host: AssistantMessageHost,
@@ -210,6 +219,8 @@ function buildRunHeaderLine(
 	// 箭头紧跟在文案右边：先看到「这一轮用了多久」，紧接着就知道这行能点开。
 	const line = [
 		HEADER_INDENT,
+		deps.styler.muted(PREFIX_TAG),
+		PREFIX_GAP,
 		deps.styler.primary(i18n.t("runHeader", { duration })),
 		" ",
 		deps.styler.muted(i18n.t("runHeaderSteps", { count: String(deps.getRunSteps(host) ?? 0) })),
@@ -470,8 +481,9 @@ function buildSummaryLabel(group: ToolRowGroupInfo, deps: ComponentPatchDeps): s
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
  * 输出又不丢失「刚才做了什么」；两条以上才汇总成「主词 · N 步」。
  *
- * 对齐口径：标签底色的左边缘与运行级横条的左边缘同列（都是第 0 列），标签里的
- * 文案与折叠头文案同列（都是第 2 列），箭头和折叠头一样紧跟在文案右边且留在底色内。
+ * 对齐口径：标签底色的左边缘与运行级横条的左边缘同列（都是第 0 列），行首都是
+ * `缩进 + [clean] + 空格`，所以标签里的文案与折叠头文案也同列（都是第 10 列），
+ * 箭头和折叠头一样紧跟在文案右边且留在底色内。
  * 底色只包住这一行自己的内容，不再另加左内边距，否则底色块会比横条右缩一格。
  */
 function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
@@ -489,6 +501,8 @@ function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatch
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
 	const content = [
 		HEADER_INDENT,
+		deps.styler.muted(PREFIX_TAG),
+		PREFIX_GAP,
 		label,
 		counters,
 		ARROW_GAP,

@@ -19,6 +19,7 @@ import {
 	type ActivityRenderInput,
 } from "../src/activity.ts";
 import { i18n } from "../src/i18n.ts";
+import { PREFIX_TAG } from "../src/source-tag.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 /** 透明的取色能力，便于断言明文。 */
@@ -220,6 +221,7 @@ test("轮首状态行只报运行级时间：状态与耗时，不带计数与�
 
 	assert.equal(lines.length, 1, `轮首只应有一行：${lines.join("\n")}`);
 	const line = lines[0] ?? "";
+	assert.ok(line.includes(PREFIX_TAG), `轮首应带来源前缀：${line}`);
 	assert.ok(line.includes(i18n.t("activityWorking")), `应说明正在处理：${line}`);
 	assert.ok(line.includes("42s"), `应带耗时：${line}`);
 	assert.ok(
