@@ -29,6 +29,7 @@ import { installComponentPatches } from "../src/component-patches.ts";
 import { formatDuration } from "../src/duration.ts";
 import { createHeaderStyler, type ThemePainter } from "../src/header-style.ts";
 import { i18n } from "../src/i18n.ts";
+import { PREFIX_TAG } from "../src/source-tag.ts";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "../src/types.ts";
 
 /** 渲染宽度。 */
@@ -81,6 +82,8 @@ const TOOL_CWD = "/tmp";
 const HEADER_ROW = 1;
 /** 两级折叠头共用的左缩进列数：组头文案不再比运行级多缩一级。 */
 const HEADER_INDENT_COLUMNS = 2;
+/** 文案列：缩进 + `[clean]` 来源前缀 + 一个空格；两级折叠头都从这一列起写文案。 */
+const HEADER_LABEL_COLUMNS = HEADER_INDENT_COLUMNS + PREFIX_TAG.length + 1;
 /** 展开态箭头：实心下三角。 */
 const EXPANDED_CHEVRON = "▼";
 /** 收起态箭头：实心右三角；动作组默认就是收起态。 */
@@ -369,8 +372,8 @@ test("组头带上当前组的分类计数后缀", () => {
 		);
 		assert.equal(
 			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
-			HEADER_INDENT_COLUMNS,
-			"计数后缀不能把组头文案挤离缩进列",
+			HEADER_LABEL_COLUMNS,
+			"计数后缀不能把组头文案挤离文案列",
 		);
 		assertChevronFollowsLabel(
 			groupHeader,
@@ -843,7 +846,15 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 		);
 		assert.ok(runHeader, "前置条件：应渲染出运行级折叠头");
 
-		// 箭头挪到文案右边后，左侧只剩文案；两级文案必须同列，否则看着还是没对齐。
+		// 两级行首都带来源前缀，版式完全一致，而且是「前缀 + 空格 + 文案」紧接着的。
+		assert.ok(
+			runHeader.includes(`${PREFIX_TAG} ${RUN_HEADER_LABEL}`),
+			`运行级折叠头应是「前缀 + 空格 + 文案」：${runHeader}`,
+		);
+		assert.ok(
+			groupHeader.includes(`${PREFIX_TAG} ${GROUP_HEADER_FRAGMENT}`),
+			`组头应是「前缀 + 空格 + 文案」：${groupHeader}`,
+		);
 		assert.equal(
 			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
 			columnOf(runHeader, RUN_HEADER_LABEL),
@@ -851,8 +862,8 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 		);
 		assert.equal(
 			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
-			HEADER_INDENT_COLUMNS,
-			"组头文案应顶在折叠头缩进列上",
+			HEADER_LABEL_COLUMNS,
+			"组头文案应顶在文案列上",
 		);
 
 		// 箭头紧跟在文案右边（只隔一格），而且不再显示快捷键提示。

@@ -27,6 +27,7 @@
 
 import { formatDuration } from "./duration.js";
 import { i18n } from "./i18n.js";
+import { PREFIX_TAG } from "./source-tag.js";
 
 /**
  * 思考动画帧：半填充圆按顺时针转，四帧一循环。
@@ -386,13 +387,18 @@ export function formatActivityCountersSuffix(counters: ActivityCounters): string
  *
  * 这一行由渲染层整行铺上底色，和运行结束后的「用时」横条共用同一列与同一套视觉，
  * 因此它是整轮最上面那个槽位里唯一的内容，越往下的细节都不归它。
+ *
+ * 行首带 `[clean]` 来源前缀，与「用时」横条、动作组头保持同一种版式；
+ * 前缀后面只隔一个空格，后续分段才用 `·` 连接，免得读成「[clean] 是一个分段」。
  */
 function buildRunStatusLine(input: ActivityRenderInput): string {
 	const { snapshot, nowMs, frame, animated, paint } = input;
 	const glyph = activityGlyph("working", frame, animated);
 	const label = snapshot.running.length > 1 ? i18n.t("activityParallel") : i18n.t("activityWorking");
 
-	const parts = [`${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, label))}`];
+	const parts = [
+		`${paint.fg(COLOR_DETAIL, PREFIX_TAG)} ${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, label))}`,
+	];
 	if (snapshot.startedAtMs !== undefined) {
 		parts.push(paint.fg(COLOR_DETAIL, formatDuration(nowMs - snapshot.startedAtMs)));
 	}
