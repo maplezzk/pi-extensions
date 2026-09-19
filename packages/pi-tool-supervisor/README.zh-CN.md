@@ -40,6 +40,32 @@
 
 API Key 优先从 `config.json` 顶层的 `typesafe.apiKey` 读取，没配时回退到 `TYPESAFE_API_KEY` 环境变量；`typesafe.endpoint` 同理，没配时回退到 `TYPESAFE_ENDPOINT`，都没有就用官方地址。key 缺失、请求失败或规则文件切不出条款都会产生可见的 `failed` 审计条目，不会阻断工具，与对话模型审查失败时的行为一致。
 
+#### 怎么启用
+
+1. 确保装的是带本后端的版本（`pi update --extensions`）。
+2. 在 `config.json` 顶层加 TypeSafe 连接设置（`endpoint` 可省略，默认官方地址）：
+
+```json
+"typesafe": {
+  "apiKey": "<your-typesafe-api-key>"
+}
+```
+
+3. 把要切换的 reviewer 改成 `typesafe` 引擎（`model` 字段要去掉）：
+
+```json
+{
+  "name": "code-taste",
+  "backend": "typesafe",
+  "typesafeModel": "jev-latest",
+  "rulesFiles": ["/absolute/path/to/javascript-typescript.md"],
+  "tools": ["edit", "write"],
+  "trigger": "after"
+}
+```
+
+规则文件不用动。改完后重启 Pi 会话（或 `/reload`）生效；先挑一个规则文件试几天，看误报和漏报再扩到其他 reviewer。
+
 #### 它怎么读你的规则文件
 
 ```markdown

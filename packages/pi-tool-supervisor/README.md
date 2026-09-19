@@ -39,6 +39,32 @@ The `typesafe` backend turns every numbered clause of a rule file into one Noul 
 
 The API key is read from `typesafe.apiKey` in `config.json` first and falls back to the `TYPESAFE_API_KEY` environment variable; `typesafe.endpoint` falls back to `TYPESAFE_ENDPOINT` and then to the official endpoint. A missing key, a failed request, or a rule file with no clause to judge produces a visible `failed` audit entry and does not block the tool, which matches how a failed chat-model review behaves.
 
+#### Enabling it
+
+1. Make sure the installed version carries this backend (`pi update --extensions`).
+2. Add the TypeSafe connection settings at the top level of `config.json` (`endpoint` is optional and defaults to the official endpoint):
+
+```json
+"typesafe": {
+  "apiKey": "<your-typesafe-api-key>"
+}
+```
+
+3. Switch the reviewer you want to the `typesafe` engine (drop the `model` field):
+
+```json
+{
+  "name": "code-taste",
+  "backend": "typesafe",
+  "typesafeModel": "jev-latest",
+  "rulesFiles": ["/absolute/path/to/javascript-typescript.md"],
+  "tools": ["edit", "write"],
+  "trigger": "after"
+}
+```
+
+No rule file changes are needed. Restart the Pi session (or `/reload`) to apply it; start with one rule file for a few days and watch for false positives and misses before switching the rest.
+
 #### How it reads your rule file
 
 ```markdown
