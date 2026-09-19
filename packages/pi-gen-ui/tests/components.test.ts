@@ -277,7 +277,9 @@ test("named colors and hex colors become ANSI, unknown names are ignored", () =>
   const render = (color: string): string =>
     new SpecView({ spec: makeSpec("root", { root: { type: "Text", props: { text: "x", color } } }) }).render(20)[0];
 
-  assert.match(render("red"), /^\u001b\[31mx\u001b\[0m$/);
-  assert.match(render("#ff0000"), /^\u001b\[38;2;255;0;0mx\u001b\[0m$/);
+  // Colors close with 39 (foreground off), not a full reset: `\x1b[0m` would
+  // clear the background Pi paints behind the tool result.
+  assert.match(render("red"), /^\u001b\[31mx\u001b\[39m$/);
+  assert.match(render("#ff0000"), /^\u001b\[38;2;255;0;0mx\u001b\[39m$/);
   assert.equal(render("chartreuse"), "x");
 });

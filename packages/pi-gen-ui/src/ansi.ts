@@ -6,9 +6,18 @@
  * same so a spec keeps its intended colors instead of being remapped onto Pi's
  * semantic theme tokens, which have no magenta/cyan/blue equivalents. Theme
  * tokens are used only for chrome the spec does not color itself.
+ *
+ * Runs close with *selective* SGR resets rather than `\x1b[0m`. A full reset also
+ * clears the background, and Pi paints its own background behind a tool result,
+ * so one `\x1b[0m` mid-line made everything after it fall back to the terminal's
+ * default background. Only the attributes a run actually turned on are undone
+ * here, leaving the ambient background intact.
  */
 
-const RESET = "\x1b[0m";
+/** Undo only the foreground color, keeping background and attributes. */
+const RESET_FG = "\x1b[39m";
+/** Undo only the background color, keeping foreground and attributes. */
+const RESET_BG = "\x1b[49m";
 
 /** Named foreground SGR codes, matching Ink's `color` vocabulary. */
 const NAMED_FG: Readonly<Record<string, number>> = {
@@ -76,14 +85,14 @@ function resolveSgr(color: string, background: boolean): string | undefined {
 export function fg(color: string | null | undefined, text: string): string {
   if (!color) return text;
   const sgr = resolveSgr(color, false);
-  return sgr ? `\x1b[${sgr}m${text}${RESET}` : text;
+  return sgr ? `\x1b[${sgr}m${text}${RESET_FG}` : text;
 }
 
 /** Wrap text in a background color. Unsupported colors return the text unchanged. */
 export function bg(color: string | null | undefined, text: string): string {
   if (!color) return text;
   const sgr = resolveSgr(color, true);
-  return sgr ? `\x1b[${sgr}m${text}${RESET}` : text;
+  return sgr ? `\x1b[${sgr}m${text}${RESET_BG}` : text;
 }
 
 /** SGR codes for the boolean text attributes json-render exposes. */
@@ -96,9 +105,30 @@ export const SGR = {
   strikethrough: 9,
 } as const;
 
-/** Apply an SGR code to text. */
-export function style(code: number, text: string): string {
-  return `\x1b[${code}m${text}${RESET}`;
+/** The SGR code that turns each attribute back off, without touching colors. */
+const ATTRIBUTE_OFF: Readonly<Record<number, number>> = {
+  [SGR.bold]: 22,
+  [SGR.dim]: 22,
+  [SGR.italic]: 23,
+  [SGR.underline]: 24,
+  [SGR.inverse]: 27,
+  [SGR.strikethrough]: 29,
+};
+
+/** Attribute codes `style` understands. Anything else has no safe "off" code. */
+type AttributeCode = (typeof SGR)[keyof typeof SGR];
+
+/**
+ * Apply an SGR attribute to text.
+ *
+ * The run closes with the matching attribute-off code so bold, italic, and the
+ * like do not leak past their text. Color and background are deliberately left
+ * alone: a `\x1b[0m` here would clear Pi's tool-result background. The parameter
+ * is narrowed to the known attributes because an unknown code has no selective
+ * counterpart, and falling back to a full reset would reintroduce that bug.
+ */
+export function style(code: AttributeCode, text: string): string {
+  return `\x1b[${code}m${text}\x1b[${ATTRIBUTE_OFF[code]}m`;
 }
 
 /** OSC 8 hyperlink; terminals without support ignore the escapes and show the label. */

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { bg, fg, SGR, style } from "../src/ansi.ts";
+import { SpecView } from "../src/view.ts";
 import { makeSpec, renderText } from "./helpers.ts";
 
 test("repeat expands one container into one block per state item", () => {
@@ -107,4 +109,52 @@ test("specs with a missing root render nothing and explain why", () => {
   const { lines, warnings } = renderText({ root: "", elements: {} } as never, 30);
   assert.deepEqual(lines, []);
   assert.match(warnings.join("\n"), /no "root" key/);
+});
+
+/**
+ * A full SGR reset also clears the background, and Pi paints its own background
+ * behind a tool result. One `\x1b[0m` mid-line therefore dropped the panel
+ * background for the rest of that line, so trailing padding rendered in the
+ * terminal default color. Styled runs must close with selective resets instead.
+ */
+test("styled output never emits a full SGR reset", () => {
+  const spec = makeSpec("card", {
+    card: {
+      type: "Card",
+      props: { title: "Deploy", padding: 1 },
+      children: ["heading", "table", "progress", "badge"],
+    },
+    heading: { type: "Heading", props: { text: "Deploy" } },
+    table: {
+      type: "Table",
+      props: {
+        borderStyle: "single",
+        columns: [
+          { header: "Service", key: "svc", width: 12 },
+          { header: "Env", key: "env", width: 8 },
+        ],
+        rows: [{ svc: "api-server", env: "prod" }],
+      },
+    },
+    progress: { type: "ProgressBar", props: { label: "Rollout", progress: 0.67, width: 20 } },
+    badge: { type: "Badge", props: { label: "STABLE", variant: "success" } },
+  });
+
+  for (const width of [40, 80, 120]) {
+    const view = new SpecView({ spec });
+    for (const line of view.render(width)) {
+      assert.ok(!line.includes("\x1b[0m"), `full reset in: ${JSON.stringify(line)}`);
+    }
+  }
+});
+
+test("attributes are closed with their matching off code, colors with 39/49", () => {
+  assert.equal(style(SGR.bold, "x"), "\x1b[1mx\x1b[22m");
+  assert.equal(style(SGR.italic, "x"), "\x1b[3mx\x1b[23m");
+  assert.equal(style(SGR.underline, "x"), "\x1b[4mx\x1b[24m");
+  assert.equal(style(SGR.dim, "x"), "\x1b[2mx\x1b[22m");
+  assert.equal(style(SGR.inverse, "x"), "\x1b[7mx\x1b[27m");
+  assert.equal(style(SGR.strikethrough, "x"), "\x1b[9mx\x1b[29m");
+  assert.equal(fg("red", "x"), "\x1b[31mx\x1b[39m");
+  assert.equal(bg("blue", "x"), "\x1b[44mx\x1b[49m");
 });
