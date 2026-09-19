@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.0.0](https://github.com/maplezzk/pi-extensions/compare/pi-safety-guards-v0.4.0...pi-safety-guards-v1.0.0) (2026-09-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **safety-guards:** presets 字段与 presets/ 目录已删除，旧配置需要把规则直接写进 rules；/config:safety-guards reset 和 TUI 预设菜单已移除。
+* 配置里的 match.detector 已移除，请改用 commands / commandPrefixes / commandPattern，或需要精确判断时用 module。
+
+### Features
+
+* **safety-guards:** 删除预设，规则直接写进 config.json ([451f7e6](https://github.com/maplezzk/pi-extensions/commit/451f7e663118a1d8839890231b5e2d96228ae02d))
+* 安全预设改为读取包内 JSON 规则文件 ([a821ba0](https://github.com/maplezzk/pi-extensions/commit/a821ba08c8a040592c39fedc6496c9a0a311616f))
+* 安全预设改为读取包内 JSON 规则文件 ([58389c2](https://github.com/maplezzk/pi-extensions/commit/58389c2d73747c84e60a42edc4fb7a5fb7e3bf28))
+* 移除 detector，匹配逻辑全部写进配置 ([2ef6d3c](https://github.com/maplezzk/pi-extensions/commit/2ef6d3c6389a62d5399df9083afe2256a6d6efda))
+
+
+### Bug Fixes
+
+* 解释器程序正文不再被当成路径导致安全规则失败 ([23d5a54](https://github.com/maplezzk/pi-extensions/commit/23d5a544e794a30c9a3aabd55e80dadb804c800c))
+* 解释器程序正文不再被当成路径导致安全规则失败 ([caa6d5a](https://github.com/maplezzk/pi-extensions/commit/caa6d5ab5d30057e7a05a477a7f5958a875df9d6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-safety-guards-v0.3.0...pi-safety-guards-v0.4.0) (2026-09-14)
 
 

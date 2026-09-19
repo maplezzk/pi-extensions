@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-resources-v0.6.0...pi-session-resources-v0.7.0) (2026-09-19)
+
+
+### Features
+
+* **session-resources:** fullscreen 鼠标浏览资源按钮 ([#184](https://github.com/maplezzk/pi-extensions/issues/184)) ([03cd458](https://github.com/maplezzk/pi-extensions/commit/03cd4582413f6dfb634ca4f4326113745d38a780))
+* **session-resources:** 面板可点击关闭、计数直达 Tab、列表可滚动 ([80f8004](https://github.com/maplezzk/pi-extensions/commit/80f8004065cb0731b0196f56e6515e72fcf264c3))
+* **session-resources:** 面板可点击关闭、计数直达 Tab、列表可滚动 ([8bc6c74](https://github.com/maplezzk/pi-extensions/commit/8bc6c740197cda4d4be8505af63422870989f7a3))
+
+
+### Bug Fixes
+
+* **session-resources:** 关闭入口从标题栏移到提示行，✕ 关闭 文字可点 ([1d0dcc4](https://github.com/maplezzk/pi-extensions/commit/1d0dcc478401e816ee4e05c1658cae6585f2ee80))
+* **session-resources:** 关闭按钮从标题栏移到提示行，✕ 关闭 文字本身可点 ([4019d3e](https://github.com/maplezzk/pi-extensions/commit/4019d3ecc0b7a027441071fa016204233d3a53ed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-resources-v0.5.0...pi-session-resources-v0.6.0) (2026-09-14)
 
 

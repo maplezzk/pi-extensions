@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.3.0...pi-extensions-tool-display-v1.3.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **tool-display:** 结果渲染中间件覆盖所有扩展注册的工具 ([abfcfbf](https://github.com/maplezzk/pi-extensions/commit/abfcfbf1565895e60e0cbece12fb252eb08f152c))
+* **tool-display:** 结果渲染中间件覆盖所有扩展注册的工具 ([8a4e112](https://github.com/maplezzk/pi-extensions/commit/8a4e112308ddcd8ede8f4907e3ab8e8bd3672ac8)), closes [#187](https://github.com/maplezzk/pi-extensions/issues/187)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [1.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.2.0...pi-extensions-tool-display-v1.3.0) (2026-09-14)
 
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.7.0...pi-session-tools-v0.7.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **pi-session-tools:** 压缩快照消息默认收起为一行 ([0c527bc](https://github.com/maplezzk/pi-extensions/commit/0c527bc000c9f9b9acd5be6a5b6997eb6bbc0e87))
+* **pi-session-tools:** 压缩快照消息默认收起为一行 ([fcf36bd](https://github.com/maplezzk/pi-extensions/commit/fcf36bda442f25d8507d3430165b24e02ac196fd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.6.0...pi-session-tools-v0.7.0) (2026-09-14)
 
 

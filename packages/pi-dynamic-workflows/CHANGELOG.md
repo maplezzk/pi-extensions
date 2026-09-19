@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.4.0...pi-dynamic-workflows-v1.4.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* workflow 子 agent 不再重复展示在 Subagents 面板 ([ad650e6](https://github.com/maplezzk/pi-extensions/commit/ad650e6f1787fb57bc13ffd8f228b1907302ef7c))
+* workflow 子 agent 不再重复展示在 Subagents 面板 ([137b800](https://github.com/maplezzk/pi-extensions/commit/137b800d26e14dcded719c8067cedf8ae5d66456))
+* workflow 子 agent 禁用 caller_ping ([33e29e7](https://github.com/maplezzk/pi-extensions/commit/33e29e7c834b7d94ce3765cd949ce1c6ef03e833))
+* workflow 子 agent 禁用 caller_ping ([b478968](https://github.com/maplezzk/pi-extensions/commit/b478968c894e49fa60c2b415da287c4039662d7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [1.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.3.0...pi-dynamic-workflows-v1.4.0) (2026-09-14)
 
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.6.0...pi-metrics-v0.7.0) (2026-09-19)
+
+
+### Features
+
+* **pi-metrics:** 显示时机可配置，默认改成停下后汇总一行 ([0c66c65](https://github.com/maplezzk/pi-extensions/commit/0c66c6597a6462ccc60310ef9b1ef9adfa58d0a7))
+* **pi-metrics:** 显示时机可配置，默认改成停下后汇总一行 ([97afc11](https://github.com/maplezzk/pi-extensions/commit/97afc114f997b01b782668eab694582f98c478fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-metrics-v0.5.0...pi-metrics-v0.6.0) (2026-09-14)
 
 

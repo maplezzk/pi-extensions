@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-notifications-v0.4.0...pi-notifications-v0.4.1) (2026-09-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
 ## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-notifications-v0.3.0...pi-notifications-v0.4.0) (2026-09-14)
 
 

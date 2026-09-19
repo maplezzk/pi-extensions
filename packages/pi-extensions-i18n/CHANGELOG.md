@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.6.0...pi-extensions-i18n-v0.7.0) (2026-09-19)
+
+
+### Features
+
+* **pi-extensions-i18n:** 提示块支持全屏点击展开 ([cdfe6e9](https://github.com/maplezzk/pi-extensions/commit/cdfe6e9c866b051f5d8bfe7155c7af31f06ed6ac))
+
+
+### Bug Fixes
+
+* **pi-auto-goal:** 等后台任务时判为可停止，判定默认只看最后输出 ([bc0c280](https://github.com/maplezzk/pi-extensions/commit/bc0c28017bf9db1fd583c431a81bf6c90dd278c0))
+* 判定提示写清置信度百分比并换双宽图标 ([113eae9](https://github.com/maplezzk/pi-extensions/commit/113eae95774af53af9f0ec39b403b67b3d16d6cc))
+* 判定提示写清置信度百分比并换双宽图标 ([13d0ea0](https://github.com/maplezzk/pi-extensions/commit/13d0ea0e1bea16754a83b9961eff8e32a330b420))
+
 ## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-i18n-v0.5.0...pi-extensions-i18n-v0.6.0) (2026-09-14)
 
 

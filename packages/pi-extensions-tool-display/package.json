@@ -1,6 +1,6 @@
 {
   "name": "pi-extensions-tool-display",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Pi tool display host and shared result-rendering protocol for extensions",
   "type": "module",
   "main": "./index.ts",
@@ -48,7 +48,7 @@
     "tool-display"
   ],
   "dependencies": {
-    "pi-extensions-i18n": "^0.6.0"
+    "pi-extensions-i18n": "^0.7.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.80.0",
