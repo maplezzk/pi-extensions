@@ -52,21 +52,14 @@ import {
   type TailCompactionData,
   type TailStartErrorCode,
 } from "./session-tail-compaction-utils.ts";
+import { NOTICE_SOURCE } from "./source-tag.ts";
 import { i18n } from "./i18n.ts";
 import { registerSquashMessageRenderer } from "./squash-message-renderer.ts";
 import {
   notifyWithSource,
   type NoticeColor,
   type NoticeLevel,
-  type NoticeSource,
 } from "pi-extensions-i18n";
-
-/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
-const NOTICE_TAG = "session";
-/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
-const NOTICE_COLOR: NoticeColor = "accent";
-/** 本扩展的提示来源。 */
-const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 /**
  * 统一的用户可见提示出口：加来源标签后交给 Pi 的 notify。

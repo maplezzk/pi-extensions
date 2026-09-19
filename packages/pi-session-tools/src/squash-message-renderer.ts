@@ -6,7 +6,10 @@
  * 压缩前的最后一条回答顶出屏幕，用户想回看就得往前翻。
  *
  * 这里改成和 pi-extensions-i18n 提示块一致的行为：
- * - 默认只画一行状态（起点、压缩前 tokens、展开提示），最后一条回答留在视野里；
+ * - 行首带 `[session]` 来源前缀（与提示块、其它扩展块头统一），展开方向用箭头
+ *   （收起 `▶` / 展开 `▼`）而不是写 `Ctrl+O`；全屏与常规模式在渲染时区分不出来，
+ *   箭头在两种模式下都成立（全屏可点、常规模式用 Ctrl+O）。
+ * - 默认只画一行状态（起点、压缩前 tokens），最后一条回答留在视野里；
  * - Ctrl+O（app.tools.expand）或全屏模式下点击这一行，展开完整任务状态；
  * - 展开内容只画给用户看的任务状态正文，剥掉只给接手模型看的 continuation 指令段
  *   （指令仍保留在消息 content 里，模型上下文不受影响）。
@@ -22,6 +25,7 @@ import {
   type MessageRenderer,
 } from "@earendil-works/pi-coding-agent";
 import { i18n } from "./i18n.ts";
+import { NOTICE_COLOR, PREFIX_TAG } from "./source-tag.ts";
 import {
   formatTokens,
   readTailCompactionData,
@@ -41,11 +45,13 @@ const BACKGROUND_COLOR = "customMessageBg";
 /** 摘要块的水平内边距；垂直为 0，收起时只占一行。 */
 const BOX_PADDING_X = 1;
 const BOX_PADDING_Y = 0;
-/** 收起/展开方向箭头。 */
-const COLLAPSED_ARROW = "▸";
-const EXPANDED_ARROW = "▾";
+/** 收起/展开方向箭头；与 pi-extensions-i18n 的提示块、清爽模式的折叠头用同一组字形。 */
+const COLLAPSED_ARROW = "▶";
+const EXPANDED_ARROW = "▼";
 /** 头部各段之间的分隔符。 */
 const META_SEPARATOR = " · ";
+/** 来源前缀与后续内容之间的间距。 */
+const PREFIX_GAP = " ";
 
 /** 鼠标事件类型：只有左键 click 才切换展开态。 */
 const MOUSE_EVENT_CLICK = "click";
@@ -143,23 +149,20 @@ function buildSquashBox(
   return box;
 }
 
-/** 头部一行：箭头 + 标题 + 压缩范围与规模 + 展开方向提示。 */
+/** 头部一行：来源前缀 + 箭头 + 标题 + 压缩范围与规模。 */
 function buildHeaderLine(
   details: TailCompactionData,
   expanded: boolean,
   theme: SquashRenderTheme,
 ): string {
+  const prefix = theme.fg(NOTICE_COLOR, PREFIX_TAG);
   const arrow = theme.fg("accent", expanded ? EXPANDED_ARROW : COLLAPSED_ARROW);
   const title = theme.fg("accent", i18n.t("squashMessageTitle"));
   const meta = theme.fg("dim", i18n.t("squashMessageMeta", {
     from: details.fromUserInputIndex,
     tokens: formatTokens(details.tokensBefore),
   }));
-  const hint = theme.fg(
-    "dim",
-    i18n.t(expanded ? "squashMessageCollapseHint" : "squashMessageExpandHint"),
-  );
-  return `${arrow} ${title}${META_SEPARATOR}${meta}${META_SEPARATOR}${hint}`;
+  return `${prefix}${PREFIX_GAP}${arrow} ${title}${META_SEPARATOR}${meta}`;
 }
 
 /** 可用时把消息包一层鼠标区域，让点击切换展开态。 */

@@ -186,13 +186,5 @@
   "squashMessageMeta": {
     "zh-CN": "从 #{from} 起 · 压缩前 {tokens} tokens",
     "en-US": "from #{from} · {tokens} tokens before"
-  },
-  "squashMessageExpandHint": {
-    "zh-CN": "Ctrl+O 展开",
-    "en-US": "Ctrl+O to expand"
-  },
-  "squashMessageCollapseHint": {
-    "zh-CN": "Ctrl+O 收起",
-    "en-US": "Ctrl+O to collapse"
   }
 }
