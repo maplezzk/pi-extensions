@@ -35,7 +35,6 @@ import {
 	dominantActivityClass,
 	extractOutputTail,
 	extractThoughtHead,
-	formatActivityCountersSuffix,
 	toolActivityDetail,
 	toolActivityLabel,
 	type ActivityCounters,
@@ -112,13 +111,13 @@ const NO_CONTENT_COMPONENT: Component = {
 	invalidate: () => {},
 };
 /**
+/**
  * 主题还没拿到时的占位画笔。
  *
- * 只做排版（横条仍旧截断补齐），不上色；session_start 拿到主题后换成真的着色器。
+ * 只做排版，不上色也不加粗；session_start 拿到主题后换成真的着色器。
  */
 const PLAIN_PAINTER: ThemePainter = {
 	fg: (_color, text) => text,
-	bg: (_color, text) => text,
 	bold: (text) => text,
 };
 
@@ -450,7 +449,6 @@ function installPatches(runtime: Runtime): void {
 		isCurrentRunHost: (host) => runtime.runDurations.isOwner(host),
 		getActivityLines: () => runtime.activityArea.lines,
 		getActivityDetailLines: () => runtime.activityArea.detailLines,
-		getActivityCounters: () => formatActivityCountersSuffix(runtime.activity.counters),
 		getRunStatusLines: () => runtime.activityArea.runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === runtime.actionGroups.currentGroupId,
 		getGroupActivityLabel: (groupId) => lookupGroupActivityLabel(runtime, groupId),

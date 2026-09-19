@@ -40,11 +40,20 @@ const NOTICE_COLORS = [
 /** 提示用到的主题色名。 */
 export type NoticeColor = (typeof NOTICE_COLORS)[number];
 
-/** 一个扩展的提示来源：短标签 + 固定颜色。 */
+/**
+ * 提示来源标签的统一颜色。
+ *
+ * 标签只负责标出来源（文本已经说清了是谁），不负责区分来源 —— 9 个色槽分给
+ * 16 个包必然撞车，一旦撞车颜色就不再有任何定位价值，反而让人以为两个包是同一个。
+ * 参考 Codex / Claude Code / Gemini CLI / lazygit / k9s 等 TUI：没有谁用颜色标注来源。
+ */
+export const NOTICE_TAG_COLOR: NoticeColor = "muted";
+
+/** 一个扩展的提示来源：短标签 + 统一颜色。 */
 export interface NoticeSource {
   /** 展示在消息前的短标签，例如 "naming"。建议用包名去掉 pi- 前缀。 */
   tag: string;
-  /** 该扩展的固定标签颜色，用来在会话里快速定位来源。 */
+  /** 标签颜色；所有扩展统一用 NOTICE_TAG_COLOR，来源靠 tag 文本区分。 */
   color: NoticeColor;
 }
 

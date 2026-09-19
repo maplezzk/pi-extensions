@@ -10,12 +10,19 @@ import {
 	type ActivityUiHost,
 } from "../src/activity-area.ts";
 import {
+	BRANCH_CONTINUATION_PADDING,
+	TREE_INDENT,
+	activityCountersNote,
 	createActivitySnapshot,
 	renderActivityRows,
 	type ActivityRow,
 	type ActivitySnapshot,
 } from "../src/activity.ts";
 import { ACTIVITY_ROWS_DEFAULT } from "../src/types.ts";
+
+/** 树形行前缀（`├─ ` / `└─ `）与续行前缀；从源码常量算，缩进变了断言跟着走。 */
+const BRANCH = `${TREE_INDENT}`;
+const TAIL = `${TREE_INDENT} ${BRANCH_CONTINUATION_PADDING}`;
 
 /** 活动区默认行数，测试里同样用它避免魔法值。 */
 const MAX_ROWS = ACTIVITY_ROWS_DEFAULT;
@@ -283,7 +290,7 @@ test("运行期间活动块行数只增不减，避免内容高度抖动", () =>
 	};
 
 	refreshActivityArea(runtime, fake.host, deps);
-	assert.deepEqual(runtime.lines, ["  └─ 处理中"]);
+	assert.deepEqual(runtime.lines, [`${BRANCH}└─ 处理中`]);
 
 	rows = [
 		{ kind: "item", text: "处理中" },
@@ -292,7 +299,7 @@ test("运行期间活动块行数只增不减，避免内容高度抖动", () =>
 	refreshActivityArea(runtime, fake.host, deps);
 	assert.deepEqual(
 		runtime.lines,
-		["  ├─ 处理中", "  └─ 思考 正在定位 token 失效路径"],
+		[`${BRANCH}├─ 处理中`, `${BRANCH}└─ 思考 正在定位 token 失效路径`],
 		"新行出现时就地长高，收口跟着最后一项走",
 	);
 
@@ -300,7 +307,7 @@ test("运行期间活动块行数只增不减，避免内容高度抖动", () =>
 	refreshActivityArea(runtime, fake.host, deps);
 	assert.deepEqual(
 		runtime.lines,
-		["  └─ 处理中", ""],
+		[`${BRANCH}└─ 处理中`, ""],
 		"行变少时用空行补齐，且补位行不带竖折前缀",
 	);
 });
@@ -320,13 +327,43 @@ test("细节形态去掉动作名后重拼前缀，收口落在剩下的最后�
 
 	assert.deepEqual(
 		runtime.lines,
-		["  ├─ 思考 权衡方案", "  └─ 运行命令 npm test", "     ↳ 12 passing"],
+		[`${BRANCH}├─ 思考 权衡方案`, `${BRANCH}└─ 运行命令 npm test`, `${TAIL}↳ 12 passing`],
 		"完整形态里动作行是最后一项",
 	);
 	assert.deepEqual(
 		runtime.detailLines,
-		["  └─ 思考 权衡方案", "     ↳ 12 passing"],
+		[`${BRANCH}└─ 思考 权衡方案`, `${TAIL}↳ 12 passing`],
 		"去掉动作行后思考接替成为最后一项，分支符要重拼成 └─",
+	);
+});
+
+test("分类计数作尾注接在最后一个非空行尾，两种形态各接一次", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	const rows: ActivityRow[] = [
+		{ kind: "item", text: "思考 权衡方案" },
+		{ kind: "item", text: "运行命令 npm test" },
+		{ kind: "tail", text: "↳ 12 passing" },
+	];
+	const snapshot: ActivitySnapshot = {
+		...activeSnapshot(),
+		counters: { read: 4, search: 3, command: 1, other: 0 },
+	};
+	const deps = createDeps(snapshot, rows);
+	deps.renderLines = () => ({ rows, actionRows: [1] });
+
+	refreshActivityArea(runtime, fake.host, deps);
+
+	const note = activityCountersNote(snapshot.counters);
+	assert.notEqual(note, "", "前置条件：该快照应当产生尾注");
+	assert.ok(
+		(runtime.lines.at(-1) ?? "").endsWith(note),
+		`尾注应接在最后一个非空行尾：${runtime.lines.join("\n")}`,
+	);
+	assert.equal(runtime.lines.length, rows.length, "尾注不另占一行，行数预算不变");
+	assert.ok(
+		(runtime.detailLines.at(-1) ?? "").endsWith(note),
+		`去掉动作行之后尾注要重新接在新的最后一行上：${runtime.detailLines.join("\n")}`,
 	);
 });
 

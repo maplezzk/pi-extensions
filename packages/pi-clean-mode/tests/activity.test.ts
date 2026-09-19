@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	BRANCH_CONTINUATION_PADDING,
+	TREE_INDENT,
 	activityClassLabel,
+	activityCountersNote,
 	activityGlyph,
+	appendActivityCountersNote,
 	buildActivityLines,
 	buildRunStatusLines,
 	classifyToolActivity,
@@ -11,7 +15,7 @@ import {
 	dominantActivityClass,
 	extractOutputTail,
 	extractThoughtHead,
-	formatActivityCountersSuffix,
+	formatActivityCountersNote,
 	renderActivityRows,
 	toolActivityDetail,
 	toolActivityLabel,
@@ -19,7 +23,6 @@ import {
 	type ActivityRenderInput,
 } from "../src/activity.ts";
 import { i18n } from "../src/i18n.ts";
-import { PREFIX_TAG } from "../src/source-tag.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 /** 透明的取色能力，便于断言明文。 */
@@ -27,6 +30,13 @@ const PLAIN_PAINTER = {
 	fg: (_color: string, text: string) => text,
 	bold: (text: string) => text,
 };
+
+/**
+ * 续行的前缀：树形缩进 + 一个贯通占位（横向无后续子项时是空格）+ 与分支符同宽的占位。
+ *
+ * 从源码导出的常量算出来，缩进或分支符宽度变了断言会跟着走，不必手改字面量。
+ */
+const TAIL_PREFIX = `${TREE_INDENT} ${BRANCH_CONTINUATION_PADDING}`;
 
 /** 造一个进行中、带一条正在执行命令的快照。 */
 function runningSnapshot(): ReturnType<typeof createActivitySnapshot> {
@@ -179,39 +189,66 @@ test("未运行时活动区不输出任何行", () => {
 	assert.deepEqual(blockLines({ snapshot }), []);
 });
 
-test("活动块只报最新状态：不重复顶部文案、耗时与分类计数", () => {
+test("活动块末尾带本轮分类计数尾注，不重复顶部文案与耗时", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
-	const joined = blockLines({ snapshot }).join("\n");
+	const joined = appendActivityCountersNote(
+		blockLines({ snapshot }),
+		activityCountersNote(snapshot.counters),
+	).join("\n");
 
 	assert.ok(joined.includes("npm test"), `应显示正在跑的工具：${joined}`);
+	assert.ok(
+		joined.includes(i18n.t("activityCounterRead", { count: "4" })),
+		`分类计数应作为尾注出现在活动块里：${joined}`,
+	);
 	assert.ok(
 		!joined.includes(i18n.t("activityWorking")),
 		`「处理中」只在轮首，活动块不应重复：${joined}`,
 	);
 	assert.ok(!joined.includes("42s"), `耗时只在轮首，活动块不应重复：${joined}`);
-	assert.ok(
-		!joined.includes(i18n.t("activityCounterRead", { count: "4" })),
-		`分类计数接在组头上，不另占一行：${joined}`,
+});
+
+test("尾注接在最后一条非空行上，不另占一行，也不挂到补位空行后面", () => {
+	const note = activityCountersNote(runningSnapshot().counters);
+	const lines = ["  ├─ 思考", "  └─ › 运行命令 npm test", ""];
+	const appended = appendActivityCountersNote(lines, note);
+
+	assert.equal(appended.length, lines.length, "尾注不该改变行数");
+	assert.equal(appended[0], lines[0], "尾注只接在最后一条非空行上");
+	assert.ok(appended[1]?.endsWith(note), `尾注应接在最后一个非空行尾：${appended[1]}`);
+	assert.equal(appended[2], "", "补位空行保持空行，不挂尾注");
+});
+
+test("只有一次动作时不出尾注：组头已经写了动作名", () => {
+	assert.equal(
+		activityCountersNote({ read: 0, search: 0, command: 1, other: 0 }),
+		"",
+		"一次动作时尾注应为空串",
+	);
+	assert.deepEqual(
+		appendActivityCountersNote(["  └─ › 运行命令 npm test"], ""),
+		["  └─ › 运行命令 npm test"],
+		"没有尾注时行原样返回",
 	);
 });
 
-test("分类计数拼成组头后缀，前缀与 0 的桶都按需省略", () => {
-	const counted = formatActivityCountersSuffix({ read: 4, search: 3, command: 1, other: 9 });
+test("分类计数拼成一行尾注，0 的桶按需省略", () => {
+	const counted = formatActivityCountersNote({ read: 4, search: 3, command: 1, other: 9 });
 	assert.equal(
 		counted,
-		` · ${i18n.t("activityCounterRead", { count: "4" })} · ${i18n.t("activityCounterSearch", { count: "3" })} · ${i18n.t("activityCounterCommand", { count: "1" })}`,
-		`后缀自带前缀分隔符，顺序是读取 → 搜索 → 命令：${counted}`,
+		`${i18n.t("activityCounterRead", { count: "4" })} · ${i18n.t("activityCounterSearch", { count: "3" })} · ${i18n.t("activityCounterCommand", { count: "1" })}`,
+		`顺序是读取 → 搜索 → 命令，且不带前导分隔符：${counted}`,
 	);
 	assert.equal(
-		formatActivityCountersSuffix({ read: 0, search: 0, command: 0, other: 5 }),
+		formatActivityCountersNote({ read: 0, search: 0, command: 0, other: 5 }),
 		"",
 		"只有 other 时没有可报的分类，应返回空串",
 	);
 	assert.equal(
-		formatActivityCountersSuffix({ read: 0, search: 2, command: 0, other: 0 }),
-		` · ${i18n.t("activityCounterSearch", { count: "2" })}`,
-		"只有一个桶时同样只带一个前缀",
+		formatActivityCountersNote({ read: 0, search: 2, command: 0, other: 0 }),
+		i18n.t("activityCounterSearch", { count: "2" }),
+		"只有一个桶时只留那一个桶",
 	);
 });
 
@@ -221,7 +258,7 @@ test("轮首状态行只报运行级时间：状态与耗时，不带计数与�
 
 	assert.equal(lines.length, 1, `轮首只应有一行：${lines.join("\n")}`);
 	const line = lines[0] ?? "";
-	assert.ok(line.includes(PREFIX_TAG), `轮首应带来源前缀：${line}`);
+	assert.ok(!line.includes("[clean]"), `轮首不应带来源前缀：${line}`);
 	assert.ok(line.includes(i18n.t("activityWorking")), `应说明正在处理：${line}`);
 	assert.ok(line.includes("42s"), `应带耗时：${line}`);
 	assert.ok(
@@ -260,9 +297,12 @@ test("当前动作与其输出尾巴各占一行，用竖折挂在组头下面",
 	assert.ok(joined.includes("npm test"), `应显示当前动作与参数：${joined}`);
 	assert.ok(joined.includes("12 passing"), `应显示最新输出：${joined}`);
 	// 只有这一条动作，它就是活动块里最后一个子项，分支符用 └─ 收口。
-	assert.ok(lines[0]?.startsWith("  └─ "), `动作行应带收口分支符：${JSON.stringify(lines[0])}`);
+	assert.ok(lines[0]?.startsWith(`${TREE_INDENT}└─ `), `动作行应带收口分支符：${JSON.stringify(lines[0])}`);
 	// 尾巴与分支符后的正文同列，不再深一级缩进。
-	assert.ok(lines[1]?.startsWith("     ↳ "), `输出尾巴应与动作正文同列：${JSON.stringify(lines[1])}`);
+	assert.ok(
+		lines[1]?.startsWith(`${TAIL_PREFIX}↳ `),
+		`输出尾巴应与动作正文同列：${JSON.stringify(lines[1])}`,
+	);
 });
 
 test("行数预算收紧时从尾部截断，先保住第一行", () => {
@@ -322,10 +362,13 @@ test("多行时分支符按「后面还有没有子项」收口，尾巴用竖�
 	const lines = blockLines({ snapshot });
 
 	assert.equal(lines.length, 4, `应是思考 + 动作 + 尾巴 + 动作四行：${lines.join("\n")}`);
-	assert.ok(lines[0]?.startsWith("  ├─ "), `后面还有子项时用 ├─：${JSON.stringify(lines[0])}`);
-	assert.ok(lines[1]?.startsWith("  ├─ "), `第一条动作后面还有子项：${JSON.stringify(lines[1])}`);
-	assert.ok(lines[2]?.startsWith("  │  ↳ "), `续行的竖线要与分支符同列贯通：${JSON.stringify(lines[2])}`);
-	assert.ok(lines[3]?.startsWith("  └─ "), `最后一个子项收口成 └─：${JSON.stringify(lines[3])}`);
+	assert.ok(lines[0]?.startsWith(`${TREE_INDENT}├─ `), `后面还有子项时用 ├─：${JSON.stringify(lines[0])}`);
+	assert.ok(lines[1]?.startsWith(`${TREE_INDENT}├─ `), `第一条动作后面还有子项：${JSON.stringify(lines[1])}`);
+	assert.ok(
+		lines[2]?.startsWith(`${TREE_INDENT}│${BRANCH_CONTINUATION_PADDING}↳ `),
+		`续行的竖线要与分支符同列贯通：${JSON.stringify(lines[2])}`,
+	);
+	assert.ok(lines[3]?.startsWith(`${TREE_INDENT}└─ `), `最后一个子项收口成 └─：${JSON.stringify(lines[3])}`);
 });
 
 test("去掉动作名后只剩思考与输出尾巴", () => {
@@ -339,8 +382,8 @@ test("去掉动作名后只剩思考与输出尾巴", () => {
 	assert.deepEqual(
 		detail,
 		[
-			`  └─ ${activityGlyph("thinking", 0, false)} ${i18n.t("activityThinking")}  权衡方案`,
-			`     ↳ 12 passing`,
+			`${TREE_INDENT}└─ ${activityGlyph("thinking", 0, false)} ${i18n.t("activityThinking")}  权衡方案`,
+			`${TAIL_PREFIX}↳ 12 passing`,
 		],
 		`动作名去掉后只留思考与尾巴，思考收口成 └─：${detail.join("\n")}`,
 	);

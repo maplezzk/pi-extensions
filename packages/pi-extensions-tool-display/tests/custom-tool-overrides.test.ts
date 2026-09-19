@@ -226,7 +226,7 @@ test("enabled generic custom tool override replaces existing extension renderers
 	await runLifecycle(eventHandlers);
 
 	assert.equal(renderToText(enabledTool.renderCall?.({ query: "Widget", limit: 5 }, createTheme())), "ide_find_symbol (2 args)");
-	assert.equal(renderToolResult(enabledTool, "alpha\nbeta\ngamma\n"), "↳ 3 lines returned • Ctrl+O to expand");
+	assert.equal(renderToolResult(enabledTool, "alpha\nbeta\ngamma\n"), "3 lines returned • Ctrl+O to expand");
 	assert.equal(renderToText(disabledTool.renderCall?.({}, createTheme())), "RAW DISABLED CALL");
 	assert.equal(renderToolResult(disabledTool, "ignored"), "RAW DISABLED RESULT");
 	assert.equal(renderToText(unlistedTool.renderCall?.({}, createTheme())), "RAW UNLISTED CALL");
@@ -368,9 +368,9 @@ test("generic custom tool preview mode supports collapsed previews, expanded pre
 	assert.equal(renderToolResult(previewTool, "still running", { isPartial: true }), "running...");
 	assert.equal(
 		renderToolRawResult(previewTool, { content: [{ type: "image", data: "ignored" }], details: {} }),
-		"↳ (no output)",
+		"(no output)",
 	);
-	assert.equal(renderToolRawResult(previewTool, { details: {} }), "↳ (no output)");
+	assert.equal(renderToolRawResult(previewTool, { details: {} }), "(no output)");
 });
 
 test("explicit mcp custom tool override interprets MCP proxy argument variants", async () => {

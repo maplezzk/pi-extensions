@@ -1413,7 +1413,7 @@ test("TUI 模式下提示写进会话条目，由带底色的消息块渲染", a
   assert.equal(entries.length, 1);
   assert.equal(entries[0]?.customType, "pi-extensions-notice");
   assert.equal(entries[0]?.data.tag, "supervisor");
-  assert.equal(entries[0]?.data.color, "success");
+  assert.equal(entries[0]?.data.color, "muted");
   assert.equal(entries[0]?.data.level, "warning");
   // 标签由渲染器画在最前面，条目正文里不再重复带标签。
   assert.doesNotMatch(String(entries[0]?.data.message), /\[supervisor\]/);

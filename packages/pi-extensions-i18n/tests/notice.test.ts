@@ -8,11 +8,26 @@ import {
   notifyWithSource,
   renderNoticeEntry,
   resetNoticeRenderer,
+  NOTICE_TAG_COLOR,
   type NoticeApi,
+  type NoticeColor,
   type NoticeContext,
   type NoticeEntryTheme,
   type NoticeSource,
 } from "../src/index.ts";
+
+/** 合法的主题色名；与 notice.ts 的 NOTICE_COLORS 同步，用来验证常量是合法色槽。 */
+const NOTICE_COLORS_FOR_TEST: readonly NoticeColor[] = [
+  "accent",
+  "success",
+  "warning",
+  "error",
+  "muted",
+  "dim",
+  "text",
+  "customMessageText",
+  "toolTitle",
+];
 
 /** 测试用来源标签。 */
 const SOURCE: NoticeSource = { tag: "naming", color: "accent" };
@@ -336,15 +351,23 @@ test("条目写入失败时退回 ui.notify，而不是抛给调用方", () => {
   }
 });
 
-test("不同扩展用不同标签，同一扩展颜色固定", () => {
-  const supervisor: NoticeSource = { tag: "supervisor", color: "toolTitle" };
-  const first = formatNotice({ source: SOURCE, message: "x", mode: "tui", theme: THEME });
-  const second = formatNotice({ source: SOURCE, message: "y", mode: "tui", theme: THEME });
+test("不同扩展用不同标签，颜色不参与区分", () => {
+  const supervisor: NoticeSource = { tag: "supervisor", color: NOTICE_TAG_COLOR };
+  const naming: NoticeSource = { tag: "naming", color: NOTICE_TAG_COLOR };
+  const first = formatNotice({ source: naming, message: "x", mode: "tui", theme: THEME });
+  const second = formatNotice({ source: naming, message: "y", mode: "tui", theme: THEME });
   const other = formatNotice({ source: supervisor, message: "x", mode: "tui", theme: THEME });
 
+  // 来源只能靠 tag 文本认出；两个包的颜色完全相同。
   assert.match(first, /\[naming\]/);
   assert.match(other, /\[supervisor\]/);
-  assert.match(first, /<accent>/);
-  assert.match(other, /<toolTitle>/);
+  assert.match(first, /<muted>/);
+  assert.match(other, /<muted>/);
   assert.equal(first.replace("x", ""), second.replace("y", ""));
+});
+
+test("提示来源标签统一用 muted，不靠颜色区分来源", () => {
+  // 9 个色槽分给 16 个包必然撞车，撞车后颜色反而误导；所以统一弱化色，靠 tag 文本区分。
+  assert.equal(NOTICE_TAG_COLOR, "muted");
+  assert.ok(NOTICE_COLORS_FOR_TEST.includes(NOTICE_TAG_COLOR));
 });

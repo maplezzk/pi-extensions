@@ -22,6 +22,8 @@
  */
 
 import {
+	activityCountersNote,
+	appendActivityCountersNote,
 	blankActivityRow,
 	renderActivityRows,
 	withoutActionRows,
@@ -293,12 +295,18 @@ export function refreshActivityArea(
 
 	const rendered = renderActivityLines(runtime, host, deps);
 	const rows = padActivityRows(runtime, rendered.rows);
-	const lines = renderActivityRows(rows, host.ui.theme);
+	// 尾注接在已渲染的最后一行上：它不占行数预算，单条组把动作行去掉之后也还在。
+	// 两种形态各拼一次，而不是先拼好再筛 —— 两者的最后一行本来就不是同一行。
+	const note = activityCountersNote(deps.getSnapshot().counters);
+	const lines = appendActivityCountersNote(renderActivityRows(rows, host.ui.theme), note);
 	// 单条组的组头已经写出这条动作，动作名从细节形态里去掉；去掉之后重拼前缀，
 	// 原本的第二项才成为最后一项。
-	const detailLines = renderActivityRows(
-		withoutActionRows({ rows, actionRows: rendered.actionRows }),
-		host.ui.theme,
+	const detailLines = appendActivityCountersNote(
+		renderActivityRows(
+			withoutActionRows({ rows, actionRows: rendered.actionRows }),
+			host.ui.theme,
+		),
+		note,
 	);
 	const runStatusLines = renderRunStatusLines(runtime, host, deps);
 	const signature = buildLinesSignature({

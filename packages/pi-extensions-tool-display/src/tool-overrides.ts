@@ -68,6 +68,15 @@ import {
   shouldRenderWriteCallSummary,
 } from "./write-display-utils.js";
 
+/**
+ * 结果摘要行（`loaded 42 lines`、`3 matches returned`、`(no output)`）不加前缀符号。
+ *
+ * `↳` 在会话里归活动区独占，表示「这条命令正在流出的输出尾巴」
+ * （见 pi-clean-mode 的 `activity.ts`）。两边都写 `↳` 时，同一个符号会在同一屏里
+ * 指两件事：一边是还没跑完的实时尾巴，一边是已经落定的结果计数。
+ * 摘要本身靠弱化色与「紧接在调用行下面」就能认出身份，不需要额外符号。
+ */
+
 interface BuiltInTools {
   read: ReturnType<typeof createReadTool>;
   grep: ReturnType<typeof createGrepTool>;
@@ -447,7 +456,7 @@ function buildPreviewText(
   expanded: boolean,
 ): string {
   if (lines.length === 0) {
-    return theme.fg("muted", "↳ (no output)");
+    return theme.fg("muted", "(no output)");
   }
 
   const { shown, remaining } = previewLines(lines, maxLines);
@@ -473,9 +482,9 @@ function formatBashNoOutputLine(
   theme: RenderTheme,
 ): string {
   if (isLikelyQuietCommand(command)) {
-    return theme.fg("muted", "↳ command completed (no output)");
+    return theme.fg("muted", "command completed (no output)");
   }
-  return theme.fg("muted", "↳ (no output)");
+  return theme.fg("muted", "(no output)");
 }
 
 function truncationHint(
@@ -958,7 +967,7 @@ function formatReadSummary(
   const lineCount = lines.length;
   let summary = theme.fg(
     "muted",
-    `↳ loaded ${lineCount} ${pluralize(lineCount, "line")}`,
+    `loaded ${lineCount} ${pluralize(lineCount, "line")}`,
   );
   summary += theme.fg(
     "warning",
@@ -978,7 +987,7 @@ function formatSearchSummary(
   const count = countNonEmptyLines(lines);
   let summary = theme.fg(
     "muted",
-    `↳ ${count} ${pluralize(count, unitLabel, pluralLabel)} returned`,
+    `${count} ${pluralize(count, unitLabel, pluralLabel)} returned`,
   );
   summary += theme.fg(
     "warning",
@@ -996,7 +1005,7 @@ function formatBashSummary(
   const lineCount = lines.length;
   const summary = theme.fg(
     "muted",
-    `↳ ${lineCount} ${pluralize(lineCount, "line")} returned`,
+    `${lineCount} ${pluralize(lineCount, "line")} returned`,
   );
   return summary;
 }
@@ -1105,7 +1114,7 @@ function renderBashErrorResult(
   details: BashToolDetails | undefined,
 ): Text {
   const lines = prepareOutputLines(rawOutput, options);
-  let text = theme.fg("error", "↳ command failed");
+  let text = theme.fg("error", "command failed");
 
   if (lines.length > 0) {
     const maxLines = getBashPreviewLineLimit(lines, options, config);
@@ -1270,7 +1279,7 @@ function renderMcpResult(
     const lineCount = countNonEmptyLines(lines);
     let summary = theme.fg(
       "muted",
-      `↳ ${lineCount} ${pluralize(lineCount, "line")} returned`,
+      `${lineCount} ${pluralize(lineCount, "line")} returned`,
     );
     summary += formatExpandHint(theme);
     if (config.showTruncationHints && truncation.truncated) {
@@ -2061,7 +2070,7 @@ export function registerToolDisplayOverrides(
       }
 
       if (!options.expanded && config.bashCollapsedLines === 0) {
-        let hidden = theme.fg("muted", "↳ output hidden");
+        let hidden = theme.fg("muted", "output hidden");
         if (config.showTruncationHints) {
           hidden += formatBashTruncationHints(details, theme);
         }
