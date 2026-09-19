@@ -92,11 +92,19 @@ Interactive components are driven through Pi's own keyboard handling:
 
 Requirements and caveats:
 
-- Set `AI_GATEWAY_API_KEY` (Vercel AI Gateway, with the `typesafe-ai` provider enabled for that team). Restart Pi after setting it.
-- The tool is only registered when the key is present, so it costs nothing in the prompt otherwise.
-- Candidate props that read `$state` must resolve against `state`, or the composer rejects the candidates before it ever calls the gateway.
+- **Credentials.** In the default `auto` mode the tool uses whichever key is present, preferring TypeSafe direct:
+  - `TYPESAFE_API_KEY` → posts to `https://api.typesafe.ai/v1/systemone` through this package's own adapter. No Vercel account needed.
+  - `AI_GATEWAY_API_KEY` → posts to Vercel AI Gateway through core's built-in evaluator. This requires a Vercel team with a payment method on file and the `typesafe-ai` provider enabled.
+
+  Restart Pi after setting a key. Set `composition.provider` to `typesafe` or `gateway` to pin one transport; a pinned provider never silently falls back to the other.
+- The tool is only registered when a usable key is present, so it costs nothing in the prompt otherwise.
+- Candidate props that read `$state` must resolve against `state`, or the composer rejects the candidates before it ever calls the evaluation endpoint.
 - The upstream API is **experimental** (`experimental_composeSpec` / `experimental_createEvaluator`) and may change in any release. `@json-render/core` is therefore pinned to an exact version, the imports are dynamic, and the functions are feature-detected: if a future release removes them, `compose_ui` reports that and `render_ui` keeps working.
 - Composition failures are reported, never retried silently. The tool result tells the model to author the spec itself with `render_ui` instead.
+
+### Transports
+
+The `typesafe` transport exists because core hard-codes Vercel AI Gateway's endpoint and exposes no base URL. Rather than patching core, this package injects a `fetch` through core's own `fetch` option: it rewrites the request to TypeSafe's endpoint, adds the `model` field TypeSafe requires, and folds TypeSafe's `answers[].confidence` and `usage.input_tokens` back into the shape core validates. TypeSafe's endpoint speaks the same `{ state, questions }` protocol and the same `choice` question type, so no prompt or candidate changes are involved.
 
 ## Configuration
 
@@ -109,7 +117,10 @@ Requirements and caveats:
   "interactiveView": "auto",
   "composition": {
     "enabled": true,
-    "model": "typesafe-ai/jev",
+    "provider": "auto",
+    "model": "",
+    "apiKeyEnv": "",
+    "endpoint": "",
     "timeoutMs": 10000
   }
 }
@@ -121,7 +132,10 @@ Requirements and caveats:
 | `maxResultLines` | Transcript lines a tool result shows before it collapses behind an expand hint. |
 | `interactiveView` | `auto` opens the panel only for specs with interactive components, `always` always opens it, `never` never does. A per-call `interactive` argument overrides it. |
 | `composition.enabled` | Whether `compose_ui` is offered. |
-| `composition.model` | Gateway evaluation model id. |
+| `composition.provider` | `auto` (default) prefers TypeSafe and falls back to the gateway; `typesafe` and `gateway` pin one transport. |
+| `composition.model` | Evaluation model id. Empty uses the provider default: `jev-latest` for TypeSafe, `typesafe-ai/jev` for the gateway. |
+| `composition.apiKeyEnv` | Environment variable holding the key. Empty uses the provider default (`TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY`). |
+| `composition.endpoint` | TypeSafe endpoint override. Empty uses `https://api.typesafe.ai/v1/systemone`. |
 | `composition.timeoutMs` | Per-evaluation timeout. |
 
 The commands:

@@ -1,6 +1,11 @@
 import type { Spec } from "@json-render/core";
 import { piCatalog } from "./pi-catalog.ts";
-import type { JsonRenderConfig } from "./config.ts";
+import {
+  PROVIDER_DEFAULTS,
+  type ConcreteCompositionProvider,
+  type JsonRenderConfig,
+} from "./config.ts";
+import { TYPESAFE_ENDPOINT, createTypesafeFetch } from "./typesafe.ts";
 
 /**
  * Catalog-constrained composition through a TypeSafe decision model.
@@ -15,9 +20,13 @@ import type { JsonRenderConfig } from "./config.ts";
  *    release that removes them degrades to a clear message instead of
  *    breaking the whole extension at load time.
  *
- * The evaluator posts to Vercel's AI Gateway, so this path needs
- * `AI_GATEWAY_API_KEY` and network egress. It is never exercised by tests:
- * `composeSpec` accepts an injected `fetch`.
+ * Two transports are supported. `gateway` uses core's built-in evaluator and
+ * posts to Vercel's AI Gateway with `AI_GATEWAY_API_KEY`. `typesafe` replaces
+ * the transport with a fetch adapter that posts to TypeSafe's own endpoint
+ * using `TYPESAFE_API_KEY`, so composition works without a Vercel account.
+ *
+ * Both paths need network egress and are never exercised by tests: `composeSpec`
+ * accepts an injected `fetch`.
  */
 
 /** Default Gateway evaluation model. */
@@ -25,6 +34,66 @@ export const DEFAULT_COMPOSITION_MODEL = "typesafe-ai/jev";
 
 /** Why composition cannot run. */
 export type CompositionBlockReason = "disabled" | "missingKey" | "unsupportedCore";
+
+/** A fully resolved composition target. */
+export interface ResolvedComposition {
+  /** Transport that will actually be used. */
+  provider: ConcreteCompositionProvider;
+  /** Environment variable the key was read from. */
+  keyEnv: string;
+  /** API key value. */
+  apiKey: string;
+  /** Evaluation model id. */
+  model: string;
+  /** Endpoint override for the TypeSafe transport, when configured. */
+  endpoint?: string;
+}
+
+/**
+ * Pick the transport, key, and model to use.
+ *
+ * `auto` prefers TypeSafe because it needs no Vercel account; it falls back to
+ * the gateway when only a gateway key is present. An explicit provider is never
+ * silently swapped for the other one: a missing key is reported as `missingKey`
+ * instead of quietly changing transport.
+ */
+export function resolveComposition(options: {
+  config: JsonRenderConfig;
+  env?: NodeJS.ProcessEnv;
+}): ResolvedComposition | undefined {
+  const env = options.env ?? process.env;
+  const composition = options.config.composition;
+
+  /** Read the key for one provider, honoring an explicit variable override. */
+  const readKey = (provider: ConcreteCompositionProvider): { keyEnv: string; apiKey: string } => {
+    const keyEnv = composition.apiKeyEnv || PROVIDER_DEFAULTS[provider].keyEnv;
+    const raw = env[keyEnv];
+    return { keyEnv, apiKey: typeof raw === "string" ? raw.trim() : "" };
+  };
+
+  /** Finish a provider once its key is known to be present. */
+  const build = (provider: ConcreteCompositionProvider, keyEnv: string, apiKey: string): ResolvedComposition => {
+    const model = composition.model || PROVIDER_DEFAULTS[provider].model;
+    return {
+      provider,
+      keyEnv,
+      apiKey,
+      model,
+      ...(provider === "typesafe" && composition.endpoint ? { endpoint: composition.endpoint } : {}),
+    };
+  };
+
+  if (composition.provider === "typesafe" || composition.provider === "gateway") {
+    const { keyEnv, apiKey } = readKey(composition.provider);
+    return apiKey ? build(composition.provider, keyEnv, apiKey) : undefined;
+  }
+
+  for (const provider of ["typesafe", "gateway"] as const) {
+    const { keyEnv, apiKey } = readKey(provider);
+    if (apiKey) return build(provider, keyEnv, apiKey);
+  }
+  return undefined;
+}
 
 /** Whether composition can run with the current configuration and environment. */
 export interface CompositionAvailability {
@@ -88,10 +157,14 @@ export interface ComposeSpecOptions {
   maxDepth?: number;
   /** Abort signal from the tool call. */
   signal?: AbortSignal;
-  /** Gateway API key. */
+  /** API key for the selected transport. */
   apiKey: string;
-  /** Gateway evaluation model id. */
+  /** Evaluation model id. */
   model: string;
+  /** Transport to use. Defaults to `gateway` (core's built-in evaluator). */
+  provider?: ConcreteCompositionProvider;
+  /** TypeSafe endpoint override, used when `provider` is `typesafe`. */
+  endpoint?: string;
   /** Per-evaluation timeout. */
   timeoutMs?: number;
   /** Fetch implementation; injectable so tests never hit the network. */
@@ -107,9 +180,9 @@ export function compositionAvailability(options: {
 }): CompositionAvailability {
   if (!options.config.composition.enabled) return { available: false, reason: "disabled" };
   if (options.coreSupportsComposition === false) return { available: false, reason: "unsupportedCore" };
-  const key = (options.env ?? process.env).AI_GATEWAY_API_KEY;
-  if (typeof key !== "string" || key.trim().length === 0) return { available: false, reason: "missingKey" };
-  return { available: true };
+  return resolveComposition({ config: options.config, ...(options.env === undefined ? {} : { env: options.env }) })
+    ? { available: true }
+    : { available: false, reason: "missingKey" };
 }
 
 /** Whether the installed `@json-render/core` still exports the experimental composer. */
@@ -188,11 +261,24 @@ export async function* composeSpec(options: ComposeSpecOptions): AsyncGenerator<
     );
   }
 
+  const provider = options.provider ?? "gateway";
+  const transport =
+    provider === "typesafe"
+      ? createTypesafeFetch({
+          apiKey: options.apiKey,
+          model: options.model,
+          endpoint: options.endpoint ?? TYPESAFE_ENDPOINT,
+          ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+        })
+      : options.fetchImpl;
+
   const evaluate = (createEvaluator as (input: unknown) => unknown)({
     apiKey: options.apiKey,
     model: options.model,
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-    ...(options.fetchImpl === undefined ? {} : { fetch: options.fetchImpl }),
+    // The TypeSafe transport replaces core's gateway call entirely; core keeps
+    // its own timeout handling around whatever fetch it is handed.
+    ...(transport === undefined ? {} : { fetch: transport }),
   });
 
   const request = {

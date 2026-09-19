@@ -17,21 +17,32 @@ test("normalizeConfig clamps numeric fields and accepts valid overrides", () => 
     enabled: false,
     maxResultLines: 100000,
     interactiveView: "never",
-    composition: { enabled: false, model: "  typesafe-ai/jev  ", timeoutMs: 10 },
+    composition: { enabled: false, provider: "typesafe", model: "  jev-latest  ", timeoutMs: 10 },
   });
   assert.equal(normalized.enabled, false);
   assert.equal(normalized.maxResultLines, 500);
   assert.equal(normalized.interactiveView, "never");
-  assert.deepEqual(normalized.composition, { enabled: false, model: "typesafe-ai/jev", timeoutMs: 500 });
+  assert.deepEqual(normalized.composition, {
+    enabled: false,
+    provider: "typesafe",
+    model: "jev-latest",
+    apiKeyEnv: "",
+    endpoint: "",
+    timeoutMs: 500,
+  });
 
   assert.equal(normalizeConfig({ maxResultLines: 0 }).maxResultLines, 5);
 });
 
+test("normalizeConfig rejects an unknown composition provider", () => {
+  assert.equal(normalizeConfig({ composition: { provider: "openai" } }).composition.provider, "auto");
+  assert.equal(normalizeConfig({ composition: { provider: 42 } }).composition.provider, "auto");
+});
+
 test("normalizeConfig keeps composition defaults when only some fields are set", () => {
   assert.deepEqual(normalizeConfig({ composition: { model: "custom/model" } }).composition, {
-    enabled: DEFAULT_CONFIG.composition.enabled,
+    ...DEFAULT_CONFIG.composition,
     model: "custom/model",
-    timeoutMs: DEFAULT_CONFIG.composition.timeoutMs,
   });
   assert.deepEqual(normalizeConfig({ composition: { model: "   " } }).composition, DEFAULT_CONFIG.composition);
 });

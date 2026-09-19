@@ -43,6 +43,10 @@
     "zh-CN": "pi-gen-ui：{state}；结果最多显示 {maxLines} 行；交互面板 {view}；组合 {composition}；组件参考：{catalog}",
     "en-US": "pi-gen-ui: {state}; results show at most {maxLines} lines; interactive panel {view}; composition {composition}; component reference: {catalog}"
   },
+  "composeFailedDetail": {
+    "zh-CN": "compose_ui 调用失败：{error}",
+    "en-US": "compose_ui failed: {error}"
+  },
   "configLoadFailed": {
     "zh-CN": "pi-gen-ui 配置读取失败：{path}（{error}）。当前使用默认配置。",
     "en-US": "Failed to read pi-gen-ui configuration: {path} ({error}). Defaults are in effect."
@@ -100,8 +104,8 @@
     "en-US": "Component reference updated: {path}"
   },
   "composeToolDescription": {
-    "zh-CN": "用 TypeSafe 的决策模型（Jev）从你提供的候选元素里挑选并组合出面板，而不是自己手写整棵元素树。你负责提供原子候选（组件名 + 具体 props 值 + 说明）和 state；Jev 只决定包含哪些、顺序和位置，不会发明 props 值、也不会执行 action。需要 AI_GATEWAY_API_KEY 和 typesafe-ai provider 访问权限。这是上游 experimental API，可能随版本变化。",
-    "en-US": "Use TypeSafe's decision model (Jev) to select and arrange a panel from candidates you provide, instead of hand-authoring the whole element tree. You supply atomic candidates (component name plus concrete prop values plus a description) and state; Jev decides only what to include, in what order, and where. It never invents prop values and never executes actions. Requires AI_GATEWAY_API_KEY and access to the typesafe-ai provider. This is an upstream experimental API and may change between releases."
+    "zh-CN": "用 TypeSafe 的决策模型（Jev）从你提供的候选元素里挑选并组合出面板，而不是自己手写整棵元素树。你负责提供原子候选（组件名 + 具体 props 值 + 说明）和 state；Jev 只决定包含哪些、顺序和位置，不会发明 props 值、也不会执行 action。默认自动选用可用的凭据：优先 TypeSafe 直连（TYPESAFE_API_KEY），否则用 Vercel AI Gateway（AI_GATEWAY_API_KEY）。这是上游 experimental API，可能随版本变化。",
+    "en-US": "Use TypeSafe's decision model (Jev) to select and arrange a panel from candidates you provide, instead of hand-authoring the whole element tree. You supply atomic candidates (component name plus concrete prop values plus a description) and state; Jev decides only what to include, in what order, and where. It never invents prop values and never executes actions. Credentials are auto-detected: TypeSafe direct (TYPESAFE_API_KEY) is preferred, otherwise Vercel AI Gateway (AI_GATEWAY_API_KEY). This is an upstream experimental API and may change between releases."
   },
   "composeToolSnippet": {
     "zh-CN": "让决策模型从候选元素里组合出面板；候选需带具体 props 值与说明。",
@@ -112,16 +116,16 @@
     "en-US": "With compose_ui, every candidate element needs concrete prop values, real copy and data, and a clear description, since Jev can only judge a candidate from its description. Bind values to state with $state expressions. Open-ended strings, copy, and data must already be provided: Jev does not fill values in."
   },
   "composeGuidelineFallback": {
-    "zh-CN": "compose_ui 需要 AI_GATEWAY_API_KEY，可能因缺凭据、网络或 provider 权限失败。失败时不要重试同一调用，直接用 render_ui 自己写 spec。",
-    "en-US": "compose_ui needs AI_GATEWAY_API_KEY and can fail on missing credentials, network, or provider access. When it fails, do not retry the same call: author the spec yourself with render_ui instead."
+    "zh-CN": "compose_ui 需要可用的凭据（TYPESAFE_API_KEY 或 AI_GATEWAY_API_KEY），可能因缺凭据、网络或 provider 权限失败。失败时不要重试同一调用，直接用 render_ui 自己写 spec。",
+    "en-US": "compose_ui needs usable credentials (TYPESAFE_API_KEY or AI_GATEWAY_API_KEY) and can fail on missing credentials, network, or provider access. When it fails, do not retry the same call: author the spec yourself with render_ui instead."
   },
   "composeDisabled": {
     "zh-CN": "compose_ui 已在配置中禁用；把 composition.enabled 设为 true 并 /reload 后可用。也可以直接用 render_ui 手写 spec。",
     "en-US": "compose_ui is disabled in configuration; set composition.enabled to true and /reload to use it. You can also author the spec directly with render_ui."
   },
   "composeMissingKey": {
-    "zh-CN": "compose_ui 需要环境变量 AI_GATEWAY_API_KEY（Vercel AI Gateway，且该 team 需允许 typesafe-ai provider）；当前未设置。请设置后重启 Pi，或直接用 render_ui 手写 spec。",
-    "en-US": "compose_ui needs the AI_GATEWAY_API_KEY environment variable (Vercel AI Gateway, with the typesafe-ai provider allowed for that team); it is not set. Set it and restart Pi, or author the spec directly with render_ui."
+    "zh-CN": "compose_ui 没有找到可用的 API key（provider 设置为 {provider}）。默认自动模式会优先用 TYPESAFE_API_KEY 直连 TypeSafe，找不到再用 AI_GATEWAY_API_KEY 走 Vercel AI Gateway。请设置其中一个环境变量并重启 Pi，或在配置里指定 composition.apiKeyEnv；也可以直接用 render_ui 手写 spec。",
+    "en-US": "compose_ui found no usable API key (provider is set to {provider}). In the default auto mode it prefers TYPESAFE_API_KEY for a direct TypeSafe call and falls back to AI_GATEWAY_API_KEY through Vercel AI Gateway. Set one of those environment variables and restart Pi, or name the variable with composition.apiKeyEnv; you can also author the spec directly with render_ui."
   },
   "composeUnsupportedCore": {
     "zh-CN": "当前安装的 @json-render/core 不再提供 experimental_composeSpec/experimental_createEvaluator（上游 experimental API 已变更）。请用 render_ui 手写 spec，或把 @json-render/core 固定到可用版本。",

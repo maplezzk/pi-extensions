@@ -92,11 +92,19 @@
 
 前提与注意：
 
-- 需要设置 `AI_GATEWAY_API_KEY`（Vercel AI Gateway，且该 team 要允许 `typesafe-ai` provider）。设置后重启 Pi。
-- 只有 key 存在时才注册这个工具，所以平时不占提示词开销。
-- 候选里用 `$state` 的 props 必须在 `state` 里有对应路径，否则组合器在调用网关之前就会拒绝候选。
+- **凭据。** 默认 `auto` 模式会自动使用已有的 key，优先 TypeSafe 直连：
+  - `TYPESAFE_API_KEY` → 通过本包自己的适配器打 `https://api.typesafe.ai/v1/systemone`，不需要 Vercel 账号。
+  - `AI_GATEWAY_API_KEY` → 走 core 内置 evaluator 打 Vercel AI Gateway，需要该 Vercel team 绑了支付方式并开通 `typesafe-ai` provider。
+
+  设置后重启 Pi。把 `composition.provider` 设为 `typesafe` 或 `gateway` 可以钉死某一种通道；钉死后缺 key 会直接报错，不会静默换到另一种。
+- 只有存在可用 key 时才注册这个工具，所以平时不占提示词开销。
+- 候选里用 `$state` 的 props 必须在 `state` 里有对应路径，否则组合器在调用评估端点之前就会拒绝候选。
 - 上游 API 是 **experimental**（`experimental_composeSpec` / `experimental_createEvaluator`），可能随版本变化。因此本包把 `@json-render/core` 固定在精确版本，用动态导入 + 运行时探测：将来若上游移除这两个函数，`compose_ui` 会明确报错，`render_ui` 照常工作。
 - 组合失败会如实报告，不会静默重试。工具结果会告诉模型改用 `render_ui` 自己写 spec。
+
+### 两条通道
+
+`typesafe` 通道存在的原因：core 把 Vercel AI Gateway 的端点写死在代码里，且没有 base URL 选项。本包不去改 core，而是利用 core 自己的 `fetch` 注入点：把请求改写到 TypeSafe 端点、补上 TypeSafe 要求的 `model` 字段，再把 TypeSafe 的 `answers[].confidence` 和 `usage.input_tokens` 折回 core 期望的结构。TypeSafe 的端点和 core 用的是同一套 `{ state, questions }` 协议与 `choice` 问题类型，所以候选与提示词都不用改。
 
 ## 配置
 
@@ -109,7 +117,10 @@
   "interactiveView": "auto",
   "composition": {
     "enabled": true,
-    "model": "typesafe-ai/jev",
+    "provider": "auto",
+    "model": "",
+    "apiKeyEnv": "",
+    "endpoint": "",
     "timeoutMs": 10000
   }
 }
@@ -121,7 +132,10 @@
 | `maxResultLines` | 工具结果在会话里最多画多少行，超出部分折叠成一行提示。 |
 | `interactiveView` | `auto` 只在 spec 含交互组件时开面板，`always` 总是开，`never` 从不打开；工具调用的 `interactive` 参数优先。 |
 | `composition.enabled` | 是否提供 `compose_ui`。 |
-| `composition.model` | 网关 evaluation model id。 |
+| `composition.provider` | `auto`（默认）优先 TypeSafe，没有它的 key 才退回 gateway；`typesafe` / `gateway` 钉死某一种通道。 |
+| `composition.model` | evaluation model id。留空则用该通道的默认值：TypeSafe 是 `jev-latest`，gateway 是 `typesafe-ai/jev`。 |
+| `composition.apiKeyEnv` | 存放 key 的环境变量名。留空则用该通道默认值（`TYPESAFE_API_KEY` 或 `AI_GATEWAY_API_KEY`）。 |
+| `composition.endpoint` | TypeSafe 端点覆盖。留空用 `https://api.typesafe.ai/v1/systemone`。 |
 | `composition.timeoutMs` | 单次评估超时。 |
 
 命令：

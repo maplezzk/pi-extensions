@@ -5,12 +5,36 @@ import { configPath } from "./agent-dir.ts";
 /** When the interactive panel opens. */
 export type InteractiveViewMode = "auto" | "always" | "never";
 
+/** Evaluation transport used by `compose_ui`. */
+export type CompositionProvider = "gateway" | "typesafe" | "auto";
+
+/** Concrete providers (everything except the `auto` selector). */
+export type ConcreteCompositionProvider = Exclude<CompositionProvider, "auto">;
+
+/** Per-provider key variable and model defaults. */
+export const PROVIDER_DEFAULTS: Record<ConcreteCompositionProvider, { keyEnv: string; model: string }> = {
+  gateway: { keyEnv: "AI_GATEWAY_API_KEY", model: "typesafe-ai/jev" },
+  typesafe: { keyEnv: "TYPESAFE_API_KEY", model: "jev-latest" },
+};
+
 /** Catalog-constrained composition settings (experimental upstream API). */
 export interface CompositionConfig {
   /** Whether the compose_ui tool is available at all. */
   enabled: boolean;
-  /** Gateway evaluation model id. */
+  /**
+   * Which evaluation transport to use.
+   *
+   * `gateway` posts to Vercel AI Gateway through core's built-in evaluator.
+   * `typesafe` posts to TypeSafe's own endpoint through the local adapter.
+   * `auto` picks whichever provider has a usable API key, preferring TypeSafe.
+   */
+  provider: CompositionProvider;
+  /** Evaluation model id; an empty string uses the resolved provider's default. */
   model: string;
+  /** Environment variable holding the API key; empty uses the resolved provider's default. */
+  apiKeyEnv: string;
+  /** Endpoint override for the TypeSafe transport; empty uses the TypeSafe default. */
+  endpoint: string;
   /** Per-evaluation timeout in milliseconds. */
   timeoutMs: number;
 }
@@ -34,18 +58,27 @@ export const DEFAULT_CONFIG: JsonRenderConfig = {
   interactiveView: "auto",
   composition: {
     enabled: true,
-    model: "typesafe-ai/jev",
+    provider: "auto",
+    model: "",
+    apiKeyEnv: "",
+    endpoint: "",
     timeoutMs: 10000,
   },
 };
 
 const VIEW_MODES: readonly InteractiveViewMode[] = ["auto", "always", "never"];
+const PROVIDERS: readonly CompositionProvider[] = ["gateway", "typesafe", "auto"];
 
 /** Clamp a numeric field into a safe range, falling back on invalid input. */
 function clampNumber(options: { value: unknown; fallback: number; min: number; max: number }): number {
   return typeof options.value === "number" && Number.isFinite(options.value)
     ? Math.max(options.min, Math.min(options.max, Math.floor(options.value)))
     : options.fallback;
+}
+
+/** Trim a string field, falling back when the value is not a usable string. */
+function optionalString(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value.trim() : fallback;
 }
 
 /** Coerce an unknown value into a valid configuration, ignoring bad fields. */
@@ -76,10 +109,13 @@ export function normalizeConfig(raw: unknown): JsonRenderConfig {
         typeof compositionRaw.enabled === "boolean"
           ? compositionRaw.enabled
           : DEFAULT_CONFIG.composition.enabled,
-      model:
-        typeof compositionRaw.model === "string" && compositionRaw.model.trim().length > 0
-          ? compositionRaw.model.trim()
-          : DEFAULT_CONFIG.composition.model,
+      provider:
+        typeof compositionRaw.provider === "string" && (PROVIDERS as readonly string[]).includes(compositionRaw.provider)
+          ? (compositionRaw.provider as CompositionProvider)
+          : DEFAULT_CONFIG.composition.provider,
+      model: optionalString(compositionRaw.model, DEFAULT_CONFIG.composition.model),
+      apiKeyEnv: optionalString(compositionRaw.apiKeyEnv, DEFAULT_CONFIG.composition.apiKeyEnv),
+      endpoint: optionalString(compositionRaw.endpoint, DEFAULT_CONFIG.composition.endpoint),
       timeoutMs: clampNumber({
         value: compositionRaw.timeoutMs,
         fallback: DEFAULT_CONFIG.composition.timeoutMs,

@@ -4,7 +4,10 @@
   "interactiveView": "auto",
   "composition": {
     "enabled": true,
-    "model": "typesafe-ai/jev",
+    "provider": "auto",
+    "model": "",
+    "apiKeyEnv": "",
+    "endpoint": "",
     "timeoutMs": 10000
   }
 }

@@ -3,7 +3,7 @@ import { Container, Text } from "@earendil-works/pi-tui";
 import type { Spec, StateModel } from "@json-render/core";
 import { Type } from "typebox";
 import { catalogDocPath } from "./agent-dir.ts";
-import { composeSpec, validateCandidates, type CompositionAvailability, type CompositionStepInfo } from "./compose.ts";
+import { composeSpec, resolveComposition, validateCandidates, type CompositionAvailability, type CompositionStepInfo } from "./compose.ts";
 import { StaticPanel, errorText, openInteractivePanel, progressText } from "./panel.ts";
 import { specIsInteractive } from "./tool.ts";
 import { i18n } from "./i18n.ts";
@@ -131,7 +131,14 @@ export function createComposeUiTool(
         return { content: [{ type: "text", text }], details: { ...base, error: text } };
       }
 
-      const apiKey = (process.env.AI_GATEWAY_API_KEY ?? "").trim();
+      // Resolve the transport again per call so a key added or rotated after
+      // startup is picked up, and so the resolved provider is what actually runs.
+      const resolved = resolveComposition({ config });
+      if (!resolved) {
+        const text = i18n.t("composeMissingKey", { provider: config.composition.provider });
+        return { content: [{ type: "text", text }], details: { ...base, error: text } };
+      }
+
       let spec: Spec | null = null;
       let progress: string | undefined;
       let stopReason: ComposeUiDetails["stopReason"];
@@ -143,9 +150,11 @@ export function createComposeUiTool(
         for await (const event of composeSpec({
           prompt: params.prompt,
           candidates: params.candidates ?? [],
-          apiKey,
-          model: config.composition.model,
+          apiKey: resolved.apiKey,
+          model: resolved.model,
+          provider: resolved.provider,
           timeoutMs: config.composition.timeoutMs,
+          ...(resolved.endpoint === undefined ? {} : { endpoint: resolved.endpoint }),
           ...(params.state === undefined ? {} : { initialState: params.state }),
           ...(params.context === undefined ? {} : { context: params.context }),
           ...(params.strategy === undefined ? {} : { strategy: params.strategy }),

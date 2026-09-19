@@ -5,7 +5,7 @@ import { installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeS
 import { catalogDocPath, configPath } from "./agent-dir.ts";
 import { DEFAULT_CONFIG, loadConfig, saveConfig, type JsonRenderConfig } from "./config.ts";
 import { renderCatalogDoc } from "./catalog-doc.ts";
-import { compositionAvailability, coreSupportsComposition, type CompositionAvailability } from "./compose.ts";
+import { compositionAvailability, coreSupportsComposition, resolveComposition, type CompositionAvailability } from "./compose.ts";
 import { createComposeUiTool } from "./compose-tool.ts";
 import { createRenderUiTool } from "./tool.ts";
 import { i18n } from "./i18n.ts";
@@ -41,9 +41,10 @@ function writeCatalogReference(): string {
 }
 
 /** Human-readable composition state for the status notice. */
-function compositionState(availability: CompositionAvailability): string {
-  if (availability.available) return "available";
-  return availability.reason ?? "unavailable";
+function compositionState(availability: CompositionAvailability, config: JsonRenderConfig): string {
+  if (!availability.available) return availability.reason ?? "unavailable";
+  const resolved = resolveComposition({ config });
+  return resolved ? `${resolved.provider} (${resolved.keyEnv})` : "available";
 }
 
 /**
@@ -118,7 +119,7 @@ export default async function jsonRenderExtension(pi: ExtensionAPI): Promise<voi
         state: config.enabled ? "enabled" : "disabled",
         maxLines: config.maxResultLines,
         view: config.interactiveView,
-        composition: compositionState(availability),
+        composition: compositionState(availability, config),
         catalog: catalogDocPath(),
       }),
       "info",
