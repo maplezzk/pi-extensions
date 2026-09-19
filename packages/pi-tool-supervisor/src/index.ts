@@ -472,18 +472,18 @@ async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEdi
   }
 
   const { verdicts, unanswered } = readJudgmentVerdicts(compiled.judgments, answers);
+  // 本后端不分级：条款定义了就要遵守，命中即阻断，也就要做行定位。
   const hits = verdicts.filter((verdict) => verdict.hit);
-  const blocking = verdicts.filter((verdict) => verdict.blocking);
   const localization = await locateJudgmentLines({
     context,
-    judgments: blocking.map((verdict) => verdict.judgment),
+    judgments: hits.map((verdict) => verdict.judgment),
     diff,
     beforeContent,
     afterContent,
     timeoutMs,
     typesafeModel,
   });
-  // 缺答案和无法编译的规则不能当成通过：它们列进 failed 和 warnings。
+  // 缺答案和切不出条款的文件不能当成通过：它们列进 failed 和 warnings。
   const unresolved = [
     ...ruleErrors,
     ...(unanswered.length > 0
@@ -493,14 +493,11 @@ async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEdi
       })]
       : []),
   ];
-  const status = blocking.length > 0 ? "rejected" : unresolved.length > 0 ? "failed" : "passed";
+  const status = hits.length > 0 ? "rejected" : unresolved.length > 0 ? "failed" : "passed";
   const hitDetails = hits.map((verdict) => `${verdict.judgment.ruleName}=${verdict.noul.toFixed(2)}`).join(", ");
-  // 命中但都不是 error 级时不能报「全部未命中」：那是另一种结论。
   const summary = status === "rejected"
     ? i18n.t("rejectedSummary", { count: hits.length, details: hitDetails })
-    : hits.length > 0
-      ? i18n.t("advisorySummary", { count: hits.length, details: hitDetails })
-      : i18n.t("passedSummary");
+    : i18n.t("passedSummary");
   const result: FileEditReviewResult = {
     ...base,
     status,

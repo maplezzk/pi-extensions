@@ -99,25 +99,9 @@
     "zh-CN": "规则文件 front matter 未找到结束标记 ---，已按普通 Markdown 处理。",
     "en-US": "The rule file front matter has no closing --- marker; it was treated as plain Markdown."
   },
-  "invalidRuleSeverity": {
-    "zh-CN": "规则 front matter 的 severity 值 {value} 无效，已按 error 处理；只能是 error、warning 或 info。",
-    "en-US": "The rule front matter severity value {value} is invalid and was treated as error; use error, warning, or info."
-  },
   "invalidRuleThreshold": {
     "zh-CN": "规则 front matter 的 threshold 值 {value} 无效，已按默认阈值处理；必须是 0 到 1 之间的数字。",
     "en-US": "The rule front matter threshold value {value} is invalid and the default threshold was used; it must be a number greater than 0 and at most 1."
-  },
-  "invalidBlockSeverity": {
-    "zh-CN": "规则块内的 severity 值 {value} 无效，已按该块默认值处理；只能是 error、warning 或 info。",
-    "en-US": "A rule block severity value {value} is invalid; the block default was used instead. Use error, warning, or info."
-  },
-  "invalidBlockThreshold": {
-    "zh-CN": "规则块的 threshold 值 {value} 无效，已按该块默认值处理；必须是 0 到 1 之间的数字。",
-    "en-US": "A rule block has an invalid threshold value {value}; the block default was used instead. It must be a number greater than 0 and at most 1."
-  },
-  "topLevelSectionsIgnored": {
-    "zh-CN": "规则文件同时含有 `## 规则：` 分块和顶层判据段落，顶层判据已被忽略；请把判据写进对应的规则块。",
-    "en-US": "The rule file has both `## Rule:` blocks and top-level criteria sections, so the top-level criteria were ignored. Move each criteria section into its rule block."
   },
   "invalidBackendConfig": {
     "zh-CN": "审查配置 reviewers[{index}].backend 无效，必须是 model 或 typesafe。",

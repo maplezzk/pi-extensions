@@ -13,19 +13,23 @@
 import { diffLines } from "diff";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 import {
+  DEFAULT_RULE_THRESHOLD,
   type FileEditReviewFinding,
   type FileEditReviewRule,
-  type RuleSeverity,
 } from "./review-utils.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/judgment.json", import.meta.url)));
 
 /** 一次行定位请求里允许的候选行上限；超过时跳过定位并明确报告。 */
 export const MAX_LOCALIZATION_CANDIDATES = 40;
-/** 候选行代码和判据文本截断长度，控制单次请求的输入 token。 */
+/** 候选项代码和判据文本的截断长度，控制单次请求的输入 token。 */
 const MAX_CANDIDATE_TEXT_CHARS = 120;
 const MAX_CRITERION_CHARS = 300;
+/** finding 文案上限；条款原文可能很长，全量塞进 tool result 会淹没 Agent。 */
+const MAX_FIX_HINT_CHARS = 600;
 const MAX_JUDGMENT_ID_CHARS = 60;
+/** 本后端不分 error/warning：条款定义了就要遵守，命中即阻断。 */
+const BLOCKING_SEVERITY = "error";
 /** 行定位置信度低于该值时只报规则、不报行号，避免指错行。 */
 const MIN_LOCALIZATION_CONFIDENCE = 0.5;
 const JUDGMENT_ID_SEPARATOR = /[^A-Za-z0-9_-]+/g;
@@ -36,13 +40,12 @@ const NO_LINE_CHOICE = "none";
 export interface RuleJudgment {
   /** TypeSafe 问题 id，只含字母、数字、下划线和连字符。 */
   id: string;
+  /** 审计和 finding 里显示的规则名，取自规则文件自己的条款叫法。 */
   ruleName: string;
   rulesFile: string;
-  severity: RuleSeverity;
   threshold: number;
-  criterionTrue: string;
-  criterionFalse: string;
-  fixHint?: string;
+  /** 条款正文；既当判据也当修复提示。 */
+  criterion: string;
 }
 
 export interface JudgmentCompileError {
@@ -80,10 +83,8 @@ export interface LocatedLine {
 export interface JudgmentVerdict {
   judgment: RuleJudgment;
   noul: number;
-  /** noul 达到该规则的阈值。 */
+  /** noul 达到该条款的阈值。 */
   hit: boolean;
-  /** 命中且 severity 为 error，可以阻断。 */
-  blocking: boolean;
 }
 
 export interface JudgmentReadResult {
@@ -107,8 +108,10 @@ function truncate(value: string, maxChars: number): string {
 }
 
 /**
- * 编译规则。缺少「判据」的规则不能被 TypeSafe 判断：这里报成显式错误，
- * 而不是退回散文规则或静默跳过。
+ * 把规则文件切出的编号条款编译成判断。
+ *
+ * 一个文件切不出任何条款时不能静默通过：那意味着这个文件在本后端下无法判断，
+ * 必须报成带路径的错误，否则启用 typesafe 后规则会静默失效。
  */
 export function compileJudgments(rules: FileEditReviewRule[]): JudgmentCompileResult {
   const judgments: RuleJudgment[] = [];
@@ -116,16 +119,12 @@ export function compileJudgments(rules: FileEditReviewRule[]): JudgmentCompileRe
   const warnings: string[] = [];
   const usedIds = new Set<string>();
   for (const rule of rules) {
-    for (const block of rule.blocks) {
-      const criterionTrue = block.sections.criterionTrue;
-      if (!criterionTrue) {
-        errors.push({
-          rulesFile: rule.absolutePath,
-          message: i18n.t("missingCriteria", { name: block.name }),
-        });
-        continue;
-      }
-      const baseId = sanitizeJudgmentId(block.name);
+    if (rule.clauses.length === 0) {
+      errors.push({ rulesFile: rule.absolutePath, message: i18n.t("missingClauses") });
+      continue;
+    }
+    for (const clause of rule.clauses) {
+      const baseId = sanitizeJudgmentId(clause.id);
       let id = baseId;
       let suffix = 2;
       while (usedIds.has(id)) {
@@ -138,33 +137,33 @@ export function compileJudgments(rules: FileEditReviewRule[]): JudgmentCompileRe
       usedIds.add(id);
       judgments.push({
         id,
-        ruleName: block.name,
+        ruleName: clause.group,
         rulesFile: rule.absolutePath,
-        severity: block.severity,
-        threshold: block.threshold,
-        criterionTrue,
-        criterionFalse: block.sections.criterionFalse ?? i18n.t("fallbackCriterionFalse"),
-        ...(block.sections.fixHint ? { fixHint: block.sections.fixHint } : {}),
+        threshold: rule.metadata.threshold ?? DEFAULT_RULE_THRESHOLD,
+        criterion: clause.text,
       });
     }
   }
   return { judgments, errors, warnings };
 }
 
-/** 把规则编译成一批 Noul 问题；同一份 state 下的问题由 TypeSafe 并行回答。 */
+/** 把条款编译成一批 Noul 问题；同一份 state 下的问题由 TypeSafe 并行回答。 */
 export function buildJudgmentQuestions(judgments: RuleJudgment[]): Record<string, TypeSafeQuestion> {
   const questions: Record<string, TypeSafeQuestion> = {};
   for (const judgment of judgments) {
     questions[judgment.id] = {
       type: "noul",
-      instructions: i18n.t("judgmentInstructions", { rule: judgment.ruleName }),
-      criteria: { true: judgment.criterionTrue, false: judgment.criterionFalse },
+      instructions: i18n.t("judgmentInstructions", { rule: judgment.ruleName, criterion: judgment.criterion }),
+      criteria: {
+        true: i18n.t("criterionTrue", { criterion: judgment.criterion }),
+        false: i18n.t("criterionFalse"),
+      },
     };
   }
   return questions;
 }
 
-/** 读取答案；缺答案或值非法的规则被列进 unanswered。 */
+/** 读取答案；缺答案或值非法的条款被列进 unanswered。 */
 export function readJudgmentVerdicts(
   judgments: RuleJudgment[],
   answers: Record<string, { type?: string; noul?: number }>,
@@ -177,8 +176,7 @@ export function readJudgmentVerdicts(
       unanswered.push(judgment);
       continue;
     }
-    const hit = noul >= judgment.threshold;
-    verdicts.push({ judgment, noul, hit, blocking: hit && judgment.severity === "error" });
+    verdicts.push({ judgment, noul, hit: noul >= judgment.threshold });
   }
   return { verdicts, unanswered };
 }
@@ -230,7 +228,7 @@ export function buildLocalizationQuestions(
       type: "choice",
       instructions: i18n.t("localizeInstructions", {
         rule: judgment.ruleName,
-        criterion: truncate(judgment.criterionTrue, MAX_CRITERION_CHARS),
+        criterion: truncate(judgment.criterion, MAX_CRITERION_CHARS),
         none: NO_LINE_CHOICE,
       }),
       criteria,
@@ -258,7 +256,7 @@ export function readLocatedLines(
   return located;
 }
 
-/** 把命中的判断转成 findings；只有 error 级在现有语义里会阻断。 */
+/** 把命中的判断转成 findings；本后端不分级，命中即阻断。 */
 export function buildJudgmentFindings(
   verdicts: JudgmentVerdict[],
   located: Map<string, LocatedLine>,
@@ -268,9 +266,9 @@ export function buildJudgmentFindings(
     if (!verdict.hit) continue;
     const { judgment } = verdict;
     const locatedLine = located.get(judgment.id);
-    const advice = judgment.fixHint ?? i18n.t("fallbackFixHint", { criterion: truncate(judgment.criterionTrue, MAX_CRITERION_CHARS) });
+    const advice = truncate(judgment.criterion, MAX_FIX_HINT_CHARS);
     findings.push({
-      severity: judgment.severity,
+      severity: BLOCKING_SEVERITY,
       ruleGroup: judgment.ruleName,
       message: locatedLine
         ? `${advice}\n${i18n.t("hitLine", { text: locatedLine.text })}`

@@ -33,103 +33,89 @@ Each reviewer picks an engine with `backend`. Omitting it keeps the original beh
 
 ### TypeSafe backend
 
-The `typesafe` backend turns each rule into one Noul question - "does code added or changed in `diff` violate this rule?" - answered as a probability. Every rule of one reviewer is asked in a single request, because TypeSafe answers all questions over the same state in parallel. Code owns everything else: `threshold` decides whether a rule counts as hit, `severity` decides whether a hit blocks, and a second, smaller Choice request locates the offending line among the lines the diff actually added.
+The `typesafe` backend turns every numbered clause of a rule file into one Noul question - "does code added or changed in `diff` violate this clause?" - answered as a probability. Every clause of one reviewer is asked in a single request, because TypeSafe answers all questions over the same state in parallel. Code owns the rest: `threshold` decides whether a clause counts as hit, and a second, smaller Choice request locates the offending line among the lines the diff actually added.
 
-Because TypeSafe returns judgments and not prose, the fixing advice comes from the rule's `## Fix` section, written once by the rule author. It is not generated per review.
+**Rule files are engine-independent: switching backends changes one config line and not a single character of a rule file.** There is no `## Criteria` section to write, no severity to declare, and no block heading to add.
 
-**One rule file can hold many rules or just one.** Both shapes share the same criteria syntax.
+Set `TYPESAFE_API_KEY` in the environment; `TYPESAFE_ENDPOINT` overrides the endpoint. A missing key, a failed request, or a rule file with no clause to judge produces a visible `failed` audit entry and does not block the tool, which matches how a failed chat-model review behaves.
 
-#### Many rules: split with `## Rule:`
+#### How it reads your rule file
 
 ```markdown
 ---
 name: javascript-typescript
-filePatterns: ["*.ts", "*.tsx"]
+filePatterns: ["**/*.ts"]
 ---
-# JS/TS code quality
+# JavaScript / TypeScript rules
 
-(file-level notes)
+## Ownership and severity (takes precedence)
 
-## Rule: no-magic-number
-severity: error
-threshold: 0.85
+1. `ruleGroup` may only use clause names or numbers that appear in this file.  ← reporting, not judged
+2. Do not report rules this file does not contain.                             ← reporting, not judged
 
-Criteria:
-  true: An added line writes a timeout or limit literal in business logic without extracting a named constant
-  false: The value already comes from a named constant, or the change adds no such literal
+## Requirements
 
-Fix: Extract the literal into a named constant.
-
-## Rule: no-swallowed-error
-severity: warning
-threshold: 0.90
-
-## Criteria
-true: An added line catches an error and continues silently: empty catch, an ignored rejected promise
-false: The failure is surfaced by rethrowing, propagating, or logging
-
-## Fix
-Propagate the failure to the caller, or at least log it.
+1. [error] **No magic values**: non-obvious numbers in business logic must be extracted into a semantic `const` or shared configuration.
+2. [warning] **At most 3 parameters**: a declaration with 4 or more parameters must use a parameter object.
+3. **No `any`**: prefer concrete types; use `unknown` and narrow it at the boundary.
+   Do not bypass type checking with `as any` or `any[]`.
 ```
 
-Each `## Rule: <name>` heading (`## 规则：<name>` works too) starts one independent rule, and the block name is the rule name shown in the audit. **Every rule gets its own probability, threshold, severity, line localization, and finding**, so rules never interfere with each other:
+This becomes **3 independent rules**:
 
-| Block | Criteria | Threshold | `noul` | Outcome |
+| Judgment id | Rule name (the `ruleGroup` in each finding) | Criterion | `noul` | Outcome |
 | --- | --- | --- | --- | --- |
-| `no-magic-number` | `true:` magic literal | 0.85 | 0.92 | error → blocks, located at line 9 |
-| `no-swallowed-error` | `true:` swallowed failure | 0.90 | 0.31 | below threshold, not reported |
+| `rule_1` | `Requirements 1 No magic values` | clause text | 0.52 | below threshold |
+| `rule_2` | `Requirements 2 At most 3 parameters` | clause text | 0.03 | below threshold |
+| `rule_3` | `Requirements 3 No any` | clause text | **0.97** | blocks, located at line 3 |
 
-The two criteria are **two independent Noul questions answered in the same request**, so adding rules barely adds latency: 10 rules batched into one request measured 1.1 s and 1,351 input tokens, against 4.3 s and 7,525 input tokens for 10 separate requests.
+A clause's text is **both the criterion and the finding text**. The three clauses are three independent Noul questions **answered in the same request**.
 
-A block can override the file front matter with its own `severity:` and `threshold:`; an omitted field falls back to front matter, then to the default.
+#### Splitting rules
 
-#### One rule: the whole file is the rule
+| What you write | How it is treated |
+| --- | --- |
+| A `1. text` numbered clause | One rule; indented continuation lines join the same clause |
+| Numbered items inside a `## Ownership and severity…` section | **Not judged** - those are reporting requirements, not code rules |
+| A leading `[error]` / `[warning]` on a clause | Stripped from the criterion; this backend has no levels, so **every hit blocks** |
+| A `**bold**` phrase in a clause | Used as the rule name, combined as `{section} {number} {title}` - this is the `ruleGroup` |
+| `threshold` in front matter | Hit threshold for every clause in that file; default `0.85` |
+| Other prose, `## Output` style sections | Does not affect judging |
 
-When a file has no `## Rule:` heading, the entire file is one rule and behaves exactly as it did before rule blocks existed:
+The `## Ownership and severity` heading is a fixed convention in common rule files; numbered items inside it are always skipped, so requirements like "`ruleGroup` may only use clause names that appear in this file" never turn into code rules.
 
-```markdown
----
-name: no-swallowed-error
-severity: error
-threshold: 0.85
----
-# Do not swallow failures
+#### You can see which rule failed
 
-## Criteria
-true: An added line catches an error and continues silently: empty catch, an ignored rejected promise, or a default/null/empty value that hides the failure
-false: The failure is surfaced by rethrowing, propagating, or logging; or the change adds no error handling
+Every hit clause produces its own finding, named the way your file names it:
 
-## Fix
-Propagate the failure to the caller, or at least log it and return an explicit error value. Do not hide it behind a default.
+```
+Found 2 must-fix problems
+- [Requirements 1 No magic values] line 5: non-obvious numbers in business logic must be extracted…
+  Offending line: const fallback = 30000;
+- [Requirements 4 No any] line 3: prefer concrete types; use `unknown`…
+  Offending line: const raw = (config as any).timeout;
 ```
 
-In a single-rule file `severity` and `threshold` are read from front matter only, so prose that discusses thresholds in the body is never mistaken for configuration.
+The reviewer `summary` also lists every `noul`, as in `2 rules hit: Requirements 1 No magic values=0.92, Requirements 4 No any=0.97`.
 
-#### Criteria syntax
+One request asks N clauses, so adding clauses barely adds latency: measured 6 clauses at 2,438 input tokens, and 10 rules batched into one request at 1.1 s / 1,351 input tokens, against 4.3 s / 7,525 input tokens for 10 separate requests.
 
-- A criteria section starts with `## Criteria` (`## 判据`, `Criteria:`, or `判据：` work too) and holds `true:` and `false:` lines; an indented line continues the previous definition.
-- A fix section starts with `## Fix` (`## 修复提示`, `Fix: text`, or `修复提示：文本`) and becomes the finding text; without it the finding falls back to the `true:` criterion.
-- The `## Rule:` separator is required, so a plain heading like `## Rules of thumb` is never mistaken for a rule block.
-- When a file has both rule blocks and top-level criteria, the top-level criteria are ignored with a warning instead of being silently merged.
-- A rule **block** without a criteria section is reported as a failed review naming the file path and the block, while the other rules in the same file are still judged.
+#### No clauses is an error, not a pass
 
-#### Front matter fields
-
-| Field | Meaning |
-| --- | --- |
-| `severity` | `error`, `warning`, or `info`. Only `error` blocks. Default `error`. |
-| `threshold` | Probability at which the rule counts as hit; greater than 0 and at most 1. Default `0.85`. Calibrate it per rule. |
+When a rule file yields no numbered clause at all (say it is all prose, or the items are bullets), the review reports `failed` with the file path and is **never treated as passing**. Otherwise enabling typesafe would silently disable a rule file.
 
 #### Limitations
 
 Limitations worth knowing before treating a `typesafe` reviewer as a gate:
 
-- **Criteria must be specific enough to judge.** Prose like "do not write bad code" cannot be judged reliably; break it into concrete, checkable conditions.
-- **Calibrate thresholds per rule.** Measured: `no-magic-number` scored only 0.70 on `const timeout = 30000;`, so the default 0.85 threshold misses it. The real migration cost is compiling prose rules into concrete criteria and calibrating each threshold, not writing code.
+- **The more specific the clause, the better the judgment.** When a probability is off, fix how the sentence is written (spell out the exemptions) rather than changing the format. Measured: "non-obvious numbers must be extracted into a semantic constant" is too subjective about "semantic", so `const fallback = 30000;` scored 0.52, while the sharp-edged "no `any`" scored 0.97.
+- **The threshold is per file.** Clause quality varies within one file, and there is no per-clause override; sharpen the clause instead.
+- **No severity levels.** A `[warning]` clause that only advises under the `model` backend blocks under the `typesafe` backend.
 - Line localization needs the post-edit file. A `before` review only has it for `write`, so `edit` before-reviews report rule-level issues without a line number.
 - When the diff adds more than 40 lines, localization is skipped and reported as a warning; the rule-level issues are still reported.
 - The whole post-edit file is sent as context, bounded by `maxFileContextChars`. It roughly doubles the input tokens compared with a diff-only request.
-- A probability is a calibrated judgment, not a guarantee. Validate thresholds against your own rules, and expect borderline rules to drift.
+- Every clause body is sent, so detailed clauses raise input tokens (measured about 2.4k input tokens for 6 clauses).
+- A probability is a calibrated judgment, not a guarantee.
 
 ## Install
 
@@ -220,6 +206,8 @@ consumers:
 ```
 
 `filePatterns` uses a simplified glob syntax: `*` does not cross `/`, `**` does, and `**/` at any position matches zero or more directory levels. Backslashes are normalized to `/`, and a leading `./` is ignored.
+
+`threshold` is an optional front matter field used only by the `typesafe` backend, defaulting to `0.85`; the `model` backend ignores it.
 
 ### Condition modules
 

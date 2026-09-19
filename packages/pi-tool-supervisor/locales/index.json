@@ -231,10 +231,6 @@
     "zh-CN": "{count} 条规则命中：{details}",
     "en-US": "{count} rule judgments were hit: {details}"
   },
-  "advisorySummary": {
-    "zh-CN": "{count} 条规则命中，但都不是阻断级别：{details}",
-    "en-US": "{count} rule judgments were hit, none at blocking severity: {details}"
-  },
   "unansweredJudgments": {
     "zh-CN": "TypeSafe 没有返回 {count} 条规则的答案（{ids}），它们无法判定，本次审查按失败处理，不视为通过。",
     "en-US": "TypeSafe returned no answer for {count} rules ({ids}); they could not be judged, so this review is reported as failed rather than passed."

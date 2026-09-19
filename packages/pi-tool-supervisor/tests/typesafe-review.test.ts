@@ -8,53 +8,45 @@ import { loadFileEditReviewConfig } from "../src/review-utils.ts";
 
 process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
 
+/**
+ * 照抄真规则文件的形态：front matter + 元指令段落 + 编号条款 + severity 标注 + 粗体标题。
+ * 规则文件本身不动，typesafe 直接读它。
+ */
 const SWALLOWED_ERROR_RULE = `---
-name: no-swallowed-error
-severity: error
-threshold: 0.85
----
-# 不得静默吞掉异常
-
-## 判据
-true: 新增行捕获错误后静默继续，例如空 catch 或用默认值掩盖失败
-false: 通过抛出或记录日志报告失败
-
-## 修复提示
-把失败显式抛给调用方，不要用默认值掩盖。
-`;
-
-const PROSE_ONLY_RULE = `# 只有散文规则
-
-1. 不要吞异常。
-`;
-
-/** 一个文件里两条规则：一条阻断、一条只提示。 */
-const MULTI_BLOCK_RULE = `---
 name: js-quality
+threshold: 0.85
 ---
 # JS/TS 代码质量
 
-## 规则：no-swallowed-error
-severity: error
+## 归属与 severity（优先于以上条款）
+
+1. \`ruleGroup\` 只能填本文件里原样出现的条款名或编号。
+2. 禁止越界：不要报本文件没写的规则。
+3. \`severity\` 必须按条款前的标注填写。
+
+## 必须遵守
+
+1. [error] **禁止静默吞异常**：新增行捕获错误后静默继续，例如空 catch 或用默认值掩盖失败。
+   应通过抛出或记录日志报告失败。
+`;
+
+/** 没有任何编号条款的文件：本后端切不出规则，必须报错而不是静默通过。 */
+const CLAUSE_FREE_RULE = `# 只有散文规则
+
+不要把错误吞掉。
+`;
+
+/** 一个文件里两条规则：被告知哪一条命中，各自带自己的行号。 */
+const MULTI_CLAUSE_RULE = `---
+name: js-quality
 threshold: 0.85
+---
+# JS/TS 代码质量
 
-## 判据
-true: 新增行捕获错误后静默继续，例如空 catch 或用默认值掩盖失败
-false: 通过抛出或记录日志报告失败
+## 必须遵守
 
-## 修复提示
-把失败显式抛给调用方，不要用默认值掩盖。
-
-## 规则：no-magic-number
-severity: warning
-threshold: 0.85
-
-## 判据
-true: 新增行直接写了魔法数字
-false: 已经提取成具名常量
-
-## 修复提示
-把魔法数字提取成具名常量。
+1. [error] **禁止静默吞异常**：新增行捕获错误后静默继续，例如空 catch 或用默认值掩盖失败。
+2. [warning] **禁止魔法值**：业务逻辑中的非显而易见数字必须提取为有语义的常量。
 `;
 
 /** 测试用的最小 Pi 扩展宿主；只覆盖 supervisor 实际调用的方法。 */
@@ -269,9 +261,12 @@ test("typesafe reviewer 命中规则时阻断，并用规则自带的修复提�
     // 一次 Noul 批量判断，命中后再一次 Choice 行定位。
     assert.deepEqual(fixture.requests, ["noul", "choice"]);
     assert.equal(reviewer?.findings?.[0]?.line, 5);
+    // 本后端不分级：命中即阻断。
     assert.equal(reviewer?.findings?.[0]?.severity, "error");
-    assert.match(reviewer?.findings?.[0]?.message ?? "", /把失败显式抛给调用方/);
-    assert.match(reviewer?.summary ?? "", /no-swallowed-error=0\.96/);
+    // 规则名取自条款自己的叫法，所以能看出是文件里哪一条。
+    assert.equal(reviewer?.findings?.[0]?.ruleGroup, "必须遵守 1 禁止静默吞异常");
+    assert.match(reviewer?.findings?.[0]?.message ?? "", /应通过抛出或记录日志报告失败/);
+    assert.match(reviewer?.summary ?? "", /必须遵守 1 禁止静默吞异常=0\.96/);
     // 拒绝必须送到 Agent 的 tool result 里，而不是只留在审计卡片上。
     assert.equal(result.content.length, 2);
     assert.match(result.content[1]?.text ?? "", /命中代码：\/\/ ignore/);
@@ -375,39 +370,41 @@ test("配置 UI 可以把 model reviewer 切换到 typesafe 引擎并持久化",
   }
 });
 
-test("warning 级规则命中时只入审计、不阻断也不注入 Agent", async () => {
-  const warningRule = SWALLOWED_ERROR_RULE.replace("severity: error", "severity: warning");
+test("条款里的 [warning] 标注不再降级：定义即遵守，照样阻断", async () => {
+  // 旧行为是 [warning] 只提示不阻断；本后端不分级，所以同一条款要阻断。
+  const warningRule = SWALLOWED_ERROR_RULE.replace("[error] **禁止静默吞异常**", "[warning] **禁止静默吞异常**");
   const fixture = await createFixture({ rules: warningRule, noul: 0.96, chosenLine: "5" });
   await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
     const result = await runWriteTool(fixture);
     const audit = result.details?.fileEditReview;
 
-    assert.equal(audit?.status, "passed");
-    assert.equal(audit?.reviewers?.[0]?.findings?.[0]?.severity, "warning");
-    assert.match(audit?.reviewers?.[0]?.summary ?? "", /都不是阻断级别/);
-    // 非阻断命中不需要行定位，也不需要打扰 Agent。
-    assert.deepEqual(fixture.requests, ["noul"]);
-    assert.equal(result.content.length, 1);
+    assert.equal(audit?.status, "rejected");
+    assert.equal(audit?.reviewers?.[0]?.findings?.[0]?.severity, "error");
+    // 判据里不能留 [warning]，否则行为和文案矛盾。
+    assert.doesNotMatch(audit?.reviewers?.[0]?.findings?.[0]?.message ?? "", /\[warning\]/);
+    // 阻断就要行定位，也要送到 Agent 的 tool result。
+    assert.deepEqual(fixture.requests, ["noul", "choice"]);
+    assert.equal(result.content.length, 2);
   });
 });
 
-test("规则文件缺少判据时报 failed 并说明原因，不发起 TypeSafe 请求", async () => {
-  const fixture = await createFixture({ rules: PROSE_ONLY_RULE });
+test("规则文件切不出编号条款时报 failed 并说明原因，不发起 TypeSafe 请求", async () => {
+  const fixture = await createFixture({ rules: CLAUSE_FREE_RULE });
   await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
     const result = await runWriteTool(fixture);
     const audit = result.details?.fileEditReview;
 
     assert.equal(audit?.status, "failed");
-    assert.match(audit?.reviewers?.[0]?.error ?? "", /判据/);
+    assert.match(audit?.reviewers?.[0]?.error ?? "", /编号条款/);
     assert.deepEqual(fixture.requests, []);
   });
 });
 
-test("一个文件里的多条规则合并成一次请求，并各自报出独立的规则名和行", async () => {
+test("一个文件里的多条规则合并成一次请求，并各自报出是哪条命中", async () => {
   const fixture = await createFixture({
-    rules: MULTI_BLOCK_RULE,
-    noulById: { "no-swallowed-error": 0.96, "no-magic-number": 0.93 },
-    lineById: { "no-swallowed-error__line": "5" },
+    rules: MULTI_CLAUSE_RULE,
+    noulById: { rule_1: 0.96, rule_2: 0.93 },
+    lineById: { rule_1__line: "5" },
   });
   await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
     const result = await runWriteTool(fixture);
@@ -415,47 +412,52 @@ test("一个文件里的多条规则合并成一次请求，并各自报出独�
     const reviewer = audit?.reviewers?.[0];
 
     assert.equal(audit?.status, "rejected");
-    // 两条规则一次 Noul 批量问完；只有 error 级那条需要行定位。
-    assert.deepEqual(fixture.questionIdBatches, [["no-swallowed-error", "no-magic-number"], ["no-swallowed-error__line"]]);
-    assert.deepEqual(fixture.requests, ["noul,noul", "choice"]);
+    // 两条规则一次 Noul 批量问完；不分级，两条命中都要行定位。
+    assert.deepEqual(fixture.questionIdBatches, [["rule_1", "rule_2"], ["rule_1__line", "rule_2__line"]]);
+    assert.deepEqual(fixture.requests, ["noul,noul", "choice,choice"]);
     // 两条规则各自得到一条 finding，而不是合并成一条。
-    assert.deepEqual(reviewer?.findings?.map((finding) => finding.ruleGroup), ["no-swallowed-error", "no-magic-number"]);
-    assert.deepEqual(reviewer?.findings?.map((finding) => finding.severity), ["error", "warning"]);
+    assert.deepEqual(reviewer?.findings?.map((finding) => finding.ruleGroup), [
+      "必须遵守 1 禁止静默吞异常",
+      "必须遵守 2 禁止魔法值",
+    ]);
+    assert.deepEqual(reviewer?.findings?.map((finding) => finding.severity), ["error", "error"]);
     assert.equal(reviewer?.findings?.[0]?.line, 5);
-    assert.match(reviewer?.findings?.[0]?.message ?? "", /把失败显式抛给调用方/);
-    assert.match(reviewer?.findings?.[1]?.message ?? "", /把魔法数字提取成具名常量/);
+    assert.match(reviewer?.findings?.[0]?.message ?? "", /新增行捕获错误后静默继续/);
+    assert.match(reviewer?.findings?.[1]?.message ?? "", /必须提取为有语义的常量/);
     // summary 必须两条都列出来，否则看不出哪条命中。
-    assert.match(reviewer?.summary ?? "", /no-swallowed-error=0\.96/);
-    assert.match(reviewer?.summary ?? "", /no-magic-number=0\.93/);
+    assert.match(reviewer?.summary ?? "", /必须遵守 1 禁止静默吞异常=0\.96/);
+    assert.match(reviewer?.summary ?? "", /必须遵守 2 禁止魔法值=0\.93/);
   });
 });
 
-test("多规则文件里只有 warning 级命中时不阻断，也不发第二次请求", async () => {
+test("多规则文件里只有一条命中时，只报那一条", async () => {
   const fixture = await createFixture({
-    rules: MULTI_BLOCK_RULE,
-    noulById: { "no-swallowed-error": 0.2, "no-magic-number": 0.93 },
+    rules: MULTI_CLAUSE_RULE,
+    noulById: { rule_1: 0.2, rule_2: 0.93 },
+    lineById: { rule_2__line: "5" },
   });
-  await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
-    const result = await runWriteTool(fixture);
-    const audit = result.details?.fileEditReview;
-
-    assert.equal(audit?.status, "passed");
-    // 两条规则仍然合并成一次请求，只是都不需要行定位。
-    assert.deepEqual(fixture.requests, ["noul,noul"]);
-    assert.deepEqual(audit?.reviewers?.[0]?.findings?.map((finding) => finding.ruleGroup), ["no-magic-number"]);
-    assert.equal(result.content.length, 1);
-  });
-});
-
-test("多规则文件里某个块缺判据时报 failed，并指名是哪个块", async () => {
-  const brokenBlockRule = MULTI_BLOCK_RULE.replace("## 判据\ntrue: 新增行直接写了魔法数字\nfalse: 已经提取成具名常量\n", "");
-  const fixture = await createFixture({ rules: brokenBlockRule, noul: 0.96, chosenLine: "5" });
   await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
     const result = await runWriteTool(fixture);
     const audit = result.details?.fileEditReview;
 
     assert.equal(audit?.status, "rejected");
-    // 阻断和“某个块缺判据”同时发生：阻断优先，但缺判据仍然要在 warnings 里指名。
-    assert.match(audit?.reviewers?.[0]?.warnings?.join(" ") ?? "", /no-magic-number/);
+    // 两条规则仍然合并成一次请求；只有命中那条需要行定位。
+    assert.deepEqual(fixture.requests, ["noul,noul", "choice"]);
+    assert.deepEqual(audit?.reviewers?.[0]?.findings?.map((finding) => finding.ruleGroup), ["必须遵守 2 禁止魔法值"]);
+  });
+});
+
+test("同一条规则重复命中时不会静默丢掉后续命中", async () => {
+  const fixture = await createFixture({
+    rules: MULTI_CLAUSE_RULE,
+    noulById: { rule_1: 0.96, rule_2: 0.95 },
+    lineById: { rule_1__line: "5", rule_2__line: "4" },
+  });
+  await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
+    const result = await runWriteTool(fixture);
+    const reviewer = result.details?.fileEditReview?.reviewers?.[0];
+
+    // 两条命中的行号必须各自独立，不能只看第一条。
+    assert.deepEqual(reviewer?.findings?.map((finding) => finding.line), [5, 4]);
   });
 });
