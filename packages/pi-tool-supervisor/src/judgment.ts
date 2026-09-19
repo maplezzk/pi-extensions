@@ -5,9 +5,9 @@
  * 命中判断后再用一次 Choice 请求把问题定位到具体的新增行。
  *
  * 设计要点：
- * - 代码拥有控制流：阈值、severity、阻断与否都在这里决定，模型只提供概率。
- * - finding 文案来自规则文件自带的「修复提示」，不依赖模型生成解释。
- * - 缺失答案、阈值非法、规则缺判据都必须明确报告，不能降级成「通过」。
+ * - 代码拥有控制流：阈值和阻断与否都在这里决定，模型只提供概率。
+ * - finding 文案直接取规则文件里的条款正文，不依赖模型生成解释。
+ * - 缺失答案、阈值非法、规则切不出条款都必须明确报告，不能降级成「通过」。
  */
 
 import { diffLines } from "diff";
@@ -26,7 +26,7 @@ export const MAX_LOCALIZATION_CANDIDATES = 40;
 const MAX_CANDIDATE_TEXT_CHARS = 120;
 const MAX_CRITERION_CHARS = 300;
 /** finding 文案上限；条款原文可能很长，全量塞进 tool result 会淹没 Agent。 */
-const MAX_FIX_HINT_CHARS = 600;
+const MAX_FINDING_TEXT_CHARS = 600;
 const MAX_JUDGMENT_ID_CHARS = 60;
 /** 本后端不分 error/warning：条款定义了就要遵守，命中即阻断。 */
 const BLOCKING_SEVERITY = "error";
@@ -266,13 +266,13 @@ export function buildJudgmentFindings(
     if (!verdict.hit) continue;
     const { judgment } = verdict;
     const locatedLine = located.get(judgment.id);
-    const advice = truncate(judgment.criterion, MAX_FIX_HINT_CHARS);
+    const text = truncate(judgment.criterion, MAX_FINDING_TEXT_CHARS);
     findings.push({
       severity: BLOCKING_SEVERITY,
       ruleGroup: judgment.ruleName,
       message: locatedLine
-        ? `${advice}\n${i18n.t("hitLine", { text: locatedLine.text })}`
-        : advice,
+        ? `${text}\n${i18n.t("hitLine", { text: locatedLine.text })}`
+        : text,
       ...(locatedLine ? { line: locatedLine.line } : {}),
     });
   }

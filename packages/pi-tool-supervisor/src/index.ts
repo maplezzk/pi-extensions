@@ -61,7 +61,7 @@ import {
   type ReviewBackend,
   type ReviewTrigger,
 } from "./review-utils.ts";
-import { askTypeSafe } from "./typesafe-client.ts";
+import { askTypeSafe, type TypeSafeConnection } from "./typesafe-client.ts";
 import {
   buildJudgmentFindings,
   buildJudgmentQuestions,
@@ -403,11 +403,24 @@ async function reviewWithModel(options: RunReviewerOptions): Promise<FileEditRev
 }
 
 /**
+ * 从 config.json 取 TypeSafe 连接设置。
+ *
+ * config 里没配的字段留空，由连接层回退到环境变量；key 不回显、不写日志。
+ */
+function typeSafeConnection(config: FileEditReviewConfig): TypeSafeConnection {
+  const typesafe = config.typesafe;
+  return {
+    ...(typesafe?.apiKey === undefined ? {} : { apiKey: typesafe.apiKey }),
+    ...(typesafe?.endpoint === undefined ? {} : { endpoint: typesafe.endpoint }),
+  };
+}
+
+/**
  * 用 TypeSafe 判断后端执行一次审查。
  *
  * 一条规则 = 一个 Noul 问题，一次请求批量问完（同一份 state 下 TypeSafe 并行回答）；
- * 有 error 级命中时再做一次 Choice 请求，把问题定位到具体新增行。
- * 阈值、severity、阻断与否都由本模块决定，模型只提供概率。
+ * 有条款命中时再做一次 Choice 请求，把问题定位到具体新增行。
+ * 阈值和阻断与否都由本模块决定，模型只提供概率；本后端不分级，命中即阻断。
  */
 async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEditReviewResult> {
   const {
@@ -426,17 +439,18 @@ async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEdi
   }
 
   const compiled = compileJudgments(rules);
-  const ruleErrors = compiled.errors.map((entry) => `${entry.rulesFile}: ${entry.message}`);
+  const unparsableRules = compiled.errors.map((entry) => `${entry.rulesFile}: ${entry.message}`);
   if (compiled.judgments.length === 0) {
     return {
       ...base,
       status: "failed",
       durationMs: elapsedMs(),
-      error: ruleErrors.length > 0 ? ruleErrors.join(" | ") : i18n.t("noJudgments"),
+      error: unparsableRules.length > 0 ? unparsableRules.join(" | ") : i18n.t("noJudgments"),
     };
   }
 
   const typesafeModel = reviewer.typesafeModel ?? DEFAULT_TYPESAFE_MODEL;
+  const connection = typeSafeConnection(config);
   const timeoutMs = config.timeoutSeconds * MILLISECONDS_PER_SECOND;
   const state: JudgmentState = {
     tool: toolName,
@@ -455,6 +469,7 @@ async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEdi
       questions: buildJudgmentQuestions(compiled.judgments),
       model: typesafeModel,
       timeoutMs,
+      ...connection,
       signal: context.signal,
     });
     answers = response.answers;
@@ -482,10 +497,11 @@ async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEdi
     afterContent,
     timeoutMs,
     typesafeModel,
+    connection,
   });
   // 缺答案和切不出条款的文件不能当成通过：它们列进 failed 和 warnings。
   const unresolved = [
-    ...ruleErrors,
+    ...unparsableRules,
     ...(unanswered.length > 0
       ? [i18n.t("unansweredJudgments", {
         count: unanswered.length,
@@ -522,8 +538,9 @@ async function locateJudgmentLines(options: {
   afterContent?: string;
   timeoutMs: number;
   typesafeModel: string;
+  connection: TypeSafeConnection;
 }): Promise<{ located: Map<string, LocatedLine>; warnings: string[] }> {
-  const { context, judgments, diff, beforeContent, afterContent, timeoutMs, typesafeModel } = options;
+  const { context, judgments, diff, beforeContent, afterContent, timeoutMs, typesafeModel, connection } = options;
   const located = new Map<string, LocatedLine>();
   const warnings: string[] = [];
   if (judgments.length === 0 || afterContent === undefined) return { located, warnings };
@@ -542,6 +559,7 @@ async function locateJudgmentLines(options: {
       questions: buildLocalizationQuestions(judgments, scan.lines),
       model: typesafeModel,
       timeoutMs,
+      ...connection,
       signal: context.signal,
     });
     return { located: readLocatedLines(judgments, response.answers, scan.lines), warnings };
