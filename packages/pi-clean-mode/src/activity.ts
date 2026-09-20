@@ -398,30 +398,50 @@ export function activityCountersNote(counters: ActivityCounters): string {
 }
 
 /**
- * 把尾注接在活动块最后一条非空行后面；尾注为空、块为空时原样返回。
+ * 把尾注接在活动块的一个子项行后面；尾注为空、块为空时原样返回。
  *
- * 空行是补位用的，不能把尾注挂到它后面 —— 那会在屏幕上留下一个只带分隔符的孤行。
+ * 优先接最后一个子项行（动作行、思考行），不接输出尾巴：尾巴是命令自己打出来的那行，
+ * 把本轮计数接到它后面，读起来就像这条命令的汇总。补位空行同样不能挂 —— 那会在屏幕上
+ * 留下一个只带分隔符的孤行；块里只剩续行时才退回最后一条非空行。
  * 在已渲染的行上拼接而不是另加一行：行数预算让给「正在跑什么」，删掉动作行之后也还在。
  */
-export function appendActivityCountersNote(lines: string[], note: string): string[] {
+export function appendActivityCountersNote(
+	rows: ActivityRow[],
+	lines: string[],
+	note: string,
+): string[] {
 	if (note === "") {
 		return lines;
 	}
 
-	let last = -1;
-	for (let index = lines.length - 1; index >= 0; index -= 1) {
-		if (lines[index] !== "") {
-			last = index;
-			break;
-		}
-	}
-	if (last < 0) {
+	const target = lastItemRowIndex(rows) ?? lastNonEmptyLineIndex(lines);
+	if (target === undefined) {
 		return lines;
 	}
 
 	return lines.map((line, index) =>
-		index === last ? `${line}${SEGMENT_SEPARATOR}${note}` : line,
+		index === target ? `${line}${SEGMENT_SEPARATOR}${note}` : line,
 	);
+}
+
+/** 最后一个子项行（动作名或思考头部）的行号；块里只有续行时返回 undefined。 */
+function lastItemRowIndex(rows: ActivityRow[]): number | undefined {
+	for (let index = rows.length - 1; index >= 0; index -= 1) {
+		if (rows[index]?.kind === "item") {
+			return index;
+		}
+	}
+	return undefined;
+}
+
+/** 最后一条非空行；用来兜底「块里没有子项行」这种形态。 */
+function lastNonEmptyLineIndex(lines: string[]): number | undefined {
+	for (let index = lines.length - 1; index >= 0; index -= 1) {
+		if (lines[index] !== "") {
+			return index;
+		}
+	}
+	return undefined;
 }
 
 /**
@@ -431,17 +451,18 @@ export function appendActivityCountersNote(lines: string[], note: string): strin
  * （粗竖条 `▌` + 加粗文案），因此它是整轮最上面那个槽位里唯一的内容，
  * 越往下的细节都不归它。
  *
- * 行首不加 `[clean]` 来源前缀：折叠头每轮都画、位置固定，前缀只会把文案右推到
+ * 行首不画转动图标：这一行的耗时本身就每秒在变，「还在跑」已经说清楚了；再加一个
+ * 每 150ms 转一下的图标，只会在顶部多一处跳动，和活动块里那个真正表示「这条命令在跑」
+ * 的图标抢注意力。运行结束后换成 `▌ 用时 42s`，两者版式一致，切换时不跳列。
+ *
+ * 行首也不加 `[clean]` 来源前缀：折叠头每轮都画、位置固定，前缀只会把文案右推到
  * 与细节行不同的列上。粗竖条本身就是「这是 clean-mode 画的」的标记。
  */
 function buildRunStatusLine(input: ActivityRenderInput): string {
-	const { snapshot, nowMs, frame, animated, paint } = input;
-	const glyph = activityGlyph("working", frame, animated);
+	const { snapshot, nowMs, paint } = input;
 	const label = snapshot.running.length > 1 ? i18n.t("activityParallel") : i18n.t("activityWorking");
 
-	const parts = [
-		`${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, label))}`,
-	];
+	const parts = [paint.bold(paint.fg(COLOR_HEADING, label))];
 	if (snapshot.startedAtMs !== undefined) {
 		parts.push(paint.fg(COLOR_DETAIL, formatDuration(nowMs - snapshot.startedAtMs)));
 	}

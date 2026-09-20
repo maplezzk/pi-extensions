@@ -57,13 +57,15 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 活动区一直停在顶部，不跟着最新动作走 | 活动块应接在当前组最后一条可见行末尾（`appendActivityTail`）。卡在顶部说明轮首还在读 `getActivityLines`（它只应读 `getRunStatusLines`），或当前组号对不上（`beginActionGroupStep` 是否在 turn 边界调了） |
 | 顶部又出现思考或工具行 | 轮首子组件必须读 `getRunStatusLines`（`runtime.activityArea.runStatusLines`，无计数的状态行），不能读 `getActivityLines`；顶部只承担整轮时间，细节行只属于列表末尾 |
 | 屏幕上出现两个「处理中」 | 只有轮首能写 `activityWorking` / `activityParallel`（`buildRunStatusLines`）。活动块里只能放思考、动作、输出尾巴；把状态文案或耗时再写一遍就是同一句话重复，对应断言在 `tests/activity.test.ts` 的「活动块只报最新状态」 |
-| 分类计数又单独占一行 | 计数由 `activity-area.ts` 接在活动块最后一个非空行尾（`activityCountersNote` + `appendActivityCountersNote`），不另开一行也不进组头；接在**已渲染**的行上，所以单条组去掉动作行之后不会跟着消失，也不占行数预算 |
+| 分类计数又单独占一行 | 计数由 `activity-area.ts` 接在活动块最后一个**子项行**（正在跑的动作或思考头部）尾（`activityCountersNote` + `appendActivityCountersNote`），不另开一行也不进组头；接在**已渲染**的行上，所以单条组去掉动作行之后不会跟着消失，也不占行数预算。不接输出尾巴：那是命令自己打出来的行，把本轮计数接在后面读起来像这条命令的汇总 |
 | 同一个动作名出现两次 | 单条组的组头就是这条动作的摘要，活动块要走去掉动作名的形态（`runtime.activityArea.detailLines` ← `withoutActionRows` 去掉 `actionRows` 那几行）；多条成员的组收起时组头只写汇总文案、没说具体动作，才用带动作名的形态。展开的组里命令已经逐行列出，也走去掉动作名的形态 |
 | 历史组的组头也带计数 | 计数是本轮累计值，只能加在当前组上（`isCurrentActionGroup`）；忘了这个判断就会给历史组报出不属于它的数字 |
 | 活动块悬在组中段 | `isLastVisibleRow` 的「最后一条可见行」算错了：展开的组是 `groupSize - 1`，收起时是 `0`（成员行隐藏，只剩组头）；写成固定 0 就会挂到组头上、展开后看起来悬在中间 |
 | 思考行又挂在某条命令的正文底下 | 展开的组里成员行必须走 `TOOL_ROW_SUMMARY`：命令行与活动块行共用一个树形前缀（`renderTreePrefix`），思考行才是列表里与命令平级的末项。成员行铺原文时活动块就挂在多行正文后面了 |
 | 活动行被终端切掉 / 主屏模式直接报错停机 | 活动行超出渲染宽度：主屏模式下 pi-tui 遇到超宽行会抛错，全屏模式被硬切。`clampLinesToWidth` 按本次 `width` 截断，`ACTIVITY_MAX_LINE` 只是文本片段的上限，不等于行宽 |
 | 发送后一段时间没任何反馈，看着像卡住 | 活动行要等一个能挂它的组件：轮首槽位属于本轮第一条 assistant 消息（`message_start` 才创建），组头则要等第一个工具调用。这段窗口里绝对不能关 Pi 自带的 Working 提示，否则屏幕一片空白。判定在 `ActivityAreaDeps.hasRunHeaderHost`，它也参与去重签名 |
+| 底部 Pi 自带的 `⏱ Ns` 提示一闪一闪 | 接管必须是**整轮一次**的：本轮一旦隐藏过内置提示，就一直藏到运行结束（`clearActivityArea` 让回去），不能因为「工具刚跑完、下一条还没开始」那一两帧活动行暂时为空就弹回来。判定看的是 `getSnapshot().active && hasRunHeaderHost && (有活动行 || isRunHeaderShown())`，不是这一帧有没有活动行 |
+| 工具行先原样跳出来、再突然被收进组里 | 登记必须早于 Pi 渲染那一行。`tool_call` / `tool_execution_start` 要等整条 assistant 消息结束才发（实测晚 300ms 上下），所以 `stream-registration.ts` 从 `message_update` 的流式内容块里就扫出工具调用并登记；开组也在同一处，且早于登记（解说出现在工具调用后面时，先把已登记的调用改挂到新组） |
 | 活动区闪或卡 | 检查是否绕过了内容签名去重而每次 tick 都请求重绘；行内容不变时必须跳过 |
 | 活动区结束后还残留 | `agent_settled` / `session_shutdown` 是否调到了 `clearActivityArea`（它会清空 `runtime.lines` / `detailLines` / `rows` 与 `runtime.runStatusLines` 并请求一次重绘） |
 | 活动区行多了底色 | 折叠头与活动块都不该铺底色（`styler.band` / `styler.chip` 已删除）。层级靠左侧竖条 + 字重；底色只属于 diff 这类内容本身有色的地方 |
@@ -72,6 +74,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | thinking 原文还在刷屏 | `hideThinking` 是否为 on；它靠 `resolveRenderedMessage` 在 `updateContent` 前抽掉 thinking 内容块，若某条消息看不到效果，检查该消息是否只走了 `render` 而没走 `updateContent` |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
 | 清爽模式下仍有裸露的扩展行（如 `Distill` 审计行） | 该行是 `pi.appendEntry` 写的 custom entry，不在两个导出组件里。检查 `hideExtensionEntries` 是否为 on（默认 on）；条目是否在「工作窗口」内产生 —— 运行期间，或 `session_start` 后的恢复窗口；运行结束后才出现的条目不折。若两者都成立仍不隐藏，看 Pi 的 `CustomEntryComponent` 特征是否变了（本扩展靠「同时持有 entry / renderer / hasContent」识别），或该条目被注册成了 `pi-extensions-notice`（通知豁免，不折） |
+| 运行中的扩展条目 / 消息面板把左侧轨道切断 | 它应该带上 `│ ` 前缀（`shouldRailExtensionEntry`：总开关开 + 非收起态 + 运行中）。若没带上：看它首次渲染时是否已经不在运行中（归属只看首次渲染，之后不补），或 Pi 是否换了别的组件类型渲染它（补丁靠结构特征认：条目是「entry / renderer / hasContent」，消息是 Pi 的 `CustomMessageComponent` 那组「message / customRenderer / setExpanded」） |
 | `/resume` 或 `/reload` 后整段历史原样铺开 | `session_start` 是否调了 `restoreHistory`：历史消息不重放 `agent_start` / `agent_settled`，状态会停在 `createInitialState()` 的展开态，折叠就失效。注意即使收起，历史轮次也不会出现耗时头 —— 耗时与步数只存在内存里，不写进会话 |
 | `session_start` 到底拿到的哪个 reason | 调试日志里记了 `reason=startup\|reload\|new\|resume\|fork` 与处理后的 `collapsed` |
 
@@ -84,6 +87,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 运行级折叠头 | 粗竖条 `▌`（加粗 + 主文字色）+ **加粗**文案 + 紧跟在文案右边的强调色箭头 |
 | 动作组头 | 细竖条 `│`（弱化色）+ 弱化色文案 + 紧跟其后的强调色箭头；**它上面那行也画细竖条**，不留空行 |
 | 成员命令行 | 树形前缀（`├─`，分支符用 `dim` 色）+ 弱化色动作摘要 + 紧跟其后的强调色箭头；不画竖条（它长在组头的竖条下面） |
+| 运行期间的扩展条目 | 前缀 `│ `（`renderGutterPrefix`，弱化色）+ 条目本体（按 `width - 2` 渲染） |
 | 正文 / 工具行 | 不加任何装饰；可见的工具行也会在首行尾部加同款箭头（`insertToolRowArrow`） |
 
 **层级靠左侧竖条 + 字重，不靠底色。** 三条竖条落在同一列，连起来是一条从上到下的轨道；组头上面那行（`buildActionGroupHeaderLines` 的第一行）也画细竖条，留空行会让轨道整整断开一行。`RUN_GUTTER` / `GROUP_GUTTER` / `GUTTER_GAP` 在 `header-style.ts` 里只定一次，`activity.ts` 的 `TREE_INDENT` 为空串就是为了让 `├─` 与两级竖条同列 —— 改竖条只需改一处，但**必须同时确认树形前缀仍与它同列**。文案色档：运行级 `primary` + `bold`，组头与成员摘要 `muted`（截断在明文上做完再上色），箭头一律 `accent`。
@@ -105,7 +109,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 
 活动块的位置：接在当前组**最后一条可见行**的末尾（`appendActivityTail` + `isLastVisibleRow`）—— 展开的组接在末位成员下面，收起时成员行整行隐藏、接在组头下面，所以最新状态永远在列表最底部，不会悬在中段。展开的组里成员行本身也是树形行（`renderTreePrefix`，与活动块同一个正文列），末位成员在活动块跟随时让出收口位（用 `├─`），思考行接替它用 `└─` 收口 —— 所以思考行读起来是与命令行平级的兄弟项，而不是挂在某条正文底下。轮首折叠头子组件（`createRunHeaderComponent`）只输出运行级时间（`buildRunStatusLines`：在处理 + 耗时，无计数），思考与工具细节一概不往顶部搬。两处共用 `runtime.activityArea.lines` / `runStatusLines`，且都只认「当前组」（`isCurrentActionGroup`）与「当前轮承载者」（`isCurrentRunHost`），所以历史轮次不会重复显示。运行结束后活动行清空，轮首位置换成 `用时` 头（耗时在 `agent_settled` 才写入，两者不会同时出现）。
 
-分工与去重（每个数字只说一遍，一个动作名只说一遍）：**「处理中」（或并行文案）与耗时只在轮首出现一次**（`buildRunStatusLines`），活动块里全是思考、动作、输出尾巴这类普通行，不铺底色、行首带 `├─` / `└─` 竖折；**分类计数也不单独占行**，它接在活动块最后一个非空行尾（`activityCountersNote` + `appendActivityCountersNote`，`activity-area.ts` 在渲染之后拼接）；**组头主词**按组内过半分类选（`dominantActivityClass` → `activityClassLabel`，经 `getGroupActivityLabel` 交给渲染层），没有过半分类时退回通用词 `探索 · N 步`；**组内只有一条时活动块去掉动作名**（组头就是这条动作的摘要），`buildActivityLines` 返回结构化行 `rows` 与 `actionRows`（哪几行在报「正在跑什么」），`activity-area.ts` 先把 `rows` 补齐再渲染出完整形态 `lines` 与去掉动作名的 `detailLines`（`withoutActionRows` 过滤后用 `renderActivityRows` 重拼前缀），`resolveActivityTail` 按组形态取：收起的多条组用带动作名的形态，单条组与展开的多条组用去掉动作名的形态（后者的命令已经逐行列在列表里）。活动块的位置见上一段。缩进常量：轮首状态行用 `RUN_GUTTER` + `GUTTER_GAP`（`activity.ts` 的 `BAND_INDENT` 由它们拼出），活动块竖折用 `TREE_INDENT`；运行状态行与运行结束后的「用时 …」同列，因此状态切换不跳列。
+分工与去重（每个数字只说一遍，一个动作名只说一遍）：**「处理中」（或并行文案）与耗时只在轮首出现一次**（`buildRunStatusLines`，不带转动图标——耗时每秒都在变，再放一个每 150ms 转一下的图标只会让顶部多一处跳动），活动块里全是思考、动作、输出尾巴这类普通行，不铺底色、行首带 `├─` / `└─` 竖折；**分类计数也不单独占行**，它接在活动块最后一个子项行尾（`activityCountersNote` + `appendActivityCountersNote`，`activity-area.ts` 在渲染之后拼接，不接输出尾巴）；**组头主词**按组内过半分类选（`dominantActivityClass` → `activityClassLabel`，经 `getGroupActivityLabel` 交给渲染层），没有过半分类时退回通用词 `探索 · N 步`；**组内只有一条时活动块去掉动作名**（组头就是这条动作的摘要），`buildActivityLines` 返回结构化行 `rows` 与 `actionRows`（哪几行在报「正在跑什么」），`activity-area.ts` 先把 `rows` 补齐再渲染出完整形态 `lines` 与去掉动作名的 `detailLines`（`withoutActionRows` 过滤后用 `renderActivityRows` 重拼前缀），`resolveActivityTail` 按组形态取：收起的多条组用带动作名的形态，单条组与展开的多条组用去掉动作名的形态（后者的命令已经逐行列在列表里）。活动块的位置见上一段。缩进常量：轮首状态行用 `RUN_GUTTER` + `GUTTER_GAP`（`activity.ts` 的 `BAND_INDENT` 由它们拼出），活动块竖折用 `TREE_INDENT`；运行状态行与运行结束后的「用时 …」同列，因此状态切换不跳列。
 
 ## 边界
 
@@ -119,3 +123,5 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 - 原型补丁在 reload / shutdown 时还原；若安装后原型被其它扩展替换，本扩展不会顶掉对方的实现。
 - 与重新注册工具类的扩展（例如 `pi-extensions-tool-display`）不冲突：本扩展不调用 `pi.registerTool`。
 - 扩展条目折叠（`src/extension-entry-patch.ts`）补丁的是 pi-tui 的 `Container.prototype.render`：Pi 没导出 `CustomEntryComponent`，只能按结构特征认。只折工作条目（运行期间 + 会话恢复窗口），通知条目（`NOTICE_ENTRY_TYPE`）始终豁免。
+- 同一个补丁把**运行期间**的扩展条目与消息面板（通知、工作流结果面板、审计卡片）接上轨道（`renderGutterPrefix` + 按 `width - 2` 渲染，前缀补回两列，整行宽度不变）。判定在 `shouldRailExtensionEntry`：只有「总开关开 + 非收起态 + 运行中」才加；收起态不加是因为轨道行本来就不显示，加一条孤立竖条反而像掉了东西。接轨道的块有两类，各用一套结构特征认：扩展条目（`entry` / `renderer` / `hasContent`）与扩展注册的消息（`message` / `customRenderer` / `setExpanded`，对应 Pi 的 `CustomMessageComponent`）；消息只接轨道，不参与条目折叠。
+- 轨道归属按**条目/消息对象**记，不按组件实例（`readRailOwnershipKey`，正负结果都缓存）：Pi 会重建组件，按实例记归属会让同一块的判定在重建后翻面 —— 实测启动时的提示本来不带竖条，运行中重建后突然带上了。

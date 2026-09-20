@@ -25,6 +25,13 @@ export const RUN_GUTTER = "▌";
 export const GROUP_GUTTER = "│";
 /** 竖条与文案之间的间隔；三级文案因此从同一列起写。 */
 export const GUTTER_GAP = " ";
+/**
+ * 轨道前缀占用的列宽：竖条 1 列 + 间隔 1 列。
+ *
+ * 给整块内容（例如运行期间的扩展条目）加前缀时要按它把渲染宽度让出来，否则整行会超宽。
+ * 值与 `renderGutterPrefix` 的产出绑在一起，测试会核对两者一致。
+ */
+export const GUTTER_PREFIX_WIDTH = 2;
 /** 强调色：箭头等可点击提示。 */
 const COLOR_ACCENT = "accent";
 /** 主文字色：折叠头的主体信息。 */
@@ -89,6 +96,16 @@ function probeBold(theme: ThemePainter): ((text: string) => string) | undefined 
 /** 原样返回文本；缺色时用它兜底。 */
 function identity(text: string): string {
 	return text;
+}
+
+/**
+ * 拼轨道前缀 `│ `。
+ *
+ * 动作组头用它起头；运行期间的扩展条目这类整块内容也用它接上运行时轨道 —— 两条轨道字符必须来自
+ * 同一处，否则一处换字形、另一处还留着旧写法，看上去就是两根对不齐的竖条。
+ */
+export function renderGutterPrefix(styler: HeaderStyler): string {
+	return `${styler.muted(GROUP_GUTTER)}${GUTTER_GAP}`;
 }
 
 /**

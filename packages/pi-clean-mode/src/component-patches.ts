@@ -31,7 +31,7 @@ import {
 import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import type { HeaderStyler } from "./header-style.js";
-import { GROUP_GUTTER, GUTTER_GAP, RUN_GUTTER } from "./header-style.js";
+import { GUTTER_GAP, GROUP_GUTTER, renderGutterPrefix, RUN_GUTTER } from "./header-style.js";
 import { i18n } from "./i18n.js";
 import {
 	resolveAssistantMessageRender,
@@ -494,8 +494,7 @@ function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatch
 		: (group.summary ?? i18n.t("actionGroupHeader", { count: String(group.groupSize) }));
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
 	return [
-		deps.styler.muted(GROUP_GUTTER),
-		GUTTER_GAP,
+		renderGutterPrefix(deps.styler),
 		deps.styler.muted(label),
 		ARROW_GAP,
 		deps.styler.accent(chevron),
