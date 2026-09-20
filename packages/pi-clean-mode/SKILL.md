@@ -74,7 +74,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | thinking 原文还在刷屏 | `hideThinking` 是否为 on；它靠 `resolveRenderedMessage` 在 `updateContent` 前抽掉 thinking 内容块，若某条消息看不到效果，检查该消息是否只走了 `render` 而没走 `updateContent` |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
 | 清爽模式下仍有裸露的扩展行（如 `Distill` 审计行） | 该行是 `pi.appendEntry` 写的 custom entry，不在两个导出组件里。检查 `hideExtensionEntries` 是否为 on（默认 on）；条目是否在「工作窗口」内产生 —— 运行期间，或 `session_start` 后的恢复窗口；运行结束后才出现的条目不折。若两者都成立仍不隐藏，看 Pi 的 `CustomEntryComponent` 特征是否变了（本扩展靠「同时持有 entry / renderer / hasContent」识别），或该条目被注册成了 `pi-extensions-notice`（通知豁免，不折） |
-| 运行中的扩展条目把左侧轨道切断 | 条目应该带上 `│ ` 前缀（`shouldRailExtensionEntry`：总开关开 + 非收起态 + 运行中）。若没带上：看它首次渲染时是否已经不在运行中（归属只看首次渲染，之后不补），或 Pi 是否换了别的组件类型渲染它（补丁靠「同时持有 entry / renderer / hasContent」识别条目组件） |
+| 运行中的扩展条目 / 消息面板把左侧轨道切断 | 它应该带上 `│ ` 前缀（`shouldRailExtensionEntry`：总开关开 + 非收起态 + 运行中）。若没带上：看它首次渲染时是否已经不在运行中（归属只看首次渲染，之后不补），或 Pi 是否换了别的组件类型渲染它（补丁靠结构特征认：条目是「entry / renderer / hasContent」，消息是 Pi 的 `CustomMessageComponent` 那组「message / customRenderer / setExpanded」） |
 | `/resume` 或 `/reload` 后整段历史原样铺开 | `session_start` 是否调了 `restoreHistory`：历史消息不重放 `agent_start` / `agent_settled`，状态会停在 `createInitialState()` 的展开态，折叠就失效。注意即使收起，历史轮次也不会出现耗时头 —— 耗时与步数只存在内存里，不写进会话 |
 | `session_start` 到底拿到的哪个 reason | 调试日志里记了 `reason=startup\|reload\|new\|resume\|fork` 与处理后的 `collapsed` |
 
@@ -123,5 +123,5 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 - 原型补丁在 reload / shutdown 时还原；若安装后原型被其它扩展替换，本扩展不会顶掉对方的实现。
 - 与重新注册工具类的扩展（例如 `pi-extensions-tool-display`）不冲突：本扩展不调用 `pi.registerTool`。
 - 扩展条目折叠（`src/extension-entry-patch.ts`）补丁的是 pi-tui 的 `Container.prototype.render`：Pi 没导出 `CustomEntryComponent`，只能按结构特征认。只折工作条目（运行期间 + 会话恢复窗口），通知条目（`NOTICE_ENTRY_TYPE`）始终豁免。
-- 同一个补丁把**运行期间**的扩展条目（通知、工作流结果面板、审计卡片）接上轨道（`renderGutterPrefix` + 按 `width - 2` 渲染，前缀补回两列，整行宽度不变）。判定在 `shouldRailExtensionEntry`：只有「总开关开 + 非收起态 + 运行中」才加；收起态不加是因为轨道行本来就不显示，加一条孤立竖条反而像掉了东西。
-- 轨道归属按**条目对象**记，不按组件实例（`readExtensionEntryOwnershipKey`，正负结果都缓存）：Pi 会重建条目组件，按实例记归属会让同一条提示在重建后翻面 —— 实测启动时的提示本来不带竖条，运行中重建后突然带上了。
+- 同一个补丁把**运行期间**的扩展条目与消息面板（通知、工作流结果面板、审计卡片）接上轨道（`renderGutterPrefix` + 按 `width - 2` 渲染，前缀补回两列，整行宽度不变）。判定在 `shouldRailExtensionEntry`：只有「总开关开 + 非收起态 + 运行中」才加；收起态不加是因为轨道行本来就不显示，加一条孤立竖条反而像掉了东西。接轨道的块有两类，各用一套结构特征认：扩展条目（`entry` / `renderer` / `hasContent`）与扩展注册的消息（`message` / `customRenderer` / `setExpanded`，对应 Pi 的 `CustomMessageComponent`）；消息只接轨道，不参与条目折叠。
+- 轨道归属按**条目/消息对象**记，不按组件实例（`readRailOwnershipKey`，正负结果都缓存）：Pi 会重建组件，按实例记归属会让同一块的判定在重建后翻面 —— 实测启动时的提示本来不带竖条，运行中重建后突然带上了。

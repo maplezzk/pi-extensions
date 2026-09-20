@@ -18,6 +18,7 @@ import {
 	installExtensionEntryPatch,
 	isExtensionEntryHost,
 	isExtensionEntryWorkWindow,
+	isExtensionMessageHost,
 	readExtensionEntryCustomType,
 	resolveContainerPrototypes,
 	shouldHideExtensionEntry,
@@ -76,6 +77,22 @@ class WidthReportingEntry extends Container implements EntryHostShape {
 /** 造一个与 target 共用同一条目对象的组件，模拟 Pi 重建组件实例。 */
 function rebuildEntry(target: EntryHostShape): WidthReportingEntry {
 	return new WidthReportingEntry(target.entry.customType, target.entry);
+}
+
+/**
+ * 结构上等同于 Pi 的 CustomMessageComponent：扩展注册的消息渲染器（工作流结果面板）。
+ *
+ * 它不参与条目折叠，只参与接轨道，所以字段故意和条目组件不同。
+ */
+class FakeMessageComponent extends Container {
+	message = { customType: "workflow_result" };
+	customRenderer = (): unknown => undefined;
+	setExpanded = (): void => undefined;
+
+	constructor() {
+		super();
+		this.addChild({ render: (width: number) => [`w=${width}`], invalidate: () => {} });
+	}
 }
 
 /** 模拟「另一份 pi-tui」的容器：与真实 Container 同形，但不是同一个原型。 */
@@ -152,6 +169,15 @@ test("特征判定只认条目组件", () => {
 	assert.equal(readExtensionEntryCustomType(entry), "pi-distill-audit");
 	assert.equal(readExtensionEntryCustomType({ entry: { customType: 42 } }), undefined);
 	assert.equal(readExtensionEntryCustomType({ entry: { customType: "" } }), undefined);
+});
+
+test("消息组件与条目组件是两套判定", () => {
+	const message = new FakeMessageComponent();
+	assert.equal(isExtensionMessageHost(message), true);
+	assert.equal(isExtensionMessageHost(new Container()), false);
+	assert.equal(isExtensionMessageHost(undefined), false);
+	assert.equal(isExtensionMessageHost({ message: {} }), false, "缺 customRenderer 与 setExpanded 不算");
+	assert.equal(isExtensionEntryHost(message), false, "消息组件不是条目组件，不参与条目折叠");
 });
 
 test("工作窗口覆盖运行中与会话恢复", () => {
@@ -311,6 +337,24 @@ test("普通容器渲染不受补丁影响", () => {
 		const container = new Container();
 		container.addChild({ render: () => ["plain"], invalidate: () => {} });
 		assert.deepEqual(container.render(RENDER_WIDTH), ["plain"]);
+	});
+});
+
+test("运行中的消息组件（工作流结果面板）也带上轨道前缀，且不被条目折叠收走", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, (box) => {
+		const message = new FakeMessageComponent();
+		assert.deepEqual(message.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+
+		// 收起态：轨道行不显示，消息块也不该被条目折叠收走。
+		box.state = stateWith({ collapsed: true, runSettled: false });
+		assert.deepEqual(message.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+	});
+});
+
+test("运行之外的消息组件不加轨道前缀", () => {
+	withPatch({ state: stateWith({ runSettled: true }), config: configWith({}), restoreWindow: false }, () => {
+		const message = new FakeMessageComponent();
+		assert.deepEqual(message.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
 	});
 });
 

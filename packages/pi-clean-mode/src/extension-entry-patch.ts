@@ -53,6 +53,19 @@ interface ExtensionEntryPayload {
 	customType?: unknown;
 }
 
+/**
+ * 扩展注册的消息组件对外可见的最小结构（对应 Pi 的 CustomMessageComponent）。
+ *
+ * 它和条目组件一样铺满整宽（工作流结果面板就是它），运行期间同样会切断轨道，
+ * 所以也要接上。它是一个独立判定：消息组件不参与条目折叠（`hideExtensionEntries`），
+ * 只参与接轨道。
+ */
+export interface ExtensionMessageHost {
+	message?: unknown;
+	customRenderer?: unknown;
+	setExpanded?: unknown;
+}
+
 /** 判断一个组件是不是扩展写入的条目组件。 */
 export function isExtensionEntryHost(host: unknown): host is ExtensionEntryHost {
 	if (typeof host !== "object" || host === null) {
@@ -63,6 +76,24 @@ export function isExtensionEntryHost(host: unknown): host is ExtensionEntryHost 
 		candidate.entry !== undefined &&
 		typeof candidate.renderer === "function" &&
 		typeof candidate.hasContent === "function"
+	);
+}
+
+/**
+ * 判断一个组件是不是扩展注册的消息组件。
+ *
+ * 三个字段必须同时成立：Pi 的 CustomMessageComponent 持有 message、customRenderer，
+ * 并对外提供 setExpanded。普通容器与条目组件都没有这组字段。
+ */
+export function isExtensionMessageHost(host: unknown): host is ExtensionMessageHost & object {
+	if (typeof host !== "object" || host === null) {
+		return false;
+	}
+	const candidate = host as ExtensionMessageHost;
+	return (
+		candidate.message !== undefined &&
+		typeof candidate.customRenderer === "function" &&
+		typeof candidate.setExpanded === "function"
 	);
 }
 
@@ -86,10 +117,19 @@ export function isExtensionEntryWorkWindow(input: {
 	return input.isHistoryRestoreWindow || !input.state.runSettled;
 }
 
-/** 取条目归属的键。 */
-export function readExtensionEntryOwnershipKey(host: ExtensionEntryHost & object): object {
-	const entry = host.entry;
-	return typeof entry === "object" && entry !== null ? entry : host;
+/**
+ * 取可接轨道的块的归属键。
+ *
+ * 用条目/消息对象（而不是组件实例）：Pi 会重建组件，按实例记归属会让同一块的判定
+ * 在重建后翻面。消息组件用 `message`，条目组件用 `entry`。
+ */
+export function readRailOwnershipKey(host: (ExtensionEntryHost | ExtensionMessageHost) & object): object {
+	const entry = (host as ExtensionEntryHost).entry;
+	if (typeof entry === "object" && entry !== null) {
+		return entry;
+	}
+	const message = (host as ExtensionMessageHost).message;
+	return typeof message === "object" && message !== null ? message : host;
 }
 
 /**
@@ -237,8 +277,12 @@ export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () =>
 	 * 「首次渲染时本轮在不在跑」走，运行结束后不再反过来改——否则屏幕上会看到轨道
 	 * 前缀在收起那一瞬间凭空出现或消失。
 	 */
-	const shouldRail = (host: ExtensionEntryHost & object, state: CleanModeState, config: CleanModeConfig): boolean => {
-		const key = readExtensionEntryOwnershipKey(host);
+	const shouldRail = (
+		host: (ExtensionEntryHost | ExtensionMessageHost) & object,
+		state: CleanModeState,
+		config: CleanModeConfig,
+	): boolean => {
+		const key = readRailOwnershipKey(host);
 		const decided = railDecisions.get(key);
 		if (decided !== undefined) {
 			return decided;
@@ -248,41 +292,51 @@ export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () =>
 		return railed;
 	};
 
-	/** 条目组件的渲染接管；两份原型共用同一份实现与同一张归属表。 */
+	/**
+	 * 块组件的渲染接管；两份原型共用同一份实现与同一张归属表。
+	 *
+	 * 两类块走这里：扩展条目（要折叠，也要接轨道）与扩展注册的消息（只接轨道）。
+	 * 其余容器（包括 chatContainer 自己）只花一次属性读取就原样返回。
+	 */
 	const buildMethod = (originalRender: ContainerRenderMethod): ContainerRenderMethod =>
 		function patchedRender(this: object, width: number): string[] {
-			if (!isExtensionEntryHost(this)) {
+			const entryHost = isExtensionEntryHost(this) ? this : undefined;
+			if (entryHost === undefined && !isExtensionMessageHost(this)) {
 				return originalRender.call(this, width);
 			}
 
 			const state = deps.getState();
 			const config = deps.getConfig();
-			const ownershipKey = readExtensionEntryOwnershipKey(this);
-			const isWorkEntry =
-				workEntries.has(ownershipKey) ||
-				(config.enabled &&
-					config.hideExtensionEntries &&
-					isExtensionEntryWorkWindow({
+
+			if (entryHost !== undefined) {
+				const ownershipKey = readRailOwnershipKey(entryHost);
+				const isWorkEntry =
+					workEntries.has(ownershipKey) ||
+					(config.enabled &&
+						config.hideExtensionEntries &&
+						isExtensionEntryWorkWindow({
+							state,
+							isHistoryRestoreWindow: deps.isHistoryRestoreWindow(),
+						}));
+				if (isWorkEntry) {
+					workEntries.add(ownershipKey);
+				}
+
+				if (
+					shouldHideExtensionEntry({
 						state,
-						isHistoryRestoreWindow: deps.isHistoryRestoreWindow(),
-					}));
-			if (isWorkEntry) {
-				workEntries.add(ownershipKey);
+						config,
+						customType: readExtensionEntryCustomType(entryHost),
+						isWorkEntry,
+					})
+				) {
+					return NO_LINES;
+				}
 			}
 
-			if (
-				shouldHideExtensionEntry({
-					state,
-					config,
-					customType: readExtensionEntryCustomType(this),
-					isWorkEntry,
-				})
-			) {
-				return NO_LINES;
-			}
-
-			const railPrefix = shouldRail(this, state, config) ? deps.getEntryRailPrefix() : undefined;
-			// 宽度不够让出前缀时按原样渲染：宁可轨道断一下，也不能把提示画坏。
+			const railHost = this as (ExtensionEntryHost | ExtensionMessageHost) & object;
+			const railPrefix = shouldRail(railHost, state, config) ? deps.getEntryRailPrefix() : undefined;
+			// 宽度不够让出前缀时按原样渲染：宁可轨道断一下，也不能把内容画坏。
 			if (railPrefix === undefined || width <= ENTRY_RAIL_WIDTH) {
 				return originalRender.call(this, width);
 			}
