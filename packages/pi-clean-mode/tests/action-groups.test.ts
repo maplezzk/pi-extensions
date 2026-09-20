@@ -4,12 +4,14 @@ import {
 	beginActionGroupStep,
 	areAllActionGroupsExpanded,
 	createActionGroupState,
+	extractToolCalls,
 	findActionGroupMembership,
 	getActionGroupActivityCounts,
 	getActionGroupSize,
 	hasNarrationText,
 	isAssistantMessage,
 	isActionGroupExpanded,
+	reassignActionToolCall,
 	registerActionToolCall,
 	setAllActionGroupsExpanded,
 	toggleActionGroup,
@@ -166,4 +168,98 @@ test("批量展开把当前所有组都设为展开", () => {
 test("没有任何组时不算全部展开", () => {
 	const state = createActionGroupState();
 	assert.equal(areAllActionGroupsExpanded(state), false);
+});
+
+test("占位摘要让真摘要换掉，真摘要不被后到的占位或重复事件改写", () => {
+	const state = createActionGroupState();
+	beginActionGroupStep(state);
+	registerActionToolCall(state, {
+		toolCallId: "c1",
+		summary: "运行命令",
+		provisional: true,
+		activity: "command",
+	});
+	registerActionToolCall(state, { toolCallId: "c1", summary: "运行命令 ls -la", activity: "command" });
+
+	assert.equal(findActionGroupMembership(state, "c1")?.summary, "运行命令 ls -la", "占位摘要要被换掉");
+	assert.equal(getActionGroupSize(state, state.currentGroupId), 1, "换摘要不该加成员");
+	assert.equal(
+		getActionGroupActivityCounts(state, state.currentGroupId)?.command,
+		1,
+		"换摘要也不该重复计数",
+	);
+
+	registerActionToolCall(state, {
+		toolCallId: "c1",
+		summary: "运行命令 占位",
+		provisional: true,
+		activity: "command",
+	});
+	assert.equal(
+		findActionGroupMembership(state, "c1")?.summary,
+		"运行命令 ls -la",
+		"真摘要不能被后来的占位摘要盖掉",
+	);
+});
+
+test("从消息内容里扫出工具调用，缺字段的内容块直接跳过", () => {
+	const message = {
+		role: "assistant",
+		content: [
+			{ type: "text", text: "说明" },
+			{ type: "thinking", thinking: "先想一下" },
+			{ type: "toolCall", id: "a1", name: "bash", arguments: { command: "ls" } },
+			// 缺 id、缺 name、不是对象的块都不能让扫描抛错或造出半个调用。
+			{ type: "toolCall", id: "", name: "bash", arguments: {} },
+			{ type: "toolCall", id: "a3", arguments: {} },
+			{ type: "toolCall", name: "bash" },
+			"not a block",
+		],
+	};
+
+	assert.deepEqual(extractToolCalls(message), [
+		{ toolCallId: "a1", toolName: "bash", args: { command: "ls" } },
+	]);
+	assert.deepEqual(extractToolCalls({ role: "assistant" }), [], "没有 content 时返回空数组");
+	assert.deepEqual(extractToolCalls(undefined), [], "非对象输入返回空数组");
+});
+
+test("改挂调用到当前组：旧组减一，分类计数跟着走", () => {
+	const state = createActionGroupState();
+	beginActionGroupStep(state);
+	registerActionToolCall(state, { toolCallId: "c1", summary: "运行命令 ls", activity: "command" });
+	registerActionToolCall(state, { toolCallId: "c2", summary: "读取 a.ts", activity: "read" });
+	const previous = state.currentGroupId;
+	beginActionGroupStep(state);
+
+	reassignActionToolCall(state, {
+		toolCallId: "c2",
+		summary: "读取 a.ts",
+		activity: "read",
+	});
+
+	assert.equal(getActionGroupSize(state, previous), 1, "旧组只剩没挪走的那条");
+	assert.equal(getActionGroupSize(state, state.currentGroupId), 1, "新组接到挪过来的一条");
+	assert.equal(
+		findActionGroupMembership(state, "c2")?.groupId,
+		state.currentGroupId,
+		"归属要指向新组",
+	);
+	assert.equal(
+		getActionGroupActivityCounts(state, previous)?.read ?? 0,
+		0,
+		"旧组的读取计数要减一，不能留着幽灵计数",
+	);
+	assert.equal(getActionGroupActivityCounts(state, state.currentGroupId)?.read, 1, "新组计数加上");
+});
+
+test("改挂同组内的调用什么也不发生", () => {
+	const state = createActionGroupState();
+	beginActionGroupStep(state);
+	registerActionToolCall(state, { toolCallId: "c1", summary: "运行命令 ls", activity: "command" });
+
+	reassignActionToolCall(state, { toolCallId: "c1", summary: "运行命令 ls", activity: "command" });
+
+	assert.equal(getActionGroupSize(state, state.currentGroupId), 1, "成员数不能变成 2");
+	assert.equal(getActionGroupActivityCounts(state, state.currentGroupId)?.command, 1, "计数不能翻倍");
 });
