@@ -8,6 +8,7 @@
   "maxUserRequestChars": 2000,
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
+  "maxUserAnswerChars": 2000,
   "notifyOnStopDecision": false,
   "showVerdictNotice": true,
   "judgeMaxTokens": 2000,

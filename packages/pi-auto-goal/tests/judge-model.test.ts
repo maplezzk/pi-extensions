@@ -12,7 +12,7 @@ import {
 import type { TurnSnapshot } from "../src/session-context.ts";
 
 /** 判定输入快照。 */
-const SNAPSHOT: TurnSnapshot = { userRequest: "任务", finalOutput: "做了一半", toolTrace: [] };
+const SNAPSHOT: TurnSnapshot = { userRequest: "任务", userAnswers: [], finalOutput: "做了一半", toolTrace: [] };
 
 /** 测试用最小模型对象：字段完整以满足 Pi 的模型契约。 */
 const TEST_MODEL: PiModel = {

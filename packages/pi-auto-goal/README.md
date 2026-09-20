@@ -21,8 +21,9 @@ Run `/reload` after installing; configuration changed through `/config:auto-goal
 Every fully settled turn is judged (unless `enabled` is false), so a single-line question also costs one judge call. Judged contexts:
 
 - **User request**: the last real user input on the current branch. Messages injected by this extension are skipped, so repeated interventions still judge against your original request.
+- **User answers**: when the agent asked you with `ask_user_question`, the answers you gave (stored as tool results, not user messages). They count as user input for the round, and the judge prompt makes them outrank the original request: an answer that narrows the scope, picks an option, or asks to stop first makes stopping a normal ending. One answer is truncated at `maxUserAnswerChars` (default `2000`).
 - **Final output**: the agent's last text output of this round.
-- **Tool trace** (optional, off by default via `includeToolTrace`): tool calls made since that user input, condensed to one line each. It is not sent by default, so verdicts rest on the two text blocks above.
+- **Tool trace** (optional, off by default via `includeToolTrace`): tool calls made since that user input, condensed to one line each. It is not sent by default, so verdicts rest on the text blocks above.
 
 The judge never sees your other session branches.
 
@@ -50,6 +51,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
   "maxUserRequestChars": 2000,
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
+  "maxUserAnswerChars": 2000,
   "notifyOnStopDecision": false,
   "showVerdictNotice": true,
   "judgeMaxTokens": 2000,
@@ -69,6 +71,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | `maxUserRequestChars` | `2000` | Truncation limit for the user request. |
 | `maxFinalOutputChars` | `4000` | Truncation limit for the agent's final output. |
 | `maxToolTraceEntries` | `20` | Maximum tool-trace lines. |
+| `maxUserAnswerChars` | `2000` | Truncation limit for one user answer (an `ask_user_question` reply). |
 | `notifyOnStopDecision` | `false` | Deprecated: one verdict block is emitted per turn, so this switch no longer has any effect (the field stays accepted so old configs keep working). |
 | `showVerdictNotice` | `true` | Show the latest verdict as a filled notice block in the transcript, below the message (details expand with Ctrl+O). |
 | `judgeMaxTokens` | `2000` | Output-token ceiling for one judge call, clamped to the model's own output limit. |
