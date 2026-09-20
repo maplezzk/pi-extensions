@@ -74,6 +74,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | thinking 原文还在刷屏 | `hideThinking` 是否为 on；它靠 `resolveRenderedMessage` 在 `updateContent` 前抽掉 thinking 内容块，若某条消息看不到效果，检查该消息是否只走了 `render` 而没走 `updateContent` |
 | 折叠完全无效 | Pi 版本是否仍导出 `AssistantMessageComponent` / `ToolExecutionComponent` |
 | 清爽模式下仍有裸露的扩展行（如 `Distill` 审计行） | 该行是 `pi.appendEntry` 写的 custom entry，不在两个导出组件里。检查 `hideExtensionEntries` 是否为 on（默认 on）；条目是否在「工作窗口」内产生 —— 运行期间，或 `session_start` 后的恢复窗口；运行结束后才出现的条目不折。若两者都成立仍不隐藏，看 Pi 的 `CustomEntryComponent` 特征是否变了（本扩展靠「同时持有 entry / renderer / hasContent」识别），或该条目被注册成了 `pi-extensions-notice`（通知豁免，不折） |
+| 运行中的扩展条目 / 消息面板把左侧轨道切断 | 它应该带上 `│ ` 前缀（`shouldRailExtensionEntry`：总开关开 + 非收起态 + 运行中）。若没带上：看它首次渲染时是否已经不在运行中（归属只看首次渲染，之后不补），或 Pi 是否换了别的组件类型渲染它（补丁靠结构特征认：条目是「entry / renderer / hasContent」，消息是 Pi 的 `CustomMessageComponent` 那组「message / customRenderer / setExpanded」） |
 | `/resume` 或 `/reload` 后整段历史原样铺开 | `session_start` 是否调了 `restoreHistory`：历史消息不重放 `agent_start` / `agent_settled`，状态会停在 `createInitialState()` 的展开态，折叠就失效。注意即使收起，历史轮次也不会出现耗时头 —— 耗时与步数只存在内存里，不写进会话 |
 | `session_start` 到底拿到的哪个 reason | 调试日志里记了 `reason=startup\|reload\|new\|resume\|fork` 与处理后的 `collapsed` |
 
@@ -86,6 +87,7 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 | 运行级折叠头 | 粗竖条 `▌`（加粗 + 主文字色）+ **加粗**文案 + 紧跟在文案右边的强调色箭头 |
 | 动作组头 | 细竖条 `│`（弱化色）+ 弱化色文案 + 紧跟其后的强调色箭头；**它上面那行也画细竖条**，不留空行 |
 | 成员命令行 | 树形前缀（`├─`，分支符用 `dim` 色）+ 弱化色动作摘要 + 紧跟其后的强调色箭头；不画竖条（它长在组头的竖条下面） |
+| 运行期间的扩展条目 | 前缀 `│ `（`renderGutterPrefix`，弱化色）+ 条目本体（按 `width - 2` 渲染） |
 | 正文 / 工具行 | 不加任何装饰；可见的工具行也会在首行尾部加同款箭头（`insertToolRowArrow`） |
 
 **层级靠左侧竖条 + 字重，不靠底色。** 三条竖条落在同一列，连起来是一条从上到下的轨道；组头上面那行（`buildActionGroupHeaderLines` 的第一行）也画细竖条，留空行会让轨道整整断开一行。`RUN_GUTTER` / `GROUP_GUTTER` / `GUTTER_GAP` 在 `header-style.ts` 里只定一次，`activity.ts` 的 `TREE_INDENT` 为空串就是为了让 `├─` 与两级竖条同列 —— 改竖条只需改一处，但**必须同时确认树形前缀仍与它同列**。文案色档：运行级 `primary` + `bold`，组头与成员摘要 `muted`（截断在明文上做完再上色），箭头一律 `accent`。
@@ -121,3 +123,5 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 - 原型补丁在 reload / shutdown 时还原；若安装后原型被其它扩展替换，本扩展不会顶掉对方的实现。
 - 与重新注册工具类的扩展（例如 `pi-extensions-tool-display`）不冲突：本扩展不调用 `pi.registerTool`。
 - 扩展条目折叠（`src/extension-entry-patch.ts`）补丁的是 pi-tui 的 `Container.prototype.render`：Pi 没导出 `CustomEntryComponent`，只能按结构特征认。只折工作条目（运行期间 + 会话恢复窗口），通知条目（`NOTICE_ENTRY_TYPE`）始终豁免。
+- 同一个补丁把**运行期间**的扩展条目与消息面板（通知、工作流结果面板、审计卡片）接上轨道（`renderGutterPrefix` + 按 `width - 2` 渲染，前缀补回两列，整行宽度不变）。判定在 `shouldRailExtensionEntry`：只有「总开关开 + 非收起态 + 运行中」才加；收起态不加是因为轨道行本来就不显示，加一条孤立竖条反而像掉了东西。接轨道的块有两类，各用一套结构特征认：扩展条目（`entry` / `renderer` / `hasContent`）与扩展注册的消息（`message` / `customRenderer` / `setExpanded`，对应 Pi 的 `CustomMessageComponent`）；消息只接轨道，不参与条目折叠。
+- 轨道归属按**条目/消息对象**记，不按组件实例（`readRailOwnershipKey`，正负结果都缓存）：Pi 会重建组件，按实例记归属会让同一块的判定在重建后翻面 —— 实测启动时的提示本来不带竖条，运行中重建后突然带上了。

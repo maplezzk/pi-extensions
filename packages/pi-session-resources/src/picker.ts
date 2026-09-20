@@ -442,12 +442,18 @@ export function renderResourceButton(options: RenderResourceButtonOptions): stri
   // The label covers every resource type, so it uses the shared accent instead of a kind accent.
   const label = `${RESOURCE_ACCENT}${theme.bold(resourceButtonLabelText())}${ANSI_RESET}`;
   const labelRow = labelHovered ? theme.bg(THEME_BACKGROUND.selected, label) : label;
+  // The separator before a chip stays outside the hover highlight, matching the chip's own
+  // hit region so hovering never inverts the ` · ` between two counts.
   const chips = segments
     .map((segment, index) => {
-      const text = `${index === 0 ? " " : BUTTON_SUMMARY_SEPARATOR}${segment.text}`;
-      return segment.kind === hoveredKind
-        ? theme.bg(THEME_BACKGROUND.selected, theme.fg(THEME_COLOR.dim, text))
-        : theme.fg(THEME_COLOR.dim, text);
+      const separator = theme.fg(
+        THEME_COLOR.dim,
+        index === 0 ? " " : BUTTON_SUMMARY_SEPARATOR,
+      );
+      const text = theme.fg(THEME_COLOR.dim, segment.text);
+      return separator + (segment.kind === hoveredKind
+        ? theme.bg(THEME_BACKGROUND.selected, text)
+        : text);
     })
     .join("");
   return [padToWidth(truncateToWidth(`${labelRow}${chips}`, width, ""), width)];
