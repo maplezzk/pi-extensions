@@ -401,6 +401,25 @@ test("clicking a count chip opens the picker directly on that type", () => {
   assert.equal(editor.getActiveKind(), "review");
 });
 
+test("hovering a count chip inverts the chip only, never the separator before it", () => {
+  process.env.PI_EXTENSIONS_LOCALE = "en-US";
+  const editor = createEditor(new FakeEditor(), () => true);
+  const segment = resourceButtonSegments(resourceSet()).find((chip) => chip.kind === "review");
+  assert.ok(segment);
+
+  assert.deepEqual(
+    editor.handleMouse(mouseEvent({ type: "move", x: segment.start + 1, y: 0 })),
+    { handled: true, render: true },
+  );
+
+  const row = editor.render(72)[0] ?? "";
+  const start = row.indexOf(SELECTED_BACKGROUND_START);
+  const end = row.indexOf(SELECTED_BACKGROUND_END);
+  assert.ok(start >= 0 && end > start, "the hovered chip must render a background");
+  // The highlighted columns are exactly the chip's own hit region, so ` · ` stays plain.
+  assert.equal(plainText(row.slice(start, end)), segment.text);
+});
+
 test("clicking the button label keeps the picker on its current type", () => {
   process.env.PI_EXTENSIONS_LOCALE = "en-US";
   const editor = createEditor(new FakeEditor(), () => true);
