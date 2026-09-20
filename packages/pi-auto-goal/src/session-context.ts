@@ -47,11 +47,6 @@ export interface TurnSnapshotOptions {
   includeToolTrace: boolean;
   /** 单条用户回答的截断长度。 */
   maxUserAnswerChars: number;
-  /**
-   * 本扩展自己注入的催促消息文本。
-   * 这些消息在会话里同样以 user 角色保存，必须排除，否则会把催促当成用户请求。
-   */
-  injectedUserTexts?: ReadonlySet<string>;
 }
 
 /** 判定模型需要的本轮上下文。 */
@@ -133,15 +128,16 @@ function isMessageEntry(entry: EntryLike, role: string): boolean {
   return entry.type === "message" && entry.message?.role === role;
 }
 
-/** 从分支尾部反向查找最后一条真实用户消息的下标，找不到返回 -1。 */
-function findLastUserIndex(entries: readonly EntryLike[], injected: ReadonlySet<string>): number {
+/**
+ * 从分支尾部反向查找最后一条真实用户消息的下标，找不到返回 -1。
+ * 扩展注入的催促是 custom 角色的消息，不是 user，因此天然不会被当成用户请求。
+ */
+function findLastUserIndex(entries: readonly EntryLike[]): number {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (!isMessageEntry(entry, "user")) continue;
     const text = getTextContent(entry.message?.content).trim();
     if (!text) continue;
-    // 本扩展注入的催促消息不计入用户请求，继续向前找真正的用户输入。
-    if (injected.has(text)) continue;
     return index;
   }
   return -1;
@@ -224,8 +220,7 @@ export function collectTurnSnapshot(
   entries: readonly EntryLike[],
   options: TurnSnapshotOptions,
 ): TurnSnapshot | undefined {
-  const injected = options.injectedUserTexts ?? new Set<string>();
-  const lastUserIndex = findLastUserIndex(entries, injected);
+  const lastUserIndex = findLastUserIndex(entries);
   if (lastUserIndex < 0) return undefined;
 
   const userRequest = truncateText(

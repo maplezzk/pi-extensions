@@ -2,7 +2,7 @@
  * pi-auto-goal 扩展入口。
  *
  * agent 每次完全停止后，用第二个模型判断这次停止是「正常结束」还是「擅自早停」；
- * 判定为早停时，以用户语气自动发一条严厉的继续指令，并有次数上限兜底。
+ * 判定为早停时自动注入一条 system 继续指令，并有次数上限兜底。
  */
 import type {
   ExtensionAPI,
@@ -34,6 +34,12 @@ import {
 } from "./verdict-notice.ts";
 import { formatModelValue } from "./model-choice.ts";
 import { openConfigPanel } from "./config-panel.ts";
+import {
+  createNudgeDelivery,
+  registerNudgeContext,
+  triggerSystemNudge,
+  type NudgeDelivery,
+} from "./system-nudge.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
 const NOTICE_INFO: NoticeLevel = "info";
@@ -66,8 +72,8 @@ const CONFIG_MODEL_REUSE_VALUES: readonly string[] = ["default", "current", "ses
 interface AutoGoalRuntime {
   /** 当前生效配置（改动配置后需要 /reload 重新加载）。 */
   config: AutoGoalConfig;
-  /** 本扩展注入的催促消息文本，用于和真实用户输入区分。 */
-  injectedUserTexts: Set<string>;
+  /** 催促投递状态：标记当前这一轮是否由催促触发。 */
+  nudge: NudgeDelivery;
   /** 当前会话 id，切换会话时重置预算。 */
   sessionId: string | undefined;
   /** 当前用户请求已自动干预的次数。 */
@@ -80,7 +86,7 @@ interface AutoGoalRuntime {
 function createRuntime(config: AutoGoalConfig): AutoGoalRuntime {
   return {
     config,
-    injectedUserTexts: new Set<string>(),
+    nudge: createNudgeDelivery(),
     sessionId: undefined,
     used: 0,
     inFlight: false,
@@ -110,6 +116,8 @@ function syncSession(
   if (runtime.sessionId === sessionId) return;
   runtime.sessionId = sessionId;
   runtime.used = 0;
+  // 催促属于上一个会话的那一轮，不能跟着会话走。
+  runtime.nudge.active = false;
 }
 
 /** 判定异步返回后确认会话没有被用户接管：仍然空闲，且叶节点没有变化。 */
@@ -273,7 +281,7 @@ function registerConfigCommand(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
 /**
  * 把判定结论写进会话区（消息下方，带底色的消息块）。
  *
- * 一个有判定的轮次只发一条：正文一行，细节（理由/失败原因/已发送的催促）默认收起、
+ * 一个有判定的轮次只发一条：正文一行，细节（理由/失败原因/已注入的催促）默认收起、
  * Ctrl+O 展开，避免每轮往会话区里堆好几条提示。
  */
 function writeVerdictNotice(
@@ -292,7 +300,7 @@ function writeVerdictNotice(
   });
 }
 
-/** 把判定结果落到 UI 与会话：只有 continue 才会真的发消息。 */
+/** 把判定结果落到 UI 与会话：只有 continue 才会真的注入催促并触发新一轮。 */
 function applyOutcome(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -303,13 +311,12 @@ function applyOutcome(
     case "continue": {
       // 先发送再记账：发送失败不应该消耗干预预算。
       try {
-        pi.sendUserMessage(outcome.message);
+        triggerSystemNudge(pi, runtime.nudge, outcome.message);
       } catch (error) {
         writeVerdictNotice(ctx, runtime, buildSendFailedNotice(errorText(error)));
         return;
       }
       runtime.used += 1;
-      runtime.injectedUserTexts.add(outcome.message.trim());
       writeVerdictNotice(ctx, runtime, buildVerdictNotice(outcome, outcome.message));
       return;
     }
@@ -324,14 +331,18 @@ function applyOutcome(
 /** 注册停止判定事件。 */
 function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void {
   // 真实用户输入开启新一轮任务：会话变了就切预算，同一会话内也重置次数。
-  // 扩展注入的催促消息不重置，否则自动干预会无限循环。
+  // 扩展注入的催促不是用户消息，不会走到这里，所以自动干预不会自己重置次数。
   pi.on("input", (event, ctx) => {
     if (event.source === "extension") return;
     syncSession(runtime, ctx);
     runtime.used = 0;
+    // 用户接管了会话，上一轮的催促指令不再适用。
+    runtime.nudge.active = false;
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
+    // 这一轮（可能是催促触发的一轮）已经彻底结束，催促不再进入后续请求。
+    runtime.nudge.active = false;
     if (!runtime.config.enabled) return;
     if (!JUDGE_MODES.has(ctx.mode)) return;
     // 已有判定在跑，或 Pi 还会继续（排队消息 / 其他扩展启动了新一轮）时不介入。
@@ -361,7 +372,6 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
       maxToolTraceEntries: runtime.config.maxToolTraceEntries,
       maxUserAnswerChars: runtime.config.maxUserAnswerChars,
       includeToolTrace: runtime.config.includeToolTrace,
-      injectedUserTexts: runtime.injectedUserTexts,
     });
     if (!snapshot?.userRequest) return;
 
@@ -398,6 +408,7 @@ export default function piAutoGoal(pi: ExtensionAPI): void {
   const { config, error } = loadInitialConfig();
   const runtime = createRuntime(config);
   registerConfigCommand(pi, runtime);
+  registerNudgeContext(pi, runtime.nudge);
   registerStopJudgement(pi, runtime);
 
   if (error !== undefined) {
@@ -414,6 +425,14 @@ export default function piAutoGoal(pi: ExtensionAPI): void {
 
 export { configPath, loadConfig, parseConfig, saveConfig } from "./config.ts";
 export type { AutoGoalConfig } from "./config.ts";
+export {
+  NUDGE_CUSTOM_TYPE,
+  createNudgeDelivery,
+  isNudgeMessage,
+  registerNudgeContext,
+  triggerSystemNudge,
+} from "./system-nudge.ts";
+export type { NudgeDelivery } from "./system-nudge.ts";
 export { collectTurnSnapshot, truncateText } from "./session-context.ts";
 export type { TurnSnapshot } from "./session-context.ts";
 export { createStopVerdictRequester, parseJudgeVerdict } from "./verdict.ts";

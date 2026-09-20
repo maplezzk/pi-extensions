@@ -113,23 +113,18 @@ test("用户回答按配置长度截断，空回答不入快照", () => {
 });
 
 test("扩展注入的催促消息不会被当成用户请求", () => {
-  const injected = i18nLikeContinueMessage();
   const snapshot = collectTurnSnapshot([
     messageEntry("user", "实现登录并补测试"),
     messageEntry("assistant", [{ type: "text", text: "登录做完了。" }]),
-    messageEntry("user", injected),
+    // 催促是 custom 角色的消息，不是用户输入。
+    messageEntry("custom", "【自动监督】你在任务中途停下了。"),
     messageEntry("assistant", [{ type: "text", text: "测试还没补。" }]),
-  ], { ...OPTIONS, injectedUserTexts: new Set([injected]) });
+  ], OPTIONS);
 
   assert.ok(snapshot);
   assert.equal(snapshot.userRequest, "实现登录并补测试");
   assert.equal(snapshot.finalOutput, "测试还没补。");
 });
-
-/** 模拟一条本扩展发出的催促消息文本。 */
-function i18nLikeContinueMessage(): string {
-  return "你停下来了，但这一轮任务并没有完成：还缺回归测试。";
-}
 
 test("找不到真实用户消息时返回 undefined", () => {
   assert.equal(collectTurnSnapshot([

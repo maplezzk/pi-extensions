@@ -71,7 +71,7 @@ function notice(
 
 /**
  * 把一次判定结果渲染成结论提示。
- * 「提前停止已干预」时调用方把真正发出去的催促文本传进来，放进细节供回看。
+ * 「提前停止已干预」时调用方把真正注入的催促文本传进来，放进细节供回看。
  */
 export function buildVerdictNotice(outcome: StopOutcome, sentMessage?: string): VerdictNotice {
   switch (outcome.kind) {
