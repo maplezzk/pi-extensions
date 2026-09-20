@@ -29,6 +29,13 @@ export interface ActionGroupMembership {
 	index: number;
 	/** 该动作的一行摘要（例如「运行命令 ls -la」）；组内只有它一条时当组头文案。 */
 	summary?: string;
+	/**
+	 * 摘要是不是「占位摘要」。
+	 *
+	 * 流式内容块先出现时参数只有键、值还没到（JSON 序列化出来是 `{}`），那时只能读出
+	 * 「运行命令」这样的标签；标成占位，等参数到齐后允许被真摘要覆盖。
+	 */
+	summaryProvisional?: boolean;
 }
 
 /** 动作组的累计状态；组号只增不减，历史组的归属与展开状态得以保留。 */
@@ -189,6 +196,8 @@ export interface ActionToolCallInput {
 	toolCallId: string;
 	/** 该动作的一行摘要（例如「运行命令 ls -la」）。 */
 	summary?: string;
+	/** 摘要是否只是占位（参数还没读全）；后一次登记带上了真摘要时会把它换掉。 */
+	provisional?: boolean;
 	/** 本次调用的分类，用于选组头主词。 */
 	activity?: keyof ActivityCounters;
 }
@@ -197,28 +206,56 @@ export interface ActionToolCallInput {
  * 把一个工具调用登记到当前组。原地修改 state，无返回值。
  *
  * 重复登记同一个 toolCallId 时保持原归属，避免 Pi 重发事件导致序号错乱；
- * 后一次带上了摘要而先前没带上时，只补摘要。分类计数只在新登记时累加，
+ * 后一次带上了摘要而先前没带上、或先前那份只是占位摘要时，只补摘要。分类计数只在新登记时累加，
  * 重复登记不能把同一次调用数两遍。
  */
 export function registerActionToolCall(state: ActionGroupState, input: ActionToolCallInput): void {
-	const { toolCallId, summary, activity } = input;
+	const { toolCallId, summary, provisional, activity } = input;
 	const existing = state.membershipByToolCallId.get(toolCallId);
 	if (existing) {
-		if (summary !== undefined && existing.summary === undefined) {
-			existing.summary = summary;
-		}
+		upgradeToolCallSummary(existing, summary, provisional);
 		return;
 	}
 
 	const groupId = state.currentGroupId;
 	const index = state.memberCountByGroupId.get(groupId) ?? 0;
-	state.membershipByToolCallId.set(toolCallId, { groupId, index, ...(summary === undefined ? {} : { summary }) });
+	state.membershipByToolCallId.set(toolCallId, {
+		groupId,
+		index,
+		...(summary === undefined ? {} : { summary, ...(provisional === true ? { summaryProvisional: true } : {}) }),
+	});
 	state.memberCountByGroupId.set(groupId, index + 1);
 
 	if (activity !== undefined) {
 		const counts = state.activityCountByGroupId.get(groupId) ?? {};
 		counts[activity] = (counts[activity] ?? 0) + 1;
 		state.activityCountByGroupId.set(groupId, counts);
+	}
+}
+
+/**
+ * 用后一次登记带来的摘要补全（或覆盖占位摘要）。
+ *
+ * 三种情况不动：没带摘要、已有的已经是真摘要、新带来的自己也是占位 —— 否则重复事件会
+ * 不停地把文案改来改去。
+ */
+function upgradeToolCallSummary(
+	membership: ActionGroupMembership,
+	summary: string | undefined,
+	provisional: boolean | undefined,
+): void {
+	if (summary === undefined) {
+		return;
+	}
+	if (membership.summary !== undefined && (membership.summaryProvisional !== true || provisional === true)) {
+		return;
+	}
+
+	membership.summary = summary;
+	if (provisional === true) {
+		membership.summaryProvisional = true;
+	} else {
+		delete membership.summaryProvisional;
 	}
 }
 
@@ -250,23 +287,6 @@ export function reassignActionToolCall(state: ActionGroupState, input: ActionToo
 
 	state.membershipByToolCallId.delete(toolCallId);
 	registerActionToolCall(state, input);
-}
-
-/**
- * 补全一次已经登记的摘要：流式块先出现时参数还是空占位，等参数到齐再补。
- *
- * 只在原来没有摘要时补，不改写已有文案（重复事件不该把文案换来换去）。
- */
-export function fillActionToolCallSummary(
-	state: ActionGroupState,
-	toolCallId: string,
-	summary: string | undefined,
-): void {
-	const existing = state.membershipByToolCallId.get(toolCallId);
-	if (!existing || existing.summary !== undefined || summary === undefined) {
-		return;
-	}
-	existing.summary = summary;
 }
 
 /** 取某个组的分类计数；未知组返回 undefined。 */

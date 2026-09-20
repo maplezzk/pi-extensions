@@ -14,7 +14,6 @@
 import {
 	beginActionGroupStep,
 	extractToolCalls,
-	fillActionToolCallSummary,
 	findActionGroupMembership,
 	hasNarrationText,
 	isAssistantMessage,
@@ -37,12 +36,12 @@ export interface StreamedToolCall {
 /**
  * 把一次调用翻译成登记所需的摘要与分类；由调用方提供（它才知道工具名怎么读数）。
  *
- * `summary` 可以是 `undefined`：流式块的参数是分片拼起来的，刚出现时可能还是空对象，
- * 那时读不出摘要，先不写（写了就会被当成最终文案），等参数到齐再补。
+ * `provisional` 为真表示这份摘要是占位：流式块的参数是分片拼起来的，块刚出现时只有键、
+ * 值还没到，那时只能读出「运行命令」这样的标签。标成占位后，参数到齐时会被真摘要覆盖。
  */
 export type StreamedToolCallDescriber = (
 	call: StreamedToolCall,
-) => { summary?: string; activity: keyof ActivityCounters };
+) => { summary?: string; provisional?: boolean; activity: keyof ActivityCounters };
 
 /** 流式登记的会话内状态；一次会话一份，跨 run 复用。 */
 export interface StreamRegistration {
@@ -111,8 +110,13 @@ export function applyStreamedMessage(input: StreamedMessageInput): StreamedMessa
 		// 解说出现在工具调用后面时，那几次调用已按上一组登记过：组边界既然落在解说
 		// 之后，它们就该跟着走，否则会被算进上一组。
 		for (const call of state.toolCalls) {
-			const { summary, activity } = describe(call);
-			reassignActionToolCall(actionGroups, { toolCallId: call.toolCallId, summary, activity });
+			const { summary, provisional, activity } = describe(call);
+			reassignActionToolCall(actionGroups, {
+				toolCallId: call.toolCallId,
+				summary,
+				provisional,
+				activity,
+			});
 		}
 	}
 
@@ -122,8 +126,8 @@ export function applyStreamedMessage(input: StreamedMessageInput): StreamedMessa
 			refineStreamedToolCall({ state, call, actionGroups, describe });
 			continue;
 		}
-		const { summary, activity } = describe(call);
-		registerActionToolCall(actionGroups, { toolCallId: call.toolCallId, summary, activity });
+		const { summary, provisional, activity } = describe(call);
+		registerActionToolCall(actionGroups, { toolCallId: call.toolCallId, summary, provisional, activity });
 		state.toolCalls.push(call);
 		registered.push(call);
 	}
@@ -152,7 +156,8 @@ function refineStreamedToolCall(input: StreamedToolCallRefinement): void {
 		return;
 	}
 
-	// 用最新一帧的参数替掉当初的占位；摘要只在原来缺失时才补。
+	// 用最新一帧的参数替掉当初的占位；登记层只在「先前是占位」时才换文案。
 	state.toolCalls[index] = call;
-	fillActionToolCallSummary(actionGroups, call.toolCallId, describe(call).summary);
+	const { summary, provisional, activity } = describe(call);
+	registerActionToolCall(actionGroups, { toolCallId: call.toolCallId, summary, provisional, activity });
 }

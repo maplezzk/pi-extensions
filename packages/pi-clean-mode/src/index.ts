@@ -403,15 +403,17 @@ interface ToolActionInput {
  * tool_execution_start，同样会被计入。
  */
 function registerToolAction(runtime: Runtime, action: ToolActionInput): void {
-	if (findActionGroupMembership(runtime.actionGroups, action.toolCallId)) {
-		return;
-	}
+	const isNew = findActionGroupMembership(runtime.actionGroups, action.toolCallId) === undefined;
+	// 已登记也要再进一次：流式阶段先登记时参数还没到齐，摘要那时只能给占位，
+	// 这两个事件带的参数是完整的，由登记层把占位摘要换掉。
 	registerActionToolCall(runtime.actionGroups, {
 		toolCallId: action.toolCallId,
 		summary: summarizeToolCall(action.toolName, action.args),
 		activity: classifyToolActivity(action.toolName),
 	});
-	runtime.runToolCount += 1;
+	if (isNew) {
+		runtime.runToolCount += 1;
+	}
 }
 
 /** 把一次流式消息喂给登记状态机，并累加本轮步数。 */
@@ -437,24 +439,28 @@ function feedStreamedMessage(runtime: Runtime, message: unknown): void {
 /** 把一次工具调用翻译成动作组登记所需的摘要与分类。 */
 function describeStreamedToolCall(call: StreamedToolCall): {
 	summary?: string;
+	provisional?: boolean;
 	activity: keyof ActivityCounters;
 } {
 	return {
-		summary: hasToolArguments(call.args) ? summarizeToolCall(call.toolName, call.args) : undefined,
+		summary: summarizeToolCall(call.toolName, call.args),
+		// 参数还读不出内容时，上面只给出「运行命令」这样的标签：标成占位，
+		// 等参数到齐（下一帧或 `tool_call` 事件）再换成真摘要。
+		...(hasToolDetail(call.toolName, call.args) ? {} : { provisional: true }),
 		activity: classifyToolActivity(call.toolName),
 	};
 }
 
 /**
- * 参数是不是已经能读出内容。
+ * 参数里有没有能读出来的内容。
  *
- * 流式内容块里的 `arguments` 是分片拼出来的，块刚出现时还是空对象。空对象只能读出
- * 「运行命令」这样的标签，把标签当摘要写进去就再也不会被补全了 —— 那时宁可不写，
- * 等参数到齐后由 `fillActionToolCallSummary` 补上（真正无参数的工具由后续事件
- * 登记时补上标签本身）。
+ * 流式内容块里的 `arguments` 是分片拼起来的：块刚出现时键已经在了、值还是 undefined
+ * （JSON 序列化出来是 `{}`）。`toolActivityDetail` 读不到已知字段时会退回工具名，
+ * 所以「详情等于工具名」就是「参数还没到齐」。
  */
-function hasToolArguments(args: unknown): boolean {
-	return typeof args === "object" && args !== null && Object.keys(args).length > 0;
+function hasToolDetail(toolName: string, args: unknown): boolean {
+	const detail = toolActivityDetail(toolName, args);
+	return detail !== undefined && detail !== toolName;
 }
 
 /**

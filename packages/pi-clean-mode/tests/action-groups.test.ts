@@ -170,6 +170,38 @@ test("没有任何组时不算全部展开", () => {
 	assert.equal(areAllActionGroupsExpanded(state), false);
 });
 
+test("占位摘要让真摘要换掉，真摘要不被后到的占位或重复事件改写", () => {
+	const state = createActionGroupState();
+	beginActionGroupStep(state);
+	registerActionToolCall(state, {
+		toolCallId: "c1",
+		summary: "运行命令",
+		provisional: true,
+		activity: "command",
+	});
+	registerActionToolCall(state, { toolCallId: "c1", summary: "运行命令 ls -la", activity: "command" });
+
+	assert.equal(findActionGroupMembership(state, "c1")?.summary, "运行命令 ls -la", "占位摘要要被换掉");
+	assert.equal(getActionGroupSize(state, state.currentGroupId), 1, "换摘要不该加成员");
+	assert.equal(
+		getActionGroupActivityCounts(state, state.currentGroupId)?.command,
+		1,
+		"换摘要也不该重复计数",
+	);
+
+	registerActionToolCall(state, {
+		toolCallId: "c1",
+		summary: "运行命令 占位",
+		provisional: true,
+		activity: "command",
+	});
+	assert.equal(
+		findActionGroupMembership(state, "c1")?.summary,
+		"运行命令 ls -la",
+		"真摘要不能被后来的占位摘要盖掉",
+	);
+});
+
 test("从消息内容里扫出工具调用，缺字段的内容块直接跳过", () => {
 	const message = {
 		role: "assistant",

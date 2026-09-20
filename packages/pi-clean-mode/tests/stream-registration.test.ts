@@ -136,6 +136,47 @@ test("参数还没流到时先不写摘要，到齐后补上", () => {
 	);
 });
 
+test("占位摘要会被参数到齐后的真摘要换掉", () => {
+	const groups = createGroups();
+	const state = createStreamRegistration();
+	/** 参数没到齐时给占位摘要（只有标签），到齐后给真摘要。 */
+	const describeProvisional = (call: StreamedToolCall) => {
+		const command = (call.args as Record<string, unknown> | undefined)?.command;
+		return typeof command === "string"
+			? { summary: `运行命令 ${command}`, activity: "command" as const }
+			: { summary: "运行命令", provisional: true, activity: "command" as const };
+	};
+
+	beginStreamedMessage(state, assistantMessage());
+	// 第一帧：参数只有键、值还没到，只能给出「运行命令」这样的占位摘要。
+	applyStreamedMessage({
+		state,
+		message: assistantMessage({ type: "toolCall", id: "a1", name: "bash", arguments: {} }),
+		actionGroups: groups,
+		describe: describeProvisional,
+	});
+	assert.equal(findActionGroupMembership(groups, "a1")?.summary, "运行命令", "先给占位摘要");
+
+	// 第二帧：参数到齐，占位摘要换成真摘要，且不重复登记。
+	const outcome = applyStreamedMessage({
+		state,
+		message: assistantMessage({
+			type: "toolCall",
+			id: "a1",
+			name: "bash",
+			arguments: { command: "ls -la" },
+		}),
+		actionGroups: groups,
+		describe: describeProvisional,
+	});
+	assert.equal(outcome.registered.length, 0, "同一次调用不重复登记");
+	assert.equal(
+		findActionGroupMembership(groups, "a1")?.summary,
+		"运行命令 ls -la",
+		"参数到齐后占位摘要要被换掉",
+	);
+});
+
 test("同一帧反复喂进来只登记一次，也不会反复开组", () => {
 	const groups = createGroups();
 	const state = createStreamRegistration();
