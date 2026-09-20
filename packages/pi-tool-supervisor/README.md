@@ -15,7 +15,7 @@ An edit tool can complete successfully while the resulting file still violates l
 - Supports multiple reviewers running in parallel, each with its own model and one or more rule files.
 - Reads optional front matter from rule files for `enabled`, `filePatterns`, `complexity`, and `consumers`.
 - Returns `passed`, `rejected`, `failed`, or `skipped` status with summaries, findings, rule groups, and durations.
-- Treats a reviewer verdict as binding only when it is self-consistent: `passed: false` without any actionable (`error`-severity) finding is downgraded to passed and annotated, so a self-contradicting reviewer cannot block an edit with nothing to fix.
+- Treats a reviewer verdict as binding only when it is self-consistent: `passed: false` without any finding is downgraded to passed and annotated, so a self-contradicting reviewer cannot block an edit with nothing to fix.
 - Passes native tool results through unchanged; it does not truncate or write tool output to temporary files. Output control belongs to Pi or other extensions.
 - Re-reads the configuration for every tool call, so configuration changes apply to the next matching operation.
 - Shows an audit card through Pi's display middleware or a fallback renderer. The shared display protocol is provided by `pi-extensions-tool-display`.
@@ -35,7 +35,7 @@ Each reviewer picks an engine with `backend`. Omitting it keeps the original beh
 
 The `typesafe` backend turns every numbered clause of a rule file into one Noul question - "does code added or changed in `diff` violate this clause?" - answered as a probability. Every clause of one reviewer is asked in a single request, because TypeSafe answers all questions over the same state in parallel. Code owns the rest: `threshold` decides whether a clause counts as hit, and a second, smaller Choice request locates the offending line among the lines the diff actually added.
 
-**Rule files are engine-independent: switching backends changes one config line and not a single character of a rule file.** There is no `## Criteria` section to write, no severity to declare, and no block heading to add.
+**Rule files are engine-independent: switching backends changes one config line and not a single character of a rule file.** There is no `## Criteria` section to write, no severity level to declare, and no block heading to add.
 
 The API key is read from `typesafe.apiKey` in `config.json` first and falls back to the `TYPESAFE_API_KEY` environment variable; `typesafe.endpoint` falls back to `TYPESAFE_ENDPOINT` and then to the official endpoint. A missing key, a failed request, or a rule file with no clause to judge produces a visible `failed` audit entry and does not block the tool, which matches how a failed chat-model review behaves.
 
@@ -74,15 +74,15 @@ filePatterns: ["**/*.ts"]
 ---
 # JavaScript / TypeScript rules
 
-## Ownership and severity (takes precedence)
+## Ownership (takes precedence)
 
 1. `ruleGroup` may only use clause names or numbers that appear in this file.  ← reporting, not judged
 2. Do not report rules this file does not contain.                             ← reporting, not judged
 
 ## Requirements
 
-1. [error] **No magic values**: non-obvious numbers in business logic must be extracted into a semantic `const` or shared configuration.
-2. [warning] **At most 3 parameters**: a declaration with 4 or more parameters must use a parameter object.
+1. **No magic values**: non-obvious numbers in business logic must be extracted into a semantic `const` or shared configuration.
+2. **At most 3 parameters**: a declaration with 4 or more parameters must use a parameter object.
 3. **No `any`**: prefer concrete types; use `unknown` and narrow it at the boundary.
    Do not bypass type checking with `as any` or `any[]`.
 ```
@@ -102,14 +102,14 @@ A clause's text is **both the criterion and the finding text**. The three clause
 | What you write | How it is treated |
 | --- | --- |
 | A `1. text` numbered clause | One rule; indented continuation lines join the same clause |
-| Numbered items inside a `## Ownership and severity…` section | **Not judged** - those are reporting requirements, not code rules |
-| A leading `[error]` / `[warning]` on a clause | Stripped from the criterion; this backend has no levels, so **every hit blocks** |
+| Numbered items inside a section whose heading starts with `归属` ("Ownership") | **Not judged** - those are reporting requirements, not code rules |
+| A legacy `[error]` / `[warning]` left on a clause | Stripped from the criterion; there are no levels, so **every hit blocks** (old rule files keep working) |
 | A `**bold**` phrase in a clause | Used as the rule name, combined as `{section} {number} {title}` - this is the `ruleGroup` |
 | `threshold` in front matter | Hit threshold for every clause in that file; default `0.85` |
 | Other prose, `## Output` style sections | Does not affect judging |
 | A numbered list of **exemptions** ("only reads", "only runs a script") | Still one rule per item, but asked backwards - see below |
 
-The `## Ownership and severity` heading is a fixed convention in common rule files; numbered items inside it are always skipped, so requirements like "`ruleGroup` may only use clause names that appear in this file" never turn into code rules.
+A section heading that starts with `归属` (English rule files often use `## Ownership and severity`) is always skipped when judging, so requirements like "`ruleGroup` may only use clause names that appear in this file" never turn into code rules.
 
 A numbered clause must say **what code counts as a violation**. A numbered list of exemptions does not disappear: every item becomes a rule and is asked as "does this code violate *only reads*?", which inverts its meaning, while the real prohibition - written as bullets or prose - is never asked at all. **Extracting clauses is not the same as extracting the right clauses**, so the `no clause is an error` check below cannot catch it: the file does yield clauses, just the wrong kind. Write clauses as prohibitions and put the exemptions inside the clause they exempt.
 
@@ -139,7 +139,7 @@ Limitations worth knowing before treating a `typesafe` reviewer as a gate:
 
 - **The more specific the clause, the better the judgment.** When a probability is off, fix how the sentence is written (spell out the exemptions) rather than changing the format. Measured: "non-obvious numbers must be extracted into a semantic constant" is too subjective about "semantic", so `const fallback = 30000;` scored 0.52, while the sharp-edged "no `any`" scored 0.97.
 - **The threshold is per file.** Clause quality varies within one file, and there is no per-clause override; sharpen the clause instead.
-- **No severity levels.** A `[warning]` clause that only advises under the `model` backend blocks under the `typesafe` backend.
+- **No severity levels anywhere.** Both backends block on any hit; a legacy `[error]` / `[warning]` marker in a rule file is stripped from the criterion and never changes the outcome.
 - Line localization needs the post-edit file. A `before` review only has it for `write`, so `edit` before-reviews report rule-level issues without a line number.
 - When the diff adds more than 40 lines, localization is skipped and reported as a warning; the rule-level issues are still reported.
 - The whole post-edit file is sent as context, bounded by `maxFileContextChars`. It roughly doubles the input tokens compared with a diff-only request.

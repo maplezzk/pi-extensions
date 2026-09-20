@@ -28,9 +28,6 @@ export const DEFAULT_TYPESAFE_MODEL = "jev-latest";
 export const DEFAULT_RULE_THRESHOLD = 0.85;
 /** 规则文件去掉扩展名的认得的扩展名。 */
 const RULE_FILE_EXTENSION = /\.(md|markdown|txt)$/i;
-/** Severity that makes one finding actionable, and therefore blocking. */
-const BLOCKING_SEVERITY = "error";
-const INFO_SEVERITY = "info";
 /** Rule group reported by findings the supervisor synthesizes itself. */
 const SUPERVISOR_RULE_GROUP = "supervisor";
 /** 二级标题；用来识别元指令段落边界。 */
@@ -39,7 +36,7 @@ const RULE_SECTION_HEADING = /^##\s+(.+?)\s*$/;
 const CLAUSE_LINE = /^(\d+)\.\s+(\S.*)$/;
 /** 条款正文里的粗体片段当规则名；没有时回退到编号。 */
 const CLAUSE_TITLE = /\*\*(.+?)\*\*/;
-/** 条款开头的历史 severity 标注；本后端不读它，但要从判据里剔掉。 */
+/** 条款开头可能残留的历史级别标注（`[error]` / `[warning]`）；没有分级概念，一律从判据里剔掉。 */
 const CLAUSE_SEVERITY_MARK = /^\[(?:error|warning|info)\]\s*/i;
 /**
  * 元指令段落：讲的是「怎么报告」，不是「什么代码算违规」。
@@ -51,8 +48,6 @@ export type ReviewStatus = "passed" | "rejected" | "failed" | "skipped";
 export type ReviewTrigger = (typeof REVIEW_TRIGGERS)[number];
 /** 审查引擎：`model` 用 Pi 配置的对话模型，`typesafe` 用 TypeSafe System One 判断。 */
 export type ReviewBackend = (typeof REVIEW_BACKENDS)[number];
-/** 对话模型后端返回的 finding 级别；TypeSafe 后端不分级，命中即阻断。 */
-export type RuleSeverity = "error" | "warning" | "info";
 
 export interface FileEditReviewReviewerConfig {
   name: string;
@@ -93,7 +88,8 @@ export interface FileEditReviewRuleMetadata {
 /**
  * 规则文件里的一条编号条款。
  *
- * 规则文件是引擎无关的：条款正文就是判据，`## 归属与 severity` 这类元指令段落里的编号不参与判断。
+ * 规则文件是引擎无关的：条款正文就是判据，`## 归属…` 这类元指令段落（标题以「归属」开头）
+ * 里的编号不参与判断。
  * `group` 沿用规则文件自己的叫法（如「必须遵守 1」），所以两个后端的 finding 看起来一致。
  */
 export interface FileEditReviewRuleClause {
@@ -101,7 +97,7 @@ export interface FileEditReviewRuleClause {
   id: string;
   /** 审计和 finding 里显示的规则名，如「必须遵守 1 禁止魔法值」。 */
   group: string;
-  /** 条款正文去掉 severity 标注后的文本；既当判据也当修复提示。 */
+  /** 条款正文去掉历史级别标注后的文本；既当判据也当修复提示。 */
   text: string;
 }
 
@@ -165,7 +161,6 @@ export interface CurrentFileContext {
 }
 
 export interface FileEditReviewFinding {
-  severity?: "error" | "warning" | "info";
   message: string;
   line?: number;
   ruleGroup?: string;
@@ -452,8 +447,8 @@ function clauseLabel(draft: ClauseDraft, section: string | undefined): string {
 /**
  * 把规则文件切成编号条款。
  *
- * 规则文件是引擎无关的：不要求 `## 判据`、不要求 severity 标注，也不要求分块标题。
- * 一条 `N. 正文` 就是一条规则，正文既当判据、也当修复提示；`## 归属与 severity`
+ * 规则文件是引擎无关的：不要求 `## 判据`、不要求声明级别，也不要求分块标题。
+ * 一条 `N. 正文` 就是一条规则，正文既当判据、也当修复提示；`## 归属…`
  * 这类元指令段落里编号的是「怎么报告」，不参与判断。
  */
 function parseRuleClauses(content: string): FileEditReviewRuleClause[] {
@@ -493,7 +488,7 @@ function parseRuleClauses(content: string): FileEditReviewRuleClause[] {
     .filter((clause) => clause.text !== "");
 }
 
-/** 剔掉条款开头的 `[error]` / `[warning]` 标注；本后端不分级，标注留在判据里会和行为矛盾。 */
+/** 剔掉条款开头的 `[error]` / `[warning]` 标注；没有分级，标注留在判据里会和行为矛盾。 */
 function stripSeverityMark(value: string): string {
   return value.replace(CLAUSE_SEVERITY_MARK, "");
 }
@@ -864,28 +859,16 @@ function normalizeFinding(value: unknown): FileEditReviewFinding | undefined {
   const source = value as Record<string, unknown>;
   const message = stringValue(source.message);
   if (!message) return undefined;
-  const severity = source.severity === "error" || source.severity === "warning" || source.severity === "info"
-    ? source.severity
-    : undefined;
   const line = typeof source.line === "number" && Number.isSafeInteger(source.line) && source.line > 0
     ? source.line
     : undefined;
   const ruleGroup = stringValue(source.ruleGroup);
-  return { severity, message, line, ruleGroup };
-}
-
-/**
- * Finds actionable issues. A finding without severity stays blocking so reviewers that omit
- * the field keep their gate instead of silently losing it.
- */
-function isBlockingFinding(finding: FileEditReviewFinding): boolean {
-  return finding.severity === undefined || finding.severity === BLOCKING_SEVERITY;
+  return { message, line, ruleGroup };
 }
 
 /** Records why the reviewer verdict was not taken at face value. */
 function buildVerdictConflictFinding(modelClaimedPassed: boolean): FileEditReviewFinding {
   return {
-    severity: INFO_SEVERITY,
     ruleGroup: SUPERVISOR_RULE_GROUP,
     message: i18n.t(modelClaimedPassed ? "verdictConflictPassed" : "verdictConflictDowngraded"),
   };
@@ -906,9 +889,9 @@ export function parseReviewResponse(text: string): ParsedFileEditReviewResult {
   const findings = Array.isArray(source.findings)
     ? source.findings.map(normalizeFinding).filter((finding): finding is FileEditReviewFinding => Boolean(finding))
     : [];
-  // A rejection is honored only when the reviewer also reported an actionable issue; a model that
-  // claims passed false while listing nothing to fix would otherwise block the edit with no fix path.
-  const blocked = findings.some(isBlockingFinding);
+  // A rejection is honored only when the reviewer also reported a finding; a model that claims
+  // passed false while listing nothing to fix would otherwise block the edit with no fix path.
+  const blocked = findings.length > 0;
   const balanced = source.passed === !blocked;
   const passed = source.passed || !blocked;
   return {

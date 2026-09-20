@@ -420,7 +420,7 @@ function typeSafeConnection(config: FileEditReviewConfig): TypeSafeConnection {
  *
  * 一条规则 = 一个 Noul 问题，一次请求批量问完（同一份 state 下 TypeSafe 并行回答）；
  * 有条款命中时再做一次 Choice 请求，把问题定位到具体新增行。
- * 阈值和阻断与否都由本模块决定，模型只提供概率；本后端不分级，命中即阻断。
+ * 阈值和阻断与否都由本模块决定，模型只提供概率；没有分级，命中即阻断。
  */
 async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEditReviewResult> {
   const {
@@ -487,7 +487,7 @@ async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEdi
   }
 
   const { verdicts, unanswered } = readJudgmentVerdicts(compiled.judgments, answers);
-  // 本后端不分级：条款定义了就要遵守，命中即阻断，也就要做行定位。
+  // 没有分级：条款定义了就要遵守，命中即阻断，也就要做行定位。
   const hits = verdicts.filter((verdict) => verdict.hit);
   const localization = await locateJudgmentLines({
     context,

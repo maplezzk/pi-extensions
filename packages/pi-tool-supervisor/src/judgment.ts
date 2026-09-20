@@ -28,8 +28,7 @@ const MAX_CRITERION_CHARS = 300;
 /** finding 文案上限；条款原文可能很长，全量塞进 tool result 会淹没 Agent。 */
 const MAX_FINDING_TEXT_CHARS = 600;
 const MAX_JUDGMENT_ID_CHARS = 60;
-/** 本后端不分 error/warning：条款定义了就要遵守，命中即阻断。 */
-const BLOCKING_SEVERITY = "error";
+/** 命中即阻断：没有 severity 概念，条款定义了就要遵守。 */
 /** 行定位置信度低于该值时只报规则、不报行号，避免指错行。 */
 const MIN_LOCALIZATION_CONFIDENCE = 0.5;
 const JUDGMENT_ID_SEPARATOR = /[^A-Za-z0-9_-]+/g;
@@ -256,7 +255,7 @@ export function readLocatedLines(
   return located;
 }
 
-/** 把命中的判断转成 findings；本后端不分级，命中即阻断。 */
+/** 把命中的判断转成 findings；没有分级，命中即阻断。 */
 export function buildJudgmentFindings(
   verdicts: JudgmentVerdict[],
   located: Map<string, LocatedLine>,
@@ -268,7 +267,6 @@ export function buildJudgmentFindings(
     const locatedLine = located.get(judgment.id);
     const text = truncate(judgment.criterion, MAX_FINDING_TEXT_CHARS);
     findings.push({
-      severity: BLOCKING_SEVERITY,
       ruleGroup: judgment.ruleName,
       message: locatedLine
         ? `${text}\n${i18n.t("hitLine", { text: locatedLine.text })}`
