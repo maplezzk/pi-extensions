@@ -123,4 +123,5 @@ Pi 自带的 `/settings` 没有扩展注册配置项的入口，所以面板由�
 - 原型补丁在 reload / shutdown 时还原；若安装后原型被其它扩展替换，本扩展不会顶掉对方的实现。
 - 与重新注册工具类的扩展（例如 `pi-extensions-tool-display`）不冲突：本扩展不调用 `pi.registerTool`。
 - 扩展条目折叠（`src/extension-entry-patch.ts`）补丁的是 pi-tui 的 `Container.prototype.render`：Pi 没导出 `CustomEntryComponent`，只能按结构特征认。只折工作条目（运行期间 + 会话恢复窗口），通知条目（`NOTICE_ENTRY_TYPE`）始终豁免。
-- 同一个补丁把**运行期间**的提示块接上轨道（`renderGutterPrefix` + 按 `width - 2` 渲染，前缀补回两列，整行宽度不变）。判定在 `shouldRailNoticeEntry`：只有「总开关开 + 提示条目 + 非收起态 + 运行中」才加；归属在首次渲染时记进 WeakSet，运行结束后不再反转。收起态不加是因为轨道行本来就不显示，加一条孤立竖条反而像掉了东西。
+- 同一个补丁把**运行期间**的提示块接上轨道（`renderGutterPrefix` + 按 `width - 2` 渲染，前缀补回两列，整行宽度不变）。判定在 `shouldRailNoticeEntry`：只有「总开关开 + 提示条目 + 非收起态 + 运行中」才加；收起态不加是因为轨道行本来就不显示，加一条孤立竖条反而像掉了东西。
+- 轨道归属按**条目对象**记，不按组件实例（`readExtensionEntryOwnershipKey`，正负结果都缓存）：Pi 会重建条目组件，按实例记归属会让同一条提示在重建后翻面 —— 实测启动时的提示本来不带竖条，运行中重建后突然带上了。

@@ -62,11 +62,20 @@ class WidthReportingEntry extends Container implements EntryHostShape {
 	renderer = (): unknown => undefined;
 	hasContent = (): boolean => true;
 
-	constructor(customType: string) {
+	/**
+	 * @param customType 条目的 customType。
+	 * @param entry 复用的条目对象；不传时新建一个，用于模拟「同一条目换一个组件实例」。
+	 */
+	constructor(customType: string, entry: { customType: string } = { customType }) {
 		super();
-		this.entry = { customType };
+		this.entry = entry;
 		this.addChild({ render: (width: number) => [`w=${width}`], invalidate: () => {} });
 	}
+}
+
+/** 造一个与 target 共用同一条目对象的组件，模拟 Pi 重建组件实例。 */
+function rebuildEntry(target: EntryHostShape): WidthReportingEntry {
+	return new WidthReportingEntry(target.entry.customType, target.entry);
 }
 
 /** 模拟「另一份 pi-tui」的容器：与真实 Container 同形，但不是同一个原型。 */
@@ -387,5 +396,33 @@ test("轨道归属在首次渲染时固定，收起后仍然带着", () => {
 			[`${RAIL_PREFIX}entry:${NOTICE_ENTRY_TYPE}`],
 			"已判定归属的提示不会因为运行结束而变样",
 		);
+	});
+});
+
+test("Pi 重建条目组件后，轨道归属跟着条目对象走", () => {
+	withPatch({ state: stateWith({ collapsed: true, runSettled: true }), config: configWith({}), restoreWindow: false }, (box) => {
+		// 启动时的提示：先按「不在运行中」记下归属。
+		const first = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(first.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+
+		// 运行开始了，而且 Pi 用同一条目对象重建了组件。
+		box.state = stateWith({ collapsed: false, runSettled: false });
+		const rebuilt = rebuildEntry(first);
+		assert.deepEqual(
+			rebuilt.render(RENDER_WIDTH),
+			[`w=${RENDER_WIDTH}`],
+			"按实例记归属时这里会凭空多出竖条：同一条提示的判定必须跟着条目对象",
+		);
+	});
+});
+
+test("重建后归属为真的提示仍然带着轨道前缀", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, (box) => {
+		const first = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(first.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+
+		box.state = stateWith({ collapsed: true, runSettled: true });
+		const rebuilt = rebuildEntry(first);
+		assert.deepEqual(rebuilt.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
 	});
 });

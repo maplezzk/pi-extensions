@@ -86,6 +86,12 @@ export function isExtensionEntryWorkWindow(input: {
 	return input.isHistoryRestoreWindow || !input.state.runSettled;
 }
 
+/** 取条目归属的键。 */
+export function readExtensionEntryOwnershipKey(host: ExtensionEntryHost & object): object {
+	const entry = host.entry;
+	return typeof entry === "object" && entry !== null ? entry : host;
+}
+
 /**
  * 判定一条提示条目在当前位置是否该接上运行时轨道。
  *
@@ -217,8 +223,15 @@ export function resolveContainerPrototypes(sources: ContainerPrototypeSources): 
  * 之后运行结束也不能反悔 —— 否则刚展示过的工作行会在收起时反而留在屏幕上。
  */
 export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () => void {
+	/**
+	 * 归属记在**条目对象**上，不记在组件实例上。
+	 *
+	 * Pi 会重建条目组件（同一条目对象换一个新实例），按实例记归属会让同一条提示的判定
+	 * 在重建后翻面：实测启动时的提示本来不带竖条，运行中重建后突然带上了。
+	 */
 	const workEntries = new WeakSet<object>();
-	const railedEntries = new WeakSet<object>();
+	/** 条目对象 -> 是否该接轨道；首次渲染时定下，正负两种结果都记，重建后不再翻面。 */
+	const railDecisions = new WeakMap<object, boolean>();
 
 	/**
 	 * 判定条目是否该接上轨道前缀，并在首次渲染时把归属固定下来。
@@ -227,18 +240,18 @@ export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () =>
 	 * 「首次渲染时本轮在不在跑」走，运行结束后不再反过来改——否则屏幕上会看到轨道
 	 * 前缀在收起那一瞬间凭空出现或消失。
 	 */
-	const shouldRail = (host: object, state: CleanModeState, config: CleanModeConfig): boolean => {
-		if (railedEntries.has(host)) {
-			return true;
+	const shouldRail = (host: ExtensionEntryHost & object, state: CleanModeState, config: CleanModeConfig): boolean => {
+		const key = readExtensionEntryOwnershipKey(host);
+		const decided = railDecisions.get(key);
+		if (decided !== undefined) {
+			return decided;
 		}
 		const railed = shouldRailNoticeEntry({
 			state,
 			config,
-			customType: readExtensionEntryCustomType(host as ExtensionEntryHost),
+			customType: readExtensionEntryCustomType(host),
 		});
-		if (railed) {
-			railedEntries.add(host);
-		}
+		railDecisions.set(key, railed);
 		return railed;
 	};
 
@@ -251,8 +264,9 @@ export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () =>
 
 			const state = deps.getState();
 			const config = deps.getConfig();
+			const ownershipKey = readExtensionEntryOwnershipKey(this);
 			const isWorkEntry =
-				workEntries.has(this) ||
+				workEntries.has(ownershipKey) ||
 				(config.enabled &&
 					config.hideExtensionEntries &&
 					isExtensionEntryWorkWindow({
@@ -260,7 +274,7 @@ export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () =>
 						isHistoryRestoreWindow: deps.isHistoryRestoreWindow(),
 					}));
 			if (isWorkEntry) {
-				workEntries.add(this);
+				workEntries.add(ownershipKey);
 			}
 
 			if (
