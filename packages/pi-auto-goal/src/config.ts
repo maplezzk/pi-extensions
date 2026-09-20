@@ -43,7 +43,7 @@ export interface AutoGoalConfig {
   showVerdictNotice: boolean;
   /** 单次判定调用的输出 token 上限；调试时可适当调高以避免推理占满预算。 */
   judgeMaxTokens: number;
-  /** 自动催促消息模板；空字符串表示使用内置模板。支持 {reason} 占位。 */
+  /** 自动催促指令模板（作为 system 提示注入）；空字符串表示使用内置模板。支持 {reason} 占位。 */
   continueMessageTemplate: string;
   /** 受控实验：覆写判定结果；auto 表示正常判定。 */
   forcedDecision: ForcedDecision;

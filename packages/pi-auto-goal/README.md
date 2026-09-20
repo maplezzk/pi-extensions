@@ -1,6 +1,6 @@
 # pi-auto-goal
 
-Stop-guard for Pi: when the agent stops, a second model judges whether the stop is premature and continues the task in your voice.
+Stop-guard for Pi: when the agent stops, a second model judges whether the stop is premature and sends the agent back with a system-prompt nudge.
 
 [中文](./README.zh-CN.md)
 
@@ -8,7 +8,7 @@ Stop-guard for Pi: when the agent stops, a second model judges whether the stop 
 
 Pi can finish a turn while a multi-step request is only half done: the agent edits one file, reports progress, and stops. `pi-auto-goal` listens for `agent_settled` — the moment Pi is certain it will not continue on its own — and asks a second model one question: **was stopping here acceptable, or is work still missing?**
 
-When the verdict is "still missing" with enough confidence, the extension sends a stern user-voice message that names the gap and tells the agent to keep going. Otherwise it stays quiet and the turn ends normally.
+When the verdict is "still missing" with enough confidence, the extension injects a system continuation directive that names the gap and tells the agent to keep going — it never masquerades as a message you typed. Otherwise it stays quiet and the turn ends normally.
 
 ## Installation and usage
 
@@ -20,7 +20,7 @@ Run `/reload` after installing; configuration changed through `/config:auto-goal
 
 Every fully settled turn is judged (unless `enabled` is false), so a single-line question also costs one judge call. Judged contexts:
 
-- **User request**: the last real user input on the current branch. Messages injected by this extension are skipped, so repeated interventions still judge against your original request.
+- **User request**: the last real user input on the current branch. The nudge this extension injects is a `custom` message rather than user input, so repeated interventions still judge against your original request.
 - **User answers**: when the agent asked you with `ask_user_question`, the answers you gave (stored as tool results, not user messages). They count as user input for the round, and the judge prompt makes them outrank the original request: an answer that narrows the scope, picks an option, or asks to stop first makes stopping a normal ending. One answer is truncated at `maxUserAnswerChars` (default `2000`).
 - **Final output**: the agent's last text output of this round.
 - **Tool trace** (optional, off by default via `includeToolTrace`): tool calls made since that user input, condensed to one line each. It is not sent by default, so verdicts rest on the text blocks above.
@@ -31,7 +31,7 @@ The judge never sees your other session branches.
 
 - **Bounded interventions**: `maxAutoContinues` (default `2`) caps automatic continuations per user request. Your own new input resets the counter. Reaching the cap produces a single warning and stops intervening.
 - **No interruption of your typing**: the verdict is discarded if you started a new turn, queued a message, or the branch moved while the judge was running.
-- **Conservative verdicts**: the built-in judge prompt treats thin evidence, polite closings, and analysis-only output as incomplete, and falls back to "stop" when the evidence is ambiguous.
+- **A change request cannot be answered by restating it**: when the request asks for a change to be applied (an imperative or a target-state description such as "remove X" or "A should be B") and the agent only restates the rule, lists the resulting state, or replies "understood" with no sign of having applied anything, that is a premature stop. Only a request that is itself a question, discussion, or request for opinion is judged as "answered, so stopping is fine".
 - **Waiting on background work counts as normal waiting**: when the agent's final output says it is waiting on background work (for example it just started `subagent`, `subagent_resume`, or `workflow` and said the result arrives automatically), the judge prompt requires a "stop" verdict. The background work wakes the session when it finishes, so a continuation would only add an extra round; this rule outranks the other verdict rules, and it reads the agent's final output rather than the tool trace.
 - **Explicit failures**: judge, authentication, timeout, and send errors are reported in the UI; a failed judgement is never treated as an acceptable stop.
 - **Persistent sessions only**: judgement runs in TUI and RPC modes. Print and JSON modes skip it, because the session already shuts down once the agent settles and an automatic continuation could never execute.
@@ -75,7 +75,7 @@ File: `<pi-agent-dir>/extensions/pi-auto-goal/config.json`; respects `PI_CODING_
 | `notifyOnStopDecision` | `false` | Deprecated: one verdict block is emitted per turn, so this switch no longer has any effect (the field stays accepted so old configs keep working). |
 | `showVerdictNotice` | `true` | Show the latest verdict as a filled notice block in the transcript, below the message (details expand with Ctrl+O). |
 | `judgeMaxTokens` | `2000` | Output-token ceiling for one judge call, clamped to the model's own output limit. |
-| `continueMessageTemplate` | `""` | Overrides the built-in message; supports `{reason}`. |
+| `continueMessageTemplate` | `""` | Overrides the built-in nudge text (injected as a system directive); supports `{reason}`. |
 | `forcedDecision` | `"auto"` | Override verdict for controlled experiments: `auto` (normal), `continue` (always treat as premature stop), `stop` (always treat as acceptable stop). |
 
 Unknown fields and invalid values are rejected with an explicit error instead of being silently ignored.
@@ -87,13 +87,13 @@ After each turn the transcript shows **one** filled `[auto-goal]` block below th
 | Verdict line | Colour | Meaning |
 | --- | --- | --- |
 | `⚖️ stop accepted · confidence 92%` | green | Judged as a normal stop; no intervention. The reason sits in the expandable details (`Ctrl+O`, or click the block in fullscreen mode). |
-| `⚖️ judged premature · continuation 1/2` | yellow | Judged as a premature stop; the continuation was sent (1/2 = 1 sent, limit 2). |
+| `⚖️ judged premature · continuation 1/2` | yellow | Judged as a premature stop; a system nudge was injected (1/2 = 1 sent, limit 2). |
 | `⚖️ continuation limit reached (2/2) · no further intervention` | grey | Intervention budget for this request is used up. |
 | `⚖️ interrupted · not judged` | grey | You pressed Esc; the judgement stood down. |
 | `⚖️ turn did not finish normally · not judged` | grey | The turn ended with a failure or a truncated record. |
 | `⚖️ judge failed` | red | The judge call failed. |
 
-The body is a single line; the reason, the continuation that was sent, the failure, and the stop reason are kept in the expandable details: press **`Ctrl+O`** (the tool-output toggle), or click the notice block in fullscreen mode, to read them. They take no space while collapsed.
+The body is a single line; the reason, the nudge that was injected, the failure, and the stop reason are kept in the expandable details: press **`Ctrl+O`** (the tool-output toggle), or click the notice block in fullscreen mode, to read them. They take no space while collapsed.
 
 The verdict never enters the LLM context and is not written to the footer status bar; it is a local session entry, so it still renders the same way when you reopen the session.
 

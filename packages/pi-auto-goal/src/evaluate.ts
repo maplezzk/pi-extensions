@@ -71,7 +71,7 @@ export type StopSkipCode = typeof STOP_SKIP_BUDGET | typeof STOP_SKIP_CANCELED;
 export type StopOutcome =
   | {
     kind: "continue";
-    /** 待发送的自动催促消息。 */
+    /** 待注入的自动催促指令。 */
     message: string;
     reason: string;
     confidence: number;
