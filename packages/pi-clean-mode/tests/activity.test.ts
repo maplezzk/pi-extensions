@@ -21,6 +21,7 @@ import {
 	toolActivityLabel,
 	withoutActionRows,
 	type ActivityRenderInput,
+	type ActivityRow,
 } from "../src/activity.ts";
 import { i18n } from "../src/i18n.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -192,8 +193,10 @@ test("未运行时活动区不输出任何行", () => {
 test("活动块末尾带本轮分类计数尾注，不重复顶部文案与耗时", () => {
 	const snapshot = runningSnapshot();
 	snapshot.running[0].outputTail = "12 passing";
+	const rows = buildActivityLines(renderInput({ snapshot })).rows;
 	const joined = appendActivityCountersNote(
-		blockLines({ snapshot }),
+		rows,
+		renderActivityRows(rows, PLAIN_PAINTER),
 		activityCountersNote(snapshot.counters),
 	).join("\n");
 
@@ -209,15 +212,38 @@ test("活动块末尾带本轮分类计数尾注，不重复顶部文案与耗�
 	assert.ok(!joined.includes("42s"), `耗时只在轮首，活动块不应重复：${joined}`);
 });
 
-test("尾注接在最后一条非空行上，不另占一行，也不挂到补位空行后面", () => {
+test("尾注接在最后一个子项行上：不接输出尾巴，不另占一行，也不挂到补位空行后面", () => {
 	const note = activityCountersNote(runningSnapshot().counters);
-	const lines = ["  ├─ 思考", "  └─ › 运行命令 npm test", ""];
-	const appended = appendActivityCountersNote(lines, note);
+	const rows: ActivityRow[] = [
+		{ kind: "item", text: "思考 权衡方案" },
+		{ kind: "item", text: "运行命令 npm test" },
+		{ kind: "tail", text: "↳ 12 passing" },
+		{ kind: "blank", text: "" },
+	];
+	const lines = renderActivityRows(rows, PLAIN_PAINTER);
+	const appended = appendActivityCountersNote(rows, lines, note);
 
 	assert.equal(appended.length, lines.length, "尾注不该改变行数");
-	assert.equal(appended[0], lines[0], "尾注只接在最后一条非空行上");
-	assert.ok(appended[1]?.endsWith(note), `尾注应接在最后一个非空行尾：${appended[1]}`);
-	assert.equal(appended[2], "", "补位空行保持空行，不挂尾注");
+	assert.ok(appended[1]?.endsWith(note), `尾注应接在最后一个子项行尾：${appended[1]}`);
+	assert.equal(
+		appended[2],
+		lines[2],
+		`输出尾巴是命令自己打出来的那行，不能挂本轮计数：${appended[2]}`,
+	);
+	assert.equal(appended[3], "", "补位空行保持空行，不挂尾注");
+});
+
+test("块里只剩续行时尾注退回最后一条非空行", () => {
+	const note = activityCountersNote(runningSnapshot().counters);
+	const rows: ActivityRow[] = [
+		{ kind: "tail", text: "↳ 12 passing" },
+		{ kind: "blank", text: "" },
+	];
+	const lines = renderActivityRows(rows, PLAIN_PAINTER);
+	const appended = appendActivityCountersNote(rows, lines, note);
+
+	assert.ok(appended[0]?.endsWith(note), `没有子项行时退回最后一条非空行：${appended[0]}`);
+	assert.equal(appended[1], "", "补位空行仍然不挂尾注");
 });
 
 test("只有一次动作时不出尾注：组头已经写了动作名", () => {
@@ -226,11 +252,27 @@ test("只有一次动作时不出尾注：组头已经写了动作名", () => {
 		"",
 		"一次动作时尾注应为空串",
 	);
+	const rows: ActivityRow[] = [{ kind: "item", text: "运行命令 npm test" }];
+	const lines = renderActivityRows(rows, PLAIN_PAINTER);
 	assert.deepEqual(
-		appendActivityCountersNote(["  └─ › 运行命令 npm test"], ""),
-		["  └─ › 运行命令 npm test"],
+		appendActivityCountersNote(rows, lines, ""),
+		lines,
 		"没有尾注时行原样返回",
 	);
+});
+
+test("轮首状态行不随动画帧变化，也不带转动图标", () => {
+	const first = buildRunStatusLines(renderInput({ frame: 0, animated: true }))[0] ?? "";
+	const second = buildRunStatusLines(renderInput({ frame: 3, animated: true }))[0] ?? "";
+
+	assert.ok(first.length > 0, "前置条件：运行中应输出状态行");
+	assert.equal(first, second, `状态行不该逐帧变，否则顶部一直在跳：${first} / ${second}`);
+	for (const glyph of ["⠋", "⠙", "⠹", "›"]) {
+		assert.ok(
+			!first.includes(glyph),
+			`状态行不带转动图标「${glyph}」：耗时本身就每秒在变：${first}`,
+		);
+	}
 });
 
 test("分类计数拼成一行尾注，0 的桶按需省略", () => {

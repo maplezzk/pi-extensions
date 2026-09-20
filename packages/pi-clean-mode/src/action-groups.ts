@@ -54,6 +54,8 @@ export interface ActionGroupState {
 
 /** 内容块的类型标识：正文文本。 */
 const CONTENT_TYPE_TEXT = "text";
+/** 内容块里工具调用的类型名，与 Pi 会话格式一致。 */
+const CONTENT_TYPE_TOOL_CALL = "toolCall";
 /** 消息角色标识：assistant。 */
 const MESSAGE_ROLE_ASSISTANT = "assistant";
 
@@ -114,6 +116,53 @@ export function isAssistantMessage(message: unknown): boolean {
 	return isRecord(message) && message.role === MESSAGE_ROLE_ASSISTANT;
 }
 
+/** 从消息里扫出的一次工具调用；登记动作组只需要这三样。 */
+export interface StreamedToolCall {
+	/** 本次调用的唯一 id。 */
+	toolCallId: string;
+	/** 工具名（`bash`、`edit` …），用来算动作摘要与分类。 */
+	toolName: string;
+	/** 调用参数，原样透传。 */
+	args: unknown;
+}
+
+/**
+ * 扫出 assistant 消息里已经出现的工具调用。
+ *
+ * 必须在消息还在流式时就能扫到。Pi 一旦把工具调用块收完，就会立刻把那一行工具行加进
+ * 对话并渲染它，而 `tool_call` / `tool_execution_start` 要等这条 assistant 消息**结束**
+ * 才发（实测差 300ms 上下）。等到那时候再登记，那一行已经以「未登记」的样子原样画了
+ * 一两帧，登记之后又突然收进组里——屏幕上就是工具行先措不及防地跳出来、再突然消失。
+ * 内容块形状见 Pi 会话格式：`{ type: "toolCall", id, name, arguments }`。
+ */
+export function extractToolCalls(message: unknown): StreamedToolCall[] {
+	if (!isRecord(message)) {
+		return [];
+	}
+
+	const content = message.content;
+	if (!Array.isArray(content)) {
+		return [];
+	}
+
+	const calls: StreamedToolCall[] = [];
+	for (const block of content) {
+		if (!isRecord(block) || block.type !== CONTENT_TYPE_TOOL_CALL) {
+			continue;
+		}
+		const { id, name } = block;
+		if (typeof id !== "string" || id.length === 0) {
+			continue;
+		}
+		if (typeof name !== "string" || name.length === 0) {
+			continue;
+		}
+		calls.push({ toolCallId: id, toolName: name, args: block.arguments });
+	}
+
+	return calls;
+}
+
 /** 创建空的动作组状态。 */
 export function createActionGroupState(): ActionGroupState {
 	return {
@@ -171,6 +220,36 @@ export function registerActionToolCall(state: ActionGroupState, input: ActionToo
 		counts[activity] = (counts[activity] ?? 0) + 1;
 		state.activityCountByGroupId.set(groupId, counts);
 	}
+}
+
+/**
+ * 把一次工具调用改挂到当前组。
+ *
+ * 解说出现在工具调用**后面**时会晚于那次调用开始流式，组边界就落在它后面（`message_end`
+ * 侧才开新组）；这几次调用得跟着挪过去，否则它们会被算进上一组。
+ * 只适用于「刚登记、还在原组尾部」的调用：挪的是同一流式消息里登记的那几条，
+ * 因此旧组剩下的成员序号仍然连续。已在当前组或无登记时什么也不做。
+ */
+export function reassignActionToolCall(state: ActionGroupState, input: ActionToolCallInput): void {
+	const { toolCallId, summary, activity } = input;
+	const existing = state.membershipByToolCallId.get(toolCallId);
+	if (!existing || existing.groupId === state.currentGroupId) {
+		return;
+	}
+
+	const previousSize = state.memberCountByGroupId.get(existing.groupId) ?? 0;
+	if (previousSize > 0) {
+		state.memberCountByGroupId.set(existing.groupId, previousSize - 1);
+	}
+	if (activity !== undefined) {
+		const counts = state.activityCountByGroupId.get(existing.groupId);
+		if (counts !== undefined) {
+			counts[activity] = Math.max(0, (counts[activity] ?? 0) - 1);
+		}
+	}
+
+	state.membershipByToolCallId.delete(toolCallId);
+	registerActionToolCall(state, input);
 }
 
 /** 取某个组的分类计数；未知组返回 undefined。 */
