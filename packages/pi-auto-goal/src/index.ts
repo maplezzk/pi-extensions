@@ -359,6 +359,7 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
       maxUserRequestChars: runtime.config.maxUserRequestChars,
       maxFinalOutputChars: runtime.config.maxFinalOutputChars,
       maxToolTraceEntries: runtime.config.maxToolTraceEntries,
+      maxUserAnswerChars: runtime.config.maxUserAnswerChars,
       includeToolTrace: runtime.config.includeToolTrace,
       injectedUserTexts: runtime.injectedUserTexts,
     });
