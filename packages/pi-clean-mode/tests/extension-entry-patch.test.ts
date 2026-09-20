@@ -15,6 +15,7 @@ import { Container } from "@earendil-works/pi-tui";
 import { NOTICE_ENTRY_TYPE } from "pi-extensions-i18n";
 import {
 	applyEntryRail,
+	dropLeadingBlankLines,
 	installExtensionEntryPatch,
 	isExtensionEntryHost,
 	isExtensionEntryWorkWindow,
@@ -89,9 +90,33 @@ class FakeMessageComponent extends Container {
 	customRenderer = (): unknown => undefined;
 	setExpanded = (): void => undefined;
 
-	constructor() {
+	/**
+	 * @param leadingBlank 是否像 Pi 那样在内容前面插一个空行（`Spacer(1)`）。
+	 */
+	constructor(leadingBlank = false) {
 		super();
-		this.addChild({ render: (width: number) => [`w=${width}`], invalidate: () => {} });
+		this.addChild({
+			render: (width: number) => (leadingBlank ? ["", `w=${width}`] : [`w=${width}`]),
+			invalidate: () => {},
+		});
+	}
+}
+
+/**
+ * 结构上等同于 Pi 的 CustomEntryComponent：内容前面自带一个空行（`Spacer(1)`）。
+ *
+ * Pi 的条目与消息组件都是这样开头的（custom-entry.js / custom-message.js），运行期间
+ * 接轨道时那一行要去掉，否则密集列表里每块前面都空出一行。
+ */
+class SpacerPrefixedEntry extends Container implements EntryHostShape {
+	entry: { customType: string };
+	renderer = (): unknown => undefined;
+	hasContent = (): boolean => true;
+
+	constructor(customType: string) {
+		super();
+		this.entry = { customType };
+		this.addChild({ render: () => ["", `entry:${customType}`], invalidate: () => {} });
 	}
 }
 
@@ -380,6 +405,40 @@ test("轨道判定：只有运行中（未收起）的条目才加轨道", () =>
 
 test("轨道前缀逐行拼接，行数不变", () => {
 	assert.deepEqual(applyEntryRail(["a", ""], RAIL_PREFIX), [`${RAIL_PREFIX}a`, RAIL_PREFIX]);
+});
+
+test("去掉开头自带的空行：只去开头的，末尾的留着", () => {
+	assert.deepEqual(dropLeadingBlankLines(["", "a"]), ["a"]);
+	assert.deepEqual(dropLeadingBlankLines(["", "", "a"]), ["a"]);
+	assert.deepEqual(dropLeadingBlankLines(["a", ""]), ["a", ""], "末尾空行不是 Pi 加的");
+	assert.deepEqual(dropLeadingBlankLines(["a"]), ["a"]);
+	assert.deepEqual(dropLeadingBlankLines([]), []);
+	assert.deepEqual(
+		dropLeadingBlankLines(["", ""]),
+		["", ""],
+		"整块都是空行时不能变成 0 行",
+	);
+});
+
+test("运行中的条目：开头那行空行不占行，块与相邻记录紧挨着", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new SpacerPrefixedEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`${RAIL_PREFIX}entry:${NOTICE_ENTRY_TYPE}`]);
+
+		const message = new FakeMessageComponent(true);
+		assert.deepEqual(
+			message.render(RENDER_WIDTH),
+			[`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`],
+			"工作流结果面板同样自带空行，一并去掉",
+		);
+	});
+});
+
+test("运行之外的条目保留 Pi 自己的空行", () => {
+	withPatch({ state: stateWith({ runSettled: true }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new SpacerPrefixedEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), ["", `entry:${NOTICE_ENTRY_TYPE}`]);
+	});
 });
 
 test("运行中的扩展条目带上轨道前缀，并让出前缀占的两列", () => {

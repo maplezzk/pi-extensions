@@ -20,7 +20,7 @@
  * 无论何时都豁免，否则「配置读取失败」这类警告会被一起收掉。
  */
 
-import { Container } from "@earendil-works/pi-tui";
+import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import { NOTICE_ENTRY_TYPE } from "pi-extensions-i18n";
 import { installMethodPatch, type PatchablePrototype } from "./prototype-patch.js";
 import type { CleanModeConfig, CleanModeState } from "./types.js";
@@ -153,10 +153,26 @@ export function shouldRailExtensionEntry(input: ExtensionEntryRailInput): boolea
  * 给条目的每一行加上轨道前缀。
  *
  * 调用方传入按 `width - ENTRY_RAIL_WIDTH` 渲染出来的行，前缀正好补回这两列：整行宽度不变，
- * 条目自己的底色仍然铺到右边缘。空行（条目自带的 Spacer）只留前缀，没有底色可补。
+ * 条目自己的底色仍然铺到右边缘。
  */
 export function applyEntryRail(lines: readonly string[], prefix: string): string[] {
 	return lines.map((line) => `${prefix}${line}`);
+}
+
+/**
+ * 去掉渲染结果开头自带的空行。
+ *
+ * Pi 的条目组件与消息组件都在自己的内容前面插一个 `Spacer(1)`（见 Pi 的
+ * custom-entry.js / custom-message.js）：普通视图里它是块与块之间的呼吸空间，但运行期间
+ * 清爽模式画的是「一行一条」的密集列表，这一行就成了列表中间的一个空洞 —— 上下都是紧挨着的
+ * 记录，只有扩展块前面空出一行，看起来像列表被随机断开。接轨道时顺手去掉。
+ *
+ * 只去开头的空行：末尾的空行不是 Pi 加的，留着不动；整块全是空行时返回原样，
+ * 免得把一个本来就空白的块变成 0 行。
+ */
+export function dropLeadingBlankLines(lines: readonly string[]): string[] {
+	const firstContent = lines.findIndex((line) => visibleWidth(line) > 0);
+	return firstContent <= 0 ? [...lines] : lines.slice(firstContent);
 }
 
 /** 判定一条扩展条目收起时是否该隐藏所需的输入。 */
@@ -340,7 +356,8 @@ export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () =>
 			if (railPrefix === undefined || width <= ENTRY_RAIL_WIDTH) {
 				return originalRender.call(this, width);
 			}
-			return applyEntryRail(originalRender.call(this, width - ENTRY_RAIL_WIDTH), railPrefix);
+			const railed = dropLeadingBlankLines(originalRender.call(this, width - ENTRY_RAIL_WIDTH));
+			return applyEntryRail(railed, railPrefix);
 		};
 
 	const restores = deps.containerPrototypes.map((prototype) =>
