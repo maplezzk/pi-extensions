@@ -106,6 +106,7 @@ A clause's text is **both the criterion and the finding text**. The three clause
 | A leading `[error]` / `[warning]` on a clause | Stripped from the criterion; this backend has no levels, so **every hit blocks** |
 | A `**bold**` phrase in a clause | Used as the rule name, combined as `{section} {number} {title}` - this is the `ruleGroup` |
 | `threshold` in front matter | Hit threshold for every clause in that file; default `0.85` |
+| Several rule files on one reviewer | Judgment ids gain a file prefix (`f1_rule_1`); the same number in different files is normal and never warns, only a duplicate number inside one file does |
 | Other prose, `## Output` style sections | Does not affect judging |
 
 The `## Ownership and severity` heading is a fixed convention in common rule files; numbered items inside it are always skipped, so requirements like "`ruleGroup` may only use clause names that appear in this file" never turn into code rules.

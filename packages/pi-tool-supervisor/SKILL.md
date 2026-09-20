@@ -20,6 +20,7 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 - 规则 frontmatter 的 `enabled`、`filePatterns`、`complexity`、`consumers`；`typesafe` 引擎另外读可选的 `threshold`（默认 `0.85`）。
 - **规则文件是引擎无关的，换 backend 不需要改规则。** `typesafe` 引擎直接读文件里现有的编号条款：一条 `1. 正文` 就是一条规则，条款正文既当判据也当 finding 文案，`[error]`/`[warning]` 标注会被剔掉且不分级（命中即阻断）。不要为了 typesafe 去加 `## 判据` / `## 修复提示` / `severity` 字段；那些不是这个后端的要求。
 - `## 归属与 severity` 这类元指令段落里的编号条款**不参与判断**，它们讲的是「怎么报告」。段落标题以「归属」开头即识别。
+- 一个 reviewer 挂多个规则文件时，判断 id 会按文件加序号前缀（`f1_rule_1`）：编号是文件内序号，跨文件重号是常态，不告警；只有同一个文件里编号重复才告警。
 
 相对规则文件路径和 condition 模块路径从当前项目 cwd 解析。配置在每次工具调用前重读。
 
