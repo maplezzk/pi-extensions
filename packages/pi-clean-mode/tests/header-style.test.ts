@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createHeaderStyler, type ThemePainter } from "../src/header-style.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import {
+	createHeaderStyler,
+	GUTTER_PREFIX_WIDTH,
+	renderGutterPrefix,
+	type ThemePainter,
+} from "../src/header-style.ts";
 
 /** 伪造的前景色码前缀，用来断言「确实套了这一层色」。 */
 const FG_PREFIX = "\x1b[38;5;99m";
@@ -63,4 +69,22 @@ test("主题没有加粗能力时原样返回", () => {
 	};
 
 	assert.equal(createHeaderStyler(noBoldTheme).bold("用时"), "用时", "加粗不可用时应原样返回");
+});
+
+test("轨道前缀带弱化色，并且宽度的声明值与实际一致", () => {
+	const styler = createHeaderStyler(ansiTheme());
+	const prefix = renderGutterPrefix(styler);
+
+	assert.ok(prefix.startsWith(FG_PREFIX), "轨道前缀应与组头同用弱化色");
+	// 伪造主题在字符后面补了重置码，所以先去掉转义再看明文字符。
+	assert.equal(
+		prefix.replace(/\u001b\[[0-9;]*m/g, ""),
+		"│ ",
+		"前缀应为竖条加间隔",
+	);
+	assert.equal(
+		visibleWidth(prefix),
+		GUTTER_PREFIX_WIDTH,
+		"让出列宽的常量必须与实际渲染宽度一致，否则整行会溢出或少两列",
+	);
 });

@@ -108,8 +108,11 @@ A clause's text is **both the criterion and the finding text**. The three clause
 | `threshold` in front matter | Hit threshold for every clause in that file; default `0.85` |
 | Several rule files on one reviewer | Judgment ids gain a file prefix (`f1_rule_1`); the same number in different files is normal and never warns, only a duplicate number inside one file does |
 | Other prose, `## Output` style sections | Does not affect judging |
+| A numbered list of **exemptions** ("only reads", "only runs a script") | Still one rule per item, but asked backwards - see below |
 
 The `## Ownership and severity` heading is a fixed convention in common rule files; numbered items inside it are always skipped, so requirements like "`ruleGroup` may only use clause names that appear in this file" never turn into code rules.
+
+A numbered clause must say **what code counts as a violation**. A numbered list of exemptions does not disappear: every item becomes a rule and is asked as "does this code violate *only reads*?", which inverts its meaning, while the real prohibition - written as bullets or prose - is never asked at all. **Extracting clauses is not the same as extracting the right clauses**, so the `no clause is an error` check below cannot catch it: the file does yield clauses, just the wrong kind. Write clauses as prohibitions and put the exemptions inside the clause they exempt.
 
 #### You can see which rule failed
 
