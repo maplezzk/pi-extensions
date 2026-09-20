@@ -104,6 +104,8 @@ Each level gets its own treatment so the hierarchy reads at a glance and never b
 
 The row above a group header draws the light rail too instead of being left blank: a blank row would break the track for a full line, and "one continuous track" would stop reading. That rail row belongs to the same click target as the header, so clicking it still expands or collapses the group. The group header text and, once expanded, each member command's summary text use the muted colour: they announce that something is there, they are not prose, and they should not outshout it.
 
+A notice (`pi-extensions-i18n`) that pops up during a run follows the track as well: unless the run is collapsed, every one of its lines gets the same light rail prefix and the background band shifts right by two columns, so a full-width band no longer cuts the track in half. Collapsed runs and moments outside a run get no rail — the rail rows are not on screen then, and a lone structural character would read as a stray fragment.
+
 None of them carry a source prefix: the headers are drawn every run in a fixed position, so a prefix is pure noise and would push the text into a column different from the detail rows. The heavy rail is itself the marker that says clean mode drew this.
 
 A single action uses its own summary as the label (`Run Command ls -la`); two or more are summarised as `Explored · N steps`. Every folded row and every visible tool row ends its first line with `▶` / `▼`, sitting right after the text: state and "clickable" in one glance, with no key hint to learn.
@@ -119,11 +121,13 @@ Pi exports its transcript components, so this package replaces `AssistantMessage
 | Assistant message **with** tool calls | hidden entirely (narration belongs to the work) |
 | Assistant message **without** tool calls | kept, with the duration header attached |
 | Tool row | hidden entirely, or reduced to one action-group header row |
-| Extension entry (custom entry) | rows created during the run or the session-restore window are hidden too; notices are exempt |
+| Extension entry (custom entry) | rows created during the run or the session-restore window are hidden too; notices are exempt (a notice that pops up during a run picks up the left rail instead of cutting it) |
 
 A message without tool calls is the final answer because the agent loop only ends once a response has no tool calls left, so there is exactly one such message per run.
 
 Extension entries (rows written with `pi.appendEntry`, such as distill's audit line) are rendered by Pi's internal `CustomEntryComponent`, which is not part of Pi's public exports and carries no collapse signal. This package therefore patches `Container.prototype.render` from pi-tui, recognising entry components by "has entry + renderer + hasContent at once" and returning zero lines when collapsed. Only **work entries** are folded: rows first rendered during a run, or during the session-restore window (`session_start` until the first `agent_start`). Rows that only appear after a run settles (notices, summaries) stay visible, and pi-extensions-i18n notices are exempt at all times — otherwise warnings such as a failed config read would be folded away with the work. Set `hideExtensionEntries: false` to turn the behaviour off.
+
+The same patch puts a notice onto the rail while a run is in progress: the notice entry is rendered at `width - 2` and every line gets a `│ ` prefix, so the line width is unchanged and the background band still reaches the right edge.
 
 Hidden rows render zero lines, so the duration header lands directly above the final answer. The header itself is a real child component wrapped in `MouseRegion` — not a string prepended during render — because Pi's `Container` computes mouse hit offsets from child heights.
 

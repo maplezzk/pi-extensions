@@ -50,7 +50,7 @@ import {
 } from "./activity-area.js";
 import { installComponentPatches, type ToolRowGroupInfo } from "./component-patches.js";
 import { installExtensionEntryPatch, resolveContainerPrototypes } from "./extension-entry-patch.js";
-import { createHeaderStyler, type HeaderStyler, type ThemePainter } from "./header-style.js";
+import { createHeaderStyler, renderGutterPrefix, type HeaderStyler, type ThemePainter } from "./header-style.js";
 import {
 	areAllActionGroupsExpanded,
 	beginActionGroupStep,
@@ -516,6 +516,8 @@ function installPatches(runtime: Runtime): void {
 		getState: () => runtime.state,
 		getConfig: () => runtime.config,
 		isHistoryRestoreWindow: () => runtime.historyRestoreWindow,
+		// 提示块运行中接上轨道：它铺满整宽的底色本来会把左侧轨道切断。
+		getNoticeRailPrefix: () => renderGutterPrefix(runtime.styler),
 		// pi-tui 可能被装成两份，条目组件继承的那份从 Pi 导出的组件往上取。
 		containerPrototypes: resolveContainerPrototypes({
 			ownContainerPrototype: Container.prototype,

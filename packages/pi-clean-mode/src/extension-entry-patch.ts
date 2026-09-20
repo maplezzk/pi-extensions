@@ -27,6 +27,13 @@ import type { CleanModeConfig, CleanModeState } from "./types.js";
 
 /** 空渲染结果：条目被收起时一行都不占。 */
 const NO_LINES: string[] = [];
+/**
+ * 提示块轨道前缀占用的列宽。
+ *
+ * 加前缀的一方要按它把渲染宽度让出来（`width - NOTICE_RAIL_WIDTH`），前缀再补回这两列，
+ * 整行宽度才不会溢出。数值与 `GUTTER_PREFIX_WIDTH` 一致。
+ */
+const NOTICE_RAIL_WIDTH = 2;
 
 /**
  * 条目组件对外可见的最小结构。
@@ -79,7 +86,35 @@ export function isExtensionEntryWorkWindow(input: {
 	return input.isHistoryRestoreWindow || !input.state.runSettled;
 }
 
-/** 判定一条扩展条目折叠时是否该隐藏所需的输入。 */
+/**
+ * 判定一条提示条目在当前位置是否该接上运行时轨道。
+ *
+ * 提示块是运行期间唯一保持可见的扩展条目（工作条目归折叠管，提示是扩展出错时唯一能
+ * 说话的地方）。它铺满整宽的底色会把左侧轨道从中间切断，所以运行中给它加上 `│ ` 前缀，
+ * 让竖条接上去。
+ *
+ * 两种情况不加：总开关关闭（根本没有轨道可接）；收起态（轨道行本身不显示，加一条
+ * 孤立竖条反而多出个没头没尾的结构字符）。
+ */
+export function shouldRailNoticeEntry(input: ExtensionEntryRailInput): boolean {
+	const { state, config, customType } = input;
+	if (!config.enabled || customType !== NOTICE_ENTRY_TYPE) {
+		return false;
+	}
+	return !state.collapsed && !state.runSettled;
+}
+
+/**
+ * 给提示块的每一行加上轨道前缀。
+ *
+ * 调用方传入按 `width - NOTICE_RAIL_WIDTH` 渲染出来的行，前缀正好补回这两列：整行宽度不变，
+ * 提示块的底色仍然铺到右边缘。空行（条目自带的 Spacer）只留前缀，没有底色可补。
+ */
+export function applyNoticeRail(lines: readonly string[], prefix: string): string[] {
+	return lines.map((line) => `${prefix}${line}`);
+}
+
+/** 判定一条扩展条目收起时是否该隐藏所需的输入。 */
 export interface ExtensionEntryHideInput {
 	state: CleanModeState;
 	config: CleanModeConfig;
@@ -110,6 +145,14 @@ export function shouldHideExtensionEntry(input: ExtensionEntryHideInput): boolea
 /** Container.render 的补丁签名；容器接口只保证返回行数组。 */
 type ContainerRenderMethod = (this: object, width: number) => string[];
 
+/** 判定一条条目是否该接上轨道前缀所需的输入。 */
+export interface ExtensionEntryRailInput {
+	state: CleanModeState;
+	config: CleanModeConfig;
+	/** entry 的 customType；无法读出时为 undefined。 */
+	customType?: string;
+}
+
 /** 补丁层从扩展入口注入的依赖。 */
 export interface ExtensionEntryPatchDeps {
 	/** 读取当前折叠状态。 */
@@ -118,6 +161,13 @@ export interface ExtensionEntryPatchDeps {
 	getConfig: () => CleanModeConfig;
 	/** 是否处于会话恢复窗口：session_start 之后、首次 agent_start 之前。 */
 	isHistoryRestoreWindow: () => boolean;
+	/**
+	 * 取当前轨道前缀（已着色，如 `│ `）。
+	 *
+	 * 主题还没就绪时返回 undefined，调用方按原样渲染 —— 宁可少加前缀，也不能因为
+	 * 取不到着色能力把提示块画坏。
+	 */
+	getNoticeRailPrefix: () => string | undefined;
 	/** 要接管的 Container 原型列表；由入口按运行时解析情况提供。 */
 	containerPrototypes: object[];
 }
@@ -168,6 +218,29 @@ export function resolveContainerPrototypes(sources: ContainerPrototypeSources): 
  */
 export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () => void {
 	const workEntries = new WeakSet<object>();
+	const railedEntries = new WeakSet<object>();
+
+	/**
+	 * 判定条目是否该接上轨道前缀，并在首次渲染时把归属固定下来。
+	 *
+	 * 归属只能算一次：Pi 每帧都会重渲整段对话，同一条提示会反复经过这里。归属跟着
+	 * 「首次渲染时本轮在不在跑」走，运行结束后不再反过来改——否则屏幕上会看到轨道
+	 * 前缀在收起那一瞬间凭空出现或消失。
+	 */
+	const shouldRail = (host: object, state: CleanModeState, config: CleanModeConfig): boolean => {
+		if (railedEntries.has(host)) {
+			return true;
+		}
+		const railed = shouldRailNoticeEntry({
+			state,
+			config,
+			customType: readExtensionEntryCustomType(host as ExtensionEntryHost),
+		});
+		if (railed) {
+			railedEntries.add(host);
+		}
+		return railed;
+	};
 
 	/** 条目组件的渲染接管；两份原型共用同一份实现与同一张归属表。 */
 	const buildMethod = (originalRender: ContainerRenderMethod): ContainerRenderMethod =>
@@ -200,7 +273,13 @@ export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () =>
 			) {
 				return NO_LINES;
 			}
-			return originalRender.call(this, width);
+
+			const railPrefix = shouldRail(this, state, config) ? deps.getNoticeRailPrefix() : undefined;
+			// 宽度不够让出前缀时按原样渲染：宁可轨道断一下，也不能把提示画坏。
+			if (railPrefix === undefined || width <= NOTICE_RAIL_WIDTH) {
+				return originalRender.call(this, width);
+			}
+			return applyNoticeRail(originalRender.call(this, width - NOTICE_RAIL_WIDTH), railPrefix);
 		};
 
 	const restores = deps.containerPrototypes.map((prototype) =>

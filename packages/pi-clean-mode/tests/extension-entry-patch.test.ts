@@ -14,12 +14,14 @@ import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { NOTICE_ENTRY_TYPE } from "pi-extensions-i18n";
 import {
+	applyNoticeRail,
 	installExtensionEntryPatch,
 	isExtensionEntryHost,
 	isExtensionEntryWorkWindow,
 	readExtensionEntryCustomType,
 	resolveContainerPrototypes,
 	shouldHideExtensionEntry,
+	shouldRailNoticeEntry,
 } from "../src/extension-entry-patch.ts";
 import { isMethodPatchInstalled } from "../src/prototype-patch.ts";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "../src/types.ts";
@@ -28,6 +30,10 @@ import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } 
 const SINGLE_LINE = 1;
 /** 渲染宽度；条目折叠只看行数，用固定宽度即可。 */
 const RENDER_WIDTH = 80;
+/** 测试用的轨道前缀；与真实实现的 `│ ` 同宽。 */
+const RAIL_PREFIX = "│ ";
+/** 轨道前缀的可见列宽，用来验证渲染宽度确实让出去了。 */
+const RAIL_WIDTH = 2;
 
 /** 带条目特征的组件结构；与 Pi 的 CustomEntryComponent 同形。 */
 interface EntryHostShape {
@@ -47,6 +53,19 @@ class FakeEntryComponent extends Container implements EntryHostShape {
 		super();
 		this.entry = { customType };
 		this.addChild({ render: () => [`entry:${customType}`], invalidate: () => {} });
+	}
+}
+
+/** 把收到的渲染宽度写进行里的条目：用来核对带轨道前缀时宽度让出了两列。 */
+class WidthReportingEntry extends Container implements EntryHostShape {
+	entry: { customType: string };
+	renderer = (): unknown => undefined;
+	hasContent = (): boolean => true;
+
+	constructor(customType: string) {
+		super();
+		this.entry = { customType };
+		this.addChild({ render: (width: number) => [`w=${width}`], invalidate: () => {} });
 	}
 }
 
@@ -91,15 +110,18 @@ interface PatchBox {
 	state: CleanModeState;
 	config: CleanModeConfig;
 	restoreWindow: boolean;
+	/** 轨道前缀；`undefined` 模拟主题还没就绪。 */
+	railPrefix?: string | undefined;
 }
 
 /** 安装补丁、跑用例、还原；原型列表按运行时解析情况取，与入口装配一致。 */
 function withPatch(init: PatchBox, run: (box: PatchBox) => void): void {
-	const box: PatchBox = { ...init };
+	const box: PatchBox = { railPrefix: RAIL_PREFIX, ...init };
 	const restore = installExtensionEntryPatch({
 		getState: () => box.state,
 		getConfig: () => box.config,
 		isHistoryRestoreWindow: () => box.restoreWindow,
+		getNoticeRailPrefix: () => box.railPrefix,
 		containerPrototypes: resolveContainerPrototypes({
 			ownContainerPrototype: Container.prototype,
 			piComponentPrototype: AssistantMessageComponent.prototype,
@@ -203,6 +225,7 @@ test("两份不同的 Container 原型都会被补丁", () => {
 		getState: () => stateWith({ collapsed: true, runSettled: false }),
 		getConfig: () => configWith({}),
 		isHistoryRestoreWindow: () => false,
+		getNoticeRailPrefix: () => RAIL_PREFIX,
 		containerPrototypes: prototypes,
 	});
 	try {
@@ -279,5 +302,90 @@ test("普通容器渲染不受补丁影响", () => {
 		const container = new Container();
 		container.addChild({ render: () => ["plain"], invalidate: () => {} });
 		assert.deepEqual(container.render(RENDER_WIDTH), ["plain"]);
+	});
+});
+
+test("轨道判定：只有运行中的提示条目才加轨道", () => {
+	const running = stateWith({ runSettled: false });
+	const config = configWith({});
+	assert.equal(shouldRailNoticeEntry({ state: running, config, customType: NOTICE_ENTRY_TYPE }), true);
+	assert.equal(
+		shouldRailNoticeEntry({ state: stateWith({ collapsed: true }), config, customType: NOTICE_ENTRY_TYPE }),
+		false,
+		"收起态轨道行本身不显示",
+	);
+	assert.equal(
+		shouldRailNoticeEntry({ state: stateWith({ runSettled: true }), config, customType: NOTICE_ENTRY_TYPE }),
+		false,
+		"运行之外没有轨道可接",
+	);
+	assert.equal(
+		shouldRailNoticeEntry({ state: running, config: configWith({ enabled: false }), customType: NOTICE_ENTRY_TYPE }),
+		false,
+	);
+	assert.equal(
+		shouldRailNoticeEntry({ state: running, config, customType: "pi-distill-audit" }),
+		false,
+		"只处理提示条目",
+	);
+});
+
+test("轨道前缀逐行拼接，行数不变", () => {
+	assert.deepEqual(applyNoticeRail(["a", ""], RAIL_PREFIX), [`${RAIL_PREFIX}a`, RAIL_PREFIX]);
+});
+
+test("运行中的提示条目带上轨道前缀，并让出前缀占的两列", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+	});
+});
+
+test("收起态与运行之外的提示条目不加轨道前缀", () => {
+	withPatch({ state: stateWith({ collapsed: true, runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+	});
+	withPatch({ state: stateWith({ runSettled: true }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+	});
+});
+
+test("工作条目不会被加轨道前缀", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new WidthReportingEntry("pi-distill-audit");
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+	});
+});
+
+test("拿不到轨道前缀时按原样渲染", () => {
+	withPatch(
+		{ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false, railPrefix: undefined },
+		() => {
+			const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+			assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+		},
+	);
+});
+
+test("宽度放不下前缀时按原样渲染", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RAIL_WIDTH), [`w=${RAIL_WIDTH}`]);
+	});
+});
+
+test("轨道归属在首次渲染时固定，收起后仍然带着", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, (box) => {
+		const entry = new FakeEntryComponent(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`${RAIL_PREFIX}entry:${NOTICE_ENTRY_TYPE}`]);
+
+		box.state = stateWith({ collapsed: true, runSettled: true });
+		assert.deepEqual(
+			entry.render(RENDER_WIDTH),
+			[`${RAIL_PREFIX}entry:${NOTICE_ENTRY_TYPE}`],
+			"已判定归属的提示不会因为运行结束而变样",
+		);
 	});
 });
