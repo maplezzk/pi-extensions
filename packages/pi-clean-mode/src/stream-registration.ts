@@ -14,6 +14,7 @@
 import {
 	beginActionGroupStep,
 	extractToolCalls,
+	fillActionToolCallSummary,
 	findActionGroupMembership,
 	hasNarrationText,
 	isAssistantMessage,
@@ -33,10 +34,15 @@ export interface StreamedToolCall {
 	args: unknown;
 }
 
-/** 把一次调用翻译成登记所需的摘要与分类；由调用方提供（它才知道工具名怎么读数）。 */
+/**
+ * 把一次调用翻译成登记所需的摘要与分类；由调用方提供（它才知道工具名怎么读数）。
+ *
+ * `summary` 可以是 `undefined`：流式块的参数是分片拼起来的，刚出现时可能还是空对象，
+ * 那时读不出摘要，先不写（写了就会被当成最终文案），等参数到齐再补。
+ */
 export type StreamedToolCallDescriber = (
 	call: StreamedToolCall,
-) => { summary: string; activity: keyof ActivityCounters };
+) => { summary?: string; activity: keyof ActivityCounters };
 
 /** 流式登记的会话内状态；一次会话一份，跨 run 复用。 */
 export interface StreamRegistration {
@@ -113,6 +119,7 @@ export function applyStreamedMessage(input: StreamedMessageInput): StreamedMessa
 	const registered: StreamedToolCall[] = [];
 	for (const call of extractToolCalls(message)) {
 		if (findActionGroupMembership(actionGroups, call.toolCallId)) {
+			refineStreamedToolCall({ state, call, actionGroups, describe });
 			continue;
 		}
 		const { summary, activity } = describe(call);
@@ -122,4 +129,30 @@ export function applyStreamedMessage(input: StreamedMessageInput): StreamedMessa
 	}
 
 	return { stepped, registered };
+}
+
+/** 补全一次登记所需的输入。 */
+interface StreamedToolCallRefinement {
+	state: StreamRegistration;
+	call: StreamedToolCall;
+	actionGroups: ActionGroupState;
+	describe: StreamedToolCallDescriber;
+}
+
+/**
+ * 参数分片到齐后把摘要补上。
+ *
+ * 只动「这条消息里自己登记过」的调用：别的来源（`tool_call` / `tool_execution_start`）
+ * 登记时参数已经是完整的，不需要也不该被这里的占位参数覆盖。
+ */
+function refineStreamedToolCall(input: StreamedToolCallRefinement): void {
+	const { state, call, actionGroups, describe } = input;
+	const index = state.toolCalls.findIndex((item) => item.toolCallId === call.toolCallId);
+	if (index < 0) {
+		return;
+	}
+
+	// 用最新一帧的参数替掉当初的占位；摘要只在原来缺失时才补。
+	state.toolCalls[index] = call;
+	fillActionToolCallSummary(actionGroups, call.toolCallId, describe(call).summary);
 }

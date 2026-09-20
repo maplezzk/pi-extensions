@@ -424,6 +424,10 @@ function feedStreamedMessage(runtime: Runtime, message: unknown): void {
 	});
 	if (outcome.registered.length > 0) {
 		runtime.runToolCount += outcome.registered.length;
+		debugLog(
+			"stream register",
+			`group=${runtime.actionGroups.currentGroupId} ${outcome.registered.map((call) => call.toolCallId).join(",")}`,
+		);
 	}
 	if (outcome.stepped) {
 		debugLog("narration", `new group=${runtime.actionGroups.currentGroupId}`);
@@ -432,13 +436,25 @@ function feedStreamedMessage(runtime: Runtime, message: unknown): void {
 
 /** 把一次工具调用翻译成动作组登记所需的摘要与分类。 */
 function describeStreamedToolCall(call: StreamedToolCall): {
-	summary: string;
+	summary?: string;
 	activity: keyof ActivityCounters;
 } {
 	return {
-		summary: summarizeToolCall(call.toolName, call.args),
+		summary: hasToolArguments(call.args) ? summarizeToolCall(call.toolName, call.args) : undefined,
 		activity: classifyToolActivity(call.toolName),
 	};
+}
+
+/**
+ * 参数是不是已经能读出内容。
+ *
+ * 流式内容块里的 `arguments` 是分片拼出来的，块刚出现时还是空对象。空对象只能读出
+ * 「运行命令」这样的标签，把标签当摘要写进去就再也不会被补全了 —— 那时宁可不写，
+ * 等参数到齐后由 `fillActionToolCallSummary` 补上（真正无参数的工具由后续事件
+ * 登记时补上标签本身）。
+ */
+function hasToolArguments(args: unknown): boolean {
+	return typeof args === "object" && args !== null && Object.keys(args).length > 0;
 }
 
 /**

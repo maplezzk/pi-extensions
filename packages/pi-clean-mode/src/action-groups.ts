@@ -252,6 +252,23 @@ export function reassignActionToolCall(state: ActionGroupState, input: ActionToo
 	registerActionToolCall(state, input);
 }
 
+/**
+ * 补全一次已经登记的摘要：流式块先出现时参数还是空占位，等参数到齐再补。
+ *
+ * 只在原来没有摘要时补，不改写已有文案（重复事件不该把文案换来换去）。
+ */
+export function fillActionToolCallSummary(
+	state: ActionGroupState,
+	toolCallId: string,
+	summary: string | undefined,
+): void {
+	const existing = state.membershipByToolCallId.get(toolCallId);
+	if (!existing || existing.summary !== undefined || summary === undefined) {
+		return;
+	}
+	existing.summary = summary;
+}
+
 /** 取某个组的分类计数；未知组返回 undefined。 */
 export function getActionGroupActivityCounts(
 	state: ActionGroupState,

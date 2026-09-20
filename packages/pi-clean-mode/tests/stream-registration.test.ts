@@ -94,6 +94,48 @@ test("工具调用先出现、解说后到时，那几次调用跟着挪到新�
 	assert.equal(getActionGroupSize(groups, moved), 1, "新组里只有这一条");
 });
 
+test("参数还没流到时先不写摘要，到齐后补上", () => {
+	const groups = createGroups();
+	const state = createStreamRegistration();
+	/** 只在参数非空时给摘要，模拟流式块的占位参数。 */
+	const describeWithArgs = (call: StreamedToolCall) => {
+		const command = (call.args as Record<string, unknown> | undefined)?.command;
+		return typeof command === "string"
+			? { summary: `运行命令 ${command}`, activity: "command" as const }
+			: { activity: "command" as const };
+	};
+	/** 造一个带指定参数的工具调用块，用来模拟分片拼参数的过程。 */
+	const toolCallWith = (args: unknown): unknown => ({ type: "toolCall", id: "a1", name: "bash", arguments: args });
+
+	beginStreamedMessage(state, assistantMessage());
+	// 第一帧：块刚出现，参数还是空占位 —— 先登记（要赶在渲染前），摘要留空。
+	applyStreamedMessage({
+		state,
+		message: assistantMessage(toolCallWith({})),
+		actionGroups: groups,
+		describe: describeWithArgs,
+	});
+	assert.equal(
+		findActionGroupMembership(groups, "a1")?.summary,
+		undefined,
+		"空参数读不出摘要，不能先把标签写进去锁死",
+	);
+
+	// 第二帧：参数到齐，摘要补上，且不重复登记。
+	const outcome = applyStreamedMessage({
+		state,
+		message: assistantMessage(toolCallWith({ command: "ls -la" })),
+		actionGroups: groups,
+		describe: describeWithArgs,
+	});
+	assert.equal(outcome.registered.length, 0, "同一次调用不重复登记");
+	assert.equal(
+		findActionGroupMembership(groups, "a1")?.summary,
+		"运行命令 ls -la",
+		"参数到齐后要把摘要补上",
+	);
+});
+
 test("同一帧反复喂进来只登记一次，也不会反复开组", () => {
 	const groups = createGroups();
 	const state = createStreamRegistration();
