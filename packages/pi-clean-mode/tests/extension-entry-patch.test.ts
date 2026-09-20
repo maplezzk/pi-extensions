@@ -14,14 +14,14 @@ import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { NOTICE_ENTRY_TYPE } from "pi-extensions-i18n";
 import {
-	applyNoticeRail,
+	applyEntryRail,
 	installExtensionEntryPatch,
 	isExtensionEntryHost,
 	isExtensionEntryWorkWindow,
 	readExtensionEntryCustomType,
 	resolveContainerPrototypes,
 	shouldHideExtensionEntry,
-	shouldRailNoticeEntry,
+	shouldRailExtensionEntry,
 } from "../src/extension-entry-patch.ts";
 import { isMethodPatchInstalled } from "../src/prototype-patch.ts";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "../src/types.ts";
@@ -130,7 +130,7 @@ function withPatch(init: PatchBox, run: (box: PatchBox) => void): void {
 		getState: () => box.state,
 		getConfig: () => box.config,
 		isHistoryRestoreWindow: () => box.restoreWindow,
-		getNoticeRailPrefix: () => box.railPrefix,
+		getEntryRailPrefix: () => box.railPrefix,
 		containerPrototypes: resolveContainerPrototypes({
 			ownContainerPrototype: Container.prototype,
 			piComponentPrototype: AssistantMessageComponent.prototype,
@@ -234,7 +234,7 @@ test("两份不同的 Container 原型都会被补丁", () => {
 		getState: () => stateWith({ collapsed: true, runSettled: false }),
 		getConfig: () => configWith({}),
 		isHistoryRestoreWindow: () => false,
-		getNoticeRailPrefix: () => RAIL_PREFIX,
+		getEntryRailPrefix: () => RAIL_PREFIX,
 		containerPrototypes: prototypes,
 	});
 	try {
@@ -314,39 +314,41 @@ test("普通容器渲染不受补丁影响", () => {
 	});
 });
 
-test("轨道判定：只有运行中的提示条目才加轨道", () => {
+test("轨道判定：只有运行中（未收起）的条目才加轨道", () => {
 	const running = stateWith({ runSettled: false });
 	const config = configWith({});
-	assert.equal(shouldRailNoticeEntry({ state: running, config, customType: NOTICE_ENTRY_TYPE }), true);
+	assert.equal(shouldRailExtensionEntry({ state: running, config }), true);
 	assert.equal(
-		shouldRailNoticeEntry({ state: stateWith({ collapsed: true }), config, customType: NOTICE_ENTRY_TYPE }),
+		shouldRailExtensionEntry({ state: stateWith({ collapsed: true }), config }),
 		false,
 		"收起态轨道行本身不显示",
 	);
 	assert.equal(
-		shouldRailNoticeEntry({ state: stateWith({ runSettled: true }), config, customType: NOTICE_ENTRY_TYPE }),
+		shouldRailExtensionEntry({ state: stateWith({ runSettled: true }), config }),
 		false,
 		"运行之外没有轨道可接",
 	);
 	assert.equal(
-		shouldRailNoticeEntry({ state: running, config: configWith({ enabled: false }), customType: NOTICE_ENTRY_TYPE }),
+		shouldRailExtensionEntry({ state: running, config: configWith({ enabled: false }) }),
 		false,
-	);
-	assert.equal(
-		shouldRailNoticeEntry({ state: running, config, customType: "pi-distill-audit" }),
-		false,
-		"只处理提示条目",
 	);
 });
 
 test("轨道前缀逐行拼接，行数不变", () => {
-	assert.deepEqual(applyNoticeRail(["a", ""], RAIL_PREFIX), [`${RAIL_PREFIX}a`, RAIL_PREFIX]);
+	assert.deepEqual(applyEntryRail(["a", ""], RAIL_PREFIX), [`${RAIL_PREFIX}a`, RAIL_PREFIX]);
 });
 
-test("运行中的提示条目带上轨道前缀，并让出前缀占的两列", () => {
+test("运行中的扩展条目带上轨道前缀，并让出前缀占的两列", () => {
 	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
-		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
-		assert.deepEqual(entry.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+		const notice = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(notice.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+
+		const audit = new WidthReportingEntry("pi-distill-audit");
+		assert.deepEqual(
+			audit.render(RENDER_WIDTH),
+			[`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`],
+			"工作流结果面板、审计卡片同样铺满整宽，也得接上轨道",
+		);
 	});
 });
 
@@ -357,13 +359,6 @@ test("收起态与运行之外的提示条目不加轨道前缀", () => {
 	});
 	withPatch({ state: stateWith({ runSettled: true }), config: configWith({}), restoreWindow: false }, () => {
 		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
-		assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
-	});
-});
-
-test("工作条目不会被加轨道前缀", () => {
-	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
-		const entry = new WidthReportingEntry("pi-distill-audit");
 		assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
 	});
 });

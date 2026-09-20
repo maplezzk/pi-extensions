@@ -28,7 +28,7 @@ export const GUTTER_GAP = " ";
 /**
  * 轨道前缀占用的列宽：竖条 1 列 + 间隔 1 列。
  *
- * 给整块内容（例如提示块）加前缀时要按它把渲染宽度让出来，否则整行会超宽。
+ * 给整块内容（例如运行期间的扩展条目）加前缀时要按它把渲染宽度让出来，否则整行会超宽。
  * 值与 `renderGutterPrefix` 的产出绑在一起，测试会核对两者一致。
  */
 export const GUTTER_PREFIX_WIDTH = 2;
@@ -101,7 +101,7 @@ function identity(text: string): string {
 /**
  * 拼轨道前缀 `│ `。
  *
- * 动作组头用它起头；提示块这类整块内容也用它接上运行时轨道 —— 两条轨道字符必须来自
+ * 动作组头用它起头；运行期间的扩展条目这类整块内容也用它接上运行时轨道 —— 两条轨道字符必须来自
  * 同一处，否则一处换字形、另一处还留着旧写法，看上去就是两根对不齐的竖条。
  */
 export function renderGutterPrefix(styler: HeaderStyler): string {
