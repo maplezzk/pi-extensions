@@ -436,31 +436,23 @@ function feedStreamedMessage(runtime: Runtime, message: unknown): void {
 	}
 }
 
-/** 把一次工具调用翻译成动作组登记所需的摘要与分类。 */
+/**
+ * 把一次工具调用翻译成动作组登记所需的摘要与分类。
+ *
+ * 流式期间只给「运行命令」这样的标签，并标成占位：参数是分片拼起来的，写下去的是半截值
+ * （「运行命令 bash -」），下一帧又可能被当成最终文案锁死。参数到齐后由 `tool_call` /
+ * `tool_execution_start` 带上完整摘要把占位换掉，那两个事件带的参数是完整的。
+ */
 function describeStreamedToolCall(call: StreamedToolCall): {
 	summary?: string;
 	provisional?: boolean;
 	activity: keyof ActivityCounters;
 } {
 	return {
-		summary: summarizeToolCall(call.toolName, call.args),
-		// 参数还读不出内容时，上面只给出「运行命令」这样的标签：标成占位，
-		// 等参数到齐（下一帧或 `tool_call` 事件）再换成真摘要。
-		...(hasToolDetail(call.toolName, call.args) ? {} : { provisional: true }),
+		summary: toolActivityLabel(call.toolName),
+		provisional: true,
 		activity: classifyToolActivity(call.toolName),
 	};
-}
-
-/**
- * 参数里有没有能读出来的内容。
- *
- * 流式内容块里的 `arguments` 是分片拼起来的：块刚出现时键已经在了、值还是 undefined
- * （JSON 序列化出来是 `{}`）。`toolActivityDetail` 读不到已知字段时会退回工具名，
- * 所以「详情等于工具名」就是「参数还没到齐」。
- */
-function hasToolDetail(toolName: string, args: unknown): boolean {
-	const detail = toolActivityDetail(toolName, args);
-	return detail !== undefined && detail !== toolName;
 }
 
 /**

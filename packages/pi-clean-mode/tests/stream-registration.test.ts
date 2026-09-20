@@ -12,6 +12,7 @@ import {
 	createActionGroupState,
 	findActionGroupMembership,
 	getActionGroupSize,
+	registerActionToolCall,
 } from "../src/action-groups.ts";
 import {
 	applyStreamedMessage,
@@ -94,21 +95,21 @@ test("工具调用先出现、解说后到时，那几次调用跟着挪到新�
 	assert.equal(getActionGroupSize(groups, moved), 1, "新组里只有这一条");
 });
 
-test("参数还没流到时先不写摘要，到齐后补上", () => {
+test("流式阶段只盖占位摘要，真摘要由后续登记层换上", () => {
 	const groups = createGroups();
 	const state = createStreamRegistration();
-	/** 只在参数非空时给摘要，模拟流式块的占位参数。 */
+	/** 参数没到齐时给占位摘要（只有标签），到齐后给真摘要。 */
 	const describeWithArgs = (call: StreamedToolCall) => {
 		const command = (call.args as Record<string, unknown> | undefined)?.command;
 		return typeof command === "string"
 			? { summary: `运行命令 ${command}`, activity: "command" as const }
-			: { activity: "command" as const };
+			: { summary: "运行命令", provisional: true, activity: "command" as const };
 	};
 	/** 造一个带指定参数的工具调用块，用来模拟分片拼参数的过程。 */
 	const toolCallWith = (args: unknown): unknown => ({ type: "toolCall", id: "a1", name: "bash", arguments: args });
 
 	beginStreamedMessage(state, assistantMessage());
-	// 第一帧：块刚出现，参数还是空占位 —— 先登记（要赶在渲染前），摘要留空。
+	// 第一帧：块刚出现，参数还没到齐 —— 先登记（要赶在渲染前），摘要只能是占位。
 	applyStreamedMessage({
 		state,
 		message: assistantMessage(toolCallWith({})),
@@ -117,11 +118,11 @@ test("参数还没流到时先不写摘要，到齐后补上", () => {
 	});
 	assert.equal(
 		findActionGroupMembership(groups, "a1")?.summary,
-		undefined,
-		"空参数读不出摘要，不能先把标签写进去锁死",
+		"运行命令",
+		"流式阶段先给占位摘要",
 	);
 
-	// 第二帧：参数到齐，摘要补上，且不重复登记。
+	// 第二帧：参数到齐，但流式阶段不重复登记。
 	const outcome = applyStreamedMessage({
 		state,
 		message: assistantMessage(toolCallWith({ command: "ls -la" })),
@@ -129,14 +130,22 @@ test("参数还没流到时先不写摘要，到齐后补上", () => {
 		describe: describeWithArgs,
 	});
 	assert.equal(outcome.registered.length, 0, "同一次调用不重复登记");
+
+	// 真摘要由带完整参数的登记层（`tool_call` / `tool_execution_start`）换上。
+	const { summary, activity } = describeWithArgs({
+		toolCallId: "a1",
+		toolName: "bash",
+		args: { command: "ls -la" },
+	});
+	registerActionToolCall(groups, { toolCallId: "a1", summary, activity });
 	assert.equal(
 		findActionGroupMembership(groups, "a1")?.summary,
 		"运行命令 ls -la",
-		"参数到齐后要把摘要补上",
+		"参数到齐后占位摘要要换成真摘要",
 	);
 });
 
-test("占位摘要会被参数到齐后的真摘要换掉", () => {
+test("占位摘要在流式阶段不会被锁死：换成真摘要后不再变动", () => {
 	const groups = createGroups();
 	const state = createStreamRegistration();
 	/** 参数没到齐时给占位摘要（只有标签），到齐后给真摘要。 */
@@ -157,7 +166,7 @@ test("占位摘要会被参数到齐后的真摘要换掉", () => {
 	});
 	assert.equal(findActionGroupMembership(groups, "a1")?.summary, "运行命令", "先给占位摘要");
 
-	// 第二帧：参数到齐，占位摘要换成真摘要，且不重复登记。
+	// 第二帧：参数到齐，但流式阶段不重复登记，真摘要由登记层（`tool_call`）换上。
 	const outcome = applyStreamedMessage({
 		state,
 		message: assistantMessage({
@@ -170,6 +179,13 @@ test("占位摘要会被参数到齐后的真摘要换掉", () => {
 		describe: describeProvisional,
 	});
 	assert.equal(outcome.registered.length, 0, "同一次调用不重复登记");
+
+	const { summary, activity } = describeProvisional({
+		toolCallId: "a1",
+		toolName: "bash",
+		args: { command: "ls -la" },
+	});
+	registerActionToolCall(groups, { toolCallId: "a1", summary, activity });
 	assert.equal(
 		findActionGroupMembership(groups, "a1")?.summary,
 		"运行命令 ls -la",

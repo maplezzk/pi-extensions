@@ -122,8 +122,8 @@ export function applyStreamedMessage(input: StreamedMessageInput): StreamedMessa
 
 	const registered: StreamedToolCall[] = [];
 	for (const call of extractToolCalls(message)) {
+		// 已登记就不重复登记：摘要（含占位→真摘要）由登记层按先后补全，这里不插手。
 		if (findActionGroupMembership(actionGroups, call.toolCallId)) {
-			refineStreamedToolCall({ state, call, actionGroups, describe });
 			continue;
 		}
 		const { summary, provisional, activity } = describe(call);
@@ -133,31 +133,4 @@ export function applyStreamedMessage(input: StreamedMessageInput): StreamedMessa
 	}
 
 	return { stepped, registered };
-}
-
-/** 补全一次登记所需的输入。 */
-interface StreamedToolCallRefinement {
-	state: StreamRegistration;
-	call: StreamedToolCall;
-	actionGroups: ActionGroupState;
-	describe: StreamedToolCallDescriber;
-}
-
-/**
- * 参数分片到齐后把摘要补上。
- *
- * 只动「这条消息里自己登记过」的调用：别的来源（`tool_call` / `tool_execution_start`）
- * 登记时参数已经是完整的，不需要也不该被这里的占位参数覆盖。
- */
-function refineStreamedToolCall(input: StreamedToolCallRefinement): void {
-	const { state, call, actionGroups, describe } = input;
-	const index = state.toolCalls.findIndex((item) => item.toolCallId === call.toolCallId);
-	if (index < 0) {
-		return;
-	}
-
-	// 用最新一帧的参数替掉当初的占位；登记层只在「先前是占位」时才换文案。
-	state.toolCalls[index] = call;
-	const { summary, provisional, activity } = describe(call);
-	registerActionToolCall(actionGroups, { toolCallId: call.toolCallId, summary, provisional, activity });
 }
