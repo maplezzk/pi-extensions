@@ -112,19 +112,25 @@ function truncate(value: string, maxChars: number): string {
  *
  * 一个文件切不出任何条款时不能静默通过：那意味着这个文件在本后端下无法判断，
  * 必须报成带路径的错误，否则启用 typesafe 后规则会静默失效。
+ *
+ * 条款编号是文件内序号（`rule_1`、`rule_2`），而一次审查会把该 reviewer 的多个规则
+ * 文件合成一次请求，所以跨文件必然重号。合并多个文件时按文件顺序加前缀，让判断 id
+ * 天然唯一；重号警告只留给同一个文件里编号重复这种真的写错了的情况。
  */
 export function compileJudgments(rules: FileEditReviewRule[]): JudgmentCompileResult {
   const judgments: RuleJudgment[] = [];
   const errors: JudgmentCompileError[] = [];
   const warnings: string[] = [];
   const usedIds = new Set<string>();
-  for (const rule of rules) {
+  const scoped = rules.length > 1;
+  for (const [fileIndex, rule] of rules.entries()) {
     if (rule.clauses.length === 0) {
       errors.push({ rulesFile: rule.absolutePath, message: i18n.t("missingClauses") });
       continue;
     }
+    const fileScope = scoped ? `f${fileIndex + 1}_` : "";
     for (const clause of rule.clauses) {
-      const baseId = sanitizeJudgmentId(clause.id);
+      const baseId = sanitizeJudgmentId(`${fileScope}${clause.id}`);
       let id = baseId;
       let suffix = 2;
       while (usedIds.has(id)) {
