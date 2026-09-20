@@ -450,3 +450,154 @@ test("session-squash 快照以 compaction summary 语义注入上下文", async 
   assert.match(llmText, /^The conversation history before this point was compacted into the following summary:/);
   assert.match(llmText, /## Current State/);
 });
+
+/**
+ * Pi 0.86 起 provider 从消息列表推导 instructions 与 tools，system 消息不属于对话条目，
+ * 分支重建时必须继续携带，否则压缩后的模型会认为环境没有提供任何工具。
+ */
+test("压缩分支重建上下文时保留运行时 system 消息", async () => {
+  type Handler = (event: unknown, ctx: unknown) => unknown | Promise<unknown>;
+  const moduleUrl = new URL("../src/session-tail-compaction.ts", import.meta.url);
+  moduleUrl.searchParams.set("carry-system-test", "enabled");
+  const { default: sessionTailCompaction } = await import(moduleUrl.href);
+  const handlers = new Map<string, Handler>();
+  const snapshot = "[Task state snapshot]\n## Current State\n继续执行 Resume";
+  const squashEntry: SessionEntry = {
+    type: "custom_message",
+    id: "squash-1",
+    parentId: "user-1",
+    timestamp: "2026-01-01T00:00:01.000Z",
+    customType: SESSION_SQUASH_TYPE,
+    content: snapshot,
+    display: true,
+    details: {
+      startEntryId: "user-1",
+      sourceLeafId: "leaf-1",
+      fromUserInputIndex: 0,
+      summary: snapshot,
+      tokensBefore: 1234,
+    },
+  };
+  const pi = {
+    registerTool: () => undefined,
+    registerCommand: () => undefined,
+    on: (eventName: string, handler: Handler) => handlers.set(eventName, handler),
+  } as unknown as ExtensionAPI;
+  sessionTailCompaction(pi);
+
+  const runtimeSystemMessage = {
+    role: "system",
+    content: "",
+    sections: { rules: "运行时下发的规则" },
+    toolsAdded: [
+      { name: "bash", description: "运行命令", parameters: { type: "object" } },
+    ],
+    timestamp: 111,
+  };
+  const contextHandler = handlers.get("context");
+  assert.ok(contextHandler);
+
+  const carried = await contextHandler(
+    {
+      type: "context",
+      messages: [
+        runtimeSystemMessage,
+        { role: "user", content: "已被折叠掉的旧分支内容", timestamp: 112 },
+      ],
+    },
+    {
+      sessionManager: {
+        getBranch: () => [squashEntry],
+        buildContextEntries: () => [squashEntry],
+      },
+    },
+  ) as {
+    messages: Array<{
+      role?: string;
+      content?: unknown;
+      sections?: Record<string, string>;
+      toolsAdded?: Array<{ name: string }>;
+      summary?: string;
+    }>;
+  };
+
+  assert.equal(carried.messages.length, 2);
+  assert.equal(carried.messages[0]?.role, "system");
+  assert.deepEqual(carried.messages[0]?.toolsAdded?.map((tool) => tool.name), [
+    "bash",
+  ]);
+  assert.equal(carried.messages[1]?.role, "compactionSummary");
+  assert.equal(carried.messages[1]?.summary, snapshot);
+  assert.ok(
+    !carried.messages.some((message) =>
+      String(message.content ?? "").includes("已被折叠掉的旧分支内容")
+    ),
+  );
+});
+
+/** 分支自身已声明同一条 system 消息时不再重复携带，避免同一份工具声明出现两次。 */
+test("分支自带的 system 消息不会被重复携带", async () => {
+  type Handler = (event: unknown, ctx: unknown) => unknown | Promise<unknown>;
+  const moduleUrl = new URL("../src/session-tail-compaction.ts", import.meta.url);
+  moduleUrl.searchParams.set("dedupe-system-test", "enabled");
+  const { default: sessionTailCompaction } = await import(moduleUrl.href);
+  const handlers = new Map<string, Handler>();
+  const branchSystemMessage = {
+    role: "system",
+    content: "",
+    sections: { rules: "分支自带的规则" },
+    toolsAdded: [
+      { name: "read", description: "读取文件", parameters: { type: "object" } },
+    ],
+    timestamp: 222,
+  };
+  const branch: SessionEntry[] = [
+    {
+      type: "message",
+      id: "sys-1",
+      parentId: null,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: branchSystemMessage,
+    },
+    {
+      type: "custom_message",
+      id: "squash-1",
+      parentId: "sys-1",
+      timestamp: "2026-01-01T00:00:01.000Z",
+      customType: SESSION_SQUASH_TYPE,
+      content: "快照",
+      display: true,
+      details: {
+        startEntryId: "sys-1",
+        sourceLeafId: "leaf-1",
+        fromUserInputIndex: 0,
+        summary: "快照",
+        tokensBefore: 10,
+      },
+    },
+  ];
+  const pi = {
+    registerTool: () => undefined,
+    registerCommand: () => undefined,
+    on: (eventName: string, handler: Handler) => handlers.set(eventName, handler),
+  } as unknown as ExtensionAPI;
+  sessionTailCompaction(pi);
+
+  const contextHandler = handlers.get("context");
+  assert.ok(contextHandler);
+  const result = await contextHandler(
+    { type: "context", messages: [branchSystemMessage] },
+    {
+      sessionManager: {
+        getBranch: () => branch,
+        buildContextEntries: () => branch,
+      },
+    },
+  ) as { messages: Array<{ role?: string; timestamp?: number }> };
+
+  assert.deepEqual(
+    result.messages.map((message) => message.role),
+    ["system", "compactionSummary"],
+  );
+  assert.equal(result.messages[0]?.timestamp, 222);
+});

@@ -17,6 +17,7 @@
 
 import {
   sessionEntryToContextMessages,
+  type ContextEvent,
   type ExtensionAPI,
   type SessionEntry,
   type ExtensionCommandContext,
@@ -78,6 +79,19 @@ type NoticeContextUi = {
   notify(message: string, type?: NoticeLevel): void;
   theme?: { fg(color: NoticeColor, text: string): string };
 };
+
+/** 运行时的单条上下文消息；system 分支不在 AgentMessage 联合类型里，按结构识别。 */
+type RuntimeMessage = ContextEvent["messages"][number];
+
+/** 是否为运行时下发的 system 消息（承载系统提示与工具声明）。 */
+function isRuntimeSystemMessage(message: RuntimeMessage): boolean {
+  return (message as { role?: string }).role === "system";
+}
+
+/** 读取消息时间戳，用于判断分支里是否已声明同一条 system 消息。 */
+function messageTimestamp(message: RuntimeMessage): number {
+  return (message as { timestamp?: number }).timestamp ?? 0;
+}
 
 /** validateTailStart 失败码 → i18n key 的映射，集中维护。 */
 const TAIL_START_ERROR_I18N_KEY: Record<TailStartErrorCode, string> = {
@@ -669,14 +683,29 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
   // branch() 发生在 agent_settled 事件中，Pi 的 AgentSession 内存消息仍可能
   // 保留旧分支。下一次 provider 请求前，以当前 active branch 重建 context，
   // 确保模型和 /tree 看到同一条新分支。
-  pi.on("context", async (_event, ctx) => {
+  //
+  // system 消息不是可分支的对话内容：它承载系统提示与工具声明，只存在于运行时的消息
+  // 数组里，压缩起点之后的新分支没有对应条目。Pi 0.86 起 provider 直接从消息列表
+  // 推导 instructions 与 tools，重建时丢掉它，模型就会说「环境没有提供工具」。
+  pi.on("context", async (event, ctx) => {
     const branch = ctx.sessionManager.getBranch();
     if (getTailCompactions(branch).length === 0) return;
 
+    const rebuilt = ctx.sessionManager
+      .buildContextEntries()
+      .flatMap(toSessionContextMessages);
+    const declaredSystemTimestamps = new Set(
+      rebuilt.filter(isRuntimeSystemMessage).map(messageTimestamp),
+    );
     return {
-      messages: ctx.sessionManager
-        .buildContextEntries()
-        .flatMap(toSessionContextMessages),
+      messages: [
+        ...(event.messages ?? []).filter(
+          (message) =>
+            isRuntimeSystemMessage(message) &&
+            !declaredSystemTimestamps.has(messageTimestamp(message)),
+        ),
+        ...rebuilt,
+      ],
     };
   });
 
