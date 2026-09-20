@@ -106,6 +106,7 @@ A clause's text is **both the criterion and the finding text**. The three clause
 | A legacy `[error]` / `[warning]` left on a clause | Stripped from the criterion; there are no levels, so **every hit blocks** (old rule files keep working) |
 | A `**bold**` phrase in a clause | Used as the rule name, combined as `{section} {number} {title}` - this is the `ruleGroup` |
 | `threshold` in front matter | Hit threshold for every clause in that file; default `0.85` |
+| Several rule files on one reviewer | Judgment ids gain a file prefix (`f1_rule_1`); the same number in different files is normal and never warns, only a duplicate number inside one file does |
 | Other prose, `## Output` style sections | Does not affect judging |
 | A numbered list of **exemptions** ("only reads", "only runs a script") | Still one rule per item, but asked backwards - see below |
 

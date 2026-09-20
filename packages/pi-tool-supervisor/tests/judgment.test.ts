@@ -154,6 +154,32 @@ test("条款编号重复时去重并警告", async () => {
   assert.match(compiled.warnings[0] ?? "", /rule_1/);
 });
 
+test("多个规则文件合并时不重号，也不报重复编号警告", async () => {
+  // 条款编号是文件内序号，每个文件都从 1 开始；合并成一次审查后跨文件必然重号。
+  const rules = await loadRules([
+    { name: "a.md", content: "# 规则 A\n\n## 检查项\n\n1. **禁止静默吞异常**：捕获后静默继续。\n" },
+    { name: "b.md", content: "# 规则 B\n\n## 检查项\n\n1. **禁止魔法值**：提取为常量。\n2. **最多 3 个参数**：改为参数对象。\n" },
+  ]);
+  const compiled = compileJudgments(rules);
+
+  assert.deepEqual(compiled.warnings, []);
+  assert.deepEqual(compiled.judgments.map((judgment) => judgment.id), ["f1_rule_1", "f2_rule_1", "f2_rule_2"]);
+  // 每个判断仍然指向自己的规则文件，前缀只解决 id 重号。
+  assert.deepEqual(compiled.judgments.map((judgment) => judgment.rulesFile.split("/").pop()), ["a.md", "b.md", "b.md"]);
+});
+
+test("同一个文件里编号重复仍然警告", async () => {
+  const rules = await loadRules([
+    { name: "a.md", content: "# 规则 A\n\n## 检查项\n\n1. **禁止静默吞异常**：捕获后静默继续。\n" },
+    { name: "b.md", content: "# 规则 B\n\n## 检查项\n\n1. **禁止魔法值**：提取为常量。\n\n1. **最多 3 个参数**：改为参数对象。\n" },
+  ]);
+  const compiled = compileJudgments(rules);
+
+  assert.deepEqual(compiled.judgments.map((judgment) => judgment.id), ["f1_rule_1", "f2_rule_1", "f2_rule_1_2"]);
+  assert.equal(compiled.warnings.length, 1);
+  assert.match(compiled.warnings[0] ?? "", /b\.md/);
+});
+
 test("阈值决定命中；noul 低于阈值和缺答案是两回事", async () => {
   const judgments = await compileAll(RULE_FILE);
 

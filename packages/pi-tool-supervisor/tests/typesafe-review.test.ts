@@ -108,6 +108,8 @@ const TARGET_CONTENT = "let result;\ntry {\n  result = run();\n} catch {\n  // i
 /** 建好配置、规则文件和目标文件，并装一个按问题类型分派的 fetch 替身。 */
 async function createFixture(options: {
   rules: string;
+  /** 第二个规则文件；用来验证多个规则文件合并成一次请求时判断 id 不重号。 */
+  secondRules?: { name: string; content: string };
   noul?: number;
   chosenLine?: string;
   /** 按判断 id 覆盖 noul；未列出的用 options.noul。 */
@@ -121,13 +123,19 @@ async function createFixture(options: {
   const projectDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-typesafe-project-"));
   const rulesFile = join(projectDir, "no-swallowed-error.md");
   await writeFile(rulesFile, options.rules);
+  const rulesFiles = [rulesFile];
+  if (options.secondRules) {
+    const secondFile = join(projectDir, options.secondRules.name);
+    await writeFile(secondFile, options.secondRules.content);
+    rulesFiles.push(secondFile);
+  }
   await mkdir(join(agentDir, "extensions", "pi-tool-supervisor"), { recursive: true });
   await writeFile(
     join(agentDir, "extensions", "pi-tool-supervisor", "config.json"),
     JSON.stringify({
       enabled: true,
       ...(options.typesafe === undefined ? {} : { typesafe: options.typesafe }),
-      reviewers: [{ name: "taste", backend: "typesafe", typesafeModel: "jev-latest", rulesFiles: [rulesFile] }],
+      reviewers: [{ name: "taste", backend: "typesafe", typesafeModel: "jev-latest", rulesFiles }],
     }),
   );
 
@@ -444,6 +452,25 @@ test("多规则文件里只有一条命中时，只报那一条", async () => {
     // 两条规则仍然合并成一次请求；只有命中那条需要行定位。
     assert.deepEqual(fixture.requests, ["noul,noul", "choice"]);
     assert.deepEqual(audit?.reviewers?.[0]?.findings?.map((finding) => finding.ruleGroup), ["必须遵守 2 禁止魔法值"]);
+  });
+});
+
+test("多个规则文件的条款编号各自从 1 开始时不重号，也不报重复编号警告", async () => {
+  // 真实配置就是多个规则文件挂在一个 reviewer 上，每个文件都从 1 开始编号。
+  const fixture = await createFixture({
+    rules: SWALLOWED_ERROR_RULE,
+    secondRules: { name: "second-quality.md", content: MULTI_CLAUSE_RULE },
+    noul: 0.2,
+  });
+  await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
+    const result = await runWriteTool(fixture);
+    const audit = result.details?.fileEditReview;
+
+    assert.equal(audit?.status, "passed");
+    // 前缀只解决跨文件重号，条数不变，仍然合并成一次请求。
+    assert.deepEqual(fixture.questionIdBatches, [["f1_rule_1", "f2_rule_1", "f2_rule_2"]]);
+    assert.equal(audit?.reviewers?.[0]?.warnings, undefined);
+    assert.doesNotMatch(JSON.stringify(audit), /编号都是/);
   });
 });
 
