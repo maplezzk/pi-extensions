@@ -97,6 +97,8 @@ function createDeps(snapshot: ActivitySnapshot, rows: ActivityRow[] = DEFAULT_RO
 		renderRunStatusLines: () => DEFAULT_RUN_STATUS_LINES,
 		// 默认假定本轮已有承载折叠头的组件；需要验证「承载者未就绪」的用例自行覆盖它。
 		hasRunHeaderHost: () => true,
+		// 默认假定轮首那条「处理中 · Ns」会画出来；要验证「轮首不画」的用例自行覆盖它。
+		isRunHeaderShown: () => true,
 	};
 }
 
@@ -247,6 +249,35 @@ test("活动行清空后恢复 Pi 内置 Working 提示", () => {
 	assert.deepEqual(fake.workingVisible, [false, true], "清空后应恢复显示");
 });
 
+test("本轮还在跑时空档里不再把内置 Working 提示弹回来", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+
+	refreshActivityArea(runtime, fake.host, createDeps(activeSnapshot(), DEFAULT_ROWS));
+	// 工具刚结束、下一条还没开始：这一帧一行活动行都没有，但轮首「处理中 · Ns」还在。
+	refreshActivityArea(runtime, fake.host, createDeps(activeSnapshot(), []));
+
+	assert.ok(
+		!fake.workingVisible.includes(true),
+		`接管过就不能再把内置提示弹回来，否则底部那行「⏱ Ns」会随着每条命令一闪一闪：${fake.workingVisible.join(",")}`,
+	);
+});
+
+test("轮首不画状态行且这帧没有活动行时，把内置 Working 提示让回去", () => {
+	const fake = createFakeHost();
+	const runtime = createActivityAreaRuntime();
+	const deps = createDeps(activeSnapshot(), []);
+	// 轮首被关掉（showRunHeader=false）时它不再是反馈，屏幕上只剩 Pi 的提示。
+	deps.isRunHeaderShown = () => false;
+
+	refreshActivityArea(runtime, fake.host, deps);
+
+	assert.ok(
+		!fake.workingVisible.includes(false),
+		`没有别的反馈时不能关掉内置提示：${fake.workingVisible.join(",")}`,
+	);
+});
+
 test("定时器启动后存在，停止后释放", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
@@ -337,7 +368,7 @@ test("细节形态去掉动作名后重拼前缀，收口落在剩下的最后�
 	);
 });
 
-test("分类计数作尾注接在最后一个非空行尾，两种形态各接一次", () => {
+test("分类计数尾注接在最后一个子项行上，不接输出尾巴，两种形态各接一次", () => {
 	const fake = createFakeHost();
 	const runtime = createActivityAreaRuntime();
 	const rows: ActivityRow[] = [
@@ -357,13 +388,18 @@ test("分类计数作尾注接在最后一个非空行尾，两种形态各接�
 	const note = activityCountersNote(snapshot.counters);
 	assert.notEqual(note, "", "前置条件：该快照应当产生尾注");
 	assert.ok(
-		(runtime.lines.at(-1) ?? "").endsWith(note),
-		`尾注应接在最后一个非空行尾：${runtime.lines.join("\n")}`,
+		(runtime.lines[1] ?? "").endsWith(note),
+		`尾注应接在最后一个子项行（动作行）尾：${runtime.lines.join("\n")}`,
+	);
+	assert.equal(
+		runtime.lines.at(-1),
+		`${TAIL}↳ 12 passing`,
+		`输出尾巴保持原样，不带本轮计数：${runtime.lines.join("\n")}`,
 	);
 	assert.equal(runtime.lines.length, rows.length, "尾注不另占一行，行数预算不变");
 	assert.ok(
-		(runtime.detailLines.at(-1) ?? "").endsWith(note),
-		`去掉动作行之后尾注要重新接在新的最后一行上：${runtime.detailLines.join("\n")}`,
+		(runtime.detailLines[0] ?? "").endsWith(note),
+		`去掉动作行之后尾注要重新接在新的最后一项上：${runtime.detailLines.join("\n")}`,
 	);
 });
 

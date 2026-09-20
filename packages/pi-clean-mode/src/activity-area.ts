@@ -130,6 +130,8 @@ export interface ActivityAreaDeps {
 	 * 否则从 agent_start 到第一个 token 之间屏幕上没有任何反馈。
 	 */
 	hasRunHeaderHost: () => boolean;
+	/** 轮首的那条状态行（`处理中 · Ns`）是否真的会被画出来，由 `showRunHeader` 决定。 */
+	isRunHeaderShown: () => boolean;
 }
 
 /** 渲染活动区行的输入。 */
@@ -295,17 +297,16 @@ export function refreshActivityArea(
 
 	const rendered = renderActivityLines(runtime, host, deps);
 	const rows = padActivityRows(runtime, rendered.rows);
-	// 尾注接在已渲染的最后一行上：它不占行数预算，单条组把动作行去掉之后也还在。
+	// 尾注接在已渲染的行上：它不占行数预算，单条组把动作行去掉之后也还在。
 	// 两种形态各拼一次，而不是先拼好再筛 —— 两者的最后一行本来就不是同一行。
 	const note = activityCountersNote(deps.getSnapshot().counters);
-	const lines = appendActivityCountersNote(renderActivityRows(rows, host.ui.theme), note);
+	const lines = appendActivityCountersNote(rows, renderActivityRows(rows, host.ui.theme), note);
 	// 单条组的组头已经写出这条动作，动作名从细节形态里去掉；去掉之后重拼前缀，
 	// 原本的第二项才成为最后一项。
+	const detailRows = withoutActionRows({ rows, actionRows: rendered.actionRows });
 	const detailLines = appendActivityCountersNote(
-		renderActivityRows(
-			withoutActionRows({ rows, actionRows: rendered.actionRows }),
-			host.ui.theme,
-		),
+		detailRows,
+		renderActivityRows(detailRows, host.ui.theme),
 		note,
 	);
 	const runStatusLines = renderRunStatusLines(runtime, host, deps);
@@ -330,22 +331,25 @@ export function refreshActivityArea(
 	runtime.actionRows = rendered.actionRows;
 	runtime.runStatusLines = runStatusLines;
 
-	if (lines.length === 0) {
-		host.requestRender();
-		restorePiWorkingIndicator(runtime, host);
-		return;
-	}
-
 	host.requestRender();
 
-	if (!deps.hasRunHeaderHost()) {
-		// 承载者还没出现，活动行画不出来；这时关掉 Pi 的 Working 提示会让屏幕彻底没有
-		// 反馈，看起来就是卡住。承载者出现后下一 tick 会因签名变化重新走到下面接管。
+	// 只要本轮还有 clean-mode 自己的反馈（活动块有行，或轮首那条「处理中 · Ns」会画出来），
+	// Pi 内置的 Working 提示就是重复信息。判断只看「本轮有没有承载者」，**不再看这一帧
+	// 有没有活动行**：工具刚跑完、下一条还没开始的空档里活动块会短暂为空，按帧判断会让
+	// 底部那行「⏱ Ns」随着每条命令一闪一闪。一次运行只接管一次，接管到本轮结束为止
+	// （clearActivityArea 在运行结束时把提示让回去）。
+	const ownsFeedback =
+		deps.getSnapshot().active &&
+		deps.hasRunHeaderHost() &&
+		(lines.length > 0 || deps.isRunHeaderShown());
+
+	if (!ownsFeedback) {
+		// 承载者还没出现，或轮首不画状态行且这一帧没有活动行：Pi 的提示是屏幕上唯一的
+		// 反馈，这时关掉它看起来就是卡住。
 		restorePiWorkingIndicator(runtime, host);
 		return;
 	}
 
-	// 活动区已经在展示当前动作，Pi 内置的 Working 提示就是重复信息。
 	safeUiCall(() => host.ui.setWorkingVisible(false));
 	runtime.workingSuppressed = true;
 }
