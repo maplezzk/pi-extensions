@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { buildModel } from "../src/index.ts";
 
 test("locales catalog provides zh-CN and en-US for every key", () => {
 	const catalog = JSON.parse(
@@ -15,4 +18,17 @@ test("locales catalog provides zh-CN and en-US for every key", () => {
 test("default export is an extension factory", async () => {
 	const mod = await import("../index.ts");
 	assert.equal(typeof mod.default, "function");
+});
+
+test("discovered models expose xhigh and max thinking levels", () => {
+	const model = buildModel("some-model", undefined, undefined, undefined, undefined) as unknown as Model<Api>;
+	assert.deepEqual(getSupportedThinkingLevels(model), [
+		"off",
+		"minimal",
+		"low",
+		"medium",
+		"high",
+		"xhigh",
+		"max",
+	]);
 });

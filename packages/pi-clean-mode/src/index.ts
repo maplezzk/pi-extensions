@@ -66,6 +66,13 @@ import {
 	toggleActionGroup,
 	type ActionGroupState,
 } from "./action-groups.js";
+import {
+	applyStreamedMessage,
+	beginStreamedMessage,
+	createStreamRegistration,
+	type StreamRegistration,
+	type StreamedToolCall,
+} from "./stream-registration.js";
 import { i18n } from "./i18n.js";
 import { NOTICE_SOURCE } from "./source-tag.js";
 import {
@@ -152,6 +159,13 @@ interface Runtime {
 	 * 上一轮的工作过程收起，否则 `/resume` 之后审计行会一条条铺在折叠好的对话里。
 	 */
 	historyRestoreWindow: boolean;
+	/**
+	 * 流式消息里的动作组登记状态机。
+	 *
+	 * 组边界与工具调用登记都要赶在那一行工具行被渲染之前完成，所以状态与顺序由
+	 * `stream-registration.ts` 统一持有，事件回调只负责把消息喂进去。
+	 */
+	streamRegistration: StreamRegistration;
 }
 
 /**
@@ -240,6 +254,7 @@ function createRuntime(): Runtime {
 		runToolCount: INITIAL_RUN_TOOL_COUNT,
 		runDurations: createRunDurationLedger(),
 		historyRestoreWindow: false,
+		streamRegistration: createStreamRegistration(),
 	};
 }
 
@@ -301,6 +316,7 @@ function createActivityDeps(runtime: Runtime): ActivityAreaDeps {
 		isAnimated: () => runtime.config.animateActivity,
 		getMaxRows: () => runtime.config.activityRows,
 		hasRunHeaderHost: () => runtime.runDurations.hasRunHeaderHost(),
+		isRunHeaderShown: () => runtime.config.showRunHeader,
 		renderLines: (input) => {
 			const { painter, frame, maxRows, animated } = input;
 			return buildActivityLines({
@@ -387,15 +403,56 @@ interface ToolActionInput {
  * tool_execution_start，同样会被计入。
  */
 function registerToolAction(runtime: Runtime, action: ToolActionInput): void {
-	if (findActionGroupMembership(runtime.actionGroups, action.toolCallId)) {
-		return;
-	}
+	const isNew = findActionGroupMembership(runtime.actionGroups, action.toolCallId) === undefined;
+	// 已登记也要再进一次：流式阶段先登记时参数还没到齐，摘要那时只能给占位，
+	// 这两个事件带的参数是完整的，由登记层把占位摘要换掉。
 	registerActionToolCall(runtime.actionGroups, {
 		toolCallId: action.toolCallId,
 		summary: summarizeToolCall(action.toolName, action.args),
 		activity: classifyToolActivity(action.toolName),
 	});
-	runtime.runToolCount += 1;
+	if (isNew) {
+		runtime.runToolCount += 1;
+	}
+}
+
+/** 把一次流式消息喂给登记状态机，并累加本轮步数。 */
+function feedStreamedMessage(runtime: Runtime, message: unknown): void {
+	const outcome = applyStreamedMessage({
+		state: runtime.streamRegistration,
+		message,
+		actionGroups: runtime.actionGroups,
+		describe: describeStreamedToolCall,
+	});
+	if (outcome.registered.length > 0) {
+		runtime.runToolCount += outcome.registered.length;
+		debugLog(
+			"stream register",
+			`group=${runtime.actionGroups.currentGroupId} ${outcome.registered.map((call) => call.toolCallId).join(",")}`,
+		);
+	}
+	if (outcome.stepped) {
+		debugLog("narration", `new group=${runtime.actionGroups.currentGroupId}`);
+	}
+}
+
+/**
+ * 把一次工具调用翻译成动作组登记所需的摘要与分类。
+ *
+ * 流式期间只给「运行命令」这样的标签，并标成占位：参数是分片拼起来的，写下去的是半截值
+ * （「运行命令 bash -」），下一帧又可能被当成最终文案锁死。参数到齐后由 `tool_call` /
+ * `tool_execution_start` 带上完整摘要把占位换掉，那两个事件带的参数是完整的。
+ */
+function describeStreamedToolCall(call: StreamedToolCall): {
+	summary?: string;
+	provisional?: boolean;
+	activity: keyof ActivityCounters;
+} {
+	return {
+		summary: toolActivityLabel(call.toolName),
+		provisional: true,
+		activity: classifyToolActivity(call.toolName),
+	};
 }
 
 /**
@@ -671,6 +728,7 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		runtime.historyRestoreWindow = false;
 		beginActionGroupStep(runtime.actionGroups);
 		runtime.runDurations.beginRun();
+		runtime.streamRegistration = createStreamRegistration();
 
 		runtime.activity = { ...createActivitySnapshot(), active: true, startedAtMs: runtime.runStartedAtMs };
 		if (isActivityEnabled(runtime)) {
@@ -720,8 +778,17 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 		noteToolFinished(runtime, event);
 	});
 
-	// 模型思考流式更新：取第一行作为活动区的思考头部。
+	// 一条 assistant 消息开始流式：记下「这条还没开新组」，并把上一条消息的登记清掉。
+	pi.on("message_start", async (event) => {
+		beginStreamedMessage(runtime.streamRegistration, event.message);
+	});
+
+	// 模型流式更新：先开组、先把已出现的工具调用登记掉，再取思考头部。
+	//
+	// 顺序不能换：开组必须早于登记，否则解说后面那几个调用会落到上一组；
+	// 登记必须早于渲染，否则那行工具行会先以原样画出来（见 `stream-registration.ts`）。
 	pi.on("message_update", async (event) => {
+		feedStreamedMessage(runtime, event.message);
 		if (!isActivityEnabled(runtime)) {
 			return;
 		}
@@ -745,15 +812,17 @@ export default function registerCleanMode(pi: ExtensionAPI): void {
 
 	// 组边界跟着「解说」走：带正文解说的 assistant 消息开新组，
 	// 连续的纯工具 turn 合并进同一组，这样才能真正收成一行组头。
+	//
+	// 流式阶段已经开过组、也已经登记过工具调用的消息在这里只剩两个兑底：不流式的
+	// provider，以及流式更新里没扫到的调用。
 	pi.on("message_end", async (event) => {
 		const isAssistant = isAssistantMessage(event.message);
 		const hasText = hasNarrationText(event.message);
 		debugLog("message_end", `assistant=${isAssistant} text=${hasText}`);
-		if (!isAssistant || !hasText) {
+		if (!isAssistant) {
 			return;
 		}
-		beginActionGroupStep(runtime.actionGroups);
-		debugLog("message_end", `new group=${runtime.actionGroups.currentGroupId}`);
+		feedStreamedMessage(runtime, event.message);
 	});
 
 	// 把每个工具调用登记进当前动作组，供渲染时判断是否收成组头。
