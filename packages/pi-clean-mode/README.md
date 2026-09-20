@@ -90,6 +90,7 @@ Each level gets its own treatment so the hierarchy reads at a glance and never b
 
 ```
 ▌ 用时 21s · 5 步 ▼
+│
 │ 探索 · 3 步 ▼
 ├─ 运行命令 ls -la ▶
 └─ 按类别：目录、视频、Excel、其他。
@@ -98,8 +99,10 @@ Each level gets its own treatment so the hierarchy reads at a glance and never b
 | Level | Treatment | Meaning |
 |---|---|---|
 | Run header | heavy rail `▌` + **bold** primary text + chevron right after the text | a whole run is folded here |
-| Action group header | light rail `│` + normal weight + muted colour + chevron right after it | one action, or a group of them, is folded here |
+| Action group header | light rail `│` + normal weight + muted colour (including the rail row above it) + chevron right after it | one action, or a group of them, is folded here |
 | Prose and tool rows | no rail at all, Pi's own look | content that is not folded |
+
+The row above a group header draws the light rail too instead of being left blank: a blank row would break the track for a full line, and "one continuous track" would stop reading. That rail row belongs to the same click target as the header, so clicking it still expands or collapses the group. The group header text and, once expanded, each member command's summary text use the muted colour: they announce that something is there, they are not prose, and they should not outshout it.
 
 None of them carry a source prefix: the headers are drawn every run in a fixed position, so a prefix is pure noise and would push the text into a column different from the detail rows. The heavy rail is itself the marker that says clean mode drew this.
 
@@ -175,6 +178,7 @@ While the agent runs, the layout splits in two: **the very top only answers "how
 ```
 user: help me fix xxx
   ▌ ⠋ Working · 42s                   ← top: run-level state + time (a heavy rail, not a band)
+  │                                   ← rail row: the row above a group header keeps the track unbroken
   │ Explored · 5 steps ▶              ← current group header: step count (member rows hidden while collapsed)
   ├─ ◐ Thinking  tracing the token expiry path…   ← block: thinking, a sibling of the command rows
   └─ ⠋ Run Command npm test                        ← block: the action running now
@@ -184,6 +188,7 @@ user: help me fix xxx
 With the group expanded the same list reads as commands, and the thinking row still closes it:
 
 ```
+  │
   │ Explored · 5 steps ▼
   ├─ Read src/index.ts ▶
   ├─ Ran ls -la ▶

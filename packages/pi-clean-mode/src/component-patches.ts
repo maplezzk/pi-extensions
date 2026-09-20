@@ -61,7 +61,7 @@ const RUN_HEADER_OWNER_KEY: unique symbol = Symbol("piCleanModeRunHeaderOwner");
 /** 工具行箭头所在的行号（相对整个组件），由渲染记录、鼠标命中使用。 */
 const TOOL_ROW_ARROW_ROW_KEY: unique symbol = Symbol("piCleanModeToolRowArrowRow");
 /**
- * 组头块占的行数（前导空行 + 组头行）；0 表示这一行没有组头。
+ * 组头块占的行数（轨道行 + 组头行）；0 表示这一行没有组头。
  *
  * 鼠标命中先看它：组头块里的点击是「收起/展开整组」，不能当成员行处理。
  */
@@ -458,9 +458,6 @@ function isGroupHeaderRow(host: ToolMessageHost, deps: ComponentPatchDeps): bool
 	}) === TOOL_ROW_GROUP_HEADER;
 }
 
-/** 组头前的空行，与普通工具行前面的 Spacer 保持一致。 */
-const ACTION_GROUP_HEADER_BLANK = "";
-
 /** 超过这个成员数才用「探索 · N 步」汇总文案；只有一条时直接用该动作的摘要。 */
 const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
 
@@ -485,6 +482,7 @@ function buildSummaryLabel(group: ToolRowGroupInfo, deps: ComponentPatchDeps): s
  * 输出又不丢失「刚才做了什么」；两条以上才汇总成「主词 · N 步」。
  *
  * 行首是细竖条 `│`（弱化色），与运行级粗竖条同列，构成一条连续的左侧轨道；
+ * 文案与竖条同属这一档，也用弱化色 —— 组头是「一行汇总」，不是正文，不该比正文还抢眼。
  * 层级在这里靠竖直的粗细与色档区分，而不是底色块。
  *
  * 分类计数不在这里：它跟着活动块走作为尾注，免得组头、活动块、轮首三处都在报进度。
@@ -498,20 +496,25 @@ function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatch
 	return [
 		deps.styler.muted(GROUP_GUTTER),
 		GUTTER_GAP,
-		label,
+		deps.styler.muted(label),
 		ARROW_GAP,
 		deps.styler.accent(chevron),
 	].join("");
 }
 
 /**
- * 组装收起的动作组头（前导空行 + 组头行）。
+ * 组装收起的动作组头（轨道行 + 组头行）。
+ *
+ * 组头上面那行不再留白：留白会让左侧轨道整整断开一行（运行级粗竖条在最上面，
+ * 细竖条从这里才开始，中间那行什么都不画），「连成一条轨道」的读法就没了。
+ * 画一个细竖条既保住行距，又把上下两段接起来；它和组头同属一个点击块，
+ * 点它照样展开/收起整组。
  */
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
 	deps: ComponentPatchDeps,
 ): string[] {
-	return [ACTION_GROUP_HEADER_BLANK, buildActionGroupHeaderRow(group, deps)];
+	return [deps.styler.muted(GROUP_GUTTER), buildActionGroupHeaderRow(group, deps)];
 }
 
 /** 组装成员命令摘要行所需的输入。 */
@@ -529,7 +532,9 @@ interface ToolRowRenderInput {
 }
 
 /**
- * 组装展开的组里一条成员命令的摘要行：`  ├─ 读取 src/index.ts ▶`。
+ * 组装展开的组里一条成员命令的摘要行：`├─ 读取 src/index.ts ▶`。
+ *
+ * 摘要是「有这条命令」的提示，不是正文，用弱化色（与组头同档）；箭头仍用强调色。
  *
  * 组展开后成员不再直接铺原始输出，而是一条命令一行——一屏能看完整组跑过哪些命令，
  * 要看哪条的原文再点哪条；否则一屏装不下几条，组里跑了多少、还剩哪些没看都看不出来。
@@ -549,7 +554,8 @@ function buildToolSummaryLine({ host, group, deps, width }: ToolRowRenderInput):
 		0,
 		width - visibleWidth(prefix) - visibleWidth(ARROW_GAP) - visibleWidth(arrow),
 	);
-	const text = truncateToWidth(summary, textWidth, TRUNCATION_ELLIPSIS);
+	// 先截断再上色：带转义码的字符串不能用字符下标算宽度，截断必须留在明文上做。
+	const text = deps.styler.muted(truncateToWidth(summary, textWidth, TRUNCATION_ELLIPSIS));
 	const line = `${prefix}${text}${ARROW_GAP}${deps.styler.accent(arrow)}`;
 	// 宽度小到连前缀都放不下时，宁可丢掉箭头也不能撑破布局。
 	return visibleWidth(line) > width ? truncateToWidth(line, width, TRUNCATION_ELLIPSIS) : line;
@@ -897,7 +903,7 @@ function renderSummaryRow(input: ToolRowRenderInput): string[] {
  * 包装工具行的 handleMouse。
  *
  * 四种命中区，其余透传给 Pi：
- * - 组头块（前导空行 + 组头行）：展开/收起整个组；
+ * - 组头块（轨道行 + 组头行）：展开/收起整个组；
  * - 成员命令的摘要行：整行可点，展开/收起这条命令的原文；
  * - 工具行箭头所在那一行：切换 Pi 自己的输出展开；
  * - 已铺开的原文：坐标减掉组头与摘要行的高度再透传，否则点哪都差几行。
