@@ -9,7 +9,7 @@ import { loadFileEditReviewConfig } from "../src/review-utils.ts";
 process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
 
 /**
- * 照抄真规则文件的形态：front matter + 元指令段落 + 编号条款 + severity 标注 + 粗体标题。
+ * 照抄真规则文件的形态：front matter + 元指令段落 + 编号条款 + 历史级别标注 + 粗体标题。
  * 规则文件本身不动，typesafe 直接读它。
  */
 const SWALLOWED_ERROR_RULE = `---
@@ -78,7 +78,7 @@ type AuditReviewer = {
   summary?: string;
   error?: string;
   warnings?: string[];
-  findings?: { line?: number; message?: string; ruleGroup?: string; severity?: string }[];
+  findings?: { line?: number; message?: string; ruleGroup?: string }[];
 };
 
 type ReviewResult = {
@@ -272,8 +272,7 @@ test("typesafe reviewer 命中规则时阻断，并用条款正文加行定位�
     // 一次 Noul 批量判断，命中后再一次 Choice 行定位。
     assert.deepEqual(fixture.requests, ["noul", "choice"]);
     assert.equal(reviewer?.findings?.[0]?.line, 5);
-    // 本后端不分级：命中即阻断。
-    assert.equal(reviewer?.findings?.[0]?.severity, "error");
+    // 没有分级：命中即写出一条 finding 并阻断。
     // 规则名取自条款自己的叫法，所以能看出是文件里哪一条。
     assert.equal(reviewer?.findings?.[0]?.ruleGroup, "必须遵守 1 禁止静默吞异常");
     assert.match(reviewer?.findings?.[0]?.message ?? "", /应通过抛出或记录日志报告失败/);
@@ -382,7 +381,7 @@ test("配置 UI 可以把 model reviewer 切换到 typesafe 引擎并持久化",
 });
 
 test("条款里的 [warning] 标注不再降级：定义即遵守，照样阻断", async () => {
-  // 旧行为是 [warning] 只提示不阻断；本后端不分级，所以同一条款要阻断。
+  // 旧行为是 [warning] 只提示不阻断；现在没有分级，同一条款一样阻断。
   const warningRule = SWALLOWED_ERROR_RULE.replace("[error] **禁止静默吞异常**", "[warning] **禁止静默吞异常**");
   const fixture = await createFixture({ rules: warningRule, noul: 0.96, chosenLine: "5" });
   await withEnvironment({ agentDir: fixture.agentDir, apiKey: "apik-test", fetchImpl: fixture.fetchStub }, async () => {
@@ -390,7 +389,6 @@ test("条款里的 [warning] 标注不再降级：定义即遵守，照样阻断
     const audit = result.details?.fileEditReview;
 
     assert.equal(audit?.status, "rejected");
-    assert.equal(audit?.reviewers?.[0]?.findings?.[0]?.severity, "error");
     // 判据里不能留 [warning]，否则行为和文案矛盾。
     assert.doesNotMatch(audit?.reviewers?.[0]?.findings?.[0]?.message ?? "", /\[warning\]/);
     // 阻断就要行定位，也要送到 Agent 的 tool result。
@@ -431,7 +429,6 @@ test("一个文件里的多条规则合并成一次请求，并各自报出是�
       "必须遵守 1 禁止静默吞异常",
       "必须遵守 2 禁止魔法值",
     ]);
-    assert.deepEqual(reviewer?.findings?.map((finding) => finding.severity), ["error", "error"]);
     assert.equal(reviewer?.findings?.[0]?.line, 5);
     assert.match(reviewer?.findings?.[0]?.message ?? "", /新增行捕获错误后静默继续/);
     assert.match(reviewer?.findings?.[1]?.message ?? "", /必须提取为有语义的常量/);

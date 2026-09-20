@@ -4,8 +4,8 @@
     "en-US": "rule"
   },
   "missingClauses": {
-    "zh-CN": "规则文件里没有切出任何编号条款，TypeSafe 无法判断它。规则条款写成 `1. 正文` 这种编号列表；如果编号条目在「## 归属与 severity」段落里，它们只是报告要求，不参与判断。",
-    "en-US": "The rule file has no numbered clause TypeSafe can judge. Write clauses as a numbered list like `1. ...`; numbered items inside a `## 归属与 severity` section are reporting requirements and are not judged."
+    "zh-CN": "规则文件里没有切出任何编号条款，TypeSafe 无法判断它。规则条款写成 `1. 正文` 这种编号列表；以「归属」开头的段落里的编号只是报告要求，不参与判断。",
+    "en-US": "The rule file has no numbered clause TypeSafe can judge. Write clauses as a numbered list like `1. ...`; numbered items inside a section whose heading starts with 「归属」(ownership) are reporting requirements and are not judged."
   },
   "duplicateJudgmentId": {
     "zh-CN": "多条规则的编号都是 {id}，{file} 已改用 {resolved}。同一个文件里的条款编号应当唯一。",

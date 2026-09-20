@@ -18,8 +18,8 @@ description: "配置与排查 pi-tool-supervisor 的 before/after 工具审查�
 - `condition`：可选本地 TypeScript/ESM 模块路径。模块默认导出函数，收到原生 tool event、`ExtensionContext` 和 `ToolConditionHelpers`；返回 `false` 时跳过 reviewer；
 - reviewer `enabled`；
 - 规则 frontmatter 的 `enabled`、`filePatterns`、`complexity`、`consumers`；`typesafe` 引擎另外读可选的 `threshold`（默认 `0.85`）。
-- **规则文件是引擎无关的，换 backend 不需要改规则。** `typesafe` 引擎直接读文件里现有的编号条款：一条 `1. 正文` 就是一条规则，条款正文既当判据也当 finding 文案，`[error]`/`[warning]` 标注会被剔掉且不分级（命中即阻断）。不要为了 typesafe 去加 `## 判据` / `## 修复提示` / `severity` 字段；那些不是这个后端的要求。
-- `## 归属与 severity` 这类元指令段落里的编号条款**不参与判断**，它们讲的是「怎么报告」。段落标题以「归属」开头即识别。
+- **规则文件是引擎无关的，换 backend 不需要改规则。** `typesafe` 引擎直接读文件里现有的编号条款：一条 `1. 正文` 就是一条规则，条款正文既当判据也当 finding 文案；条款开头历史遗留的 `[error]`/`[warning]` 标注会被剔掉。两个后端都没有分级，命中即阻断。不要为了 typesafe 去加 `## 判据` / `## 修复提示` / `severity` 字段；那些不是这个后端的要求。
+- 以「归属」开头的段落（常见写法 `## 归属与 severity`）里的编号条款**不参与判断**，它们讲的是「怎么报告」。
 - **编号条款必须写「什么代码算违规」。** 把放行条件（「只读」「只跑脚本或模块」「拿不准就判通过」）写成编号列表，它们照样会被一条一条切成规则，只是问题方向反了；而真正的禁令如果写成了无序列表或散文，反而一条都不会被问。**切得出条款不等于切对了条款**，上一节「切不出编号条款」那道闸门拦不住这种文件。条款一律写禁令，豁免条件写进被豁免的那条条款里。
 - 一个 reviewer 挂多个规则文件时，判断 id 会按文件加序号前缀（`f1_rule_1`）：编号是文件内序号，跨文件重号是常态，不告警；只有同一个文件里编号重复才告警。
 
