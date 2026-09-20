@@ -21,8 +21,9 @@ pi install npm:pi-auto-goal
 除非 `enabled` 为 false，每次完全停止都会判定一次，所以一句普通问答也会多花一次判定调用。判定输入包括：
 
 - **用户请求**：当前分支上最后一条真实用户输入。本扩展注入的催促消息会被跳过，因此连续干预时判定的始终是你最初的请求。
+- **用户回答**：agent 用 `ask_user_question` 问过你时，你当时的回答（会话里存成工具结果而不是用户消息）。它是本轮的用户输入，判定提示词规定它优先于原始请求：你借回答缩小范围、选定方案或要求先停下时，agent 停下来属于正常结束。单条回答按 `maxUserAnswerChars`（默认 `2000`）截断。
 - **最后输出**：agent 本轮最后一段文本输出。
-- **工具轨迹**（可选，默认关闭：`includeToolTrace`）：该用户输入之后发生的工具调用，每条压缩成一行；默认不发，判定只看上面两段文本。
+- **工具轨迹**（可选，默认关闭：`includeToolTrace`）：该用户输入之后发生的工具调用，每条压缩成一行；默认不发，判定只看上面几段文本。
 
 判定模型看不到你其它的会话分支。
 
@@ -50,6 +51,7 @@ pi install npm:pi-auto-goal
   "maxUserRequestChars": 2000,
   "maxFinalOutputChars": 4000,
   "maxToolTraceEntries": 20,
+  "maxUserAnswerChars": 2000,
   "notifyOnStopDecision": false,
   "showVerdictNotice": true,
   "judgeMaxTokens": 2000,
@@ -69,6 +71,7 @@ pi install npm:pi-auto-goal
 | `maxUserRequestChars` | `2000` | 用户请求截断长度。 |
 | `maxFinalOutputChars` | `4000` | agent 最后输出截断长度。 |
 | `maxToolTraceEntries` | `20` | 工具轨迹最大条数。 |
+| `maxUserAnswerChars` | `2000` | 单条用户回答（`ask_user_question` 的答案）截断长度。 |
 | `notifyOnStopDecision` | `false` | 已废弃：每轮只发一条结论块，这个开关不再起作用（保留字段以免旧配置报错）。 |
 | `showVerdictNotice` | `true` | 把最近一次判定结论写进会话区（落在消息下方，带底色的消息块；细节按 Ctrl+O 展开）。 |
 | `judgeMaxTokens` | `2000` | 单次判定调用的输出 token 上限，同时会被收敛到模型自身的输出上限。 |

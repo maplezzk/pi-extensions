@@ -79,10 +79,21 @@ function formatToolTrace(snapshot: TurnSnapshot): string {
     : i18n.t("judgeToolTraceEmpty");
 }
 
-/** 构造判定用户提示词，用标签包住三段上下文，避免被当成指令。 */
+/**
+ * 渲染用户回答区块；本轮没有回答时返回空串。
+ * 空串在模板里只落下一个空行，不会引入「本轮没有回答」这种误导性占位。
+ */
+function formatUserAnswers(snapshot: TurnSnapshot): string {
+  return snapshot.userAnswers.length > 0
+    ? i18n.t("judgeUserAnswersBlock", { userAnswers: snapshot.userAnswers.join("\n") })
+    : "";
+}
+
+/** 构造判定用户提示词，用标签包住四段上下文，避免被当成指令。 */
 export function buildJudgeUserPrompt(snapshot: TurnSnapshot): string {
   return i18n.t("judgeUserPrompt", {
     userRequest: snapshot.userRequest,
+    userAnswers: formatUserAnswers(snapshot),
     finalOutput: snapshot.finalOutput || i18n.t("judgeFinalOutputEmpty"),
     toolTrace: formatToolTrace(snapshot),
   });
