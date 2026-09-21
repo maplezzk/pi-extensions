@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.1](https://github.com/maplezzk/pi-extensions/compare/pi-auto-goal-v0.6.0...pi-auto-goal-v0.6.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **pi-auto-goal:** 催促改用 system 提示注入，并修掉改动指令的漏催 ([cd86dd8](https://github.com/maplezzk/pi-extensions/commit/cd86dd8b9cd72e7fed1d66bab7bc014d79ae17f6))
+* **pi-auto-goal:** 催促改用 system 提示注入，并修掉改动指令的漏催 ([af0ec0c](https://github.com/maplezzk/pi-extensions/commit/af0ec0c1f651093a45c0fe5121dd762322cae90c))
+* **pi-auto-goal:** 判定纳入 ask_user_question 的用户回答 ([d13a808](https://github.com/maplezzk/pi-extensions/commit/d13a808760e115fa5c40b54b5c1262d0e7a878d8))
+* **pi-auto-goal:** 判定纳入 ask_user_question 的用户回答 ([8f35bbd](https://github.com/maplezzk/pi-extensions/commit/8f35bbda1dc367cf930deab79bb1272b467985c7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-auto-goal-v0.5.0...pi-auto-goal-v0.6.0) (2026-09-19)
 
 

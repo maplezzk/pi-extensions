@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-resources-v0.7.0...pi-session-resources-v0.7.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **pi-session-resources:** keep the count-chip separator out of the hover highlight ([2511066](https://github.com/maplezzk/pi-extensions/commit/2511066f097d3508e231a6d6b0444d4491df5edc))
+* **pi-session-resources:** keep the count-chip separator out of the hover highlight ([b313d96](https://github.com/maplezzk/pi-extensions/commit/b313d96b3c94b399d18b51f462a2de86e502a814))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-resources-v0.6.0...pi-session-resources-v0.7.0) (2026-09-19)
 
 

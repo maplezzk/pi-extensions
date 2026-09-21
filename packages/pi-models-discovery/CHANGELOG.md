@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-models-discovery-v1.3.1...pi-models-discovery-v1.4.0) (2026-09-21)
+
+
+### Features
+
+* **pi-models-discovery:** 发现模型默认暴露 xhigh/max 思考等级 ([817e092](https://github.com/maplezzk/pi-extensions/commit/817e09204cd87fa0fcf6e2cd37a3fed33c6abcb8))
+* **pi-models-discovery:** 发现模型默认暴露 xhigh/max 思考等级 ([5241ae4](https://github.com/maplezzk/pi-extensions/commit/5241ae4926106d82d0d43097043fd6a2d2df20f0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [1.3.1](https://github.com/maplezzk/pi-extensions/compare/pi-models-discovery-v1.3.0...pi-models-discovery-v1.3.1) (2026-09-19)
 
 
