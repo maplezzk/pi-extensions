@@ -5,6 +5,7 @@ import {
 	createHeaderStyler,
 	GUTTER_PREFIX_WIDTH,
 	renderGutterPrefix,
+	RUN_INDENT,
 	type ThemePainter,
 } from "../src/header-style.ts";
 
@@ -87,4 +88,14 @@ test("轨道前缀带弱化色，并且宽度的声明值与实际一致", () =>
 		GUTTER_PREFIX_WIDTH,
 		"让出列宽的常量必须与实际渲染宽度一致，否则整行会溢出或少两列",
 	);
+});
+
+test("运行级只有缩进、没有竖条，且与轨道前缀同宽", () => {
+	// 文案列靠两边的宽度相同才能对齐：半格实心块与居中竖线不同族，混用会错位。
+	assert.equal(
+		visibleWidth(RUN_INDENT),
+		GUTTER_PREFIX_WIDTH,
+		"运行级缩进应与动作组前缀同宽，两级文案才能同列",
+	);
+	assert.equal(RUN_INDENT.trim(), "", "运行级不应画任何竖条字符");
 });

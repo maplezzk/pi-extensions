@@ -31,7 +31,7 @@ import {
 import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import type { HeaderStyler } from "./header-style.js";
-import { GUTTER_GAP, GROUP_GUTTER, renderGutterPrefix, RUN_GUTTER } from "./header-style.js";
+import { GROUP_GUTTER, renderGutterPrefix, RUN_INDENT } from "./header-style.js";
 import { i18n } from "./i18n.js";
 import {
 	resolveAssistantMessageRender,
@@ -52,6 +52,13 @@ const ARROW_GAP = " ";
 const TRUNCATION_ELLIPSIS = "…";
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
+/**
+ * 组头上方那一行：留白，不画竖条。
+ *
+ * 这一行只有行距的意义（隔开上一段内容与组头），不参与轨道：只画一根竖条、右边没有
+ * 文字接着，看上去就是悬在组头上面的半截线。空行与组头同属一个点击块。
+ */
+const ACTION_GROUP_HEADER_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
 const HEADER_CHILD_KEY: unique symbol = Symbol("piCleanModeHeaderChild");
 /** 标记该实例是否已判定过本轮折叠头归属。 */
@@ -61,7 +68,7 @@ const RUN_HEADER_OWNER_KEY: unique symbol = Symbol("piCleanModeRunHeaderOwner");
 /** 工具行箭头所在的行号（相对整个组件），由渲染记录、鼠标命中使用。 */
 const TOOL_ROW_ARROW_ROW_KEY: unique symbol = Symbol("piCleanModeToolRowArrowRow");
 /**
- * 组头块占的行数（轨道行 + 组头行）；0 表示这一行没有组头。
+ * 组头块占的行数（空行 + 组头行）；0 表示这一行没有组头。
  *
  * 鼠标命中先看它：组头块里的点击是「收起/展开整组」，不能当成员行处理。
  */
@@ -226,8 +233,9 @@ function classifyAssistantMessage(hasToolCalls: boolean): AssistantMessageKind {
 /**
  * 组装运行级折叠头。「用时」在左，箭头紧随其后。
  *
- * 行首是粗竖条 `▌`（加粗 + 主文字色），整条左侧轨道最强的一档：正文从不画竖条，
- * 所以一眼就能看出「这里收了一整轮」。
+ * 行首只有 `RUN_INDENT` 两列缩进，不画竖条：左侧轨道只属于动作组（半格块 `▌` 与居中
+ * 的细竖条不同族，接起来是错位的一截，见 `header-style.ts`）。这一行靠位置（整轮最
+ * 顶部）、加粗与主文字色区别于正文，文案仍与动作组文案同列。
  */
 function buildRunHeaderLine(
 	host: AssistantMessageHost,
@@ -237,8 +245,7 @@ function buildRunHeaderLine(
 	const chevron = deps.getState().collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
 	// 箭头紧跟在文案右边：先看到「这一轮用了多久」，紧接着就知道这行能点开。
 	return [
-		deps.styler.bold(deps.styler.primary(RUN_GUTTER)),
-		GUTTER_GAP,
+		RUN_INDENT,
 		deps.styler.bold(deps.styler.primary(i18n.t("runHeader", { duration }))),
 		" ",
 		deps.styler.muted(i18n.t("runHeaderSteps", { count: String(deps.getRunSteps(host) ?? 0) })),
@@ -271,7 +278,7 @@ function createRunHeaderComponent(
 			const status = deps.isCurrentRunHost(host) ? deps.getRunStatusLines() : [];
 			if (status.length > 0) {
 				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画耗时头。
-				// 状态行与耗时头同列同款（都是 `▌ + 文案`），所以这里不用再包装一层。
+				// 状态行与耗时头同列同款（都是两列缩进 + 加粗文案），所以这里不用再包装一层。
 				return [HEADER_LEADING_BLANK, ...status];
 			}
 
@@ -481,7 +488,7 @@ function buildSummaryLabel(group: ToolRowGroupInfo, deps: ComponentPatchDeps): s
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
  * 输出又不丢失「刚才做了什么」；两条以上才汇总成「主词 · N 步」。
  *
- * 行首是细竖条 `│`（弱化色），与运行级粗竖条同列，构成一条连续的左侧轨道；
+ * 行首是细竖条 `│`（弱化色），与运行级状态行同列起写，是左侧轨道唯一的一档；
  * 文案与竖条同属这一档，也用弱化色 —— 组头是「一行汇总」，不是正文，不该比正文还抢眼。
  * 层级在这里靠竖直的粗细与色档区分，而不是底色块。
  *
@@ -502,18 +509,17 @@ function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatch
 }
 
 /**
- * 组装收起的动作组头（轨道行 + 组头行）。
+ * 组装组头块（空行 + 组头行）。
  *
- * 组头上面那行不再留白：留白会让左侧轨道整整断开一行（运行级粗竖条在最上面，
- * 细竖条从这里才开始，中间那行什么都不画），「连成一条轨道」的读法就没了。
- * 画一个细竖条既保住行距，又把上下两段接起来；它和组头同属一个点击块，
- * 点它照样展开/收起整组。
+ * 组头上面那行留白：留白只丢行距，不丢东西；画成竖条（曾经这么画过）反倒多出
+ * 一根悬在组头上面的短竖线——右边没有文字接着，看着像画错的一截。空行与组头
+ * 同属一个点击块，点它照样展开/收起整组。
  */
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
 	deps: ComponentPatchDeps,
 ): string[] {
-	return [deps.styler.muted(GROUP_GUTTER), buildActionGroupHeaderRow(group, deps)];
+	return [ACTION_GROUP_HEADER_BLANK, buildActionGroupHeaderRow(group, deps)];
 }
 
 /** 组装成员命令摘要行所需的输入。 */
@@ -902,7 +908,7 @@ function renderSummaryRow(input: ToolRowRenderInput): string[] {
  * 包装工具行的 handleMouse。
  *
  * 四种命中区，其余透传给 Pi：
- * - 组头块（轨道行 + 组头行）：展开/收起整个组；
+ * - 组头块（空行 + 组头行）：展开/收起整个组；
  * - 成员命令的摘要行：整行可点，展开/收起这条命令的原文；
  * - 工具行箭头所在那一行：切换 Pi 自己的输出展开；
  * - 已铺开的原文：坐标减掉组头与摘要行的高度再透传，否则点哪都差几行。

@@ -98,10 +98,10 @@ const THOUGHT_ROW = `  ${BRANCH_LAST} ◐ ${i18n.t("activityThinking")}  想点�
 const MEMBER_SUMMARIES = ["读取 a.ts", "运行命令 npm test", "搜索 handleMouse"];
 /** 树形行的正文列号：`  ├─ ` 之后。 */
 const TREE_TEXT_COLUMN = visibleWidth(`${TREE_INDENT}${BRANCH_MIDDLE} `);
-/** 组头块占的行数（轨道行 + 组头行）：展开的组里首条成员的摘要行排在它下面。 */
+/** 组头块占的行数（空行 + 组头行）：展开的组里首条成员的摘要行排在它下面。 */
 const HEADER_BLOCK_HEIGHT = 2;
-/** 组头块首行（轨道行）的行号：它画的是细竖条，与组头同属一个点击块。 */
-const GROUP_RAIL_ROW = 0;
+/** 组头块首行（空行）的行号：它留白不画竖条，但与组头同属一个点击块。 */
+const GROUP_SPACER_ROW = 0;
 /** 超出渲染宽度的活动行：用来验证超宽行被截到终端宽度。 */
 const OVERLONG_ACTIVITY_ROW = `  ${BRANCH_LAST} ◐ ${i18n.t("activityThinking")}  ${"长".repeat(WIDTH)}`;
 /** 超长的命令摘要：摘要行必须自己截断，不能把箭头挤出屏幕。 */
@@ -126,13 +126,13 @@ const WORK_TEXT = "intermediate narration";
 const TOOL_CWD = "/tmp";
 /** 折叠头的行号；折叠头子组件输出「空行 + 折叠头」，所以落在第 1 行。 */
 const HEADER_ROW = 1;
-/** 运行级粗竖条与动作组细竖条；与源码里的常量同值，断言才能算准文案列。 */
-const RUN_GUTTER = "▌";
+/** 运行级折叠头的行首缩进：不画竖条，只留与「竖条 + 间隔」同宽的两列空格。 */
+const RUN_INDENT = "  ";
 const GROUP_GUTTER = "│";
 /** 竖条与文案之间的间隔。 */
 const GUTTER_GAP = " ";
-/** 两级折叠头共用的左缩进列数：竖条 + 间隔。 */
-const HEADER_INDENT_COLUMNS = RUN_GUTTER.length + GUTTER_GAP.length;
+/** 两级折叠头共用的左缩进列数：运行级是两列空格，组头是竖条 + 间隔。 */
+const HEADER_INDENT_COLUMNS = RUN_INDENT.length;
 /** 文案列：两级折叠头都从缩进之后起写文案（折叠头不带来源前缀）。 */
 const HEADER_LABEL_COLUMNS = HEADER_INDENT_COLUMNS;
 /** 展开态箭头：实心下三角。 */
@@ -396,7 +396,7 @@ test("本轮还没有工具行时，轮首只画状态行", () => {
 
 		const head = lines[ACTIVITY_HEAD_ROW];
 		assert.equal(head?.trimEnd(), RUN_STATUS_ROW, "状态行应落在空行之后的第一行");
-		// 状态行自带粗竖条，不铺底色，所以宽度由内容决定，不再补齐到整行。
+		// 状态行自带两列缩进，不铺底色，所以宽度由内容决定，不再补齐到整行。
 		assert.ok(
 			(head ?? "").startsWith(RUN_STATUS_ROW),
 			`状态行应从行首开始，不带任何缩进：${JSON.stringify(head)}`,
@@ -804,7 +804,7 @@ test("组内只有一条时也收成一行，用动作摘要当组头", () => {
 		const [onlyId] = seedActionGroup(harness.actionGroups, 1, [SINGLE_ACTION_SUMMARY]);
 		const headLines = linesOf(toolComponent(onlyId));
 
-		assert.equal(headLines.length, 2, "单条动作也是「轨道行 + 组头」两行");
+		assert.equal(headLines.length, 2, "单条动作也是「空行 + 组头」两行");
 		const rendered = headLines.join("\n");
 		assert.ok(rendered.includes(SINGLE_ACTION_SUMMARY), `组头应带动作摘要：${rendered}`);
 		assert.ok(!rendered.includes("a.ts"), `收起态不应露出原始工具输出：${rendered}`);
@@ -827,7 +827,7 @@ test("多条成员的组收起时只渲染一条组头", () => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
 
 		const headLines = linesOf(toolComponent(ids[0]));
-		assert.equal(headLines.length, 2, "组头应为轨道行加组头一行");
+		assert.equal(headLines.length, 2, "组头应为空行加组头一行");
 		const rendered = headLines.join("\n");
 		assert.ok(
 			rendered.includes(GROUP_HEADER_FRAGMENT),
@@ -880,10 +880,20 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 		);
 		assert.ok(runHeader, "前置条件：应渲染出运行级折叠头");
 
-		// 两级行首都是「竖条 + 一个空格」，所以文案同列；运行级用粗竖条，组头用细竖条。
+		// 两级折叠头文案同列：运行级是两列缩进（不画竖条），组头是「细竖条 + 一个空格」。
 		assert.ok(
-			runHeader.includes(`${RUN_GUTTER}${GUTTER_GAP}${RUN_HEADER_LABEL}`),
-			`运行级折叠头应是「粗竖条 + 文案」：${runHeader}`,
+			runHeader.startsWith(`${RUN_INDENT}${RUN_HEADER_LABEL}`),
+			`运行级折叠头应是「两列缩进 + 文案」，不带竖条：${runHeader}`,
+		);
+		assert.ok(
+			!runHeader.includes(GROUP_GUTTER),
+			`左侧轨道只属于动作组，运行级不应画竖条：${runHeader}`,
+		);
+		// 文案只念一遍：折叠头是「一行说一件事」，重复拼接会让「用时 …」出现两次。
+		assert.equal(
+			runHeader.split(RUN_HEADER_LABEL).length - 1,
+			1,
+			`运行级折叠头的文案应只出现一次：${runHeader}`,
 		);
 		assert.ok(
 			groupHeader.includes(`${GROUP_GUTTER}${GUTTER_GAP}${GROUP_HEADER_FRAGMENT}`),
@@ -907,16 +917,16 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 	});
 });
 
-test("组头上方画的是轨道竖条，与运行级竖条同列", () => {
+test("组头上方那行留白，轨道只画在组头行上", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
 		const headLines = linesOf(toolComponent(ids[0]));
-		const railLine = headLines[GROUP_RAIL_ROW] ?? "";
+		const spacerLine = headLines[GROUP_SPACER_ROW] ?? "";
 
 		assert.equal(
-			stripAnsi(railLine),
-			GROUP_GUTTER,
-			`组头上方应是轨道竖条，而不是断开轨道的空行：${JSON.stringify(stripAnsi(railLine))}`,
+			stripAnsi(spacerLine),
+			"",
+			`组头上方那行应留白，不能画一根悬空的短竖条：${JSON.stringify(stripAnsi(spacerLine))}`,
 		);
 
 		const runHeader = linesOf(new AssistantMessageComponent(finalMessage())).find((line) =>
@@ -926,16 +936,17 @@ test("组头上方画的是轨道竖条，与运行级竖条同列", () => {
 		const groupHeader = headLines.find((line) => line.includes(GROUP_HEADER_FRAGMENT));
 		assert.ok(groupHeader, "前置条件：应渲染出组头行");
 
-		const railColumn = columnOf(railLine, GROUP_GUTTER);
-		assert.equal(
-			railColumn,
-			columnOf(runHeader, RUN_GUTTER),
-			"轨道竖条应与运行级粗竖条同列，上下连成一条轨道",
+		// 竖条只出现在组头行上，与组头文案同一行；它独占的那一行则什么都不画。
+		assert.ok(
+			columnOf(groupHeader, GROUP_GUTTER) >= 0,
+			`组头行应带右侧轨道竖条：${JSON.stringify(stripAnsi(groupHeader))}`,
 		);
+		// 运行级不画竖条：它只有缩进，否则两根竖条会因为字形不同族
+		// （半格实心块与居中竖线）而错位。
 		assert.equal(
-			railColumn,
-			columnOf(groupHeader, GROUP_GUTTER),
-			"轨道竖条应与组头自己的竖条同列",
+			columnOf(runHeader, GROUP_GUTTER),
+			-1,
+			`运行级折叠头不应有竖条：${JSON.stringify(stripAnsi(runHeader))}`,
 		);
 	});
 });
@@ -946,11 +957,12 @@ test("动作组头与成员摘要用弱化色，箭头仍用强调色", () => {
 		{ ...DEFAULT_CLEAN_MODE_CONFIG },
 		(harness) => {
 			const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
-			const [railLine = "", headerLine = ""] = linesOf(toolComponent(ids[0]));
+			const [spacerLine = "", headerLine = ""] = linesOf(toolComponent(ids[0]));
 
+			assert.equal(stripAnsi(spacerLine), "", "组头上方那行应留白，不画竖条");
 			assert.ok(
-				railLine.includes(`${colorPrefix("muted")}${GROUP_GUTTER}`),
-				`轨道竖条应用弱化色：${JSON.stringify(railLine)}`,
+				headerLine.includes(`${colorPrefix("muted")}${GROUP_GUTTER}`),
+				`轨道竖条应用弱化色：${JSON.stringify(headerLine)}`,
 			);
 			assert.ok(
 				headerLine.includes(`${colorPrefix("muted")}${GROUP_HEADER_FRAGMENT}`),
@@ -1027,8 +1039,8 @@ test("展开的组里点组头折叠整组，点首条成员的摘要行只切�
 		const head = toolComponent(ids[0]);
 		const lines = linesOf(head);
 
-		head.handleMouse(clickAt(GROUP_RAIL_ROW, lines.length));
-		assert.equal(harness.groupToggles(), 1, "组头上方的轨道行属于同一点击块，应能折叠整组");
+		head.handleMouse(clickAt(GROUP_SPACER_ROW, lines.length));
+		assert.equal(harness.groupToggles(), 1, "组头上方那行属于同一点击块，应能折叠整组");
 
 		// 组头下面那行是首条成员自己的摘要行，属于那条工具行，不能当组头。
 		head.handleMouse(clickAt(HEADER_BLOCK_HEIGHT, lines.length));
