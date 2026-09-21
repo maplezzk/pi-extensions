@@ -16,20 +16,20 @@
     "en-US": "Return exactly one JSON object; do not use a Markdown code block or explain anything outside the JSON."
   },
   "jsonFormat": {
-    "zh-CN": "JSON 格式：{\"passed\":boolean,\"summary\":string,\"findings\":[{\"ruleGroup\":string,\"severity\":\"error\"|\"warning\"|\"info\",\"message\":string,\"line\":number|null}]}",
-    "en-US": "JSON format: {\"passed\":boolean,\"summary\":string,\"findings\":[{\"ruleGroup\":string,\"severity\":\"error\"|\"warning\"|\"info\",\"message\":string,\"line\":number|null}]}"
+    "zh-CN": "JSON 格式：{\"passed\":boolean,\"summary\":string,\"findings\":[{\"ruleGroup\":string,\"message\":string,\"line\":number|null}]}",
+    "en-US": "JSON format: {\"passed\":boolean,\"summary\":string,\"findings\":[{\"ruleGroup\":string,\"message\":string,\"line\":number|null}]}"
   },
   "passedRule": {
-    "zh-CN": "passed 只有在确实存在必须修正的问题时才为 false，此时 findings 必须至少包含一条 severity 为 error、Agent 能直接修正的问题。如果问题按规则可豁免、或你判断不需要修改，就不要报告它，并把 passed 设为 true。summary 必须与 passed 一致，不要在同一份结果里既说存在问题又说无需修正。ruleGroup 使用规则文件中已有的标识或条目写法，不要自造标识。",
-    "en-US": "Set passed false only when a must-fix problem exists, and then include at least one error-severity finding the Agent can fix directly. When the rules exempt an issue or no change is needed, do not report it and keep passed true. The summary must agree with passed; never report problems and no-must-fix inside one result. Use rule group identifiers that already exist in the rules file or its numbered items instead of inventing new ones."
+    "zh-CN": "passed 只有在确实存在必须修正的问题时才为 false，此时 findings 必须至少包含一条 Agent 能直接修正的问题。如果问题按规则可豁免、或你判断不需要修改，就不要报告它，并把 passed 设为 true。没有 severity 字段：写进 findings 的问题一律按必须修正处理。summary 必须与 passed 一致，不要在同一份结果里既说存在问题又说无需修正。ruleGroup 使用规则文件中已有的标识或条目写法，不要自造标识。",
+    "en-US": "Set passed false only when a must-fix problem exists, and then include at least one finding the Agent can fix directly. When the rules exempt an issue or no change is needed, do not report it and keep passed true. There is no severity field: every reported finding counts as a must-fix. The summary must agree with passed; never report problems and no-must-fix inside one result. Use rule group identifiers that already exist in the rules file or its numbered items instead of inventing new ones."
   },
   "verdictConflictDowngraded": {
-    "zh-CN": "审查模型返回 passed=false，但没有任何 error 级问题，已按审查通过处理，不阻断本次操作。请自行确认它的结论是否合适。",
-    "en-US": "The reviewer returned passed false without any error-severity finding, so the review is treated as passed and does not block this operation. Confirm the reviewer summary yourself."
+    "zh-CN": "审查模型返回 passed=false，但没有任何 finding，已按审查通过处理，不阻断本次操作。请自行确认它的结论是否合适。",
+    "en-US": "The reviewer returned passed false without any finding, so the review is treated as passed and does not block this operation. Confirm the reviewer summary yourself."
   },
   "verdictConflictPassed": {
-    "zh-CN": "审查模型返回 passed=true，但 findings 里含 error 级问题，已按它的结论判定通过。这些问题的处理需要你自行判断。",
-    "en-US": "The reviewer returned passed true while its findings contain error-severity issues, so the review follows the reviewer verdict. Judge those findings yourself."
+    "zh-CN": "审查模型返回 passed=true，但 findings 里列出了必须修正的问题，已按它的结论判定通过。这些问题的处理需要你自行判断。",
+    "en-US": "The reviewer returned passed true while its findings list must-fix issues, so the review follows the reviewer verdict. Judge those findings yourself."
   },
   "currentFileGuidance": {
     "zh-CN": "current-file 是修改后的实际文件内容，行首数字是实际行号。它只用于理解 diff 上下文；仍然只报告 diff 中新增或修改代码的问题。",

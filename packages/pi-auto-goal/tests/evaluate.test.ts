@@ -8,6 +8,7 @@ import type { TurnSnapshot } from "../src/session-context.ts";
 /** 判定输入快照。 */
 const SNAPSHOT: TurnSnapshot = {
   userRequest: "改好 a.ts 并跑测试",
+  userAnswers: [],
   finalOutput: "已经改好 a.ts。",
   toolTrace: [],
 };

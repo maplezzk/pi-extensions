@@ -14,12 +14,16 @@ import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { NOTICE_ENTRY_TYPE } from "pi-extensions-i18n";
 import {
+	applyEntryRail,
+	dropLeadingBlankLines,
 	installExtensionEntryPatch,
 	isExtensionEntryHost,
 	isExtensionEntryWorkWindow,
+	isExtensionMessageHost,
 	readExtensionEntryCustomType,
 	resolveContainerPrototypes,
 	shouldHideExtensionEntry,
+	shouldRailExtensionEntry,
 } from "../src/extension-entry-patch.ts";
 import { isMethodPatchInstalled } from "../src/prototype-patch.ts";
 import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } from "../src/types.ts";
@@ -28,6 +32,10 @@ import { DEFAULT_CLEAN_MODE_CONFIG, type CleanModeConfig, type CleanModeState } 
 const SINGLE_LINE = 1;
 /** 渲染宽度；条目折叠只看行数，用固定宽度即可。 */
 const RENDER_WIDTH = 80;
+/** 测试用的轨道前缀；与真实实现的 `│ ` 同宽。 */
+const RAIL_PREFIX = "│ ";
+/** 轨道前缀的可见列宽，用来验证渲染宽度确实让出去了。 */
+const RAIL_WIDTH = 2;
 
 /** 带条目特征的组件结构；与 Pi 的 CustomEntryComponent 同形。 */
 interface EntryHostShape {
@@ -47,6 +55,68 @@ class FakeEntryComponent extends Container implements EntryHostShape {
 		super();
 		this.entry = { customType };
 		this.addChild({ render: () => [`entry:${customType}`], invalidate: () => {} });
+	}
+}
+
+/** 把收到的渲染宽度写进行里的条目：用来核对带轨道前缀时宽度让出了两列。 */
+class WidthReportingEntry extends Container implements EntryHostShape {
+	entry: { customType: string };
+	renderer = (): unknown => undefined;
+	hasContent = (): boolean => true;
+
+	/**
+	 * @param customType 条目的 customType。
+	 * @param entry 复用的条目对象；不传时新建一个，用于模拟「同一条目换一个组件实例」。
+	 */
+	constructor(customType: string, entry: { customType: string } = { customType }) {
+		super();
+		this.entry = entry;
+		this.addChild({ render: (width: number) => [`w=${width}`], invalidate: () => {} });
+	}
+}
+
+/** 造一个与 target 共用同一条目对象的组件，模拟 Pi 重建组件实例。 */
+function rebuildEntry(target: EntryHostShape): WidthReportingEntry {
+	return new WidthReportingEntry(target.entry.customType, target.entry);
+}
+
+/**
+ * 结构上等同于 Pi 的 CustomMessageComponent：扩展注册的消息渲染器（工作流结果面板）。
+ *
+ * 它不参与条目折叠，只参与接轨道，所以字段故意和条目组件不同。
+ */
+class FakeMessageComponent extends Container {
+	message = { customType: "workflow_result" };
+	customRenderer = (): unknown => undefined;
+	setExpanded = (): void => undefined;
+
+	/**
+	 * @param leadingBlank 是否像 Pi 那样在内容前面插一个空行（`Spacer(1)`）。
+	 */
+	constructor(leadingBlank = false) {
+		super();
+		this.addChild({
+			render: (width: number) => (leadingBlank ? ["", `w=${width}`] : [`w=${width}`]),
+			invalidate: () => {},
+		});
+	}
+}
+
+/**
+ * 结构上等同于 Pi 的 CustomEntryComponent：内容前面自带一个空行（`Spacer(1)`）。
+ *
+ * Pi 的条目与消息组件都是这样开头的（custom-entry.js / custom-message.js），运行期间
+ * 接轨道时那一行要去掉，否则密集列表里每块前面都空出一行。
+ */
+class SpacerPrefixedEntry extends Container implements EntryHostShape {
+	entry: { customType: string };
+	renderer = (): unknown => undefined;
+	hasContent = (): boolean => true;
+
+	constructor(customType: string) {
+		super();
+		this.entry = { customType };
+		this.addChild({ render: () => ["", `entry:${customType}`], invalidate: () => {} });
 	}
 }
 
@@ -91,15 +161,18 @@ interface PatchBox {
 	state: CleanModeState;
 	config: CleanModeConfig;
 	restoreWindow: boolean;
+	/** 轨道前缀；`undefined` 模拟主题还没就绪。 */
+	railPrefix?: string | undefined;
 }
 
 /** 安装补丁、跑用例、还原；原型列表按运行时解析情况取，与入口装配一致。 */
 function withPatch(init: PatchBox, run: (box: PatchBox) => void): void {
-	const box: PatchBox = { ...init };
+	const box: PatchBox = { railPrefix: RAIL_PREFIX, ...init };
 	const restore = installExtensionEntryPatch({
 		getState: () => box.state,
 		getConfig: () => box.config,
 		isHistoryRestoreWindow: () => box.restoreWindow,
+		getEntryRailPrefix: () => box.railPrefix,
 		containerPrototypes: resolveContainerPrototypes({
 			ownContainerPrototype: Container.prototype,
 			piComponentPrototype: AssistantMessageComponent.prototype,
@@ -121,6 +194,15 @@ test("特征判定只认条目组件", () => {
 	assert.equal(readExtensionEntryCustomType(entry), "pi-distill-audit");
 	assert.equal(readExtensionEntryCustomType({ entry: { customType: 42 } }), undefined);
 	assert.equal(readExtensionEntryCustomType({ entry: { customType: "" } }), undefined);
+});
+
+test("消息组件与条目组件是两套判定", () => {
+	const message = new FakeMessageComponent();
+	assert.equal(isExtensionMessageHost(message), true);
+	assert.equal(isExtensionMessageHost(new Container()), false);
+	assert.equal(isExtensionMessageHost(undefined), false);
+	assert.equal(isExtensionMessageHost({ message: {} }), false, "缺 customRenderer 与 setExpanded 不算");
+	assert.equal(isExtensionEntryHost(message), false, "消息组件不是条目组件，不参与条目折叠");
 });
 
 test("工作窗口覆盖运行中与会话恢复", () => {
@@ -203,6 +285,7 @@ test("两份不同的 Container 原型都会被补丁", () => {
 		getState: () => stateWith({ collapsed: true, runSettled: false }),
 		getConfig: () => configWith({}),
 		isHistoryRestoreWindow: () => false,
+		getEntryRailPrefix: () => RAIL_PREFIX,
 		containerPrototypes: prototypes,
 	});
 	try {
@@ -279,5 +362,165 @@ test("普通容器渲染不受补丁影响", () => {
 		const container = new Container();
 		container.addChild({ render: () => ["plain"], invalidate: () => {} });
 		assert.deepEqual(container.render(RENDER_WIDTH), ["plain"]);
+	});
+});
+
+test("运行中的消息组件（工作流结果面板）也带上轨道前缀，且不被条目折叠收走", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, (box) => {
+		const message = new FakeMessageComponent();
+		assert.deepEqual(message.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+
+		// 收起态：组头不显示，消息块也不该被条目折叠收走。
+		box.state = stateWith({ collapsed: true, runSettled: false });
+		assert.deepEqual(message.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+	});
+});
+
+test("运行之外的消息组件不加轨道前缀", () => {
+	withPatch({ state: stateWith({ runSettled: true }), config: configWith({}), restoreWindow: false }, () => {
+		const message = new FakeMessageComponent();
+		assert.deepEqual(message.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+	});
+});
+
+test("轨道判定：只有运行中（未收起）的条目才加轨道", () => {
+	const running = stateWith({ runSettled: false });
+	const config = configWith({});
+	assert.equal(shouldRailExtensionEntry({ state: running, config }), true);
+	assert.equal(
+		shouldRailExtensionEntry({ state: stateWith({ collapsed: true }), config }),
+		false,
+		"收起态组头本身不显示",
+	);
+	assert.equal(
+		shouldRailExtensionEntry({ state: stateWith({ runSettled: true }), config }),
+		false,
+		"运行之外没有轨道可接",
+	);
+	assert.equal(
+		shouldRailExtensionEntry({ state: running, config: configWith({ enabled: false }) }),
+		false,
+	);
+});
+
+test("轨道前缀逐行拼接，行数不变", () => {
+	assert.deepEqual(applyEntryRail(["a", ""], RAIL_PREFIX), [`${RAIL_PREFIX}a`, RAIL_PREFIX]);
+});
+
+test("去掉开头自带的空行：只去开头的，末尾的留着", () => {
+	assert.deepEqual(dropLeadingBlankLines(["", "a"]), ["a"]);
+	assert.deepEqual(dropLeadingBlankLines(["", "", "a"]), ["a"]);
+	assert.deepEqual(dropLeadingBlankLines(["a", ""]), ["a", ""], "末尾空行不是 Pi 加的");
+	assert.deepEqual(dropLeadingBlankLines(["a"]), ["a"]);
+	assert.deepEqual(dropLeadingBlankLines([]), []);
+	assert.deepEqual(
+		dropLeadingBlankLines(["", ""]),
+		["", ""],
+		"整块都是空行时不能变成 0 行",
+	);
+});
+
+test("运行中的条目：开头那行空行不占行，块与相邻记录紧挨着", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new SpacerPrefixedEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`${RAIL_PREFIX}entry:${NOTICE_ENTRY_TYPE}`]);
+
+		const message = new FakeMessageComponent(true);
+		assert.deepEqual(
+			message.render(RENDER_WIDTH),
+			[`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`],
+			"工作流结果面板同样自带空行，一并去掉",
+		);
+	});
+});
+
+test("运行之外的条目保留 Pi 自己的空行", () => {
+	withPatch({ state: stateWith({ runSettled: true }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new SpacerPrefixedEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), ["", `entry:${NOTICE_ENTRY_TYPE}`]);
+	});
+});
+
+test("运行中的扩展条目带上轨道前缀，并让出前缀占的两列", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const notice = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(notice.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+
+		const audit = new WidthReportingEntry("pi-distill-audit");
+		assert.deepEqual(
+			audit.render(RENDER_WIDTH),
+			[`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`],
+			"工作流结果面板、审计卡片同样铺满整宽，也得接上轨道",
+		);
+	});
+});
+
+test("收起态与运行之外的提示条目不加轨道前缀", () => {
+	withPatch({ state: stateWith({ collapsed: true, runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+	});
+	withPatch({ state: stateWith({ runSettled: true }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+	});
+});
+
+test("拿不到轨道前缀时按原样渲染", () => {
+	withPatch(
+		{ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false, railPrefix: undefined },
+		() => {
+			const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+			assert.deepEqual(entry.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+		},
+	);
+});
+
+test("宽度放不下前缀时按原样渲染", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		const entry = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RAIL_WIDTH), [`w=${RAIL_WIDTH}`]);
+	});
+});
+
+test("轨道归属在首次渲染时固定，收起后仍然带着", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, (box) => {
+		const entry = new FakeEntryComponent(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(entry.render(RENDER_WIDTH), [`${RAIL_PREFIX}entry:${NOTICE_ENTRY_TYPE}`]);
+
+		box.state = stateWith({ collapsed: true, runSettled: true });
+		assert.deepEqual(
+			entry.render(RENDER_WIDTH),
+			[`${RAIL_PREFIX}entry:${NOTICE_ENTRY_TYPE}`],
+			"已判定归属的提示不会因为运行结束而变样",
+		);
+	});
+});
+
+test("Pi 重建条目组件后，轨道归属跟着条目对象走", () => {
+	withPatch({ state: stateWith({ collapsed: true, runSettled: true }), config: configWith({}), restoreWindow: false }, (box) => {
+		// 启动时的提示：先按「不在运行中」记下归属。
+		const first = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(first.render(RENDER_WIDTH), [`w=${RENDER_WIDTH}`]);
+
+		// 运行开始了，而且 Pi 用同一条目对象重建了组件。
+		box.state = stateWith({ collapsed: false, runSettled: false });
+		const rebuilt = rebuildEntry(first);
+		assert.deepEqual(
+			rebuilt.render(RENDER_WIDTH),
+			[`w=${RENDER_WIDTH}`],
+			"按实例记归属时这里会凭空多出竖条：同一条提示的判定必须跟着条目对象",
+		);
+	});
+});
+
+test("重建后归属为真的提示仍然带着轨道前缀", () => {
+	withPatch({ state: stateWith({ runSettled: false }), config: configWith({}), restoreWindow: false }, (box) => {
+		const first = new WidthReportingEntry(NOTICE_ENTRY_TYPE);
+		assert.deepEqual(first.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
+
+		box.state = stateWith({ collapsed: true, runSettled: true });
+		const rebuilt = rebuildEntry(first);
+		assert.deepEqual(rebuilt.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
 	});
 });

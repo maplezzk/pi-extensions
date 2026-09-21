@@ -3,10 +3,10 @@ import test from "node:test";
 import { formatNotice } from "pi-extensions-i18n";
 import { NOTICE_COLOR, NOTICE_SOURCE, NOTICE_TAG } from "../src/notice.ts";
 
-test("metrics notice source uses a stable tag and dim color", () => {
+test("metrics notice source uses a stable tag and the shared muted label color", () => {
   assert.equal(NOTICE_TAG, "metrics");
-  assert.equal(NOTICE_COLOR, "dim");
-  assert.deepEqual(NOTICE_SOURCE, { tag: "metrics", color: "dim" });
+  assert.equal(NOTICE_COLOR, "muted");
+  assert.deepEqual(NOTICE_SOURCE, { tag: "metrics", color: "muted" });
 });
 
 test("non-TUI notice renders the metrics tag without ANSI escapes", () => {

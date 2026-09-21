@@ -8,7 +8,7 @@
  */
 
 import { complete } from "@earendil-works/pi-ai/compat";
-import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
+import { NOTICE_TAG_COLOR, createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -79,8 +79,8 @@ import {
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
 const NOTICE_TAG = "supervisor";
-/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
-const NOTICE_COLOR: NoticeColor = "success";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
 /** 本扩展的提示来源。 */
 const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 const AFTER_TRIGGER: ReviewTrigger = "after";
@@ -420,7 +420,7 @@ function typeSafeConnection(config: FileEditReviewConfig): TypeSafeConnection {
  *
  * 一条规则 = 一个 Noul 问题，一次请求批量问完（同一份 state 下 TypeSafe 并行回答）；
  * 有条款命中时再做一次 Choice 请求，把问题定位到具体新增行。
- * 阈值和阻断与否都由本模块决定，模型只提供概率；本后端不分级，命中即阻断。
+ * 阈值和阻断与否都由本模块决定，模型只提供概率；没有分级，命中即阻断。
  */
 async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEditReviewResult> {
   const {
@@ -487,7 +487,7 @@ async function reviewWithJudgments(options: RunReviewerOptions): Promise<FileEdi
   }
 
   const { verdicts, unanswered } = readJudgmentVerdicts(compiled.judgments, answers);
-  // 本后端不分级：条款定义了就要遵守，命中即阻断，也就要做行定位。
+  // 没有分级：条款定义了就要遵守，命中即阻断，也就要做行定位。
   const hits = verdicts.filter((verdict) => verdict.hit);
   const localization = await locateJudgmentLines({
     context,

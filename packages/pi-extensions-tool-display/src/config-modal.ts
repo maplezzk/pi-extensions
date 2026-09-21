@@ -12,6 +12,7 @@ import { shortenPath } from "./render-utils.js";
 import type { InspectorSettingItem } from "./settings-inspector-modal.js";
 import { type ToolDisplayConfig } from "./types.js";
 import {
+	NOTICE_TAG_COLOR,
 	notifyWithSource,
 	type NoticeColor,
 	type NoticeLevel,
@@ -20,8 +21,8 @@ import {
 
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
 const NOTICE_TAG = "display";
-/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
-const NOTICE_COLOR: NoticeColor = "muted";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
 /** 本扩展的提示来源。 */
 const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 

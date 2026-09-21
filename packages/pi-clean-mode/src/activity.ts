@@ -7,15 +7,15 @@
  * 屏幕上有两个位置报进度，分工固定，不说同一句话：
  *
  * - 轮首槽位（整轮最上面，`buildRunStatusLines`）：只报运行级状态「在处理 + 跑了多久」，
- *   和运行结束后的「用时」横条是同一个槽位、同一种横条，也是屏幕上唯一一条铺底色的横条；
+ *   和运行结束后的「用时」头是同一个槽位、同一种版式（两列缩进 + 加粗文案）；
  * - 活动块（接在当前动作组最后一条可见行的下面，`buildActivityLines`）：依次是思考头部、
- *   正在执行的工具与其输出尾巴，全部是最新状态，不占条、不铺底色。每行前面还带一段
+ *   正在执行的工具与其输出尾巴，最后接一行本轮分类计数尾注。每行前面还带一段
  *   `├─` / `└─` 竖折（`renderActivityRows`）把自己挂在组头下面；只靠缩进时，看不出
  *   这些行到底属于上面哪一条。
  *
- * 分类计数（`formatActivityCountersSuffix`）也不单独占一行：它接在当前动作组的组头文案后面
- * （`探索 · 12 步 · 读取 3 · 命令 2`）。单独占一行时，它和组头的步数在数同一件事，
- * 加上顶部横条就变成三处在报进度。
+ * 分类计数（`activityCountersNote`）作为活动块最后一行的尾注，而不是接在组头文案后面：
+ * 组头、活动块、轮首三处都在报进度时，屏幕上同一件事会被数三遍。它接在**已过滤**的
+ * 最后一行上，所以单条组去掉动作行之后也不会跟着消失，也不占行数预算。
  *
  * 活动块挂在最新那条动作的下面，因为最新状态必须落在列表最底下：挂在组头上方时，
  * 展开的组里它下面还压着整组成员行，看上去就悬在中段。
@@ -26,6 +26,7 @@
  */
 
 import { formatDuration } from "./duration.js";
+import { RUN_INDENT } from "./header-style.js";
 import { i18n } from "./i18n.js";
 
 /**
@@ -54,27 +55,29 @@ const COLOR_HEADING = "toolTitle";
 /** 从工具参数里尝试读取摘要的候选字段，按优先级排列。 */
 const TOOL_ARG_KEYS = ["command", "file_path", "path", "pattern", "query", "url"] as const;
 /**
- * 运行级横条的文案缩进：与组件补丁里折叠头（「用时 …」）的文案同列。
+ * 运行级状态行的缩进：与组件补丁里折叠头（「用时 …」）共用 `RUN_INDENT`。
  *
- * 运行中与运行结束共用这一列，状态切换时文案不会横向跳；细节行再深一级。
+ * 运行中与运行结束共用这一列，状态切换时文案不会横向跳；不画竖条，竖条只属于动作组
+ * （半格块与居中细竖线不同族，混用会接成错位的两截，见 `header-style.ts`）。
  */
-const BAND_INDENT = "  ";
+const BAND_INDENT = RUN_INDENT;
 /**
- * 活动块树形前缀的缩进：与组头 chip 里的文案同列。
+ * 活动块树形前缀的缩进：不缩，竖折直接顶在第 0 列。
  *
- * 组头用组件补丁的 `HEADER_INDENT` 把文案推到第 3 列，活动块的竖折就从这一列起画，
- * 看上去像是从组头文字下面长出来的。
+ * 组头的细竖条 `│` 也在第 0 列，两者连成一条从顶到底的左侧轨道；再缩一级就会让
+ * 树形行与组头错开一列，轨道断成两段。
+ * 展开的动作组里「每条命令一行」也用这一列，思考行才是和命令平级的兄弟项。
  */
-const TREE_INDENT = "  ";
+export const TREE_INDENT = "";
 /** 子项前的分支符：它后面还有别的子项时用这个。 */
-const BRANCH_MIDDLE = "├─";
+export const BRANCH_MIDDLE = "├─";
 /** 最后一个子项的分支符：整块到这里收口。 */
-const BRANCH_LAST = "└─";
+export const BRANCH_LAST = "└─";
 /** 子项续行的宽度占位：与分支符 `├─ ` 同宽，正文才对得齐。 */
-const BRANCH_CONTINUATION_PADDING = "  ";
+export const BRANCH_CONTINUATION_PADDING = "  ";
 /** 续行所属的子项后面还有子项时，用竖线把它和后续子项贯通起来。 */
 const BRANCH_CONTINUATION = "│";
-/** 横条与细节行内各段之间的分隔符。 */
+/** 运行状态行与细节行内各段之间的分隔符；也是计数尾注接在行尾时的连接符。 */
 const SEGMENT_SEPARATOR = " · ";
 /** 思考文案与「思考」标签之间的间距。 */
 const THOUGHT_GAP = "  ";
@@ -369,37 +372,103 @@ const COUNTER_BUCKETS = [
 }>;
 
 /**
- * 把非 0 的分类计数拼成组头后缀，例如 ` · 读取 3 · 命令 2`；没有计数时返回空串。
+ * 把非 0 的分类计数拼成一行尾注，例如 `读取 3 · 命令 2`；没有计数时返回空串。
  *
- * 前缀分隔符也在这里拼，调用处直接接在组头文案后面就行，不必再判空或补分隔符。
  * 计数为 0 的桶不显示 —— 刚开始跑时「读取 0 · 搜索 0 · 命令 0」全是噪音。
+ * 自己带分隔符但**不带前导分隔符**：拼接在末尾那一行时有统一的拼接口。
  */
-export function formatActivityCountersSuffix(counters: ActivityCounters): string {
-	const parts = COUNTER_BUCKETS.filter(({ bucket }) => counters[bucket] > 0).map(
-		({ bucket, messageKey }) => i18n.t(messageKey, { count: String(counters[bucket]) }),
+export function formatActivityCountersNote(counters: ActivityCounters): string {
+	return COUNTER_BUCKETS.filter(({ bucket }) => counters[bucket] > 0)
+		.map(({ bucket, messageKey }) => i18n.t(messageKey, { count: String(counters[bucket]) }))
+		.join(SEGMENT_SEPARATOR);
+}
+
+/**
+ * 尾注要不要出现。
+ *
+ * 只有一次动作时不出现：组头已经把那次动作的名字写在上面了，再补一句「命令 1」是废话。
+ * 这里用计数总和当门槛而不是真实的组大小：计数是本轮累计值，也跨组。
+ */
+const MIN_ACTIONS_FOR_COUNTER_NOTE = 2;
+
+/** 按门槛算出的尾注文案；不该出现时为空串。 */
+export function activityCountersNote(counters: ActivityCounters): string {
+	const total = counters.read + counters.search + counters.command + counters.other;
+	return total < MIN_ACTIONS_FOR_COUNTER_NOTE ? "" : formatActivityCountersNote(counters);
+}
+
+/**
+ * 把尾注接在活动块的一个子项行后面；尾注为空、块为空时原样返回。
+ *
+ * 优先接最后一个子项行（动作行、思考行），不接输出尾巴：尾巴是命令自己打出来的那行，
+ * 把本轮计数接到它后面，读起来就像这条命令的汇总。补位空行同样不能挂 —— 那会在屏幕上
+ * 留下一个只带分隔符的孤行；块里只剩续行时才退回最后一条非空行。
+ * 在已渲染的行上拼接而不是另加一行：行数预算让给「正在跑什么」，删掉动作行之后也还在。
+ */
+export function appendActivityCountersNote(
+	rows: ActivityRow[],
+	lines: string[],
+	note: string,
+): string[] {
+	if (note === "") {
+		return lines;
+	}
+
+	const target = lastItemRowIndex(rows) ?? lastNonEmptyLineIndex(lines);
+	if (target === undefined) {
+		return lines;
+	}
+
+	return lines.map((line, index) =>
+		index === target ? `${line}${SEGMENT_SEPARATOR}${note}` : line,
 	);
-	return parts.length > 0 ? `${SEGMENT_SEPARATOR}${parts.join(SEGMENT_SEPARATOR)}` : "";
+}
+
+/** 最后一个子项行（动作名或思考头部）的行号；块里只有续行时返回 undefined。 */
+function lastItemRowIndex(rows: ActivityRow[]): number | undefined {
+	for (let index = rows.length - 1; index >= 0; index -= 1) {
+		if (rows[index]?.kind === "item") {
+			return index;
+		}
+	}
+	return undefined;
+}
+
+/** 最后一条非空行；用来兜底「块里没有子项行」这种形态。 */
+function lastNonEmptyLineIndex(lines: string[]): number | undefined {
+	for (let index = lines.length - 1; index >= 0; index -= 1) {
+		if (lines[index] !== "") {
+			return index;
+		}
+	}
+	return undefined;
 }
 
 /**
  * 组装轮首的运行级状态行：在处理（并行时是并行文案）+ 跑了多久。
  *
- * 这一行由渲染层整行铺上底色，和运行结束后的「用时」横条共用同一列与同一套视觉，
- * 因此它是整轮最上面那个槽位里唯一的内容，越往下的细节都不归它。
+ * 这一行由渲染层画在轮首，和运行结束后的「用时」头共用同一列与同一套版式
+ * （两列缩进 + 加粗文案，不画竖条），因此它是整轮最上面那个槽位里唯一的内容，
+ * 越往下的细节都不归它。
+ *
+ * 行首不画转动图标：这一行的耗时本身就每秒在变，「还在跑」已经说清楚了；再加一个
+ * 每 150ms 转一下的图标，只会在顶部多一处跳动，和活动块里那个真正表示「这条命令在跑」
+ * 的图标抢注意力。运行结束后换成 `用时 42s`，两者版式一致，切换时不跳列。
+ *
+ * 行首也不加 `[clean]` 来源前缀：折叠头每轮都画、位置固定，前缀只会把文案右推到
+ * 与细节行不同的列上。
  */
 function buildRunStatusLine(input: ActivityRenderInput): string {
-	const { snapshot, nowMs, frame, animated, paint } = input;
-	const glyph = activityGlyph("working", frame, animated);
+	const { snapshot, nowMs, paint } = input;
 	const label = snapshot.running.length > 1 ? i18n.t("activityParallel") : i18n.t("activityWorking");
 
-	const parts = [`${paint.fg(COLOR_GLYPH, `${glyph} `)}${paint.bold(paint.fg(COLOR_HEADING, label))}`];
+	const parts = [paint.bold(paint.fg(COLOR_HEADING, label))];
 	if (snapshot.startedAtMs !== undefined) {
 		parts.push(paint.fg(COLOR_DETAIL, formatDuration(nowMs - snapshot.startedAtMs)));
 	}
 
 	return `${BAND_INDENT}${parts.join(SEGMENT_SEPARATOR)}`;
 }
-
 /**
  * 组装轮首槽位的状态行：只报「在处理 + 跑了多久」，不报思考、工具和计数。
  *
@@ -494,6 +563,32 @@ export function blankActivityRow(): ActivityRow {
 	return { kind: "blank", text: "" };
 }
 
+/** 这一项的分支符：后面还有别的子项时用 `├─`，否则用 `└─` 收口。 */
+export function treeBranch(isLast: boolean): string {
+	return isLast ? BRANCH_LAST : BRANCH_MIDDLE;
+}
+
+/**
+ * 拼一条树形行：`  ├─ 正文`。
+ *
+ * 展开的动作组里「每条命令一行」与活动块里的思考行共用它，缩进与分支符才不会各写
+ * 一套；两套写法一旦漂移，命令行和思考行就不再是同一棵树里的兄弟项。
+ */
+export function renderTreeRow(
+	text: string,
+	options: { isLast: boolean; paintBranch: (branch: string) => string },
+): string {
+	return `${renderTreePrefix(options.isLast, options.paintBranch)}${text}`;
+}
+
+/** 树形行的前缀（`  ├─ ` / `  └─ `）：正文从这一列之后开始。 */
+export function renderTreePrefix(
+	isLast: boolean,
+	paintBranch: (branch: string) => string,
+): string {
+	return `${TREE_INDENT}${paintBranch(treeBranch(isLast))} `;
+}
+
 /** 从 `index` 往后还有没有别的子项；续行与补位空行都不算。 */
 function hasItemAfter(rows: ActivityRow[], index: number): boolean {
 	return rows.slice(index + 1).some((row) => row.kind === "item");
@@ -522,8 +617,10 @@ export function renderActivityRows(rows: ActivityRow[], paint: ActivityPainter):
 		}
 
 		if (row.kind === "item") {
-			const branch = hasItemAfter(rows, index) ? BRANCH_MIDDLE : BRANCH_LAST;
-			return `${TREE_INDENT}${paint.fg(COLOR_DIM, branch)} ${row.text}`;
+			return renderTreeRow(row.text, {
+				isLast: !hasItemAfter(rows, index),
+				paintBranch: (branch) => paint.fg(COLOR_DIM, branch),
+			});
 		}
 
 		const owner = ownerItemIndex(rows, index);
@@ -535,9 +632,9 @@ export function renderActivityRows(rows: ActivityRow[], paint: ActivityPainter):
 /**
  * 组装活动块。
  *
- * 内容是思考头部、正在执行的工具与其输出尾巴，全部是最新状态：没有铺底色的横条，
- * 也不重复顶部的时间与分类计数。超出 maxRows 时从尾部截断：预算再紧也先保住
- * 「正在跑什么」；被截掉的动作行也不再算动作行。
+ * 内容是思考头部、正在执行的工具与其输出尾巴，全部是最新状态：不占额外的行，
+ * 也不重复顶部的时间与分类计数（计数由 `appendActivityCountersNote` 接在最后一行尾部）。
+ * 超出 maxRows 时从尾部截断：预算再紧也先保住「正在跑什么」；被截掉的动作行也不再算动作行。
  */
 export function buildActivityLines(input: ActivityRenderInput): ActivityLines {
 	const { snapshot, maxRows } = input;

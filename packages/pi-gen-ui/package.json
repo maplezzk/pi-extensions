@@ -63,7 +63,7 @@
   },
   "dependencies": {
     "@json-render/core": "0.21.0",
-    "pi-extensions-i18n": "^0.7.0",
+    "pi-extensions-i18n": "^0.8.0",
     "typebox": "*",
     "zod": "^4.3.6"
   },

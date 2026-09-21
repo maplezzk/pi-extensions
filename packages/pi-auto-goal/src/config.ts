@@ -31,6 +31,8 @@ export interface AutoGoalConfig {
   maxFinalOutputChars: number;
   /** 工具轨迹最多保留的调用条数。 */
   maxToolTraceEntries: number;
+  /** 交给判定模型的单条用户回答（agent 提问后用户给出的回答）最大字符数。 */
+  maxUserAnswerChars: number;
   /**
    * 已弃用：以前用来在「判定为可停止」时额外发一条提示。
    * 现在每个有判定的轮次只发一条结论提示（理由等在 Ctrl+O 展开里），这个开关不再起作用；
@@ -41,7 +43,7 @@ export interface AutoGoalConfig {
   showVerdictNotice: boolean;
   /** 单次判定调用的输出 token 上限；调试时可适当调高以避免推理占满预算。 */
   judgeMaxTokens: number;
-  /** 自动催促消息模板；空字符串表示使用内置模板。支持 {reason} 占位。 */
+  /** 自动催促指令模板（作为 system 提示注入）；空字符串表示使用内置模板。支持 {reason} 占位。 */
   continueMessageTemplate: string;
   /** 受控实验：覆写判定结果；auto 表示正常判定。 */
   forcedDecision: ForcedDecision;
@@ -59,6 +61,8 @@ const DEFAULT_MAX_USER_REQUEST_CHARS = 2000;
 const DEFAULT_MAX_FINAL_OUTPUT_CHARS = 4000;
 /** 默认工具轨迹条数上限。 */
 const DEFAULT_MAX_TOOL_TRACE_ENTRIES = 20;
+/** 默认单条用户回答字符上限。 */
+const DEFAULT_MAX_USER_ANSWER_CHARS = 2000;
 /**
  * 默认判定输出上限。
  * 判定只需要一个 JSON 结论，但推理型模型会先花掉一部分输出预算用于思考；
@@ -92,6 +96,7 @@ export const DEFAULT_AUTO_GOAL_CONFIG: AutoGoalConfig = {
   maxUserRequestChars: DEFAULT_MAX_USER_REQUEST_CHARS,
   maxFinalOutputChars: DEFAULT_MAX_FINAL_OUTPUT_CHARS,
   maxToolTraceEntries: DEFAULT_MAX_TOOL_TRACE_ENTRIES,
+  maxUserAnswerChars: DEFAULT_MAX_USER_ANSWER_CHARS,
   notifyOnStopDecision: false,
   showVerdictNotice: true,
   judgeMaxTokens: DEFAULT_JUDGE_MAX_TOKENS,
@@ -102,7 +107,7 @@ export const DEFAULT_AUTO_GOAL_CONFIG: AutoGoalConfig = {
 /** 布尔字段清单。 */
 const BOOLEAN_FIELDS = ["enabled", "includeToolTrace", "notifyOnStopDecision", "showVerdictNotice"] as const;
 /** 必须为正整数的字段清单。 */
-const POSITIVE_INTEGER_FIELDS = ["maxUserRequestChars", "maxFinalOutputChars"] as const;
+const POSITIVE_INTEGER_FIELDS = ["maxUserRequestChars", "maxFinalOutputChars", "maxUserAnswerChars"] as const;
 /** 允许为 0（表示不限制）的整数字段清单。 */
 const NON_NEGATIVE_INTEGER_FIELDS = ["maxAutoContinues", "maxToolTraceEntries"] as const;
 /** 带上下界的整数字段清单。 */

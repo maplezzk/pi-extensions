@@ -13,6 +13,7 @@ import type { TurnSnapshot } from "../src/session-context.ts";
 /** 固定的判定输入快照。 */
 const SNAPSHOT: TurnSnapshot = {
   userRequest: "改好 a.ts 并跑测试",
+  userAnswers: [],
   finalOutput: "已经改好 a.ts。",
   toolTrace: ["- read {\"path\":\"a.ts\"}"],
 };
@@ -84,6 +85,29 @@ test("判定提示词包含固定规则与三段上下文边界", () => {
   assert.match(user, /<tool-trace>\n- read/);
 });
 
+test("判定提示词把用户回答单独成块，没有回答时不出现该块", () => {
+  const withoutAnswers = buildJudgeUserPrompt(SNAPSHOT);
+  assert.doesNotMatch(withoutAnswers, /<user-answers>/);
+  // 保持原有的段落结构：没有回答时 user-request 与 agent-final-output 之间只有一个空行。
+  assert.match(withoutAnswers, /<\/user-request>\n\n<agent-final-output>/);
+
+  const withAnswers = buildJudgeUserPrompt({
+    ...SNAPSHOT,
+    userAnswers: ["User has answered your questions: \"范围\"=\"只看两个文件\"."],
+  });
+  assert.match(
+    withAnswers,
+    /<\/user-request>\n\n<user-answers>\nUser has answered your questions: "范围"="只看两个文件"\.\n<\/user-answers>\n\n<agent-final-output>/,
+  );
+});
+
+test("判定系统提示词要求把用户回答当作本轮用户输入", () => {
+  const system = buildJudgeSystemPrompt();
+  assert.match(system, /<user-answers>/);
+  // 回答可以改变范围甚至要求停下，必须写明它优先于原始请求。
+  assert.match(system, /优先|outranks/);
+});
+
 test("判定提示词把「输出里在等后台任务」列为可以停止", () => {
   const system = buildJudgeSystemPrompt();
   // 后台任务跑完会自己唤醒会话，所以这类停止不该被判为提前停止。
@@ -98,7 +122,7 @@ test("判定提示词把「输出里在等后台任务」列为可以停止", ()
 });
 
 test("空输出与空工具轨迹使用占位文案", () => {
-  const user = buildJudgeUserPrompt({ userRequest: "任务", finalOutput: "", toolTrace: [] });
+  const user = buildJudgeUserPrompt({ userRequest: "任务", userAnswers: [], finalOutput: "", toolTrace: [] });
   assert.match(user, /\(agent 没有任何文本输出\)|（agent 没有任何文本输出）/);
   assert.match(user, /\(本轮没有任何工具调用\)|（本轮没有任何工具调用）/);
 });
@@ -106,6 +130,7 @@ test("空输出与空工具轨迹使用占位文案", () => {
 test("未收集工具轨迹时写明原因，不冒充「本轮没有工具调用」", () => {
   const user = buildJudgeUserPrompt({
     userRequest: "任务",
+    userAnswers: [],
     finalOutput: "起来了",
     toolTrace: [],
     toolTraceOmitted: true,

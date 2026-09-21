@@ -9,17 +9,17 @@ const THEME = {
   fg: (color: string, text: string) => `<${color}>${text}</>`,
 };
 
-test("提示来源固定为 auto-goal 标签与 warning 色", () => {
+test("提示来源固定为 auto-goal 标签与统一弱化色", () => {
   assert.equal(NOTICE_TAG, "auto-goal");
-  assert.equal(NOTICE_COLOR, "warning");
-  assert.deepEqual(NOTICE_SOURCE, { tag: "auto-goal", color: "warning" });
+  assert.equal(NOTICE_COLOR, "muted");
+  assert.deepEqual(NOTICE_SOURCE, { tag: "auto-goal", color: "muted" });
 });
 
 test("TUI 下提示带来源标签并上标签色，非 TUI 下退化为纯文本", () => {
   const message = "已催促：只改了 1/5 个文件";
   assert.equal(
     formatNotice({ source: NOTICE_SOURCE, message, mode: "tui", theme: THEME }),
-    `<warning>[auto-goal]</> ${message}`,
+    `<muted>[auto-goal]</> ${message}`,
   );
   assert.equal(formatNotice({ source: NOTICE_SOURCE, message, mode: "rpc", theme: THEME }), `[auto-goal] ${message}`);
   assert.equal(formatNotice({ source: NOTICE_SOURCE, message, mode: "print", theme: THEME }), `[auto-goal] ${message}`);

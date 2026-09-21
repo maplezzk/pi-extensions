@@ -16,8 +16,8 @@ process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
 /** 展开态用 Pi 的 markdown 主题，需要先初始化一次。 */
 initTheme();
 
-/** 渲染宽度：足够宽，保证头部不被折行。 */
-const RENDER_WIDTH = 100;
+/** 渲染宽度：足够宽，保证带头部带 `[session]` 前缀后仍不折行。 */
+const RENDER_WIDTH = 120;
 
 /** 测试用主题：把颜色名包成可断言的标记，不依赖真实 ANSI。 */
 const THEME = {
@@ -90,7 +90,10 @@ test("默认收起：只留一行状态，压缩正文不占屏幕", () => {
   assert.match(text, /压缩快照/);
   assert.match(text, /从 #3 起/);
   assert.match(text, /41\.4k tokens/);
-  assert.match(text, /Ctrl\+O 展开/);
+  // 行首带来源前缀，和提示块、其它扩展块头统一；前缀统一用弱化色，来源靠 tag 文本区分。
+  assert.match(text, /<muted>\[session\]<\/\> <accent>▶<\/\> <accent>压缩快照<\/\>/);
+  // 展开方向用箭头而不是写按键：两种模式区分不出来，箭头在两种模式下都成立。
+  assert.doesNotMatch(text, /Ctrl\+O/);
   // 收起态不该出现快照正文，也不该出现只给模型的指令段。
   assert.doesNotMatch(text, /Handoff: 修复折叠/);
   assert.doesNotMatch(text, /不是新的用户需求/);
@@ -106,7 +109,9 @@ test("展开后显示任务状态正文，剥掉只给模型的指令段", () =>
 
   assert.match(text, /Handoff: 修复折叠/);
   assert.match(text, /Current focus/);
-  assert.match(text, /Ctrl\+O 收起/);
+  // 展开态行首依然带前缀，版式不随展开方向变，只换箭头。
+  const header = renderComponent(squashMessage(), true)?.render(RENDER_WIDTH)[0] ?? "";
+  assert.match(header, /<muted>\[session\]<\/\> <accent>▼<\/\>/);
   assert.doesNotMatch(text, /不是新的用户需求/);
 });
 

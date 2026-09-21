@@ -11,6 +11,7 @@ import {
 	TOOL_ROW_GROUP_HEADER,
 	TOOL_ROW_HIDDEN,
 	TOOL_ROW_NORMAL,
+	TOOL_ROW_SUMMARY,
 	type ActionGroupMembership,
 	type ToolRowMode,
 } from "./action-groups.js";
@@ -117,7 +118,11 @@ export function resolveRunHeader(input: RunHeaderInput): RunHeaderDecision {
  * 聚合在运行期间就生效（工具聚合模式），停止后再由运行级折叠收成完全聚合。
  * 组内首行（index 0）**始终**充当组头，展开态也不例外——否则展开后组头行消失，
  * 就没有可以点击收回的目标了。**一条也算一组**：只有一条时组头直接用这条动作的
- * 摘要，所以收起态不会把原始工具输出露出来。
+ * 摘要，所以收起态不会把原始工具输出露出来，展开组头就是看这条原文。
+ *
+ * 其余成员（index >= 1）在组展开后走 `TOOL_ROW_SUMMARY`：一条命令一行，点哪条
+ * 才在哪条下面露出原文。直接铺 Pi 的原始输出时，一屏装了不下几条，组里到底跑了
+ * 多少条、还剩哪些没看都看不出来。
  */
 export function resolveToolRowMode(input: ToolRowModeInput): ToolRowMode {
 	const { state, config, membership, groupSize, groupExpanded } = input;
@@ -138,5 +143,5 @@ export function resolveToolRowMode(input: ToolRowModeInput): ToolRowMode {
 		return TOOL_ROW_GROUP_HEADER;
 	}
 
-	return groupExpanded ? TOOL_ROW_NORMAL : TOOL_ROW_HIDDEN;
+	return groupExpanded ? TOOL_ROW_SUMMARY : TOOL_ROW_HIDDEN;
 }

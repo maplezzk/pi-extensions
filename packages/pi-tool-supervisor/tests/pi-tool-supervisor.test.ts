@@ -354,54 +354,44 @@ test("生成实际文件 diff 并解析结构化审查结果", () => {
   const parsed = parseReviewResponse(JSON.stringify({
     passed: false,
     summary: "语言不符合规则",
-    findings: [{ ruleGroup: "coding-taste", severity: "error", message: "必须使用中文文案", line: 3 }],
+    findings: [{ ruleGroup: "coding-taste", message: "必须使用中文文案", line: 3 }],
   }));
   assert.equal(parsed.passed, false);
   assert.equal(parsed.findings[0]?.line, 3);
   assert.equal(parsed.findings[0]?.ruleGroup, "coding-taste");
 });
 
-test("审查模型结论与 findings 冲突时以可执行问题为准", () => {
-  // 模型自称不通过，却只给了豁免项：不阻断，并补一条说明。
-  const downgraded = parseReviewResponse(JSON.stringify({
+test("审查模型结论与 findings 不一致时以模型结论为准，并补一条说明", () => {
+  // 没有分级：任何 finding 都算必须修正，passed=false 加一条 finding 就是阻断。
+  const rejected = parseReviewResponse(JSON.stringify({
     passed: false,
     summary: "测试里存在魔法值",
-    findings: [{ ruleGroup: "禁止魔法值", severity: "warning", message: "测试数据按规则可豁免" }],
+    findings: [{ ruleGroup: "禁止魔法值", message: "测试数据按规则可豁免" }],
   }));
-  assert.equal(downgraded.passed, true);
-  assert.equal(downgraded.findings.length, 2);
-  assert.equal(downgraded.findings[1]?.severity, "info");
-  assert.equal(downgraded.findings[1]?.ruleGroup, "supervisor");
-  assert.match(downgraded.findings[1]?.message ?? "", /passed=false/);
+  assert.equal(rejected.passed, false);
+  assert.equal(rejected.findings.length, 1);
 
-  // 模型自称不通过，却没给任何 finding：同样不阻断。
+  // 模型自称不通过，却没给任何 finding：同样不阻断，并补一条说明。
   const emptyFindings = parseReviewResponse(JSON.stringify({ passed: false, summary: "不通过", findings: [] }));
   assert.equal(emptyFindings.passed, true);
   assert.equal(emptyFindings.findings.length, 1);
+  assert.equal(emptyFindings.findings[0]?.ruleGroup, "supervisor");
+  assert.match(emptyFindings.findings[0]?.message ?? "", /passed=false/);
 
-  // 省略 severity 的 finding 仍按可执行问题处理，保持旧行为。
-  const severityMissing = parseReviewResponse(JSON.stringify({
+  // 模型多给了已废弃的 severity 字段时忽略它，仍按 finding 处理。
+  const legacySeverity = parseReviewResponse(JSON.stringify({
     passed: false,
     summary: "不通过",
-    findings: [{ message: "禁止调用该工具" }],
+    findings: [{ ruleGroup: "禁止魔法值", severity: "warning", message: "禁止调用该工具" }],
   }));
-  assert.equal(severityMissing.passed, false);
-  assert.equal(severityMissing.findings.length, 1);
+  assert.equal(legacySeverity.passed, false);
+  assert.equal(legacySeverity.findings.length, 1);
 
-  // error 级 finding 与 passed=false 一致时不追加说明。
-  const consistent = parseReviewResponse(JSON.stringify({
-    passed: false,
-    summary: "不通过",
-    findings: [{ severity: "error", message: "必须提取常量" }],
-  }));
-  assert.equal(consistent.passed, false);
-  assert.equal(consistent.findings.length, 1);
-
-  // 反向冲突：模型说通过但列了 error，仍按模型结论通过，只补说明。
+  // 反向冲突：模型说通过但列了 finding，仍按模型结论通过，只补说明。
   const conflictingPass = parseReviewResponse(JSON.stringify({
     passed: true,
     summary: "通过",
-    findings: [{ severity: "error", message: "仍有问题" }],
+    findings: [{ ruleGroup: "禁止魔法值", message: "仍有问题" }],
   }));
   assert.equal(conflictingPass.passed, true);
   assert.equal(conflictingPass.findings.length, 2);
@@ -1413,7 +1403,7 @@ test("TUI 模式下提示写进会话条目，由带底色的消息块渲染", a
   assert.equal(entries.length, 1);
   assert.equal(entries[0]?.customType, "pi-extensions-notice");
   assert.equal(entries[0]?.data.tag, "supervisor");
-  assert.equal(entries[0]?.data.color, "success");
+  assert.equal(entries[0]?.data.color, "muted");
   assert.equal(entries[0]?.data.level, "warning");
   // 标签由渲染器画在最前面，条目正文里不再重复带标签。
   assert.doesNotMatch(String(entries[0]?.data.message), /\[supervisor\]/);

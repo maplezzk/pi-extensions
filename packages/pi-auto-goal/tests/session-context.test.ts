@@ -8,7 +8,21 @@ const OPTIONS: TurnSnapshotOptions = {
   maxFinalOutputChars: 1000,
   maxToolTraceEntries: 10,
   includeToolTrace: true,
+  maxUserAnswerChars: 1000,
 };
+
+/** 构造一条工具结果条目。 */
+function toolResultEntry(toolName: string, text: string): {
+  type: string;
+  message: { role: string; toolName: string; content: unknown };
+} {
+  return { type: "message", message: { role: "toolResult", toolName, content: [{ type: "text", text }] } };
+}
+
+/** 一条提问工具返回的用户回答，与真实会话里的内容一致。 */
+function askUserAnswer(text: string): string {
+  return `User has answered your questions: "范围？"="${text}". You can now continue with the user's answers in mind.`;
+}
 
 /** 构造一条 session 消息条目。 */
 function messageEntry(role: string, content: unknown): { type: string; message: { role: string; content: unknown } } {
@@ -50,26 +64,67 @@ test("快照包含用户请求、最后输出与工具轨迹", () => {
   assert.equal(snapshot.finalOutput, "已经改好 a.ts。");
   assert.equal(snapshot.toolTrace.length, 1);
   assert.match(snapshot.toolTrace[0], /^- read \{"path":"a\.ts"\}$/);
+  assert.deepEqual(snapshot.userAnswers, []);
+});
+
+test("提问工具带回的用户回答计入本轮上下文", () => {
+  const answer = askUserAnswer("先停下，我自己看");
+  const snapshot = collectTurnSnapshot([
+    messageEntry("user", "把这批配置都改一遍"),
+    messageEntry("assistant", assistantWithTool("先问清楚范围。", "ask_user_question", { questions: [] })),
+    toolResultEntry("ask_user_question", answer),
+    messageEntry("assistant", [{ type: "text", text: "好，那先不动。" }]),
+  ], OPTIONS);
+
+  assert.ok(snapshot);
+  assert.deepEqual(snapshot.userAnswers, [answer]);
+  assert.equal(snapshot.userRequest, "把这批配置都改一遍");
+});
+
+test("只收提问工具的回答，且只取最后一条真实用户消息之后的", () => {
+  const oldAnswer = askUserAnswer("上一轮的回答");
+  const newAnswer = askUserAnswer("这一轮的回答");
+  const snapshot = collectTurnSnapshot([
+    messageEntry("user", "上一轮请求"),
+    toolResultEntry("ask_user_question", oldAnswer),
+    messageEntry("assistant", [{ type: "text", text: "上一轮结束。" }]),
+    messageEntry("user", "这一轮请求"),
+    // 其它工具的结果看起来像用户输入也不是用户输入，不能混进来。
+    toolResultEntry("bash", "用户输入：随便写点东西"),
+    toolResultEntry("ask_user_question", newAnswer),
+    messageEntry("assistant", [{ type: "text", text: "这一轮结束。" }]),
+  ], OPTIONS);
+
+  assert.ok(snapshot);
+  assert.deepEqual(snapshot.userAnswers, [newAnswer]);
+});
+
+test("用户回答按配置长度截断，空回答不入快照", () => {
+  const snapshot = collectTurnSnapshot([
+    messageEntry("user", "任务"),
+    toolResultEntry("ask_user_question", "0123456789"),
+    toolResultEntry("ask_user_question", "   "),
+  ], { ...OPTIONS, maxUserAnswerChars: 3 });
+
+  assert.ok(snapshot);
+  assert.equal(snapshot.userAnswers.length, 1);
+  assert.match(snapshot.userAnswers[0], /^012\n/);
+  assert.match(snapshot.userAnswers[0], /已截断 7 字符/);
 });
 
 test("扩展注入的催促消息不会被当成用户请求", () => {
-  const injected = i18nLikeContinueMessage();
   const snapshot = collectTurnSnapshot([
     messageEntry("user", "实现登录并补测试"),
     messageEntry("assistant", [{ type: "text", text: "登录做完了。" }]),
-    messageEntry("user", injected),
+    // 催促是 custom 角色的消息，不是用户输入。
+    messageEntry("custom", "【自动监督】你在任务中途停下了。"),
     messageEntry("assistant", [{ type: "text", text: "测试还没补。" }]),
-  ], { ...OPTIONS, injectedUserTexts: new Set([injected]) });
+  ], OPTIONS);
 
   assert.ok(snapshot);
   assert.equal(snapshot.userRequest, "实现登录并补测试");
   assert.equal(snapshot.finalOutput, "测试还没补。");
 });
-
-/** 模拟一条本扩展发出的催促消息文本。 */
-function i18nLikeContinueMessage(): string {
-  return "你停下来了，但这一轮任务并没有完成：还缺回归测试。";
-}
 
 test("找不到真实用户消息时返回 undefined", () => {
   assert.equal(collectTurnSnapshot([

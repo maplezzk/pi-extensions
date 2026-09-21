@@ -4,6 +4,7 @@ import {
 	TOOL_ROW_GROUP_HEADER,
 	TOOL_ROW_HIDDEN,
 	TOOL_ROW_NORMAL,
+	TOOL_ROW_SUMMARY,
 	type ActionGroupMembership,
 } from "../src/action-groups.ts";
 import {
@@ -199,20 +200,21 @@ test("多条成员的组收起时只留首行当组头", () => {
 	);
 });
 
-test("组展开后首行仍是组头，其余成员正常渲染", () => {
+test("组展开后首行仍是组头，其余成员收成一行摘要", () => {
 	const base = { groupExpanded: true };
 	assert.equal(
 		resolveToolRowMode(toolRowInput({ ...base, membership: { groupId: 1, index: 0 } })),
 		TOOL_ROW_GROUP_HEADER,
 		"组头行必须保留，否则展开后没有点击收回的目标",
 	);
+	// 其余成员不再直接铺 Pi 的原始输出：一条命令一行，点哪条才铺哪条的原文。
 	assert.equal(
 		resolveToolRowMode(toolRowInput({ ...base, membership: { groupId: 1, index: 1 } })),
-		TOOL_ROW_NORMAL,
+		TOOL_ROW_SUMMARY,
 	);
 	assert.equal(
 		resolveToolRowMode(toolRowInput({ ...base, membership: { groupId: 1, index: 2 } })),
-		TOOL_ROW_NORMAL,
+		TOOL_ROW_SUMMARY,
 	);
 });
 

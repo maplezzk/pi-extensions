@@ -37,6 +37,7 @@ test("布尔、字符串与数值字段按类型校验", () => {
   assert.equal(parseConfig({ notifyOnStopDecision: true }).notifyOnStopDecision, true);
   assert.equal(parseConfig({ showVerdictNotice: false }).showVerdictNotice, false);
   assert.equal(parseConfig({ maxAutoContinues: 0 }).maxAutoContinues, 0);
+  assert.equal(parseConfig({ maxUserAnswerChars: 2000 }).maxUserAnswerChars, 2000);
   assert.equal(parseConfig({ maxAutoContinues: 5 }).maxAutoContinues, 5);
   assert.equal(parseConfig({ confidenceThreshold: 1 }).confidenceThreshold, 1);
   assert.equal(parseConfig({ timeoutSeconds: 2 }).timeoutSeconds, 2);
@@ -54,6 +55,7 @@ test("布尔、字符串与数值字段按类型校验", () => {
     { maxAutoContinues: 1.5 },
     { maxToolTraceEntries: -1 },
     { maxUserRequestChars: 0 },
+    { maxUserAnswerChars: 0 },
     { confidenceThreshold: -0.1 },
     { confidenceThreshold: 1.1 },
     { confidenceThreshold: "0.6" },

@@ -12,9 +12,11 @@
  * 渲染策略（与 L1 运行级折叠叠加）：
  * - L1 折叠时整轮工作过程都隐藏，动作组不参与；
  * - 组内只有 1 条时也收成一行，文案直接用这条动作自己的摘要
- *   （例如「运行命令 ls -la」）——收起态不显示原始工具输出；
+ *   （例如「运行命令 ls -la」）——收起态不显示原始工具输出，
+ *   展开时直接露出这条工具的原文（组头本身就是它的摘要）；
  * - 组内有 2 条及以上时收成汇总组头（`运行命令 · N 步`，没有过半分类时用通用词
- *   `探索 · N 步`），展开后逐条显示。
+ *   `探索 · N 步`），展开后逐条列出：一条命令一行摘要，点某一行才在该行下面
+ *   展开这条工具的原文，其余成员继续保持一行。
  */
 
 import type { ActivityCounters } from "./activity.js";
@@ -27,6 +29,13 @@ export interface ActionGroupMembership {
 	index: number;
 	/** 该动作的一行摘要（例如「运行命令 ls -la」）；组内只有它一条时当组头文案。 */
 	summary?: string;
+	/**
+	 * 摘要是不是「占位摘要」。
+	 *
+	 * 流式内容块先出现时参数只有键、值还没到（JSON 序列化出来是 `{}`），那时只能读出
+	 * 「运行命令」这样的标签；标成占位，等参数到齐后允许被真摘要覆盖。
+	 */
+	summaryProvisional?: boolean;
 }
 
 /** 动作组的累计状态；组号只增不减，历史组的归属与展开状态得以保留。 */
@@ -52,6 +61,8 @@ export interface ActionGroupState {
 
 /** 内容块的类型标识：正文文本。 */
 const CONTENT_TYPE_TEXT = "text";
+/** 内容块里工具调用的类型名，与 Pi 会话格式一致。 */
+const CONTENT_TYPE_TOOL_CALL = "toolCall";
 /** 消息角色标识：assistant。 */
 const MESSAGE_ROLE_ASSISTANT = "assistant";
 
@@ -61,12 +72,20 @@ export const TOOL_ROW_HIDDEN = "hidden";
 export const TOOL_ROW_NORMAL = "normal";
 /** 工具行充当动作组组头，只输出一行组头文案。 */
 export const TOOL_ROW_GROUP_HEADER = "group-header";
+/**
+ * 工具行是展开的组里的一名成员：只输出一行命令摘要，点它才露出原文。
+ *
+ * 展开的组不再把每条工具的原始输出一次性铺开：一组几十条调用时那是一屏又一屏的正文，
+ * 「刚才跑了哪几条」反而看不出来。一条命令一行，要看哪条的原文再点哪条。
+ */
+export const TOOL_ROW_SUMMARY = "summary";
 
 /** 工具行在当前位置的渲染方式。 */
 export type ToolRowMode =
 	| typeof TOOL_ROW_HIDDEN
 	| typeof TOOL_ROW_NORMAL
-	| typeof TOOL_ROW_GROUP_HEADER;
+	| typeof TOOL_ROW_GROUP_HEADER
+	| typeof TOOL_ROW_SUMMARY;
 
 /** 判断单个内容块是否为非空正文文本块。 */
 function isNonEmptyTextBlock(block: unknown): boolean {
@@ -104,6 +123,53 @@ export function isAssistantMessage(message: unknown): boolean {
 	return isRecord(message) && message.role === MESSAGE_ROLE_ASSISTANT;
 }
 
+/** 从消息里扫出的一次工具调用；登记动作组只需要这三样。 */
+export interface StreamedToolCall {
+	/** 本次调用的唯一 id。 */
+	toolCallId: string;
+	/** 工具名（`bash`、`edit` …），用来算动作摘要与分类。 */
+	toolName: string;
+	/** 调用参数，原样透传。 */
+	args: unknown;
+}
+
+/**
+ * 扫出 assistant 消息里已经出现的工具调用。
+ *
+ * 必须在消息还在流式时就能扫到。Pi 一旦把工具调用块收完，就会立刻把那一行工具行加进
+ * 对话并渲染它，而 `tool_call` / `tool_execution_start` 要等这条 assistant 消息**结束**
+ * 才发（实测差 300ms 上下）。等到那时候再登记，那一行已经以「未登记」的样子原样画了
+ * 一两帧，登记之后又突然收进组里——屏幕上就是工具行先措不及防地跳出来、再突然消失。
+ * 内容块形状见 Pi 会话格式：`{ type: "toolCall", id, name, arguments }`。
+ */
+export function extractToolCalls(message: unknown): StreamedToolCall[] {
+	if (!isRecord(message)) {
+		return [];
+	}
+
+	const content = message.content;
+	if (!Array.isArray(content)) {
+		return [];
+	}
+
+	const calls: StreamedToolCall[] = [];
+	for (const block of content) {
+		if (!isRecord(block) || block.type !== CONTENT_TYPE_TOOL_CALL) {
+			continue;
+		}
+		const { id, name } = block;
+		if (typeof id !== "string" || id.length === 0) {
+			continue;
+		}
+		if (typeof name !== "string" || name.length === 0) {
+			continue;
+		}
+		calls.push({ toolCallId: id, toolName: name, args: block.arguments });
+	}
+
+	return calls;
+}
+
 /** 创建空的动作组状态。 */
 export function createActionGroupState(): ActionGroupState {
 	return {
@@ -130,6 +196,8 @@ export interface ActionToolCallInput {
 	toolCallId: string;
 	/** 该动作的一行摘要（例如「运行命令 ls -la」）。 */
 	summary?: string;
+	/** 摘要是否只是占位（参数还没读全）；后一次登记带上了真摘要时会把它换掉。 */
+	provisional?: boolean;
 	/** 本次调用的分类，用于选组头主词。 */
 	activity?: keyof ActivityCounters;
 }
@@ -138,22 +206,24 @@ export interface ActionToolCallInput {
  * 把一个工具调用登记到当前组。原地修改 state，无返回值。
  *
  * 重复登记同一个 toolCallId 时保持原归属，避免 Pi 重发事件导致序号错乱；
- * 后一次带上了摘要而先前没带上时，只补摘要。分类计数只在新登记时累加，
+ * 后一次带上了摘要而先前没带上、或先前那份只是占位摘要时，只补摘要。分类计数只在新登记时累加，
  * 重复登记不能把同一次调用数两遍。
  */
 export function registerActionToolCall(state: ActionGroupState, input: ActionToolCallInput): void {
-	const { toolCallId, summary, activity } = input;
+	const { toolCallId, summary, provisional, activity } = input;
 	const existing = state.membershipByToolCallId.get(toolCallId);
 	if (existing) {
-		if (summary !== undefined && existing.summary === undefined) {
-			existing.summary = summary;
-		}
+		upgradeToolCallSummary(existing, summary, provisional);
 		return;
 	}
 
 	const groupId = state.currentGroupId;
 	const index = state.memberCountByGroupId.get(groupId) ?? 0;
-	state.membershipByToolCallId.set(toolCallId, { groupId, index, ...(summary === undefined ? {} : { summary }) });
+	state.membershipByToolCallId.set(toolCallId, {
+		groupId,
+		index,
+		...(summary === undefined ? {} : { summary, ...(provisional === true ? { summaryProvisional: true } : {}) }),
+	});
 	state.memberCountByGroupId.set(groupId, index + 1);
 
 	if (activity !== undefined) {
@@ -161,6 +231,62 @@ export function registerActionToolCall(state: ActionGroupState, input: ActionToo
 		counts[activity] = (counts[activity] ?? 0) + 1;
 		state.activityCountByGroupId.set(groupId, counts);
 	}
+}
+
+/**
+ * 用后一次登记带来的摘要补全（或覆盖占位摘要）。
+ *
+ * 三种情况不动：没带摘要、已有的已经是真摘要、新带来的自己也是占位 —— 否则重复事件会
+ * 不停地把文案改来改去。
+ */
+function upgradeToolCallSummary(
+	membership: ActionGroupMembership,
+	summary: string | undefined,
+	provisional: boolean | undefined,
+): void {
+	if (summary === undefined) {
+		return;
+	}
+	if (membership.summary !== undefined && (membership.summaryProvisional !== true || provisional === true)) {
+		return;
+	}
+
+	membership.summary = summary;
+	if (provisional === true) {
+		membership.summaryProvisional = true;
+	} else {
+		delete membership.summaryProvisional;
+	}
+}
+
+/**
+ * 把一次工具调用改挂到当前组。
+ *
+ * 解说出现在工具调用**后面**时会晚于那次调用开始流式，组边界就落在它后面（`message_end`
+ * 侧才开新组）；这几次调用得跟着挪过去，否则它们会被算进上一组。
+ * 只适用于「刚登记、还在原组尾部」的调用：挪的是同一流式消息里登记的那几条，
+ * 因此旧组剩下的成员序号仍然连续。已在当前组或无登记时什么也不做。
+ */
+export function reassignActionToolCall(state: ActionGroupState, input: ActionToolCallInput): void {
+	const { toolCallId, summary, activity } = input;
+	const existing = state.membershipByToolCallId.get(toolCallId);
+	if (!existing || existing.groupId === state.currentGroupId) {
+		return;
+	}
+
+	const previousSize = state.memberCountByGroupId.get(existing.groupId) ?? 0;
+	if (previousSize > 0) {
+		state.memberCountByGroupId.set(existing.groupId, previousSize - 1);
+	}
+	if (activity !== undefined) {
+		const counts = state.activityCountByGroupId.get(existing.groupId);
+		if (counts !== undefined) {
+			counts[activity] = Math.max(0, (counts[activity] ?? 0) - 1);
+		}
+	}
+
+	state.membershipByToolCallId.delete(toolCallId);
+	registerActionToolCall(state, input);
 }
 
 /** 取某个组的分类计数；未知组返回 undefined。 */

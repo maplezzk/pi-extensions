@@ -1,5 +1,5 @@
 /**
- * 从当前会话分支中提取「本轮用户请求 + agent 停止前最后的输出 + 工具调用轨迹」。
+ * 从当前会话分支中提取「本轮用户请求 + 用户回答 + agent 停止前最后的输出 + 工具调用轨迹」。
  *
  * 只做读取与结构解析，不做模型调用，便于用固定 session 数据做确定性测试。
  */
@@ -8,6 +8,14 @@
 const TOOL_ARGUMENT_CHARS = 160;
 /** 工具轨迹单行前缀，保持判定提示词里的人类可读性。 */
 const TOOL_TRACE_PREFIX = "- ";
+/** 工具结果条目在会话里的角色名。 */
+const TOOL_RESULT_ROLE = "toolResult";
+/**
+ * 向用户提问的工具名。
+ * 这些工具的返回值是用户当场输入的回答，在会话里却是 toolResult 而不是 user 消息，
+ * 单独收集出来交给判定模型，否则判定看不到用户已经改过范围 / 要求停下。
+ */
+const USER_ANSWER_TOOL_NAMES: ReadonlySet<string> = new Set(["ask_user_question"]);
 
 /** 会话条目中与本次提取相关的最小结构。 */
 type EntryLike = {
@@ -16,6 +24,8 @@ type EntryLike = {
     role?: unknown;
     content?: unknown;
     stopReason?: unknown;
+    /** 工具结果条目上的工具名，用来识别提问类工具。 */
+    toolName?: unknown;
   };
 };
 
@@ -35,17 +45,19 @@ export interface TurnSnapshotOptions {
   maxToolTraceEntries: number;
   /** 是否收集工具轨迹。 */
   includeToolTrace: boolean;
-  /**
-   * 本扩展自己注入的催促消息文本。
-   * 这些消息在会话里同样以 user 角色保存，必须排除，否则会把催促当成用户请求。
-   */
-  injectedUserTexts?: ReadonlySet<string>;
+  /** 单条用户回答的截断长度。 */
+  maxUserAnswerChars: number;
 }
 
 /** 判定模型需要的本轮上下文。 */
 export interface TurnSnapshot {
   /** 用户本轮的原始请求（已截断）。 */
   userRequest: string;
+  /**
+   * 本轮 agent 提问后用户给出的回答（原文，已截断）。
+   * 内容是用户当场输入的决策，和原始请求同等重要。
+   */
+  userAnswers: string[];
   /** agent 停止前最后一段可见输出（已截断）。 */
   finalOutput: string;
   /** 本轮工具调用摘要行。 */
@@ -116,15 +128,16 @@ function isMessageEntry(entry: EntryLike, role: string): boolean {
   return entry.type === "message" && entry.message?.role === role;
 }
 
-/** 从分支尾部反向查找最后一条真实用户消息的下标，找不到返回 -1。 */
-function findLastUserIndex(entries: readonly EntryLike[], injected: ReadonlySet<string>): number {
+/**
+ * 从分支尾部反向查找最后一条真实用户消息的下标，找不到返回 -1。
+ * 扩展注入的催促是 custom 角色的消息，不是 user，因此天然不会被当成用户请求。
+ */
+function findLastUserIndex(entries: readonly EntryLike[]): number {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (!isMessageEntry(entry, "user")) continue;
     const text = getTextContent(entry.message?.content).trim();
     if (!text) continue;
-    // 本扩展注入的催促消息不计入用户请求，继续向前找真正的用户输入。
-    if (injected.has(text)) continue;
     return index;
   }
   return -1;
@@ -149,6 +162,28 @@ export function readLastAssistantStopReason(entries: readonly EntryLike[]): stri
     return typeof stopReason === "string" ? stopReason : undefined;
   }
   return undefined;
+}
+
+/**
+ * 收集本轮里由提问工具带回来的用户回答。
+ * 只取最后一条真实用户消息之后的工具结果，避免把上一轮的提问当成这一轮的上下文。
+ */
+function collectUserAnswers(
+  entries: readonly EntryLike[],
+  fromIndex: number,
+  maxChars: number,
+): string[] {
+  const answers: string[] = [];
+  for (let index = fromIndex + 1; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!isMessageEntry(entry, TOOL_RESULT_ROLE)) continue;
+    const toolName = entry.message?.toolName;
+    if (typeof toolName !== "string" || !USER_ANSWER_TOOL_NAMES.has(toolName)) continue;
+    const text = getTextContent(entry.message?.content).trim();
+    if (!text) continue;
+    answers.push(truncateText(text, maxChars));
+  }
+  return answers;
 }
 
 /** 在给定下标之后查找最后一段 assistant 文本输出。 */
@@ -185,8 +220,7 @@ export function collectTurnSnapshot(
   entries: readonly EntryLike[],
   options: TurnSnapshotOptions,
 ): TurnSnapshot | undefined {
-  const injected = options.injectedUserTexts ?? new Set<string>();
-  const lastUserIndex = findLastUserIndex(entries, injected);
+  const lastUserIndex = findLastUserIndex(entries);
   if (lastUserIndex < 0) return undefined;
 
   const userRequest = truncateText(
@@ -200,6 +234,7 @@ export function collectTurnSnapshot(
 
   return {
     userRequest,
+    userAnswers: collectUserAnswers(entries, lastUserIndex, options.maxUserAnswerChars),
     finalOutput,
     toolTrace: options.includeToolTrace
       ? collectToolTrace(entries, lastUserIndex, options.maxToolTraceEntries)

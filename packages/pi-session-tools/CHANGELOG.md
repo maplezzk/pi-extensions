@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.7.1...pi-session-tools-v0.8.0) (2026-09-21)
+
+
+### Features
+
+* **session-tools:** 压缩快照头加 [session] 前缀，展开方向改用箭头 ([5782c68](https://github.com/maplezzk/pi-extensions/commit/5782c6847897e492a8df5d9d2fe8c34948c6911b))
+* 块头统一 [xxx] 来源前缀，展开方向统一用箭头 ([8cae968](https://github.com/maplezzk/pi-extensions/commit/8cae9688341fa2f47de1014b17ca606acac98694))
+
+
+### Bug Fixes
+
+* **pi-session-tools:** 压缩分支重建上下文时保留 system 消息 ([e79a0f1](https://github.com/maplezzk/pi-extensions/commit/e79a0f1c2dc96a50c6806ead545819c0750cb30d))
+* **pi-session-tools:** 压缩分支重建上下文时保留 system 消息 ([193bb3c](https://github.com/maplezzk/pi-extensions/commit/193bb3c6365d2919f4b1eae5565544e2a1a4b64c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [0.7.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.7.0...pi-session-tools-v0.7.1) (2026-09-19)
 
 

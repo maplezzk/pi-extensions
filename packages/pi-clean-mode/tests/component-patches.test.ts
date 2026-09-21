@@ -14,8 +14,7 @@ import {
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import type { TuiMouseEvent } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import {
+import { visibleWidth } from "@earendil-works/pi-tui";import {
 	beginActionGroupStep,
 	createActionGroupState,
 	findActionGroupMembership,
@@ -25,6 +24,11 @@ import {
 	toggleActionGroup,
 	type ActionGroupState,
 } from "../src/action-groups.ts";
+import {
+	BRANCH_LAST,
+	BRANCH_MIDDLE,
+	TREE_INDENT,
+} from "../src/activity.ts";
 import { installComponentPatches } from "../src/component-patches.ts";
 import { formatDuration } from "../src/duration.ts";
 import { createHeaderStyler, type ThemePainter } from "../src/header-style.ts";
@@ -39,12 +43,36 @@ const RUN_DURATION_MS = 266_000;
 const RUN_STEPS = 5;
 /** 折叠头右侧展示的展开快捷键；由扩展入口注入，测试里固定为一个值。 */
 const EXPAND_HINT = "f2";
-/** 透明主题：测试断言明文，不关心颜色，但保留横条的截断与补齐行为。 */
+/** 透明主题：测试断言明文，不关心颜色。 */
 const PLAIN_THEME: ThemePainter = {
 	fg: (_color, text) => text,
 	bg: (_color, text) => text,
 	bold: (text) => text,
 };
+/**
+ * 断言「某一层确实套了哪一档色」用的主题替身：每个色键一个固定 ANSI 码。
+ *
+ * 用真 ANSI 而不是可读标记，是因为 `visibleWidth` 会跳过转义码，列号断言照样成立。
+ */
+const ANSI_COLOR_CODES: Record<string, string> = {
+	accent: "38;5;214",
+	text: "38;5;252",
+	muted: "38;5;245",
+	dim: "38;5;240",
+};
+
+/** 某一档色的转义前缀；用它断言「这段文字套的就是这一档」。 */
+function colorPrefix(color: keyof typeof ANSI_COLOR_CODES): string {
+	return `\u001b[${ANSI_COLOR_CODES[color]}m`;
+}
+
+/** 造一个会产生真 ANSI 码的主题替身。 */
+function ansiTheme(): ThemePainter {
+	return {
+		fg: (color, text) => `${colorPrefix(color as keyof typeof ANSI_COLOR_CODES)}${text}\u001b[39m`,
+		bold: (text) => `\u001b[1m${text}\u001b[22m`,
+	};
+}
 /** 折叠头里应当出现的耗时文案。 */
 const HEADER_FRAGMENT = formatDuration(RUN_DURATION_MS);
 /** 运行级折叠头的完整标签（含耗时），用来量它的起始列。 */
@@ -55,10 +83,29 @@ const RUN_HEADER_STEPS = i18n.t("runHeaderSteps", { count: String(RUN_STEPS) });
 const GROUP_HEADER_FRAGMENT = i18n.t("actionGroupHeader", { count: "3" });
 /** 单条动作的组头摘要；组内只有一条时直接用它当组头文案。 */
 const SINGLE_ACTION_SUMMARY = "运行命令 ls -la";
-/** 活动块里的动作行；块里全是普通行，不铺底色。 */
+/** 活动块里的动作行；块里全是普通行，只带树形前缀。 */
 const ACTIVITY_ROW = "    │ ⠹ 运行命令 npm test";
 /** 活动块里跟在动作行后面的输出尾巴。 */
 const ACTIVITY_TAIL_ROW = "      │ ↳ 12 passing";
+/**
+ * 展开的组里接在命令行下面的思考行。
+ *
+ * 它和成员命令行用同一段缩进（`  ├─ ` / `  └─ `），所以活动块看起来是列表的末项，
+ * 而不是挂在某条命令正文底下的子项。
+ */
+const THOUGHT_ROW = `  ${BRANCH_LAST} ◐ ${i18n.t("activityThinking")}  想点事`;
+/** 展开的组里一条成员命令的摘要文案。 */
+const MEMBER_SUMMARIES = ["读取 a.ts", "运行命令 npm test", "搜索 handleMouse"];
+/** 树形行的正文列号：`  ├─ ` 之后。 */
+const TREE_TEXT_COLUMN = visibleWidth(`${TREE_INDENT}${BRANCH_MIDDLE} `);
+/** 组头块占的行数（空行 + 组头行）：展开的组里首条成员的摘要行排在它下面。 */
+const HEADER_BLOCK_HEIGHT = 2;
+/** 组头块首行（空行）的行号：它留白不画竖条，但与组头同属一个点击块。 */
+const GROUP_SPACER_ROW = 0;
+/** 超出渲染宽度的活动行：用来验证超宽行被截到终端宽度。 */
+const OVERLONG_ACTIVITY_ROW = `  ${BRANCH_LAST} ◐ ${i18n.t("activityThinking")}  ${"长".repeat(WIDTH)}`;
+/** 超长的命令摘要：摘要行必须自己截断，不能把箭头挤出屏幕。 */
+const OVERLONG_SUMMARY = `运行命令 ${"x".repeat(WIDTH * 2)}`;
 /**
  * 轮首槽位的状态行：只报在处理与耗时。
  *
@@ -79,8 +126,15 @@ const WORK_TEXT = "intermediate narration";
 const TOOL_CWD = "/tmp";
 /** 折叠头的行号；折叠头子组件输出「空行 + 折叠头」，所以落在第 1 行。 */
 const HEADER_ROW = 1;
-/** 两级折叠头共用的左缩进列数：组头文案不再比运行级多缩一级。 */
-const HEADER_INDENT_COLUMNS = 2;
+/** 运行级折叠头的行首缩进：不画竖条，只留与「竖条 + 间隔」同宽的两列空格。 */
+const RUN_INDENT = "  ";
+const GROUP_GUTTER = "│";
+/** 竖条与文案之间的间隔。 */
+const GUTTER_GAP = " ";
+/** 两级折叠头共用的左缩进列数：运行级是两列空格，组头是竖条 + 间隔。 */
+const HEADER_INDENT_COLUMNS = RUN_INDENT.length;
+/** 文案列：两级折叠头都从缩进之后起写文案（折叠头不带来源前缀）。 */
+const HEADER_LABEL_COLUMNS = HEADER_INDENT_COLUMNS;
 /** 展开态箭头：实心下三角。 */
 const EXPANDED_CHEVRON = "▼";
 /** 收起态箭头：实心右三角；动作组默认就是收起态。 */
@@ -176,8 +230,6 @@ interface PatchHarness {
 	activityLines: string[];
 	/** 活动块在「组内只有一条」时的形态：去掉动作名，只留思考与输出尾巴。 */
 	activityDetailLines: string[];
-	/** 接在当前组组头后面的分类计数后缀；空串表示还没计数。 */
-	activityCounters: string;
 	/** 组头主词（如「运行命令」）；undefined 表示组内没有过半分类，组头用通用词。 */
 	groupActivityLabel: string | undefined;
 	/** 轮首槽位的状态行（只在在处理 + 耗时）；用例可直接改它模拟运行中。 */
@@ -186,6 +238,8 @@ interface PatchHarness {
 	runToggles: () => number;
 	/** 动作组被切换的次数。 */
 	groupToggles: () => number;
+	/** 补丁层请求重绘的次数（成员行切换原文时应当加一）。 */
+	renderRequests: () => number;
 }
 
 /** `withPatches` 的可选行为开关。 */
@@ -194,9 +248,15 @@ interface PatchOptions {
 	 * 承载者是否直接拿到已知耗时；默认 true。
 	 *
 	 * 运行中的用例设为 false：真实运行期间耗时还没写入（`agent_settled` 才记），
-	 * 轮首槽位里应当装的是「处理中」状态横条，而不是耗时横条。
+	 * 轮首槽位里应当装的是「处理中」状态行，而不是耗时头。
 	 */
 	runHeaderHasDuration?: boolean;
+	/**
+	 * 渲染用的主题；默认透明主题（断言明文）。
+	 *
+	 * 要验证「某一层确实套了色」时传一个会产出真 ANSI 码的替身。
+	 */
+	theme?: ThemePainter;
 }
 
 /** 装一次补丁、跑断言或渲染、无论成败都还原，避免测试间互相污染。 */
@@ -210,8 +270,7 @@ function withPatches<T>(
 	const durations = new WeakMap<object, number>();
 	const activityLines: string[] = [];
 	const activityDetailLines: string[] = [];
-	const harness: { activityCounters: string; groupActivityLabel: string | undefined } = {
-		activityCounters: "",
+	const harness: { groupActivityLabel: string | undefined } = {
 		groupActivityLabel: undefined,
 	};
 	const runStatusLines: string[] = [];
@@ -219,10 +278,11 @@ function withPatches<T>(
 	let runHeaderHost: object | undefined;
 	let runToggleCount = 0;
 	let groupToggleCount = 0;
+	let renderRequestCount = 0;
 	const restore = installComponentPatches({
 		getState: () => state,
 		getConfig: () => config,
-		styler: createHeaderStyler(PLAIN_THEME),
+		styler: createHeaderStyler(options.theme ?? PLAIN_THEME),
 		expandHint: EXPAND_HINT,
 		onToggle: () => {
 			// 只计数，用于断言鼠标点击是否真的触发了运行级切换。
@@ -244,6 +304,9 @@ function withPatches<T>(
 			toggleActionGroup(actionGroups, groupId);
 			groupToggleCount += 1;
 		},
+		requestRender: () => {
+			renderRequestCount += 1;
+		},
 		claimRunHeaderHost: (host) => {
 			// 每轮只让第一个来认领的实例成为承载者；耗时已知时顺便记上。
 			if (runHeaderAssigned) {
@@ -259,7 +322,6 @@ function withPatches<T>(
 		isCurrentRunHost: (host) => host === runHeaderHost,
 		getActivityLines: () => activityLines,
 		getActivityDetailLines: () => activityDetailLines,
-		getActivityCounters: () => harness.activityCounters,
 		getRunStatusLines: () => runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === actionGroups.currentGroupId,
 		getGroupActivityLabel: () => harness.groupActivityLabel,
@@ -271,12 +333,6 @@ function withPatches<T>(
 			actionGroups,
 			activityLines,
 			activityDetailLines,
-			get activityCounters(): string {
-				return harness.activityCounters;
-			},
-			set activityCounters(value: string) {
-				harness.activityCounters = value;
-			},
 			get groupActivityLabel(): string | undefined {
 				return harness.groupActivityLabel;
 			},
@@ -286,6 +342,7 @@ function withPatches<T>(
 			runStatusLines,
 			runToggles: () => runToggleCount,
 			groupToggles: () => groupToggleCount,
+			renderRequests: () => renderRequestCount,
 		});
 	} finally {
 		restore();
@@ -339,11 +396,10 @@ test("本轮还没有工具行时，轮首只画状态行", () => {
 
 		const head = lines[ACTIVITY_HEAD_ROW];
 		assert.equal(head?.trimEnd(), RUN_STATUS_ROW, "状态行应落在空行之后的第一行");
-		// 首行被当做状态横条渲染（styler.band），band 会按宽度补齐到整行。
-		assert.equal(
-			visibleWidth(head ?? ""),
-			WIDTH,
-			`状态行应铺满整行：${JSON.stringify(head)}`,
+		// 状态行自带两列缩进，不铺底色，所以宽度由内容决定，不再补齐到整行。
+		assert.ok(
+			(head ?? "").startsWith(RUN_STATUS_ROW),
+			`状态行应从行首开始，不带任何缩进：${JSON.stringify(head)}`,
 		);
 		assert.deepEqual(
 			lines.slice(0, ACTIVITY_HEAD_ROW + 1).map((line) => line.trimEnd()),
@@ -354,55 +410,35 @@ test("本轮还没有工具行时，轮首只画状态行", () => {
 	});
 });
 
-test("组头带上当前组的分类计数后缀", () => {
+test("组头只报动作与步数，后面不接任何计数后缀", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
-		harness.activityCounters = ` · ${i18n.t("activityCounterRead", { count: "4" })} · ${i18n.t("activityCounterCommand", { count: "1" })}`;
 
 		const groupHeader = linesOf(toolComponent(ids[0])).find((line) =>
 			line.includes(GROUP_HEADER_FRAGMENT),
 		);
 		assert.ok(groupHeader, "前置条件：应渲染出组头行");
 		assert.ok(
-			groupHeader.includes(i18n.t("activityCounterRead", { count: "4" })),
-			`组头应带上读取计数：${groupHeader}`,
+			!groupHeader.includes(i18n.t("activityCounterRead", { count: "4" })),
+			`分类计数已挪到活动块尾注，组头不该再报一次：${groupHeader}`,
 		);
 		assert.equal(
 			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
-			HEADER_INDENT_COLUMNS,
-			"计数后缀不能把组头文案挤离缩进列",
+			HEADER_LABEL_COLUMNS,
+			"组头文案应顶在文案列上",
 		);
-		assertChevronFollowsLabel(
-			groupHeader,
-			i18n.t("activityCounterCommand", { count: "1" }),
-			COLLAPSED_CHEVRON,
-		);
-	});
-});
-
-test("历史组的组头不带分类计数", () => {
-	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const ids = seedActionGroup(harness.actionGroups, 3);
-		beginActionGroupStep(harness.actionGroups);
-		registerActionToolCall(harness.actionGroups, { toolCallId: "call-next", summary: SINGLE_ACTION_SUMMARY });
-		harness.activityCounters = " · 读取 4";
-
-		const oldHeader = linesOf(toolComponent(ids[0])).find((line) =>
-			line.includes(GROUP_HEADER_FRAGMENT),
-		);
-		assert.ok(oldHeader, "前置条件：历史组头仍应渲染");
 		assert.ok(
-			!oldHeader.includes(i18n.t("activityCounterRead", { count: "4" })),
-			`历史组不该显示本轮累计计数：${oldHeader}`,
+			(groupHeader ?? "").trimEnd().endsWith(COLLAPSED_CHEVRON),
+			`组头应以箭头收尾，中间不再夹计数：${groupHeader}`,
 		);
 	});
 });
 
-test("计数还没出现时活动块不铺底色", () => {
+test("活动块里的行原样接在组尾，不铺底色也不补宽", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		beginActionGroupStep(harness.actionGroups);
 		registerActionToolCall(harness.actionGroups, { toolCallId: TOOL_CALL_ID, summary: SINGLE_ACTION_SUMMARY });
-		// 满屏只有轮首一条横条：活动块里的行原样接上，不补宽也不铺底。
+		// 折叠头只画一条竖条，活动块里的行原样接上，不补宽也不铺底。
 		harness.activityDetailLines.push(ACTIVITY_ROW);
 
 		const rendered = linesOf(toolComponent()).map(stripAnsi);
@@ -444,7 +480,8 @@ test("当前组展开时，活动块接在末位成员行下面", () => {
 		registerActionToolCall(harness.actionGroups, { toolCallId: "call-1", summary: SINGLE_ACTION_SUMMARY });
 		registerActionToolCall(harness.actionGroups, { toolCallId: "call-2", summary: SINGLE_ACTION_SUMMARY });
 		toggleActionGroup(harness.actionGroups, harness.actionGroups.currentGroupId);
-		harness.activityLines.push(ACTIVITY_ROW, ACTIVITY_TAIL_ROW);
+		// 展开的组里命令行已经逐条列出，活动块只补思考与输出尾巴。
+		seedActivityBlock(harness, [ACTIVITY_ROW, ACTIVITY_TAIL_ROW]);
 
 		const headText = linesOf(toolComponent("call-1")).map(stripAnsi).join("\n");
 		const lastLines = linesOf(toolComponent("call-2")).map(stripAnsi);
@@ -457,7 +494,7 @@ test("当前组展开时，活动块接在末位成员行下面", () => {
 		);
 		assert.ok(
 			visibleWidth(lastLines[lastLines.length - 2] ?? "") < WIDTH,
-			"活动块不铺底色，不被补成整宽色块",
+			"活动块原样输出，不被补成整宽",
 		);
 	});
 });
@@ -567,7 +604,7 @@ test("折叠时承载折叠头的工作过程消息只输出折叠头", () => {
 	});
 });
 
-test("运行中收起后仍输出「处理中」状态横条，不出现整屏空白", () => {
+test("运行中收起后仍输出「处理中」状态行，不出现整屏空白", () => {
 	withPatches(
 		COLLAPSED_STATE,
 		{ ...DEFAULT_CLEAN_MODE_CONFIG },
@@ -581,9 +618,9 @@ test("运行中收起后仍输出「处理中」状态横条，不出现整屏�
 				"运行中耗时还没写入，槽位必须继续输出：否则整个屏幕上没有任何「还在跑」的信息",
 			);
 			assert.equal(
-				visibleWidth(lines[ACTIVITY_HEAD_ROW] ?? ""),
-				WIDTH,
-				`状态横条应铺满整行：${JSON.stringify(lines[ACTIVITY_HEAD_ROW])}`,
+				lines[ACTIVITY_HEAD_ROW]?.trimEnd(),
+				RUN_STATUS_ROW,
+				"状态行原样输出，不再被包一层装饰",
 			);
 		},
 		{ runHeaderHasDuration: false },
@@ -843,7 +880,25 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 		);
 		assert.ok(runHeader, "前置条件：应渲染出运行级折叠头");
 
-		// 箭头挪到文案右边后，左侧只剩文案；两级文案必须同列，否则看着还是没对齐。
+		// 两级折叠头文案同列：运行级是两列缩进（不画竖条），组头是「细竖条 + 一个空格」。
+		assert.ok(
+			runHeader.startsWith(`${RUN_INDENT}${RUN_HEADER_LABEL}`),
+			`运行级折叠头应是「两列缩进 + 文案」，不带竖条：${runHeader}`,
+		);
+		assert.ok(
+			!runHeader.includes(GROUP_GUTTER),
+			`左侧轨道只属于动作组，运行级不应画竖条：${runHeader}`,
+		);
+		// 文案只念一遍：折叠头是「一行说一件事」，重复拼接会让「用时 …」出现两次。
+		assert.equal(
+			runHeader.split(RUN_HEADER_LABEL).length - 1,
+			1,
+			`运行级折叠头的文案应只出现一次：${runHeader}`,
+		);
+		assert.ok(
+			groupHeader.includes(`${GROUP_GUTTER}${GUTTER_GAP}${GROUP_HEADER_FRAGMENT}`),
+			`组头应是「细竖条 + 文案」：${groupHeader}`,
+		);
 		assert.equal(
 			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
 			columnOf(runHeader, RUN_HEADER_LABEL),
@@ -851,8 +906,8 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 		);
 		assert.equal(
 			columnOf(groupHeader, GROUP_HEADER_FRAGMENT),
-			HEADER_INDENT_COLUMNS,
-			"组头文案应顶在折叠头缩进列上",
+			HEADER_LABEL_COLUMNS,
+			"组头文案应顶在文案列上",
 		);
 
 		// 箭头紧跟在文案右边（只隔一格），而且不再显示快捷键提示。
@@ -860,6 +915,76 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 		assertChevronFollowsLabel(runHeader, RUN_HEADER_STEPS, EXPANDED_CHEVRON);
 		assert.ok(!runHeader.includes(EXPAND_HINT), `折叠头不应再显示快捷键：${runHeader}`);
 	});
+});
+
+test("组头上方那行留白，轨道只画在组头行上", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3);
+		const headLines = linesOf(toolComponent(ids[0]));
+		const spacerLine = headLines[GROUP_SPACER_ROW] ?? "";
+
+		assert.equal(
+			stripAnsi(spacerLine),
+			"",
+			`组头上方那行应留白，不能画一根悬空的短竖条：${JSON.stringify(stripAnsi(spacerLine))}`,
+		);
+
+		const runHeader = linesOf(new AssistantMessageComponent(finalMessage())).find((line) =>
+			line.includes(HEADER_FRAGMENT),
+		);
+		assert.ok(runHeader, "前置条件：应渲染出运行级折叠头");
+		const groupHeader = headLines.find((line) => line.includes(GROUP_HEADER_FRAGMENT));
+		assert.ok(groupHeader, "前置条件：应渲染出组头行");
+
+		// 竖条只出现在组头行上，与组头文案同一行；它独占的那一行则什么都不画。
+		assert.ok(
+			columnOf(groupHeader, GROUP_GUTTER) >= 0,
+			`组头行应带右侧轨道竖条：${JSON.stringify(stripAnsi(groupHeader))}`,
+		);
+		// 运行级不画竖条：它只有缩进，否则两根竖条会因为字形不同族
+		// （半格实心块与居中竖线）而错位。
+		assert.equal(
+			columnOf(runHeader, GROUP_GUTTER),
+			-1,
+			`运行级折叠头不应有竖条：${JSON.stringify(stripAnsi(runHeader))}`,
+		);
+	});
+});
+
+test("动作组头与成员摘要用弱化色，箭头仍用强调色", () => {
+	withPatches(
+		EXPANDED_STATE,
+		{ ...DEFAULT_CLEAN_MODE_CONFIG },
+		(harness) => {
+			const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+			const [spacerLine = "", headerLine = ""] = linesOf(toolComponent(ids[0]));
+
+			assert.equal(stripAnsi(spacerLine), "", "组头上方那行应留白，不画竖条");
+			assert.ok(
+				headerLine.includes(`${colorPrefix("muted")}${GROUP_GUTTER}`),
+				`轨道竖条应用弱化色：${JSON.stringify(headerLine)}`,
+			);
+			assert.ok(
+				headerLine.includes(`${colorPrefix("muted")}${GROUP_HEADER_FRAGMENT}`),
+				`组头文案应用弱化色，不能落到终端默认色：${JSON.stringify(headerLine)}`,
+			);
+			assert.ok(
+				headerLine.includes(`${colorPrefix("accent")}${COLLAPSED_CHEVRON}`),
+				`组头箭头仍应用强调色：${JSON.stringify(headerLine)}`,
+			);
+
+			toggleActionGroup(harness.actionGroups, 1);
+			const memberLine = linesOf(toolComponent(ids[1])).find((line) =>
+				line.includes(MEMBER_SUMMARIES[1]),
+			);
+			assert.ok(memberLine, "前置条件：展开后应渲染出成员摘要行");
+			assert.ok(
+				memberLine.includes(`${colorPrefix("muted")}${MEMBER_SUMMARIES[1]}`),
+				`成员摘要文字应用弱化色，不能落到终端默认色：${JSON.stringify(memberLine)}`,
+			);
+		},
+		{ theme: ansiTheme() },
+	);
 });
 
 test("组展开后成员逐条渲染，组头行依然保留", () => {
@@ -906,42 +1031,21 @@ test("工具行的首行带上可点击箭头，点击该行切换 Pi 自己的�
 	});
 });
 
-test("展开的组里点成员箭头只切换这条工具行，不折叠整组", () => {
+test("展开的组里点组头折叠整组，点首条成员的摘要行只切换它自己", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const ids = seedActionGroup(harness.actionGroups, 3);
-		toggleActionGroup(harness.actionGroups, 1);
-
-		const head = toolComponent(ids[0]);
-		const lines = linesOf(head);
-		// 组头行用的是展开态箭头 ▼，成员行自己的箭头才是 ▶，据此定位成员行。
-		const arrowRow = lines.findIndex((line) => stripAnsi(line).trimEnd().endsWith(COLLAPSED_CHEVRON));
-		assert.ok(arrowRow >= 0, `前置条件：展开的组里成员行应带箭头：${lines.join("\n")}`);
-
-		head.handleMouse(clickAt(arrowRow, lines.length));
-		assert.equal(harness.groupToggles(), 0, "点成员箭头不应折叠整组");
-
-		const after = linesOf(head);
-		assert.ok(
-			stripAnsi(after[arrowRow] ?? "").trimEnd().endsWith(EXPANDED_CHEVRON),
-			`点箭头后该工具行应变成展开态：${JSON.stringify(stripAnsi(after[arrowRow] ?? ""))}`,
-		);
-	});
-});
-
-test("展开的组里点组头可折叠整组，点成员正文不折叠整组", () => {
-	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const ids = seedActionGroup(harness.actionGroups, 3);
+		const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
 		toggleActionGroup(harness.actionGroups, 1);
 
 		const head = toolComponent(ids[0]);
 		const lines = linesOf(head);
 
-		head.handleMouse(clickAt(HEADER_BLANK_ROW, lines.length));
-		assert.equal(harness.groupToggles(), 1, "组头上方的空行属于同一点击块，应能折叠整组");
+		head.handleMouse(clickAt(GROUP_SPACER_ROW, lines.length));
+		assert.equal(harness.groupToggles(), 1, "组头上方那行属于同一点击块，应能折叠整组");
 
-		// 组头下面的行属于工具行自己，鼠标要透传给 Pi，不能当成组头。
-		head.handleMouse(clickAt(lines.length - 1, lines.length));
-		assert.equal(harness.groupToggles(), 1, "点成员正文不应折叠整组");
+		// 组头下面那行是首条成员自己的摘要行，属于那条工具行，不能当组头。
+		head.handleMouse(clickAt(HEADER_BLOCK_HEIGHT, lines.length));
+		assert.equal(harness.groupToggles(), 1, "点首条成员的摘要行不应折叠整组");
+		assert.equal(harness.renderRequests(), 1, "点摘要行应切换它的原文展开");
 	});
 });
 
@@ -957,19 +1061,20 @@ test("组展开后点击组头仍能收起该组", () => {
 	});
 });
 
-test("鼠标点击组头切换该动作组，非组头行透传给 Pi", () => {
+test("点击组头切换该动作组，点成员摘要行不会折叠整组", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
-		const ids = seedActionGroup(harness.actionGroups, 2);
+		const ids = seedActionGroup(harness.actionGroups, 2, MEMBER_SUMMARIES);
+		toggleActionGroup(harness.actionGroups, 1);
 
 		const head = toolComponent(ids[0]);
 		linesOf(head);
-		head.handleMouse(clickAt(0, 1));
+		head.handleMouse(clickAt(HEADER_ROW, HEADER_BLOCK_HEIGHT));
 		assert.equal(harness.groupToggles(), 1, "点击组头应触发一次动作组切换");
 
 		const member = toolComponent(ids[1]);
-		linesOf(member);
-		member.handleMouse(clickAt(0, 1));
-		assert.equal(harness.groupToggles(), 1, "点击组内成员不应切换动作组");
+		const memberLines = linesOf(member);
+		member.handleMouse(clickAt(0, memberLines.length));
+		assert.equal(harness.groupToggles(), 1, "点成员摘要行不应切换动作组");
 	});
 });
 

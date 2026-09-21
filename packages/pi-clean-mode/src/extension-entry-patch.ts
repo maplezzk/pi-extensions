@@ -20,13 +20,20 @@
  * 无论何时都豁免，否则「配置读取失败」这类警告会被一起收掉。
  */
 
-import { Container } from "@earendil-works/pi-tui";
+import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import { NOTICE_ENTRY_TYPE } from "pi-extensions-i18n";
 import { installMethodPatch, type PatchablePrototype } from "./prototype-patch.js";
 import type { CleanModeConfig, CleanModeState } from "./types.js";
 
 /** 空渲染结果：条目被收起时一行都不占。 */
 const NO_LINES: string[] = [];
+/**
+ * 扩展条目轨道前缀占用的列宽。
+ *
+ * 加前缀的一方要按它把渲染宽度让出来（`width - ENTRY_RAIL_WIDTH`），前缀再补回这两列，
+ * 整行宽度才不会溢出。数值与 `GUTTER_PREFIX_WIDTH` 一致。
+ */
+const ENTRY_RAIL_WIDTH = 2;
 
 /**
  * 条目组件对外可见的最小结构。
@@ -46,6 +53,19 @@ interface ExtensionEntryPayload {
 	customType?: unknown;
 }
 
+/**
+ * 扩展注册的消息组件对外可见的最小结构（对应 Pi 的 CustomMessageComponent）。
+ *
+ * 它和条目组件一样铺满整宽（工作流结果面板就是它），运行期间同样会切断轨道，
+ * 所以也要接上。它是一个独立判定：消息组件不参与条目折叠（`hideExtensionEntries`），
+ * 只参与接轨道。
+ */
+export interface ExtensionMessageHost {
+	message?: unknown;
+	customRenderer?: unknown;
+	setExpanded?: unknown;
+}
+
 /** 判断一个组件是不是扩展写入的条目组件。 */
 export function isExtensionEntryHost(host: unknown): host is ExtensionEntryHost {
 	if (typeof host !== "object" || host === null) {
@@ -56,6 +76,24 @@ export function isExtensionEntryHost(host: unknown): host is ExtensionEntryHost 
 		candidate.entry !== undefined &&
 		typeof candidate.renderer === "function" &&
 		typeof candidate.hasContent === "function"
+	);
+}
+
+/**
+ * 判断一个组件是不是扩展注册的消息组件。
+ *
+ * 三个字段必须同时成立：Pi 的 CustomMessageComponent 持有 message、customRenderer，
+ * 并对外提供 setExpanded。普通容器与条目组件都没有这组字段。
+ */
+export function isExtensionMessageHost(host: unknown): host is ExtensionMessageHost & object {
+	if (typeof host !== "object" || host === null) {
+		return false;
+	}
+	const candidate = host as ExtensionMessageHost;
+	return (
+		candidate.message !== undefined &&
+		typeof candidate.customRenderer === "function" &&
+		typeof candidate.setExpanded === "function"
 	);
 }
 
@@ -79,7 +117,65 @@ export function isExtensionEntryWorkWindow(input: {
 	return input.isHistoryRestoreWindow || !input.state.runSettled;
 }
 
-/** 判定一条扩展条目折叠时是否该隐藏所需的输入。 */
+/**
+ * 取可接轨道的块的归属键。
+ *
+ * 用条目/消息对象（而不是组件实例）：Pi 会重建组件，按实例记归属会让同一块的判定
+ * 在重建后翻面。消息组件用 `message`，条目组件用 `entry`。
+ */
+export function readRailOwnershipKey(host: (ExtensionEntryHost | ExtensionMessageHost) & object): object {
+	const entry = (host as ExtensionEntryHost).entry;
+	if (typeof entry === "object" && entry !== null) {
+		return entry;
+	}
+	const message = (host as ExtensionMessageHost).message;
+	return typeof message === "object" && message !== null ? message : host;
+}
+
+/**
+ * 判定一条扩展条目在当前位置是否该接上运行时轨道。
+ *
+ * 运行期间扩展写入的条目（通知提示、工作流结果面板、审计卡片）都铺满整宽，
+ * 它们会把左侧轨道从中间切断；接上 `│ ` 前缀，竖条才不会断。
+ *
+ * 两种情况不加：总开关关闭（根本没有轨道可接）；收起态（组头本身不显示，加一条
+ * 孤立竖条反而多出个没头没尾的结构字符）。
+ */
+export function shouldRailExtensionEntry(input: ExtensionEntryRailInput): boolean {
+	const { state, config } = input;
+	if (!config.enabled) {
+		return false;
+	}
+	return !state.collapsed && !state.runSettled;
+}
+
+/**
+ * 给条目的每一行加上轨道前缀。
+ *
+ * 调用方传入按 `width - ENTRY_RAIL_WIDTH` 渲染出来的行，前缀正好补回这两列：整行宽度不变，
+ * 条目自己的底色仍然铺到右边缘。
+ */
+export function applyEntryRail(lines: readonly string[], prefix: string): string[] {
+	return lines.map((line) => `${prefix}${line}`);
+}
+
+/**
+ * 去掉渲染结果开头自带的空行。
+ *
+ * Pi 的条目组件与消息组件都在自己的内容前面插一个 `Spacer(1)`（见 Pi 的
+ * custom-entry.js / custom-message.js）：普通视图里它是块与块之间的呼吸空间，但运行期间
+ * 清爽模式画的是「一行一条」的密集列表，这一行就成了列表中间的一个空洞 —— 上下都是紧挨着的
+ * 记录，只有扩展块前面空出一行，看起来像列表被随机断开。接轨道时顺手去掉。
+ *
+ * 只去开头的空行：末尾的空行不是 Pi 加的，留着不动；整块全是空行时返回原样，
+ * 免得把一个本来就空白的块变成 0 行。
+ */
+export function dropLeadingBlankLines(lines: readonly string[]): string[] {
+	const firstContent = lines.findIndex((line) => visibleWidth(line) > 0);
+	return firstContent <= 0 ? [...lines] : lines.slice(firstContent);
+}
+
+/** 判定一条扩展条目收起时是否该隐藏所需的输入。 */
 export interface ExtensionEntryHideInput {
 	state: CleanModeState;
 	config: CleanModeConfig;
@@ -110,6 +206,12 @@ export function shouldHideExtensionEntry(input: ExtensionEntryHideInput): boolea
 /** Container.render 的补丁签名；容器接口只保证返回行数组。 */
 type ContainerRenderMethod = (this: object, width: number) => string[];
 
+/** 判定一条条目是否该接上轨道前缀所需的输入。 */
+export interface ExtensionEntryRailInput {
+	state: CleanModeState;
+	config: CleanModeConfig;
+}
+
 /** 补丁层从扩展入口注入的依赖。 */
 export interface ExtensionEntryPatchDeps {
 	/** 读取当前折叠状态。 */
@@ -118,6 +220,13 @@ export interface ExtensionEntryPatchDeps {
 	getConfig: () => CleanModeConfig;
 	/** 是否处于会话恢复窗口：session_start 之后、首次 agent_start 之前。 */
 	isHistoryRestoreWindow: () => boolean;
+	/**
+	 * 取当前轨道前缀（已着色，如 `│ `）。
+	 *
+	 * 主题还没就绪时返回 undefined，调用方按原样渲染 —— 宁可少加前缀，也不能因为
+	 * 取不到着色能力把条目画坏。
+	 */
+	getEntryRailPrefix: () => string | undefined;
 	/** 要接管的 Container 原型列表；由入口按运行时解析情况提供。 */
 	containerPrototypes: object[];
 }
@@ -167,40 +276,88 @@ export function resolveContainerPrototypes(sources: ContainerPrototypeSources): 
  * 之后运行结束也不能反悔 —— 否则刚展示过的工作行会在收起时反而留在屏幕上。
  */
 export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () => void {
+	/**
+	 * 归属记在**条目对象**上，不记在组件实例上。
+	 *
+	 * Pi 会重建条目组件（同一条目对象换一个新实例），按实例记归属会让同一条提示的判定
+	 * 在重建后翻面：实测启动时的提示本来不带竖条，运行中重建后突然带上了。
+	 */
 	const workEntries = new WeakSet<object>();
+	/** 条目对象 -> 是否该接轨道；首次渲染时定下，正负两种结果都记，重建后不再翻面。 */
+	const railDecisions = new WeakMap<object, boolean>();
 
-	/** 条目组件的渲染接管；两份原型共用同一份实现与同一张归属表。 */
+	/**
+	 * 判定条目是否该接上轨道前缀，并在首次渲染时把归属固定下来。
+	 *
+	 * 归属只能算一次：Pi 每帧都会重渲整段对话，同一条提示会反复经过这里。归属跟着
+	 * 「首次渲染时本轮在不在跑」走，运行结束后不再反过来改——否则屏幕上会看到轨道
+	 * 前缀在收起那一瞬间凭空出现或消失。
+	 */
+	const shouldRail = (
+		host: (ExtensionEntryHost | ExtensionMessageHost) & object,
+		state: CleanModeState,
+		config: CleanModeConfig,
+	): boolean => {
+		const key = readRailOwnershipKey(host);
+		const decided = railDecisions.get(key);
+		if (decided !== undefined) {
+			return decided;
+		}
+		const railed = shouldRailExtensionEntry({ state, config });
+		railDecisions.set(key, railed);
+		return railed;
+	};
+
+	/**
+	 * 块组件的渲染接管；两份原型共用同一份实现与同一张归属表。
+	 *
+	 * 两类块走这里：扩展条目（要折叠，也要接轨道）与扩展注册的消息（只接轨道）。
+	 * 其余容器（包括 chatContainer 自己）只花一次属性读取就原样返回。
+	 */
 	const buildMethod = (originalRender: ContainerRenderMethod): ContainerRenderMethod =>
 		function patchedRender(this: object, width: number): string[] {
-			if (!isExtensionEntryHost(this)) {
+			const entryHost = isExtensionEntryHost(this) ? this : undefined;
+			if (entryHost === undefined && !isExtensionMessageHost(this)) {
 				return originalRender.call(this, width);
 			}
 
 			const state = deps.getState();
 			const config = deps.getConfig();
-			const isWorkEntry =
-				workEntries.has(this) ||
-				(config.enabled &&
-					config.hideExtensionEntries &&
-					isExtensionEntryWorkWindow({
+
+			if (entryHost !== undefined) {
+				const ownershipKey = readRailOwnershipKey(entryHost);
+				const isWorkEntry =
+					workEntries.has(ownershipKey) ||
+					(config.enabled &&
+						config.hideExtensionEntries &&
+						isExtensionEntryWorkWindow({
+							state,
+							isHistoryRestoreWindow: deps.isHistoryRestoreWindow(),
+						}));
+				if (isWorkEntry) {
+					workEntries.add(ownershipKey);
+				}
+
+				if (
+					shouldHideExtensionEntry({
 						state,
-						isHistoryRestoreWindow: deps.isHistoryRestoreWindow(),
-					}));
-			if (isWorkEntry) {
-				workEntries.add(this);
+						config,
+						customType: readExtensionEntryCustomType(entryHost),
+						isWorkEntry,
+					})
+				) {
+					return NO_LINES;
+				}
 			}
 
-			if (
-				shouldHideExtensionEntry({
-					state,
-					config,
-					customType: readExtensionEntryCustomType(this),
-					isWorkEntry,
-				})
-			) {
-				return NO_LINES;
+			const railHost = this as (ExtensionEntryHost | ExtensionMessageHost) & object;
+			const railPrefix = shouldRail(railHost, state, config) ? deps.getEntryRailPrefix() : undefined;
+			// 宽度不够让出前缀时按原样渲染：宁可轨道断一下，也不能把内容画坏。
+			if (railPrefix === undefined || width <= ENTRY_RAIL_WIDTH) {
+				return originalRender.call(this, width);
 			}
-			return originalRender.call(this, width);
+			const railed = dropLeadingBlankLines(originalRender.call(this, width - ENTRY_RAIL_WIDTH));
+			return applyEntryRail(railed, railPrefix);
 		};
 
 	const restores = deps.containerPrototypes.map((prototype) =>

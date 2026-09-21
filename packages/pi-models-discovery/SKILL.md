@@ -21,6 +21,10 @@ description: "配置与排查 models.json 的动态模型发现、缓存刷新�
 
 `apiKey` 可用字面量、`$ENV_VAR` 或 `${ENV_VAR}`；`!command` 不用于发现请求，会被跳过并警告。不要把密钥写入 Skill、仓库或回复。
 
+## 思考等级
+
+发现的模型默认声明 `thinkingLevelMap: { xhigh: "xhigh", max: "max" }`（对所有模型一刀切）。若某个模型不认 `xhigh` / `max`，用 models.json 的 `modelOverrides` 按 model.id 把它们置 `null`。
+
 ## 验证
 
 - `/config:model-discovery-refresh` 强制联网刷新并更新缓存；旧命令名仅为兼容别名。

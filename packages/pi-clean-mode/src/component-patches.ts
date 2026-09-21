@@ -20,15 +20,18 @@ import {
 	AssistantMessageComponent,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { MouseRegion, visibleWidth, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { MouseRegion, truncateToWidth, visibleWidth, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { renderTreePrefix } from "./activity.js";
 import {
 	TOOL_ROW_GROUP_HEADER,
 	TOOL_ROW_HIDDEN,
+	TOOL_ROW_SUMMARY,
 	type ActionGroupMembership,
 } from "./action-groups.js";
 import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import type { HeaderStyler } from "./header-style.js";
+import { GROUP_GUTTER, renderGutterPrefix, RUN_INDENT } from "./header-style.js";
 import { i18n } from "./i18n.js";
 import {
 	resolveAssistantMessageRender,
@@ -43,14 +46,19 @@ import type { CleanModeConfig, CleanModeState } from "./types.js";
 const COLLAPSED_CHEVRON = "▶";
 /** 展开态的箭头：实心下三角，提示点击后收起。 */
 const EXPANDED_CHEVRON = "▼";
-/** 折叠头左缩进：运行级与动作组的文案共用同一个起始列。 */
-const HEADER_INDENT = "  ";
 /** 折叠头文案与箭头之间的间距。 */
 const ARROW_GAP = " ";
-/** 组头标签右侧的收尾留白，让底色块收得不至于贴着箭头。 */
-const CHIP_TRAILING_PAD = " ";
+/** 文本被截断时的省略号。 */
+const TRUNCATION_ELLIPSIS = "…";
 /** 折叠头之前的空行，用于与上方消息留出间距；下方间距由内容容器自带的 Spacer 提供。 */
 const HEADER_LEADING_BLANK = "";
+/**
+ * 组头上方那一行：留白，不画竖条。
+ *
+ * 这一行只有行距的意义（隔开上一段内容与组头），不参与轨道：只画一根竖条、右边没有
+ * 文字接着，看上去就是悬在组头上面的半截线。空行与组头同属一个点击块。
+ */
+const ACTION_GROUP_HEADER_BLANK = "";
 /** 折叠头子组件在实例上的缓存键。 */
 const HEADER_CHILD_KEY: unique symbol = Symbol("piCleanModeHeaderChild");
 /** 标记该实例是否已判定过本轮折叠头归属。 */
@@ -60,14 +68,35 @@ const RUN_HEADER_OWNER_KEY: unique symbol = Symbol("piCleanModeRunHeaderOwner");
 /** 工具行箭头所在的行号（相对整个组件），由渲染记录、鼠标命中使用。 */
 const TOOL_ROW_ARROW_ROW_KEY: unique symbol = Symbol("piCleanModeToolRowArrowRow");
 /**
- * 工具行正文相对组件顶部的行偏移；0 表示这一块没有组头、正文从第 0 行开始。
+ * 组头块占的行数（空行 + 组头行）；0 表示这一行没有组头。
  *
- * 展开的组会把「空行 + 组头」拼在工具行前面，容器登记的高度表却是按 Pi 原本的正文
- * 算的，所以鼠标透传前要先减掉这个偏移，否则点哪都差两行。
+ * 鼠标命中先看它：组头块里的点击是「收起/展开整组」，不能当成员行处理。
+ */
+const TOOL_ROW_HEADER_HEIGHT_KEY: unique symbol = Symbol("piCleanModeToolRowHeaderHeight");
+/**
+ * 本行命令摘要所在行号；没有摘要行（组头、未登记的行）时为 undefined。
+ *
+ * 整行可点：点摘要行就是「看这一条的原文」，展开后再点同一行收回单行。
+ */
+const TOOL_ROW_SUMMARY_ROW_KEY: unique symbol = Symbol("piCleanModeToolRowSummaryRow");
+/**
+ * 这一行是否已展开原文（只对展开的组里的成员行有意义）。
+ *
+ * 与 Pi 自己的 `expanded` 分开存：后者是「这条工具的输出要不要铺全」，
+ * 前者是「这一条的命令原文要不要露出来」，点两处得到的效果不同。
+ */
+const TOOL_ROW_REVEALED_KEY: unique symbol = Symbol("piCleanModeToolRowRevealed");
+/**
+ * 工具行正文（Pi 自己那几行）相对组件顶部的行偏移。
+ *
+ * 我们会在工具行前面拼上组头与摘要行，容器登记的高度表却是按 Pi 原本的正文
+ * 算的，所以鼠标透传前要先减掉这个偏移，否则点哪都差几行。
  */
 const TOOL_ROW_BODY_OFFSET_KEY: unique symbol = Symbol("piCleanModeToolRowBodyOffset");
-/** 没有组头时的正文偏移。 */
+/** 没有组头、也没有摘要行时的正文偏移。 */
 const NO_BODY_OFFSET = 0;
+/** 一条命令摘要行占的行数。 */
+const SUMMARY_ROW_HEIGHT = 1;
 
 /** assistant 组件对外可见的最小结构。 */
 interface AssistantMessageHost {
@@ -93,12 +122,20 @@ interface AssistantMessageHost {
 interface ToolMessageHost {
 	/** Pi 在构造时写入的工具调用 id。 */
 	toolCallId?: string;
+	/** Pi 在构造时写入的工具名；动作摘要缺失时用它兜底。 */
+	toolName?: string;
 	/** Pi 记录的工具输出展开状态；工具行箭头靠它决定朝向。 */
 	expanded?: boolean;
 	/** Pi 的展开开关；点工具行箭头时调它。 */
 	setExpanded?(expanded: boolean): void;
 	/** 箭头所在行号；渲染时写入，鼠标命中时读取。 */
 	[TOOL_ROW_ARROW_ROW_KEY]?: number;
+	/** 组头块占的行数；渲染时写入，鼠标命中时读取。 */
+	[TOOL_ROW_HEADER_HEIGHT_KEY]?: number;
+	/** 命令摘要行号；渲染时写入，鼠标命中时读取。 */
+	[TOOL_ROW_SUMMARY_ROW_KEY]?: number;
+	/** 这条命令的原文是否已展开。 */
+	[TOOL_ROW_REVEALED_KEY]?: boolean;
 	/** 工具行正文的行偏移；渲染时写入，鼠标透传前用它换算坐标。 */
 	[TOOL_ROW_BODY_OFFSET_KEY]?: number;
 	render(width: number): string[];
@@ -144,6 +181,8 @@ export interface ComponentPatchDeps {
 	getToolRowGroup: (toolCallId: string) => ToolRowGroupInfo | undefined;
 	/** 切换某个动作组的展开状态。 */
 	onToggleActionGroup: (groupId: number) => void;
+	/** 请求重绘：成员行的「看原文」状态是行内状态，改完得让屏幕重画。 */
+	requestRender: () => void;
 	/** 认领本轮折叠头归属；只有第一条 assistant 消息会得到 true。 */
 	claimRunHeaderHost: (host: object) => boolean;
 	/** 该承载者是否就是当前「正在运行」那一轮的承载者。 */
@@ -161,11 +200,6 @@ export interface ComponentPatchDeps {
 	 */
 	getActivityDetailLines: () => string[];
 	/**
-	 * 接在当前动作组组头文案后面的分类计数后缀，例如 ` · 读取 3 · 命令 2`；
-	 * 没有计数时为空串。只用在当前组上 —— 历史组显示本轮的累计数字是错的。
-	 */
-	getActivityCounters: () => string;
-	/**
 	 * 轮首槽位要展示的状态行：只含「在处理 + 跑了多久」，最多一行。
 	 *
 	 * 轮首只承担「整轮一共跑了多久」；思考、正在跑什么、分类计数都属于最新动作那一头，
@@ -177,6 +211,7 @@ export interface ComponentPatchDeps {
 	 *
 	 * 活动块接在当前组的最后一条可见行下面（而不是挂在整轮最上面），所以它总是紧跟在
 	 * 最新动作旁边；靠组号区分当前组，历史组不会再显示一遍活动行。
+	 * 分类计数也挂在活动块上，所以这个判断同时保证了「计数只报当前组」。
 	 */
 	isCurrentActionGroup: (groupId: number) => boolean;
 	/**
@@ -196,42 +231,27 @@ function classifyAssistantMessage(hasToolCalls: boolean): AssistantMessageKind {
 }
 
 /**
- * 组装运行级折叠头。「用时」在左，展开快捷键右对齐，整行铺底色成一条横带。
+ * 组装运行级折叠头。「用时」在左，箭头紧随其后。
  *
- * 底色是这级折叠头的主要识别信号：正文从不铺底色，所以一眼就能看出「这里收了一整轮」。
+ * 行首只有 `RUN_INDENT` 两列缩进，不画竖条：左侧轨道只属于动作组（半格块 `▌` 与居中
+ * 的细竖条不同族，接起来是错位的一截，见 `header-style.ts`）。这一行靠位置（整轮最
+ * 顶部）、加粗与主文字色区别于正文，文案仍与动作组文案同列。
  */
 function buildRunHeaderLine(
 	host: AssistantMessageHost,
 	deps: ComponentPatchDeps,
-	width: number,
 ): string {
 	const duration = formatDuration(deps.getRunDuration(host) ?? 0);
 	const chevron = deps.getState().collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
 	// 箭头紧跟在文案右边：先看到「这一轮用了多久」，紧接着就知道这行能点开。
-	const line = [
-		HEADER_INDENT,
-		deps.styler.primary(i18n.t("runHeader", { duration })),
+	return [
+		RUN_INDENT,
+		deps.styler.bold(deps.styler.primary(i18n.t("runHeader", { duration }))),
 		" ",
 		deps.styler.muted(i18n.t("runHeaderSteps", { count: String(deps.getRunSteps(host) ?? 0) })),
 		ARROW_GAP,
 		deps.styler.accent(chevron),
 	].join("");
-
-	return deps.styler.band(line, width);
-}
-
-/**
- * 给运行级状态行铺上底色。
- *
- * 屏幕上只有这一条铺底色的横条（运行中是在处理 + 耗时，结束后是「用时 …」）。活动块由
- * 普通行组成（只有竖折前缀，不铺底色），因此这里不需要判断首行是哪一种。
- */
-function bandActivityHead(lines: string[], width: number, deps: ComponentPatchDeps): string[] {
-	const [head, ...rest] = lines;
-	if (head === undefined) {
-		return lines;
-	}
-	return [deps.styler.band(head, width), ...rest];
 }
 
 /**
@@ -251,14 +271,15 @@ function createRunHeaderComponent(
 	deps: ComponentPatchDeps,
 ): Component {
 	const content: Component = {
-		/** 轮首槽位：运行中只画整轮时间，已结束时只画耗时横条。 */
+		/** 轮首槽位：运行中只画整轮时间，已结束时只画耗时头。 */
 		render: (width: number): string[] => {
-			// 轮首只回答「整轮一共跑了多久」：运行中是状态横条（在处理 + 耗时），
+			// 轮首只回答「整轮一共跑了多久」：运行中是状态行（在处理 + 耗时），
 			// 结束后是「用时 N 步」。活动块不在顶部，它接在最新动作的下面。
 			const status = deps.isCurrentRunHost(host) ? deps.getRunStatusLines() : [];
 			if (status.length > 0) {
-				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画横条。
-				return [HEADER_LEADING_BLANK, ...bandActivityHead(status, width, deps)];
+				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画耗时头。
+				// 状态行与耗时头同列同款（都是两列缩进 + 加粗文案），所以这里不用再包装一层。
+				return [HEADER_LEADING_BLANK, ...status];
 			}
 
 			const decision = resolveRunHeader({
@@ -266,7 +287,7 @@ function createRunHeaderComponent(
 				durationMs: deps.getRunDuration(host),
 				collapsed: deps.getState().collapsed,
 			});
-			return decision.visible ? [HEADER_LEADING_BLANK, buildRunHeaderLine(host, deps, width)] : [];
+			return decision.visible ? [HEADER_LEADING_BLANK, buildRunHeaderLine(host, deps)] : [];
 		},
 		/** 无缓存状态，渲染时实时读取当前折叠状态与活动行。 */
 		invalidate: () => {},
@@ -444,9 +465,6 @@ function isGroupHeaderRow(host: ToolMessageHost, deps: ComponentPatchDeps): bool
 	}) === TOOL_ROW_GROUP_HEADER;
 }
 
-/** 组头前的空行，与普通工具行前面的 Spacer 保持一致。 */
-const ACTION_GROUP_HEADER_BLANK = "";
-
 /** 超过这个成员数才用「探索 · N 步」汇总文案；只有一条时直接用该动作的摘要。 */
 const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
 
@@ -470,36 +488,32 @@ function buildSummaryLabel(group: ToolRowGroupInfo, deps: ComponentPatchDeps): s
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
  * 输出又不丢失「刚才做了什么」；两条以上才汇总成「主词 · N 步」。
  *
- * 对齐口径：标签底色的左边缘与运行级横条的左边缘同列（都是第 0 列），标签里的
- * 文案与折叠头文案同列（都是第 2 列），箭头和折叠头一样紧跟在文案右边且留在底色内。
- * 底色只包住这一行自己的内容，不再另加左内边距，否则底色块会比横条右缩一格。
+ * 行首是细竖条 `│`（弱化色），与运行级状态行同列起写，是左侧轨道唯一的一档；
+ * 文案与竖条同属这一档，也用弱化色 —— 组头是「一行汇总」，不是正文，不该比正文还抢眼。
+ * 层级在这里靠竖直的粗细与色档区分，而不是底色块。
+ *
+ * 分类计数不在这里：它跟着活动块走作为尾注，免得组头、活动块、轮首三处都在报进度。
  */
 function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
 	const showsStepCount = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY;
 	const label = showsStepCount
 		? buildSummaryLabel(group, deps)
 		: (group.summary ?? i18n.t("actionGroupHeader", { count: String(group.groupSize) }));
-	// 分类计数接在步数后面（`探索 · 12 步 · 读取 3 · 命令 2`），不另占一行。
-	// 只有「汇总成 N 步」的组头才带它：单条动作的组头已经写清做了什么，再加个「· 命令 1」是废话。
-	// 也只给当前组带：计数是本轮累计值，历史组显示它会报出不属于它的数字。
-	const counters =
-		showsStepCount && deps.isCurrentActionGroup(group.membership.groupId)
-			? deps.getActivityCounters()
-			: "";
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
-	const content = [
-		HEADER_INDENT,
-		label,
-		counters,
+	return [
+		renderGutterPrefix(deps.styler),
+		deps.styler.muted(label),
 		ARROW_GAP,
 		deps.styler.accent(chevron),
-		CHIP_TRAILING_PAD,
 	].join("");
-	return deps.styler.chip(content);
 }
 
 /**
- * 组装收起的动作组头（前导空行 + 组头行）。
+ * 组装组头块（空行 + 组头行）。
+ *
+ * 组头上面那行留白：留白只丢行距，不丢东西；画成竖条（曾经这么画过）反倒多出
+ * 一根悬在组头上面的短竖线——右边没有文字接着，看着像画错的一截。空行与组头
+ * 同属一个点击块，点它照样展开/收起整组。
  */
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
@@ -508,12 +522,103 @@ function buildActionGroupHeaderLines(
 	return [ACTION_GROUP_HEADER_BLANK, buildActionGroupHeaderRow(group, deps)];
 }
 
+/** 组装成员命令摘要行所需的输入。 */
+interface ToolRowRenderInput {
+	/** 该成员行的组件实例（读它的原文展开状态）。 */
+	host: ToolMessageHost;
+	/** 该成员所属的动作组。 */
+	group: ToolRowGroupInfo;
+	/** 补丁层依赖。 */
+	deps: ComponentPatchDeps;
+	/** 当前渲染宽度。 */
+	width: number;
+	/** Pi 原本的 render；铺成员原文时调它。 */
+	originalRender: (this: ToolMessageHost, width: number) => string[];
+}
+
+/**
+ * 组装展开的组里一条成员命令的摘要行：`├─ 读取 src/index.ts ▶`。
+ *
+ * 摘要是「有这条命令」的提示，不是正文，用弱化色（与组头同档）；箭头仍用强调色。
+ *
+ * 组展开后成员不再直接铺原始输出，而是一条命令一行——一屏能看完整组跑过哪些命令，
+ * 要看哪条的原文再点哪条；否则一屏装不下几条，组里跑了多少、还剩哪些没看都看不出来。
+ *
+ * 分支符与活动块的思考行共用（`renderTreePrefix`），两者才是同一棵树里的兄弟项：
+ * 思考行接在列表最后，所以它在时末位成员用 `├─`、思考行自己用 `└─` 收口。
+ */
+function buildToolSummaryLine({ host, group, deps, width }: ToolRowRenderInput): string {
+	const isLast =
+		isLastVisibleRow(group) && resolveActivityTail(group, deps, width).length === 0;
+	const revealed = host[TOOL_ROW_REVEALED_KEY] === true;
+	const arrow = revealed ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
+	const prefix = renderTreePrefix(isLast, (branch) => deps.styler.dim(branch));
+	const summary = group.summary ?? host.toolName ?? "";
+	// 先把摘要截到「行宽减去前缀与箭头」，否则长命令会把箭头挤出屏幕。
+	const textWidth = Math.max(
+		0,
+		width - visibleWidth(prefix) - visibleWidth(ARROW_GAP) - visibleWidth(arrow),
+	);
+	// 先截断再上色：带转义码的字符串不能用字符下标算宽度，截断必须留在明文上做。
+	const text = deps.styler.muted(truncateToWidth(summary, textWidth, TRUNCATION_ELLIPSIS));
+	const line = `${prefix}${text}${ARROW_GAP}${deps.styler.accent(arrow)}`;
+	// 宽度小到连前缀都放不下时，宁可丢掉箭头也不能撑破布局。
+	return visibleWidth(line) > width ? truncateToWidth(line, width, TRUNCATION_ELLIPSIS) : line;
+}
+
+/**
+ * 这一行是不是它所在组的「最后一条可见行」。
+ *
+ * 展开的组里最后一条可见行是末位成员（组头在最上面，不算尾），收起时成员行整行隐藏，
+ * 组头是该组唯一可见的行。活动块只接在这个位置上，最新状态才总是落在列表最底下。
+ */
+function isLastVisibleRow(group: ToolRowGroupInfo): boolean {
+	const lastVisibleIndex = group.groupExpanded ? group.groupSize - 1 : 0;
+	return group.membership.index === lastVisibleIndex;
+}
+
+/**
+ * 取当前组要接在末位可见行下面的活动块（按实际宽度截断）。
+ *
+ * 组收起时组头只写了汇总文案（`探索 · 12 步`），没说清具体在跑什么，活动块带上动作名；
+ * 组展开时命令已经逐条列在列表上，动作名不再重复第二遍（只留思考与输出尾巴）。
+ *
+ * 历史组、没有内容时返回空数组。
+ */
+function resolveActivityTail(
+	group: ToolRowGroupInfo,
+	deps: ComponentPatchDeps,
+	width: number,
+): string[] {
+	if (!deps.isCurrentActionGroup(group.membership.groupId)) {
+		return [];
+	}
+
+	const showsActionName = !group.groupExpanded && group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY;
+	const lines = showsActionName ? deps.getActivityLines() : deps.getActivityDetailLines();
+	return clampLinesToWidth(lines, width);
+}
+
+/**
+ * 把行截到实际渲染宽度。
+ *
+ * 活动行的长度由内容决定（文本片段自己只限制了 110 列），窄一点的终端上会超宽：
+ * 主屏模式下 pi-tui 遇到超宽行直接抛错停机，全屏模式下则被硬切掉。
+ */
+function clampLinesToWidth(lines: string[], width: number): string[] {
+	return lines.map((line) =>
+		visibleWidth(line) > width ? truncateToWidth(line, width, TRUNCATION_ELLIPSIS) : line,
+	);
+}
+
 /** `appendActivityTail` 需要的输入。 */
 interface ActivityTailInput {
 	/** 当前工具行所属的组；未登记时为 undefined。 */
 	group: ToolRowGroupInfo | undefined;
 	/** 补丁层依赖，用于取活动行。 */
 	deps: ComponentPatchDeps;
+	/** 当前的渲染宽度，用于把活动行截到终端宽度内。 */
+	width: number;
 }
 
 /**
@@ -526,31 +631,16 @@ interface ActivityTailInput {
  * 非当前组、或这一行不是最后一条可见行时原样返回。
  *
  * 块里全是普通行（思考、动作、输出尾巴），行首带 `├─` / `└─` 竖折，不铺底色：
- * 屏幕上只有轮首那条运行级横条。组内只有一条时组头已经写出这条动作，块里就去掉
- * 动作名，只留思考与输出尾巴（前缀已按剩下的行重拼）。
+ * 屏幕上只有轮首那条运行级横条。展开的组里成员行也用同一套竖折，所以思考行是与
+ * 命令行平级的兄弟项，而不是挂在中间那条正文底下。
  */
-function appendActivityTail(
-	lines: string[],
-	{ group, deps }: ActivityTailInput,
-): string[] {
-	if (!group || !deps.isCurrentActionGroup(group.membership.groupId)) {
+function appendActivityTail(lines: string[], { group, deps, width }: ActivityTailInput): string[] {
+	if (!group || !isLastVisibleRow(group)) {
 		return lines;
 	}
 
-	// 展开的组里最后一条可见行是末位成员；收起时只剩组头（index 0）。
-	const lastVisibleIndex = group.groupExpanded ? group.groupSize - 1 : 0;
-	if (group.membership.index !== lastVisibleIndex) {
-		return lines;
-	}
-
-	// 组内只有一条时组头就是这条动作的摘要，动作名不再重复第二遍。
-	const activity =
-		group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY ? deps.getActivityLines() : deps.getActivityDetailLines();
-	if (activity.length === 0) {
-		return lines;
-	}
-
-	return [...lines, ...activity];
+	const activity = resolveActivityTail(group, deps, width);
+	return activity.length === 0 ? lines : [...lines, ...activity];
 }
 
 /**
@@ -695,9 +785,9 @@ function describeToolRow(
 /**
  * 包装工具行的 render。
  *
- * 三种去向：运行级折叠时整行隐藏；多条成员的组在收起时只留首行充当组头；
- * 其余情况（含组内只有一条）直接交给 Pi 原本的渲染。当前组的最后一条可见行
- * 还要在末尾接上活动块。
+ * 四种去向：运行级折叠时整行隐藏；组头行（组内第一条，收起态只有它可见）；
+ * 展开组里的成员行（一条命令一行，点了才铺原文）；其余情况直接交给 Pi 原本的渲染。
+ * 当前组的最后一条可见行还要在末尾接上活动块（思考行与输出尾巴，与命令行平级）。
  */
 function buildToolMessageRender(
 	deps: ComponentPatchDeps,
@@ -716,42 +806,112 @@ function buildToolMessageRender(
 		debugLog(DEBUG_SCOPE_TOOL_RENDER, describeToolRow(this, group, mode));
 
 		if (mode === TOOL_ROW_HIDDEN) {
-			this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
-			this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
+			clearToolRowHitAreas(this);
 			return [];
 		}
+
 		if (mode === TOOL_ROW_GROUP_HEADER && group) {
-			const headerLines = buildActionGroupHeaderLines(group, deps);
-			if (!group.groupExpanded) {
-				// 收起时只留组头，没有正文可点，偏移归零避免鼠标透传算错行。
-				this[TOOL_ROW_ARROW_ROW_KEY] = undefined;
-				this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
-				return appendActivityTail(headerLines, { group, deps });
-			}
-			// 展开的组里，成员行本身就是一条命令，同样要带上可点击的箭头。
-			this[TOOL_ROW_BODY_OFFSET_KEY] = headerLines.length;
-			const body = withToolRowArrow(this, originalRender.call(this, width), {
-				styler: deps.styler,
-				bodyOffset: headerLines.length,
-			});
-			return appendActivityTail([...headerLines, ...body], { group, deps });
+			return renderGroupHeaderRow({ host: this, group, deps, width, originalRender });
 		}
-		this[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
+
+		if (mode === TOOL_ROW_SUMMARY && group) {
+			return renderSummaryRow({ host: this, group, deps, width, originalRender });
+		}
+
+		clearToolRowHitAreas(this);
 		const rendered = withToolRowArrow(this, originalRender.call(this, width), {
 			styler: deps.styler,
 			bodyOffset: NO_BODY_OFFSET,
 		});
-		return appendActivityTail(rendered, { group, deps });
+		return appendActivityTail(rendered, { group, deps, width });
 	};
+}
+
+/** 这一行没有自己的命中区：箭头、组头块与摘要行全部按不存在处理。 */
+function clearToolRowHitAreas(host: ToolMessageHost): void {
+	host[TOOL_ROW_ARROW_ROW_KEY] = undefined;
+	host[TOOL_ROW_HEADER_HEIGHT_KEY] = NO_BODY_OFFSET;
+	host[TOOL_ROW_SUMMARY_ROW_KEY] = undefined;
+	host[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
+}
+
+/**
+ * 渲染组头行。
+ *
+ * 三种形态：
+ * - 组收起：只留组头，成员行整行隐藏，活动块接在组头下面；
+ * - 多条成员且展开：组头只做汇总（`运行命令 · 12 步`），成员各占一行摘要，
+ *   首条成员的摘要行也由这个组件画；
+ * - 单条成员且展开：组头本身就是这条动作的摘要，直接在它下面铺这条工具的原文。
+ */
+function renderGroupHeaderRow(input: ToolRowRenderInput): string[] {
+	const { host, group, deps, width, originalRender } = input;
+	if (!group.groupExpanded) {
+		// 收起时成员行整行隐藏，没有正文可点，命中区归零避免鼠标透传算错行。
+		const headerLines = buildActionGroupHeaderLines(group, deps);
+		clearToolRowHitAreas(host);
+		host[TOOL_ROW_HEADER_HEIGHT_KEY] = headerLines.length;
+		return appendActivityTail(headerLines, { group, deps, width });
+	}
+
+	const headerLines = buildActionGroupHeaderLines(group, deps);
+	host[TOOL_ROW_HEADER_HEIGHT_KEY] = headerLines.length;
+
+	if (group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY) {
+		const summaryLine = buildToolSummaryLine(input);
+		// 首条成员自己的摘要行就在组头下面，所以它的组头块要再高一行。
+		host[TOOL_ROW_SUMMARY_ROW_KEY] = headerLines.length;
+		host[TOOL_ROW_ARROW_ROW_KEY] = undefined;
+		host[TOOL_ROW_BODY_OFFSET_KEY] = headerLines.length + SUMMARY_ROW_HEIGHT;
+		return appendActivityTail([...headerLines, summaryLine], { group, deps, width });
+	}
+
+	// 单条成员：组头即这条动作的摘要，展开动作组就是看这条的原文。
+	const bodyOffset = headerLines.length;
+	host[TOOL_ROW_SUMMARY_ROW_KEY] = undefined;
+	host[TOOL_ROW_BODY_OFFSET_KEY] = bodyOffset;
+	const body = withToolRowArrow(host, originalRender.call(host, width), {
+		styler: deps.styler,
+		bodyOffset,
+	});
+	return appendActivityTail([...headerLines, ...body], { group, deps, width });
+}
+
+/**
+ * 渲染展开的组里一条成员命令：默认只输出一行摘要，这条已看过原文就再铺上原文。
+ *
+ * 原文用 Pi 自己那一行（它自己的展开状态照旧），我们只在前面补一行摘要并把命中区
+ * 记下来：摘要是「看/收起原文」的开关，原文里的点击仍归 Pi。
+ */
+function renderSummaryRow(input: ToolRowRenderInput): string[] {
+	const { host, group, deps, width, originalRender } = input;
+	const summaryLine = buildToolSummaryLine(input);
+	host[TOOL_ROW_HEADER_HEIGHT_KEY] = NO_BODY_OFFSET;
+	host[TOOL_ROW_SUMMARY_ROW_KEY] = 0;
+
+	if (host[TOOL_ROW_REVEALED_KEY] !== true) {
+		host[TOOL_ROW_ARROW_ROW_KEY] = undefined;
+		host[TOOL_ROW_BODY_OFFSET_KEY] = NO_BODY_OFFSET;
+		return appendActivityTail([summaryLine], { group, deps, width });
+	}
+
+	const bodyOffset = SUMMARY_ROW_HEIGHT;
+	host[TOOL_ROW_BODY_OFFSET_KEY] = bodyOffset;
+	const body = withToolRowArrow(host, originalRender.call(host, width), {
+		styler: deps.styler,
+		bodyOffset,
+	});
+	return appendActivityTail([summaryLine, ...body], { group, deps, width });
 }
 
 /**
  * 包装工具行的 handleMouse。
  *
- * 三种情况归我们处理，其余透传给 Pi：
- * - 工具行箭头所在那一行：左键切换 Pi 自己的输出展开；
- * - 组头那两行（含上方空行）：左键展开/收起整个组；
- * - 展开的组里，组头下面的正文：坐标减掉组头高度再透传，否则点哪都差两行。
+ * 四种命中区，其余透传给 Pi：
+ * - 组头块（空行 + 组头行）：展开/收起整个组；
+ * - 成员命令的摘要行：整行可点，展开/收起这条命令的原文；
+ * - 工具行箭头所在那一行：切换 Pi 自己的输出展开；
+ * - 已铺开的原文：坐标减掉组头与摘要行的高度再透传，否则点哪都差几行。
  */
 function buildToolMessageHandleMouse(
 	deps: ComponentPatchDeps,
@@ -759,8 +919,25 @@ function buildToolMessageHandleMouse(
 ): (this: ToolMessageHost, event: TuiMouseEvent) => unknown {
 	return function patchedToolMessageHandleMouse(this: ToolMessageHost, event: TuiMouseEvent) {
 		const isLeftClick = event.type === "click" && event.button === "left";
-		const arrowRow = this[TOOL_ROW_ARROW_ROW_KEY];
 
+		// 组头块优先：展开的组里，首条成员的摘要行在组头下面，两者同属一个组件。
+		const headerHeight = this[TOOL_ROW_HEADER_HEIGHT_KEY] ?? NO_BODY_OFFSET;
+		if (isLeftClick && headerHeight > NO_BODY_OFFSET && event.y < headerHeight) {
+			return toggleActionGroupAt(this, deps, isLeftClick);
+		}
+
+		const summaryRow = this[TOOL_ROW_SUMMARY_ROW_KEY];
+		if (summaryRow !== undefined) {
+			const revealed = this[TOOL_ROW_REVEALED_KEY] === true;
+			// 原文没铺开时整块都是摘要行（行高只有 1）；铺开后只有第 0 行是开关。
+			const onSummary = revealed ? event.y === summaryRow : event.y >= summaryRow;
+			if (isLeftClick && onSummary) {
+				setToolRowRevealed(this, !revealed, deps);
+				return { handled: true };
+			}
+		}
+
+		const arrowRow = this[TOOL_ROW_ARROW_ROW_KEY];
 		if (isLeftClick && arrowRow !== undefined && event.y === arrowRow && this.setExpanded) {
 			this.setExpanded(!this.expanded);
 			return { handled: true };
@@ -768,10 +945,6 @@ function buildToolMessageHandleMouse(
 
 		const bodyOffset = this[TOOL_ROW_BODY_OFFSET_KEY] ?? NO_BODY_OFFSET;
 		if (bodyOffset > NO_BODY_OFFSET) {
-			// 组头块：它上面的空行也算命中区，点起来更宽松。
-			if (event.y < bodyOffset) {
-				return toggleActionGroupAt(this, deps, isLeftClick);
-			}
 			return originalHandleMouse.call(this, {
 				...event,
 				y: event.y - bodyOffset,
@@ -784,6 +957,12 @@ function buildToolMessageHandleMouse(
 		}
 		return originalHandleMouse.call(this, event);
 	};
+}
+
+/** 切换一条成员命令的原文展开状态并请求重绘。 */
+function setToolRowRevealed(host: ToolMessageHost, revealed: boolean, deps: ComponentPatchDeps): void {
+	host[TOOL_ROW_REVEALED_KEY] = revealed;
+	deps.requestRender();
 }
 
 /**

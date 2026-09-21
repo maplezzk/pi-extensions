@@ -35,6 +35,9 @@
  * - 注册 refreshModels：打开 /model 触发在线刷新时重新发现；
  *   离线初始化（allowNetwork=false）返回上次成功列表（含缓存），尚无成功记录时抛错，
  *   以免空列表清掉 models.json 手写 models。
+ * - 发现模型默认声明 thinkingLevelMap { xhigh: "xhigh", max: "max" }，让 xhigh/max 出现在
+ *   /thinking；标准档位缺省沿用 pi 的 provider 默认映射。这是对所有发现模型一刀切的默认值，
+ *   上游不认这些值时用 models.json 的 provider.modelOverrides 按 model.id 覆盖。
  * - 发现请求的 apiKey 解析仅支持字面量与 $ENV_VAR/${ENV_VAR} 插值；
  *   "!command" 形式的 apiKey 跳过发现（显式警告），pi 发起聊天请求时仍由 pi 自身解析。
  * - /config:model-discovery 命令对 models.json 的修改立即生效（registerProvider 运行时可直接调用）；
@@ -48,7 +51,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { NOTICE_TAG_COLOR, createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -57,8 +60,8 @@ const DISCOVERY_MARKER = "discoverModels";
 const LOG_PREFIX = "[model-discovery]";
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
 const NOTICE_TAG = "models";
-/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
-const NOTICE_COLOR: NoticeColor = "accent";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
 /** 本扩展的提示来源。 */
 const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 const API_CHOICES = ["openai-completions", "anthropic-messages", "openai-responses", "google-generative-ai"] as const;
@@ -288,7 +291,7 @@ function resolveEnvValue(raw: string): { value: string | null; error: string | n
 	return { value, error: null };
 }
 
-function buildModel(
+export function buildModel(
 	id: string,
 	name: string | undefined,
 	contextWindow: number | undefined,
@@ -299,6 +302,9 @@ function buildModel(
 		id,
 		name: name ?? id,
 		reasoning: true,
+		// xhigh/max 必须给非 null 值才会出现在 /thinking（缺省键等同不支持）；
+		// 标准档位保持缺省，仍走 pi 的 provider 默认映射，语义不变。
+		thinkingLevelMap: { xhigh: "xhigh", max: "max" },
 		input: ["text", "image"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: contextWindow ?? 1_000_000,

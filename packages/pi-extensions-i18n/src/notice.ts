@@ -6,8 +6,13 @@
  *
  * 做法：提示改走 Pi 的自定义条目（appendEntry + registerEntryRenderer），
  * 渲染成和用户消息同款的实心底色块（主题色 customMessageBg），左侧标注来源扩展的短标签。
- * 细节行（details）默认收起：Ctrl+O 展开，全屏模式下也可以直接点这条提示块切换展开。
+ * 细节行（details）默认收起：行尾用方向箭头（收起态 `▶`、展开态 `▼`）表示这里能展开，
+ * 全屏模式下直接点这条提示块即可切换。
  * 这些条目不进入 LLM 上下文，只影响会话区外观。
+ *
+ * 为什么用箭头而不是「Ctrl+O 展开」：全屏模式与常规模式在渲染时区分不出来（Pi 没把
+ * tuiMode 交给条目渲染器），而箭头在两种模式下都成立 —— 它说的是「这里有东西可以展开」，
+ * 不承诺具体按键；`Ctrl+O` 这个键 Pi 自己的工具行一直在教。
  *
  * 本模块只用结构化类型，不直接依赖 Pi 的实现，便于独立测试。
  */
@@ -35,11 +40,20 @@ const NOTICE_COLORS = [
 /** 提示用到的主题色名。 */
 export type NoticeColor = (typeof NOTICE_COLORS)[number];
 
-/** 一个扩展的提示来源：短标签 + 固定颜色。 */
+/**
+ * 提示来源标签的统一颜色。
+ *
+ * 标签只负责标出来源（文本已经说清了是谁），不负责区分来源 —— 9 个色槽分给
+ * 16 个包必然撞车，一旦撞车颜色就不再有任何定位价值，反而让人以为两个包是同一个。
+ * 参考 Codex / Claude Code / Gemini CLI / lazygit / k9s 等 TUI：没有谁用颜色标注来源。
+ */
+export const NOTICE_TAG_COLOR: NoticeColor = "muted";
+
+/** 一个扩展的提示来源：短标签 + 统一颜色。 */
 export interface NoticeSource {
   /** 展示在消息前的短标签，例如 "naming"。建议用包名去掉 pi- 前缀。 */
   tag: string;
-  /** 该扩展的固定标签颜色，用来在会话里快速定位来源。 */
+  /** 标签颜色；所有扩展统一用 NOTICE_TAG_COLOR，来源靠 tag 文本区分。 */
   color: NoticeColor;
 }
 
@@ -86,14 +100,19 @@ export interface NoticeSendOptions {
 /** 只有 TUI 模式能安全地看到 ANSI 颜色。 */
 export const NOTICE_COLOR_MODE = "tui";
 
+/** 来源标签与提示正文之间的分隔符。 */
+const TAG_SEPARATOR = " ";
+/** 收起态的展开箭头：实心右三角，与清爽模式的折叠头用同一个字形。 */
+const COLLAPSED_ARROW = "▶";
+/** 展开态的收起箭头。 */
+const EXPANDED_ARROW = "▼";
+/** 正文与末尾箭头之间的间距。 */
+const HINT_SEPARATOR = " ";
 /** 提示条目的类型名；所有扩展共用一种，渲染器只需注册一次。 */
 export const NOTICE_ENTRY_TYPE = "pi-extensions-notice";
 
 /** 提示块的底色主题色：和 Pi 的扩展消息同款，视觉效果接近输入框。 */
 export const NOTICE_BACKGROUND_COLOR = "customMessageBg";
-
-/** 标签与消息之间的分隔符。 */
-const TAG_SEPARATOR = " ";
 
 /** 落进会话的提示条目数据；渲染器只依赖这些字段，重启后也能原样重建。 */
 export interface NoticeEntryData {
@@ -253,13 +272,25 @@ function resolveMouseRegion(): NoticeMouseRegion | undefined {
   return typeof candidate === "function" ? (candidate as NoticeMouseRegion) : undefined;
 }
 
-/** 构造带底色的提示块正文；展开时追加细节行。 */
+/**
+ * 组装行尾的展开箭头；没有细节行时返回空串。
+ *
+ * 用强调色而不是正文色：正文可能是 dim（未判定类结论），箭头得看得出是个可点的标记，
+ * 不能被静默成正文的一部分。
+ */
+function buildExpandArrow(data: NoticeEntryData, theme: NoticeEntryTheme, expanded: boolean): string {
+  if (data.details === undefined) return "";
+  return `${HINT_SEPARATOR}${theme.fg("accent", expanded ? EXPANDED_ARROW : COLLAPSED_ARROW)}`;
+}
+
+/** 构造带底色的提示块正文；有细节行时在行尾标出展开方向，展开后追加细节行。 */
 function buildNoticeBox(input: unknown, theme: NoticeEntryTheme, expanded: boolean): piTui.Component {
   const data = readNoticeEntryData(input);
   const label = theme.fg(data.color, `[${data.tag}]`);
   const body = theme.fg(noticeBodyColor(data.level, data.textColor), data.message);
+  const arrow = buildExpandArrow(data, theme, expanded);
   const box = new piTui.Box(NOTICE_PADDING_X, NOTICE_PADDING_Y, (text) => theme.bg(NOTICE_BACKGROUND_COLOR, text));
-  box.addChild(new piTui.Text(`${label}${TAG_SEPARATOR}${body}`, 0, 0));
+  box.addChild(new piTui.Text(`${label}${TAG_SEPARATOR}${body}${arrow}`, 0, 0));
   if (expanded && data.details !== undefined) {
     for (const line of data.details) {
       box.addChild(new piTui.Text(theme.fg("dim", line), 0, 0));
@@ -320,8 +351,8 @@ class NoticeEntryBody implements piTui.Component {
 /**
  * 把一个提示条目渲染成带底色的消息块。
  *
- * 默认只占一行（上下不加空白），避免提示刷屏；细节行只在展开时追加：
- * 键盘用 Ctrl+O（全局展开），全屏模式下还可以直接点这条提示块切换它自己的展开态。
+ * 默认只占一行（上下不加空白），避免提示刷屏；有细节行时行尾带展开箭头，
+ * 细节行只在展开时追加：全屏模式下直接点这条提示块切换，常规模式用 Ctrl+O。
  * 这里直接构造 pi-tui 的 Box/Text：带底色消息块的排版（整块铺底色、按宽度换行）
  * 由 pi-tui 提供，Pi 自带的扩展消息渲染也是同样写法，属于有意为之的绑定。
  */

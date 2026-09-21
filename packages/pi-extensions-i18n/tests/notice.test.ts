@@ -8,17 +8,32 @@ import {
   notifyWithSource,
   renderNoticeEntry,
   resetNoticeRenderer,
+  NOTICE_TAG_COLOR,
   type NoticeApi,
+  type NoticeColor,
   type NoticeContext,
   type NoticeEntryTheme,
   type NoticeSource,
 } from "../src/index.ts";
 
+/** 合法的主题色名；与 notice.ts 的 NOTICE_COLORS 同步，用来验证常量是合法色槽。 */
+const NOTICE_COLORS_FOR_TEST: readonly NoticeColor[] = [
+  "accent",
+  "success",
+  "warning",
+  "error",
+  "muted",
+  "dim",
+  "text",
+  "customMessageText",
+  "toolTitle",
+];
+
 /** 测试用来源标签。 */
 const SOURCE: NoticeSource = { tag: "naming", color: "accent" };
 
-/** 渲染宽度：足够宽，保证提示不被折行，断言只看内容。 */
-const RENDER_WIDTH = 60;
+/** 渲染宽度：足够宽，保证提示不被折行，断言只看内容（假主题的颜色标记也会被算进可见宽度）。 */
+const RENDER_WIDTH = 120;
 
 /** 测试用主题：把颜色名包成可断言的标记，不依赖真实 ANSI。 */
 const THEME = {
@@ -168,6 +183,30 @@ test("warning/error 级别用黄色/红色正文，语义色覆盖优先", () =>
   assert.match(overridden, /<dim>已打断，未判定<\/>/);
 });
 
+test("有细节行的提示在行尾带展开箭头，展开后箭头反向", () => {
+  /** 一条判定结论：正文一行，理由放在细节里。 */
+  const entry = { tag: "auto-goal", color: "warning", level: "info", message: "⚖️ 判定可停止", details: ["理由：已完成"] };
+  const collapsed = renderNoticeLines(entry);
+  const expanded = renderNoticeLines(entry, true);
+
+  // 收起用右三角、展开用下三角；强调色是为了让箭头不被 dim 正文吃掉。
+  assert.match(collapsed, /<accent>▶<\/\>/);
+  assert.doesNotMatch(collapsed, /▼/);
+  assert.match(expanded, /<accent>▼<\/\>/);
+  assert.doesNotMatch(expanded, /▶/);
+  // 不再写按键提示：两种模式区分不出来，箭头才是两种模式下都成立的说法。
+  assert.doesNotMatch(collapsed, /Ctrl\+O/);
+  // 提示仍然只占一行：加了箭头也不能把会话顶满。
+  assert.equal(renderNoticeEntry({ data: entry }, ENTRY_THEME, false).render(RENDER_WIDTH).length, 1);
+});
+
+test("没有细节行的提示不带展开箭头，不会指一个点了没反应的入口", () => {
+  const lines = renderNoticeLines({ tag: "naming", color: "accent", level: "info", message: "已重命名" });
+
+  assert.doesNotMatch(lines, /[▶▼]/);
+  assert.match(lines, /<customMessageText>已重命名<\/\>/);
+});
+
 test("提示块不留上下空白，细节行只在展开时显示", () => {
   /** 一次判定结论的细节行：收起时不应出现，展开时应逐行追加。 */
   const details = ["理由：用户只是打招呼", "判定模型：llm-proxy/LOW"];
@@ -312,15 +351,23 @@ test("条目写入失败时退回 ui.notify，而不是抛给调用方", () => {
   }
 });
 
-test("不同扩展用不同标签，同一扩展颜色固定", () => {
-  const supervisor: NoticeSource = { tag: "supervisor", color: "toolTitle" };
-  const first = formatNotice({ source: SOURCE, message: "x", mode: "tui", theme: THEME });
-  const second = formatNotice({ source: SOURCE, message: "y", mode: "tui", theme: THEME });
+test("不同扩展用不同标签，颜色不参与区分", () => {
+  const supervisor: NoticeSource = { tag: "supervisor", color: NOTICE_TAG_COLOR };
+  const naming: NoticeSource = { tag: "naming", color: NOTICE_TAG_COLOR };
+  const first = formatNotice({ source: naming, message: "x", mode: "tui", theme: THEME });
+  const second = formatNotice({ source: naming, message: "y", mode: "tui", theme: THEME });
   const other = formatNotice({ source: supervisor, message: "x", mode: "tui", theme: THEME });
 
+  // 来源只能靠 tag 文本认出；两个包的颜色完全相同。
   assert.match(first, /\[naming\]/);
   assert.match(other, /\[supervisor\]/);
-  assert.match(first, /<accent>/);
-  assert.match(other, /<toolTitle>/);
+  assert.match(first, /<muted>/);
+  assert.match(other, /<muted>/);
   assert.equal(first.replace("x", ""), second.replace("y", ""));
+});
+
+test("提示来源标签统一用 muted，不靠颜色区分来源", () => {
+  // 9 个色槽分给 16 个包必然撞车，撞车后颜色反而误导；所以统一弱化色，靠 tag 文本区分。
+  assert.equal(NOTICE_TAG_COLOR, "muted");
+  assert.ok(NOTICE_COLORS_FOR_TEST.includes(NOTICE_TAG_COLOR));
 });

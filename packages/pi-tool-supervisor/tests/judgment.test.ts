@@ -20,7 +20,7 @@ process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
 
 /**
  * 刻意照抄用户真实规则文件的写法：front matter、元指令段落、编号条款、
- * 条款开头的 severity 标注、粗体标题、缩进续行。用来证明规则文件零改动可用。
+ * 条款开头的历史级别标注、粗体标题、缩进续行。用来证明规则文件零改动可用。
  */
 const RULE_FILE = `---
 name: javascript-typescript
@@ -96,7 +96,7 @@ test("编号条款直接变成规则，条款正文既是判据也是修复提�
 test("元指令段落里的编号不参与判断", async () => {
   const judgments = await compileAll(RULE_FILE);
 
-  // 「归属与 severity」里那 3 条讲的是怎么报告，不能变成代码规则。
+  // 「归属…」段落里的编号讲的是怎么报告，不能变成代码规则。
   for (const judgment of judgments) {
     assert.doesNotMatch(judgment.criterion, /ruleGroup 只能填/);
     assert.doesNotMatch(judgment.criterion, /禁止越界/);
@@ -104,7 +104,7 @@ test("元指令段落里的编号不参与判断", async () => {
   }
 });
 
-test("条款开头的 severity 标注被剔掉：本后端不分级", async () => {
+test("条款开头的历史级别标注被剔掉：本后端没有分级", async () => {
   const judgments = await compileAll(RULE_FILE);
 
   // [error] 和 [warning] 都不该出现在判据里，否则和行为矛盾。
@@ -152,6 +152,32 @@ test("条款编号重复时去重并警告", async () => {
   assert.deepEqual(compiled.judgments.map((judgment) => judgment.id), ["rule_1", "rule_1_2"]);
   assert.equal(compiled.warnings.length, 1);
   assert.match(compiled.warnings[0] ?? "", /rule_1/);
+});
+
+test("多个规则文件合并时不重号，也不报重复编号警告", async () => {
+  // 条款编号是文件内序号，每个文件都从 1 开始；合并成一次审查后跨文件必然重号。
+  const rules = await loadRules([
+    { name: "a.md", content: "# 规则 A\n\n## 检查项\n\n1. **禁止静默吞异常**：捕获后静默继续。\n" },
+    { name: "b.md", content: "# 规则 B\n\n## 检查项\n\n1. **禁止魔法值**：提取为常量。\n2. **最多 3 个参数**：改为参数对象。\n" },
+  ]);
+  const compiled = compileJudgments(rules);
+
+  assert.deepEqual(compiled.warnings, []);
+  assert.deepEqual(compiled.judgments.map((judgment) => judgment.id), ["f1_rule_1", "f2_rule_1", "f2_rule_2"]);
+  // 每个判断仍然指向自己的规则文件，前缀只解决 id 重号。
+  assert.deepEqual(compiled.judgments.map((judgment) => judgment.rulesFile.split("/").pop()), ["a.md", "b.md", "b.md"]);
+});
+
+test("同一个文件里编号重复仍然警告", async () => {
+  const rules = await loadRules([
+    { name: "a.md", content: "# 规则 A\n\n## 检查项\n\n1. **禁止静默吞异常**：捕获后静默继续。\n" },
+    { name: "b.md", content: "# 规则 B\n\n## 检查项\n\n1. **禁止魔法值**：提取为常量。\n\n1. **最多 3 个参数**：改为参数对象。\n" },
+  ]);
+  const compiled = compileJudgments(rules);
+
+  assert.deepEqual(compiled.judgments.map((judgment) => judgment.id), ["f1_rule_1", "f2_rule_1", "f2_rule_1_2"]);
+  assert.equal(compiled.warnings.length, 1);
+  assert.match(compiled.warnings[0] ?? "", /b\.md/);
 });
 
 test("阈值决定命中；noul 低于阈值和缺答案是两回事", async () => {
@@ -260,8 +286,6 @@ test("命中的条款各产生一条 finding，规则名和行号都独立", asy
     "必须遵守 1 禁止魔法值",
     "必须遵守 3 禁止 any",
   ]);
-  // 本后端不分级：命中即阻断。
-  assert.deepEqual(findings.map((finding) => finding.severity), ["error", "error"]);
   assert.equal(findings[0]?.line, 4);
   assert.equal(findings[1]?.line, undefined);
   assert.match(findings[0]?.message ?? "", /命中代码：const raw = \(config as any\).timeout;/);
