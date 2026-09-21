@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-clean-mode-v0.2.0...pi-clean-mode-v0.3.0) (2026-09-21)
+
+
+### Features
+
+* clean mode 展开动作组时每条命令一行，点开才看原文 ([a456d96](https://github.com/maplezzk/pi-extensions/commit/a456d96ff78103fb1f647db6a4b865562b358ceb))
+* **clean-mode:** 展开动作组时每条命令一行，点开才看原文 ([c9b9793](https://github.com/maplezzk/pi-extensions/commit/c9b97934e5842fcc36ec840cc875de3f5603f61a))
+* **clean-mode:** 折叠头加 [clean] 来源前缀 ([1a75f6b](https://github.com/maplezzk/pi-extensions/commit/1a75f6b8e6d7239a15d7e8d228a2b24b9466ce10))
+* 块头统一 [xxx] 来源前缀，展开方向统一用箭头 ([8cae968](https://github.com/maplezzk/pi-extensions/commit/8cae9688341fa2f47de1014b17ca606acac98694))
+
+
+### Bug Fixes
+
+* **clean-mode:** 占位摘要不再锁死组头文案，参数到齐后换成真摘要 ([e7f37a4](https://github.com/maplezzk/pi-extensions/commit/e7f37a4d602e91bab52954abf43749142c50295c))
+* **clean-mode:** 左侧轨道只留组头一行，运行级不再画竖条 ([613f063](https://github.com/maplezzk/pi-extensions/commit/613f06365c13cb88a34c83b68d2c38acc62c8a8a))
+* **clean-mode:** 左侧轨道只留组头一行，运行级不再画竖条 ([ef6d889](https://github.com/maplezzk/pi-extensions/commit/ef6d8896a9b8734a18a05a5db9753081cf31d967))
+* **clean-mode:** 扩展消息面板（工作流结果等）同样接上运行轨道 ([e968e3a](https://github.com/maplezzk/pi-extensions/commit/e968e3ae10df86028071f8762aafd85b70ee7403))
+* **clean-mode:** 流式登记先不把标签当摘要，等参数到齐再补 ([003b4a4](https://github.com/maplezzk/pi-extensions/commit/003b4a44d88e3cf8542d550f71be77b629c8557a))
+* **clean-mode:** 流式登记只给标签占位，真摘要等参数到齐再换上 ([bde0f34](https://github.com/maplezzk/pi-extensions/commit/bde0f347071d89c3f67615ac4b0212bfdb3f14ff))
+* **clean-mode:** 组头上面那行改成细竖条，组头与成员摘要改弱化色 ([94c3b98](https://github.com/maplezzk/pi-extensions/commit/94c3b981805c09ac7c2704b4fec73b318abfb111))
+* **clean-mode:** 组头上面那行改成细竖条，组头与成员摘要改弱化色 ([d5cfcf4](https://github.com/maplezzk/pi-extensions/commit/d5cfcf4a48b3ba00d8569cc78e020c920ec2d391))
+* **clean-mode:** 轨道归属按条目对象记，组件被重建后不翻面 ([c439b03](https://github.com/maplezzk/pi-extensions/commit/c439b03b537c4ca7cf5ffddb26a28ef73de24ca1))
+* **clean-mode:** 运行中实时区不再跳：去顶部图标、尾注移位、整轮接管内置提示、流式登记工具行 ([0948cb6](https://github.com/maplezzk/pi-extensions/commit/0948cb6589b95c0dd8737f4f2b3e0fb4c538d516))
+* **clean-mode:** 运行中实时区不再跳：去顶部转动图标、尾注改挂子项行、登记赶在渲染前、内置提示整轮接管 ([c0a64fc](https://github.com/maplezzk/pi-extensions/commit/c0a64fcf4f9f840cc97c24495201e5a45fc12a84))
+* **clean-mode:** 运行中的提示块接上左侧轨道，不再切断结构 ([1a060da](https://github.com/maplezzk/pi-extensions/commit/1a060dac7b4cb800a79eeaa0a46f8cebb3ee6eba))
+* **clean-mode:** 运行期间的扩展块去掉自带的前导空行 ([84ff2b5](https://github.com/maplezzk/pi-extensions/commit/84ff2b507bc3cbf8b4d5d6cadba3b2a22432c78d))
+* **clean-mode:** 运行期间的扩展块去掉自带的前导空行 ([aad6432](https://github.com/maplezzk/pi-extensions/commit/aad6432be113de8f0a39db3ba0eca50247521cf3))
+* **clean-mode:** 运行期间的扩展条目（含工作流面板）一并接上轨道 ([72100aa](https://github.com/maplezzk/pi-extensions/commit/72100aa2f375371fae7f414665c3420530ec384c))
+* **clean-mode:** 运行期间的扩展条目与消息面板接上轨道，不再切断结构 ([6858f00](https://github.com/maplezzk/pi-extensions/commit/6858f00e65ada60c8f9066c76b6ec6a60221c335))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [0.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-clean-mode-v0.1.0...pi-clean-mode-v0.2.0) (2026-09-19)
 
 

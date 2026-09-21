@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.2](https://github.com/maplezzk/pi-extensions/compare/pi-naming-v0.5.1...pi-naming-v0.5.2) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+    * pi-terminal-mux bumped from ^0.6.4 to ^0.6.5
+  * devDependencies
+    * pi-terminal-mux bumped from ^0.6.4 to ^0.6.5
+
 ## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-naming-v0.5.0...pi-naming-v0.5.1) (2026-09-19)
 
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.1](https://github.com/maplezzk/pi-extensions/compare/pi-safety-guards-v1.0.0...pi-safety-guards-v1.0.1) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
 ## [1.0.0](https://github.com/maplezzk/pi-extensions/compare/pi-safety-guards-v0.4.0...pi-safety-guards-v1.0.0) (2026-09-19)
 
 
