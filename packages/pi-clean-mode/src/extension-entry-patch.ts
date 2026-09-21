@@ -138,7 +138,7 @@ export function readRailOwnershipKey(host: (ExtensionEntryHost | ExtensionMessag
  * 运行期间扩展写入的条目（通知提示、工作流结果面板、审计卡片）都铺满整宽，
  * 它们会把左侧轨道从中间切断；接上 `│ ` 前缀，竖条才不会断。
  *
- * 两种情况不加：总开关关闭（根本没有轨道可接）；收起态（轨道行本身不显示，加一条
+ * 两种情况不加：总开关关闭（根本没有轨道可接）；收起态（组头本身不显示，加一条
  * 孤立竖条反而多出个没头没尾的结构字符）。
  */
 export function shouldRailExtensionEntry(input: ExtensionEntryRailInput): boolean {

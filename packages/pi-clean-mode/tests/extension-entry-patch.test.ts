@@ -370,7 +370,7 @@ test("运行中的消息组件（工作流结果面板）也带上轨道前缀�
 		const message = new FakeMessageComponent();
 		assert.deepEqual(message.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
 
-		// 收起态：轨道行不显示，消息块也不该被条目折叠收走。
+		// 收起态：组头不显示，消息块也不该被条目折叠收走。
 		box.state = stateWith({ collapsed: true, runSettled: false });
 		assert.deepEqual(message.render(RENDER_WIDTH), [`${RAIL_PREFIX}w=${RENDER_WIDTH - RAIL_WIDTH}`]);
 	});
@@ -390,7 +390,7 @@ test("轨道判定：只有运行中（未收起）的条目才加轨道", () =>
 	assert.equal(
 		shouldRailExtensionEntry({ state: stateWith({ collapsed: true }), config }),
 		false,
-		"收起态轨道行本身不显示",
+		"收起态组头本身不显示",
 	);
 	assert.equal(
 		shouldRailExtensionEntry({ state: stateWith({ runSettled: true }), config }),

@@ -9,7 +9,7 @@ One user prompt usually runs the agent through many tool calls and several narra
 ```
 [user message]
 
-▌ Took 4m 26s ▶
+  用时 4m 26s ▶
 The cause was that today's restock used stock-sales from two days ago, so demand was underestimated.
 ```
 
@@ -19,7 +19,7 @@ Expanded, the work rows come back and the header shows `▼` instead of `▶`.
 
 | Level | Row | Behaviour |
 |---|---|---|
-| Run | `▌ Took 4m 26s ▶` | Hides the whole run's work; only the final answer stays |
+| Run | `  用时 4m 26s ▶` | Hides the whole run's work; only the final answer stays |
 | Action group | `│ Explored · 3 steps ▶` | Hides a turn's tool calls behind one summary row |
 | Member row | `├─ Ran npm test ▶` | An expanded group lists one command per row; click a row to show that command's original output |
 | Tool row | `$ find . -name '*.ts'` | Pi's own per-row output expansion (`ctrl+o`, or click the result) |
@@ -29,12 +29,12 @@ Group boundaries follow **narration**: an assistant message with text starts a n
 Groups with a single member are never collapsed — the tool row itself is shown, so a lone command still reads as itself.
 
 ```
-▌ Took 11s ▼
+  用时 11s ▼
 I'll check the restock data first.
 
 │ 探索 · 3 steps ▶                ← collapsed group
 
-▌ Took 11s ▼
+  用时 11s ▼
 I'll check the restock data first.
 
 │ 探索 · 3 steps ▼                ← expanded group: one command per row
@@ -80,17 +80,16 @@ Pi's built-in `/settings` only manages core options and has no extension registr
 - the selected row shows its description, and the current value is on the right
 - each change is written to the config file immediately; a failed write shows an error notice instead of silently keeping the value only in memory
 
-Mouse support needs `pi --tui-mode fullscreen`; in regular mode the terminal owns mouse input and scrolling, so Pi never receives the click. The clickable area is the header line (the `▌ Working · Ns` state line while a run is active) plus the blank line above it. Clicking the answer body does nothing.
+Mouse support needs `pi --tui-mode fullscreen`; in regular mode the terminal owns mouse input and scrolling, so Pi never receives the click. The clickable area is the header line (the "Working · Ns" state line while a run is active) plus the blank line above it. Clicking the answer body does nothing.
 
-If you toggle the state yourself during a run, that run is not collapsed automatically at the end — your choice is respected until the next run starts. Collapsing by hand folds the work away only: the top `▌ Working · Ns` state line keeps showing until the run settles and becomes `▌ Took …`.
+If you toggle the state yourself during a run, that run is not collapsed automatically at the end — your choice is respected until the next run starts. Collapsing by hand folds the work away only: the top `Working · Ns` state line keeps showing until the run settles and becomes `Took …`.
 
 ## What a collapsed run looks like
 
-Each level gets its own treatment so the hierarchy reads at a glance and never blends into the prose. The hierarchy comes from a **left rail plus text weight**, not from backgrounds — all three rails land in the same column and read as one continuous "folded content" track:
+Each level gets its own treatment so the hierarchy reads at a glance and never blends into the prose. The hierarchy comes from **position, text weight and colour tiers**, not from backgrounds. The left rail is a single track: the light `│` drawn by action groups. The run header draws no rail at all — a half-block `▌` and the centred `│` are different glyph families and stack half a cell apart, so the joint reads worse than no rail; it marks itself by sitting at the very top of the run with bold, primary-coloured text:
 
 ```
-▌ 用时 21s · 5 步 ▼
-│
+  用时 21s · 5 步 ▼
 │ 探索 · 3 步 ▼
 ├─ 运行命令 ls -la ▶
 └─ 按类别：目录、视频、Excel、其他。
@@ -98,17 +97,17 @@ Each level gets its own treatment so the hierarchy reads at a glance and never b
 
 | Level | Treatment | Meaning |
 |---|---|---|
-| Run header | heavy rail `▌` + **bold** primary text + chevron right after the text | a whole run is folded here |
-| Action group header | light rail `│` + normal weight + muted colour (including the rail row above it) + chevron right after it | one action, or a group of them, is folded here |
+| Run header | two-column indent (no rail) + **bold** primary text + chevron right after the text | a whole run is folded here |
+| Action group header | light rail `│` + normal weight + muted colour + chevron right after it (the row above it is left blank) | one action, or a group of them, is folded here |
 | Prose and tool rows | no rail at all, Pi's own look | content that is not folded |
 
-The row above a group header draws the light rail too instead of being left blank: a blank row would break the track for a full line, and "one continuous track" would stop reading. That rail row belongs to the same click target as the header, so clicking it still expands or collapses the group. The group header text and, once expanded, each member command's summary text use the muted colour: they announce that something is there, they are not prose, and they should not outshout it.
+The row above a group header is left blank and draws no rail: that row would hold nothing but a short vertical line with no text next to it, which reads as a stray stroke hovering above the header (it was drawn this way once). The blank row still belongs to the same click target as the header, so clicking it still expands or collapses the group. The group header text and, once expanded, each member command's summary text use the muted colour: they announce that something is there, they are not prose, and they should not outshout it.
 
-Blocks written by extensions during a run (pi-extensions-i18n notices, workflow result panels, `pi-distill` audit cards) follow the track as well: unless the run is collapsed, every one of their lines gets the same light rail prefix and the content shifts right by two columns, so a full-width block no longer cuts the track in half. Collapsed runs and moments outside a run get no rail — the rail rows are not on screen then, and a lone structural character would read as a stray fragment.
+Blocks written by extensions during a run (pi-extensions-i18n notices, workflow result panels, `pi-distill` audit cards) follow the track as well: unless the run is collapsed, every one of their lines gets the same light rail prefix and the content shifts right by two columns, so a full-width block no longer cuts the track in half. Collapsed runs and moments outside a run get no rail — the group header is not on screen then, and a lone structural character would read as a stray fragment.
 
 Putting a block on the rail also drops the blank line it carries at the top (Pi's `CustomEntryComponent` and `CustomMessageComponent` each prepend a `Spacer(1)`): during a run the transcript is a one-row-per-record list, so that blank reads as a hole in it — everything above and below is packed tight, yet each extension block pushes an empty row in between. Dropping it puts the block flush against its neighbours, one row per notice. Blocks outside a run keep Pi's own spacing.
 
-None of them carry a source prefix: the headers are drawn every run in a fixed position, so a prefix is pure noise and would push the text into a column different from the detail rows. The heavy rail is itself the marker that says clean mode drew this.
+None of them carry a source prefix: the headers are drawn every run in a fixed position, so a prefix is pure noise and would push the text into a column different from the detail rows. The bold primary-coloured line at the very top of the run is itself the marker that says clean mode drew this.
 
 A single action uses its own summary as the label (`Run Command ls -la`); two or more are summarised as `Explored · N steps`. Every folded row and every visible tool row ends its first line with `▶` / `▼`, sitting right after the text: state and "clickable" in one glance, with no key hint to learn.
 
@@ -137,7 +136,7 @@ Hidden rows render zero lines, so the duration header lands directly above the f
 
 The transcript stays expanded while the agent is running — otherwise a collapsed run would show nothing until the answer arrives. When the run settles (`agent_settled`) the work collapses automatically. Automatic collapsing is suppressed for the rest of the run if you toggled the state yourself.
 
-Collapsing by hand while the run is still going (mouse click on the header, `f2`, or `/clean`) folds the work and the activity block away but **keeps the `▌ Working · Ns` state line at the top of the run**: it is the only thing that says the agent is still running, and with everything else folded away the screen would otherwise look dead. The `▌ Took …` header needs a duration, which is only written when the run settles; until then that same slot holds the running state line.
+Collapsing by hand while the run is still going (mouse click on the header, `f2`, or `/clean`) folds the work and the activity block away but **keeps the `Working · Ns` state line at the top of the run**: it is the only thing that says the agent is still running, and with everything else folded away the screen would otherwise look dead. The `Took …` header needs a duration, which is only written when the run settles; until then that same slot holds the running state line.
 
 ## Resumed sessions
 
@@ -163,7 +162,7 @@ Config file: `<pi agent dir>/extensions/pi-clean-mode/config.json`. See `config.
 |---|---|
 | `enabled` | Master switch. When off, every patch passes the original render through untouched. |
 | `autoExpandWhileRunning` | Expand while running, then collapse when the run settles. |
-| `showRunHeader` | Show the `▌ Took …` header at the top of the run. |
+| `showRunHeader` | Show the `Took …` header at the top of the run. |
 | `enableActionGroups` | Collapse a turn's multiple tool calls into one group header row. |
 | `showActivityArea` | Show the live activity block that follows the current action group. |
 | `activityRows` | Activity area height, 1-20 (default 4). |
@@ -183,8 +182,7 @@ While the agent runs, the layout splits in two: **the very top only answers "how
 
 ```
 user: help me fix xxx
-  ▌ Working · 42s                     ← top: run-level state + time (a heavy rail, not a band)
-  │                                   ← rail row: the row above a group header keeps the track unbroken
+  处理中 · 42s                    ← top: run-level state + time (two-column indent, no rail)
   │ Explored · 5 steps ▶              ← current group header: step count (member rows hidden while collapsed)
   ├─ ◐ Thinking  tracing the token expiry path…   ← block: thinking, a sibling of the command rows
   └─ ⠋ Run Command npm test · read 4 · search 3   ← block: the action running now + this run's counters
@@ -194,7 +192,6 @@ user: help me fix xxx
 With the group expanded the same list reads as commands, and the thinking row still closes it:
 
 ```
-  │
   │ Explored · 5 steps ▼
   ├─ Read src/index.ts ▶
   ├─ Ran ls -la ▶
@@ -202,11 +199,11 @@ With the group expanded the same list reads as commands, and the thinking row st
   └─ ◐ Thinking  tracing the token expiry path…   ← same level as the commands, at the bottom
 ```
 
-- **Top (run-level state line)**: state plus run-level time only — no counters, no thinking or tool detail, and no spinner: the elapsed time already ticks every second, and a glyph turning every 150ms only adds a second thing that moves up there. While running it reads `▌ Working · 42s`; when the run settles the same slot holds `▌ Took 42s · 3 steps ▶`, so switching state changes the text, not the layout.
+- **Top (run-level state line)**: state plus run-level time only — no counters, no thinking or tool detail, and no spinner: the elapsed time already ticks every second, and a glyph turning every 150ms only adds a second thing that moves up there. While running it reads `Working · 42s`; when the run settles the same slot holds `Took 42s · 3 steps ▶`, so switching state changes the text, not the layout.
 - **Group header**: the leading word follows what the group actually did — when one kind of action is over half the group it names it (`Run Command · 12 steps`), and only a group with no majority falls back to the generic `Explored · N steps`. Counters are not here; they drop to a tail note on the block's last item row.
 - **An action is named once**: with a single member the group header *is* that action's summary (`Run Command npm test ▶`), so the block does not list the action again — it only adds the thinking head and the output tail. A collapsed multi-member header is a summary line without action names, so there the block lists what is running; once the group is expanded the commands are already listed one per row, so the block drops the action name again.
 - **Activity block**: attached below the current group's **last visible row**. With the group expanded that is its last member; with the group collapsed the member rows render zero lines and the group header is the only visible row, so the block follows it. Either way it sits at the bottom of the list instead of hanging in the middle.
-- **The block hangs off the group header with tree lines**: each item starts with `├─` (another item follows) or `└─` (the last one), an output tail sits at the column after the branch, and a continuation whose owner still has siblings gets a `│`. The branch sits in the same column as the two header rails, so the whole thing reads as one track. Indentation alone does not say which row above an item belongs to; dropping the action name (single-member group) recomputes the closing branch, so the thinking row takes over as the last item.
+- **The block hangs off the group header with tree lines**: each item starts with `├─` (another item follows) or `└─` (the last one), an output tail sits at the column after the branch, and a continuation whose owner still has siblings gets a `│`. The branch sits in the same column as the group header rail, so the whole thing reads as one track. Indentation alone does not say which row above an item belongs to; dropping the action name (single-member group) recomputes the closing branch, so the thinking row takes over as the last item.
 - **The thinking row is a sibling of the command rows**: member rows of an expanded group use the same tree prefix, so the thinking row reads as the last item of that list (the last command yields its `└─` to it) instead of hanging under some command's multi-line output.
 
 At any moment, the newest state is at the bottom of what you see. When the run itself is collapsed (tool rows render zero lines) the block is not drawn at all and only the top state line remains — collapsing means folding the process away.
