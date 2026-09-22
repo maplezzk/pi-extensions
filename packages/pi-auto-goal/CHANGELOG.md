@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.2](https://github.com/maplezzk/pi-extensions/compare/pi-auto-goal-v0.6.1...pi-auto-goal-v0.6.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* **auto-goal:** 催促在上下文里只追加不回溯，避免提示缓存全量失效 ([5264b13](https://github.com/maplezzk/pi-extensions/commit/5264b134ce1d60ee1a2da77905ff2993345588f0))
+* 催促在上下文里只追加不回溯，避免提示缓存全量失效 ([a62090b](https://github.com/maplezzk/pi-extensions/commit/a62090bb3ff53dc72f3f69c661ae1ee4ac682c4a))
+
 ## [0.6.1](https://github.com/maplezzk/pi-extensions/compare/pi-auto-goal-v0.6.0...pi-auto-goal-v0.6.1) (2026-09-21)
 
 

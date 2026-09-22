@@ -3,7 +3,6 @@ import { test } from "node:test";
 import type { ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   NUDGE_CUSTOM_TYPE,
-  createNudgeDelivery,
   isNudgeMessage,
   registerNudgeContext,
   triggerSystemNudge,
@@ -16,13 +15,13 @@ type ContextMessage = ContextEvent["messages"][number];
 const NUDGE_TEXT = "【自动监督】你在任务尚未完成时停下了。";
 
 /** 一条本扩展注入的催促消息（会话里的形态）。 */
-function nudgeMessage(): ContextMessage {
+function nudgeMessage(text = NUDGE_TEXT, timestamp = 42): ContextMessage {
   return {
     role: "custom",
     customType: NUDGE_CUSTOM_TYPE,
-    content: NUDGE_TEXT,
+    content: text,
     display: false,
-    timestamp: 42,
+    timestamp,
   } as unknown as ContextMessage;
 }
 
@@ -45,6 +44,11 @@ function runtimeSystemMessage(): ContextMessage {
 /** 用户消息。 */
 function userMessage(text: string): ContextMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 3 } as unknown as ContextMessage;
+}
+
+/** 助手消息。 */
+function assistantMessage(text: string): ContextMessage {
+  return { role: "assistant", content: [{ type: "text", text }], timestamp: 4 } as unknown as ContextMessage;
 }
 
 /** 建一个只记录 context 处理器与 sendMessage 调用的假 Pi。 */
@@ -95,15 +99,11 @@ test("isNudgeMessage 只认本扩展注入的催促消息", () => {
   assert.equal(isNudgeMessage(undefined), false);
 });
 
-test("催促那一轮把催促消息换成同位置的 system 消息", () => {
+test("催促消息换成同位置的 system 消息", () => {
   const { api, runContext } = createApiStub();
-  const delivery = createNudgeDelivery();
-  registerNudgeContext(api, delivery);
+  registerNudgeContext(api);
 
-  const nudge = nudgeMessage();
-  const messages: ContextMessage[] = [runtimeSystemMessage(), userMessage("把命名改掉"), nudge];
-  delivery.active = true;
-
+  const messages: ContextMessage[] = [runtimeSystemMessage(), userMessage("把命名改掉"), nudgeMessage()];
   const next = runContext(messages);
   assert.ok(next);
   // 催促之外的上下文保持原样，催促被替换成 system 消息且位置不变。
@@ -115,48 +115,76 @@ test("催促那一轮把催促消息换成同位置的 system 消息", () => {
   assert.equal(replaced.timestamp, 42);
 });
 
-test("催促轮结束后催促消息不再进入上下文", () => {
+test("历史催促留在原位，不会随着新一轮催促被删掉或复活", () => {
   const { api, runContext } = createApiStub();
-  const delivery = createNudgeDelivery();
-  registerNudgeContext(api, delivery);
+  registerNudgeContext(api);
 
-  delivery.active = true;
-  runContext([runtimeSystemMessage(), nudgeMessage()]);
-  delivery.active = false;
+  const oldNudge = nudgeMessage("【自动监督】上一轮的催促", 10);
+  const newNudge = nudgeMessage("【自动监督】本轮的催促", 99);
+  const messages: ContextMessage[] = [
+    runtimeSystemMessage(),
+    oldNudge,
+    userMessage("干活"),
+    assistantMessage("干完了"),
+    newNudge,
+  ];
 
-  const next = runContext([runtimeSystemMessage(), nudgeMessage(), userMessage("继续")]);
+  const next = runContext(messages);
   assert.ok(next);
-  assert.equal(next.length, 2);
-  assert.equal(next.some(isNudgeMessage), false);
+  // 条数与顺序都不变：两条催促都在原位转成 system 消息。
+  // 早期实现按「这一轮是不是催促轮」决定保留，历史催促会在催促轮被塞回去，
+  // 让整个会话从它的位置起整体位移，请求前缀作废（表现为缓存失效、全量重算）。
+  assert.equal(next.length, messages.length);
+  assert.deepEqual(
+    next.map((message) => (message as { role?: string }).role),
+    ["system", "system", "user", "assistant", "system"],
+  );
+  assert.equal((next[1] as { content?: unknown }).content, "【自动监督】上一轮的催促");
+  assert.equal((next[4] as { content?: unknown }).content, "【自动监督】本轮的催促");
+});
+
+test("转写只追加不回溯：新增催促后旧前缀逐条不变", () => {
+  const { api, runContext } = createApiStub();
+  registerNudgeContext(api);
+
+  const base: ContextMessage[] = [
+    runtimeSystemMessage(),
+    nudgeMessage("【自动监督】老的催促", 10),
+    userMessage("干活"),
+    assistantMessage("干完了"),
+  ];
+  const grown: ContextMessage[] = [...base, nudgeMessage("【自动监督】新的催促", 99)];
+
+  const before = runContext(base);
+  const after = runContext(grown);
+  assert.ok(before);
+  assert.ok(after);
+  // 前缀逐条相同，才能命中提示缓存。
+  assert.deepEqual(after.slice(0, before.length), before);
 });
 
 test("运行时没有 system 消息时不动上下文，退回催促消息本身", () => {
   const { api, runContext } = createApiStub();
-  const delivery = createNudgeDelivery();
-  registerNudgeContext(api, delivery);
+  registerNudgeContext(api);
 
   const messages: ContextMessage[] = [userMessage("把命名改掉"), nudgeMessage()];
-  delivery.active = true;
-
   // 旧运行时会把消息列表里的 system 消息静默丢掉，此时保持原样，模型至少能看到催促。
   assert.equal(runContext(messages), undefined);
 });
 
 test("没有催促消息时钩子完全不介入", () => {
   const { api, runContext } = createApiStub();
-  registerNudgeContext(api, createNudgeDelivery());
+  registerNudgeContext(api);
 
   assert.equal(runContext([runtimeSystemMessage(), userMessage("随便聊聊")]), undefined);
   assert.equal(runContext([runtimeSystemMessage(), foreignMessage()]), undefined);
 });
 
-test("triggerSystemNudge 用不可见自定义消息触发一轮并标记催促", () => {
+test("triggerSystemNudge 用不可见自定义消息触发一轮", () => {
   const { api, sent } = createApiStub();
-  const delivery = createNudgeDelivery();
 
-  triggerSystemNudge(api, delivery, NUDGE_TEXT);
+  triggerSystemNudge(api, NUDGE_TEXT);
 
-  assert.equal(delivery.active, true);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].message.customType, NUDGE_CUSTOM_TYPE);
   assert.equal(messageText(sent[0].message), NUDGE_TEXT);
