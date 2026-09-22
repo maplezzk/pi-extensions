@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.3](https://github.com/maplezzk/pi-extensions/compare/pi-naming-v0.5.2...pi-naming-v0.5.3) (2026-09-22)
+
+
+### Bug Fixes
+
+* 扩展自建模型请求改用共享的 Pi 模型请求抽象 ([d6e817c](https://github.com/maplezzk/pi-extensions/commit/d6e817c33c68330d2a95486c8a7aade80f370123))
+* 扩展自建模型请求改用共享的 Pi 模型请求抽象 ([961f354](https://github.com/maplezzk/pi-extensions/commit/961f354a2c5200edb9417e90c443ede65d305225))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-model-request bumped from ^0.1.0 to ^0.1.1
+    * pi-terminal-mux bumped from ^0.6.5 to ^0.6.6
+  * devDependencies
+    * pi-model-request bumped from ^0.1.0 to ^0.1.1
+    * pi-terminal-mux bumped from ^0.6.5 to ^0.6.6
+
 ## [0.5.2](https://github.com/maplezzk/pi-extensions/compare/pi-naming-v0.5.1...pi-naming-v0.5.2) (2026-09-21)
 
 

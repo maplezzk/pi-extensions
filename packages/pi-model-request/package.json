@@ -1,6 +1,6 @@
 {
   "name": "pi-model-request",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Issue a one-off model request from a pi extension the same way Pi core does: resolve auth, add provider session headers, call the completion",
   "type": "module",
   "main": "./index.ts",

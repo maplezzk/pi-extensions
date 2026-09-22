@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.6](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.6.5...pi-terminal-mux-v0.6.6) (2026-09-22)
+
+
+### Bug Fixes
+
+* **pi-terminal-mux:** never close a shared tab when an orca pane fails to close ([7d9c9ae](https://github.com/maplezzk/pi-extensions/commit/7d9c9aee98d8369d776e7c320d6cd407dbeb6cd9))
+* **pi-terminal-mux:** never close a shared tab when an orca pane fails to close ([092133c](https://github.com/maplezzk/pi-extensions/commit/092133c9ff06c1801c98fa63e67b5badfea3452a))
+
 ## [0.6.5](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.6.4...pi-terminal-mux-v0.6.5) (2026-09-21)
 
 
