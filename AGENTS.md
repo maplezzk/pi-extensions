@@ -9,6 +9,7 @@ pi-extensions/
 ├── packages/
 │   ├── pi-extensions-i18n/      # Shared locale and catalog runtime
 │   ├── pi-extensions-tool-display/ # Tool-display host and shared rendering protocol
+│   ├── pi-model-request/ # Extension-side model requests (auth + provider session headers)
 │   ├── pi-distill/              # Tool-output distillation
 │   ├── pi-tool-supervisor/      # Post-edit file review
 │   ├── pi-terminal-mux/         # Terminal multiplexer abstraction (muxy/cmux/tmux/zellij/wezterm/herdr/otty/orca + headless fallback)
@@ -37,6 +38,7 @@ Each package owns its entrypoint, tests, configuration example, localization res
 - `pi-tool-supervisor` reviews the actual before/after diff of `edit` and `write` against configured rule files. It reports findings but is not an operating-system sandbox or an edit rollback mechanism.
 - `pi-extensions-tool-display` owns the actual Pi tool-display host, built-in tool renderer overrides, and the shared result-rendering middleware protocol. Feature packages register domain-specific panels through it.
 - `pi-extensions-i18n` owns locale selection, catalog validation, interpolation, and the `/pi-language` command. Feature packages use it instead of implementing separate locale runtimes.
+- `pi-model-request` owns how an extension issues its own model request: resolve auth from the model registry, add the provider session headers (`x-opencode-session`, `x-opencode-client`) that Pi's core adds to its own requests, apply a resolved `baseUrl`, and call the completion. Any package that calls `completeSimple`/`complete` itself must go through it instead of re-deriving those rules.
 - `pi-terminal-mux` owns terminal multiplexer detection and pane/surface operations. Extensions that need terminal interaction depend on it instead of re-implementing backend detection.
 - `pi-metrics` owns session metrics: the live elapsed spinner and per-turn/total summaries listen to Pi's native `input`, `agent_start`, `turn_start`, `turn_end`, `agent_end`, and `agent_settled` events without registering tools.
 - `pi-models-discovery` owns dynamic model discovery: it reads `discoverModels` providers from models.json, fetches `{baseUrl}/models`, persists a startup cache, and exposes `/model-discovery` plus `/model-discovery-refresh` commands.

@@ -62,13 +62,15 @@
     "@earendil-works/pi-tui": ">=0.80.0"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.8.0"
+    "pi-extensions-i18n": "^0.8.0",
+    "pi-model-request": "^0.1.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.85.1",
     "@earendil-works/pi-coding-agent": "0.85.1",
     "@earendil-works/pi-tui": "0.85.1",
     "@types/node": "24.12.4",
+    "pi-model-request": "^0.1.0",
     "tsx": "4.23.1",
     "typescript": "5.9.3"
   }

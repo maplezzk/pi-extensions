@@ -47,8 +47,8 @@ type TestCompletionResult = Awaited<ReturnType<TestCompletion>>;
 /** 构造真实摘要处理链所需的最小扩展上下文。 */
 function fakeSummaryContext(
   notify: (message: string, type?: "info" | "warning" | "error") => void = () => undefined,
+  model: Record<string, unknown> = { provider: "fake", id: "model" },
 ): TestContext {
-  const model = { provider: "fake", id: "model" };
   return {
     toolName: "fake-tool",
     toolCallId: "fake-call",
@@ -61,6 +61,7 @@ function fakeSummaryContext(
         find: () => model,
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: {}, env: {} }),
       },
+      sessionManager: { getSessionId: () => "session-test" },
     },
   } as unknown as TestContext;
 }
@@ -1409,6 +1410,7 @@ test("用户中断会终止 Pi 事件中尚未完成的提炼请求", async () =
         find: () => faux.getModel(),
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
       },
+      sessionManager: { getSessionId: () => "session-test" },
     };
 
     try {
@@ -1602,4 +1604,27 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   }
+});
+
+test("opencode 系列提炼请求带上 Pi 的 provider 会话头", async () => {
+  await withFakeSummaryConfig(async () => {
+    let completionOptions: Parameters<TestCompletion>[2];
+    const completion: TestCompletion = async (...args) => {
+      completionOptions = args[2];
+      return fakeCompletion("ERROR E42")(...args);
+    };
+
+    await processToolResult(
+      fakeSummaryContext(
+        () => undefined,
+        { provider: "opencode-go", id: "model", baseUrl: "https://opencode.ai/zen/go/v1" },
+      ),
+      fakeToolResult("FAIL checkout\nERROR E42\nnext: retry\n".repeat(8)),
+      0,
+      completion,
+    );
+
+    assert.equal(completionOptions?.headers?.["x-opencode-session"], "session-test");
+    assert.equal(completionOptions?.headers?.["x-opencode-client"], "pi");
+  });
 });

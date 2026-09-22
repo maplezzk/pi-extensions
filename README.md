@@ -27,6 +27,7 @@ Each package is independently installable and keeps its detailed behavior, confi
 | [`pi-session-resources`](./packages/pi-session-resources) | Collects files, browser URLs, and PR/MR links from successful tool activity and exposes them through a clickable, tabbed `#` resource picker above the editor. | [English](./packages/pi-session-resources/README.md) · [中文](./packages/pi-session-resources/README.zh-CN.md) |
 | [`pi-extensions-i18n`](./packages/pi-extensions-i18n) | Provides shared locale selection, catalog loading, interpolation, and the `/config:language` command. | [English](./packages/pi-extensions-i18n/README.md) · [中文](./packages/pi-extensions-i18n/README.zh-CN.md) |
 | [`pi-extensions-tool-display`](./packages/pi-extensions-tool-display) | Provides the actual Pi tool-display host plus the shared result-rendering protocol and component helpers. | [English](./packages/pi-extensions-tool-display/README.md) · [中文](./packages/pi-extensions-tool-display/README.zh-CN.md) |
+| [`pi-model-request`](./packages/pi-model-request) | Issues a one-off model request from an extension the way Pi core does: resolves auth, adds provider session headers, and calls the completion. | [English](./packages/pi-model-request/README.md) · [中文](./packages/pi-model-request/README.zh-CN.md) |
 | [`@maplezzk/pi-dynamic-workflows`](./packages/pi-dynamic-workflows) | Claude-Code-style dynamic workflow orchestration with `meta`/`phase()`/`agent()`/`parallel()`/`pipeline()` primitives, configurable via `/config:workflow`. Fork of michaelliv/pi-dynamic-workflows. | [English](./packages/pi-dynamic-workflows/README.md) · [中文](./packages/pi-dynamic-workflows/README.zh-CN.md) |
 | [`@maplezzk/pi-interactive-subagents`](./packages/pi-interactive-subagents) | Non-blocking interactive subagents in multiplexer panes with live status widget, `/plan` and `/iterate` workflows. Fork of HazAT/pi-interactive-subagents. | [English](./packages/pi-interactive-subagents/README.md) · [中文](./packages/pi-interactive-subagents/README.zh-CN.md) |
 
@@ -40,7 +41,7 @@ Requirements: Pi with the compatible extension API and Node.js 22 or newer.
 pi install git:github.com/maplezzk/pi-extensions
 ```
 
-The repository root is also a Pi package. Its manifest loads extension entrypoints under `packages/*/index.ts` while excluding library-only packages such as `pi-terminal-mux`, so the command above installs all current extensions without trying to load shared libraries as extensions.
+The repository root is also a Pi package. Its manifest loads extension entrypoints under `packages/*/index.ts` while excluding library-only packages such as `pi-terminal-mux` and `pi-model-request`, so the command above installs all current extensions without trying to load shared libraries as extensions.
 
 Reload Pi after installation:
 
