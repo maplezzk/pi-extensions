@@ -15,11 +15,14 @@ import {
 import {
 	Container,
 	type Component,
+	Input,
 	type SelectItem,
 	SelectList,
 	SettingsList,
 	type SettingItem,
 	Text,
+	fuzzyFilter,
+	getKeybindings,
 } from "@earendil-works/pi-tui";
 import { parseConfig, type AutoGoalConfig } from "./config.ts";
 import { buildModelChoices } from "./model-choice.ts";
@@ -182,36 +185,86 @@ function toggleValueFromLabel(value: string, labels: ToggleLabels): boolean | un
 	return undefined;
 }
 
-/** 二级选择列表：Enter 选定并回传展示文本，Esc 不改动直接返回。 */
+/**
+ * 按关键词过滤候选项；空关键词原样返回。
+ *
+ * `SelectList` 自带的 setFilter 只做前缀匹配，输入 `low` 永远找不到 `llm-proxy/LOW`。
+ * 模糊匹配还会给词边界加分，所以 `provider/model` 这种名字从哪一段搜都行。
+ */
+export function filterOptions(options: readonly PanelOption[], query: string): PanelOption[] {
+	return query.trim() ? fuzzyFilter([...options], query, (option) => option.label) : [...options];
+}
+
+/**
+ * 二级选择列表：Enter 选定并回传展示文本，Esc 不改动直接返回。
+ *
+ * `search` 打开时，列表上方多一个输入框：方向键仍然给列表，其余按键（含 Enter）给输入框，
+ * 每次输入都按 `filterOptions` 重建列表。候选表很长时这是唯一顺手的做法。
+ */
 function createChoiceSubmenu(
 	options: readonly PanelOption[],
 	currentValue: string,
 	done: (selectedLabel?: string) => void,
+	search = false,
 ): Component {
-	// 列表项的 value 与 label 取同一段文本：SettingsList 会把回传值直接显示在右侧，
-	// 回传展示文本才能让「不限制」这类文案在选中后仍然可读。
-	const items: SelectItem[] = options.map((option) => ({
-		value: option.label,
-		label: option.label,
-	}));
-	const list = new SelectList(
-		items,
-		Math.min(items.length, CHOICE_MENU_MAX_VISIBLE),
-		getSelectListTheme(),
-	);
-	const currentIndex = options.findIndex((option) => option.value === currentValue);
-	if (currentIndex >= 0) list.setSelectedIndex(currentIndex);
-	list.onSelect = (item) => done(item.value);
-	list.onCancel = () => done(undefined);
+	/** 建一份列表快照，能对上当前值就预选中它。 */
+	const buildList = (list: readonly PanelOption[], preselect: string | undefined): SelectList => {
+		// 列表项的 value 与 label 取同一段文本：SettingsList 会把回传值直接显示在右侧，
+		// 回传展示文本才能让「不限制」这类文案在选中后仍然可读。
+		const items: SelectItem[] = list.map((option) => ({ value: option.label, label: option.label }));
+		const selectList = new SelectList(
+			items,
+			Math.max(1, Math.min(items.length, CHOICE_MENU_MAX_VISIBLE)),
+			getSelectListTheme(),
+		);
+		const currentIndex = list.findIndex(
+			(option) => option.label === preselect || option.value === preselect,
+		);
+		if (currentIndex >= 0) selectList.setSelectedIndex(currentIndex);
+		selectList.onSelect = (item) => done(item.value);
+		selectList.onCancel = () => done(undefined);
+		return selectList;
+	};
 
-	// SettingsList 的 submenu 要求返回 Component，这里只把三个方法转发给列表。
+	if (!search) return buildList(options, currentValue);
+
+	const input = new Input({ prompt: `${i18n.t("configSearchPrompt")} ` });
+	input.focused = true;
+	input.onEscape = () => done(undefined);
+
+	let list = buildList(options, currentValue);
+	let query = "";
+	input.onSubmit = () => {
+		const selected = list.getSelectedItem();
+		if (selected) done(selected.value);
+	};
+
+	// SettingsList 的 submenu 要求返回 Component，这里只把三个方法转发给两个子组件。
 	return {
-		/** 行数与宽度都由 SelectList 自己算。 */
-		render: (width) => list.render(width),
-		/** 无本地缓存，交给列表清理。 */
-		invalidate: () => list.invalidate(),
-		/** 键盘输入全部转给列表。 */
-		handleInput: (data) => list.handleInput(data),
+		/** 上面过滤输入框，下面过滤后的候选。 */
+		render: (width) => [...input.render(width), ...list.render(width)],
+		/** 两个子组件都没有共享缓存。 */
+		invalidate: () => {
+			input.invalidate();
+			list.invalidate();
+		},
+		/** 方向键给列表，其余按键（含 Enter）给输入框。 */
+		handleInput: (data) => {
+			const keybindings = getKeybindings();
+			if (
+				keybindings.matches(data, "tui.select.up") ||
+				keybindings.matches(data, "tui.select.down")
+			) {
+				list.handleInput(data);
+				return;
+			}
+			input.handleInput(data);
+			const next = input.getValue();
+			if (next !== query) {
+				query = next;
+				list = buildList(filterOptions(options, next), undefined);
+			}
+		},
 	};
 }
 
@@ -241,8 +294,9 @@ export function toSettingItems(
 					description,
 					currentValue: optionLabelForValue(modelChoices, config.model),
 					// 二级列表接管 Enter，避免在「当前会话模型」与具体模型之间反复循环。
+					// 模型动辄上百条，所以这一项要过滤输入框。
 					submenu: (currentValue: string, done) =>
-						createChoiceSubmenu(modelChoices, currentValue, done),
+						createChoiceSubmenu(modelChoices, currentValue, done, true),
 				};
 			case PANEL_ITEM_KIND.choice:
 				return {

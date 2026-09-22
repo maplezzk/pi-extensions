@@ -203,6 +203,10 @@
     "zh-CN": "当前会话模型",
     "en-US": "current session model"
   },
+  "configSearchPrompt": {
+    "zh-CN": "过滤",
+    "en-US": "Filter"
+  },
   "configCommandInteractiveOnly": {
     "zh-CN": "自动催停配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
     "en-US": "Auto-continue configuration requires the TUI; run this command in an interactive Pi session."
