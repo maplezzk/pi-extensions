@@ -125,8 +125,8 @@ export async function registerNaming(
   const { requestName, loadTerminal = loadTerminalAdapter, runtime } = dependencies;
   // 运行期配置随时可能被配置面板改写，所以每次使用都读一次，不缓存快照。
   const current = (): NamingConfig => runtime?.config ?? config;
-  const initial = current();
-  if ((!initial.automaticNaming && !initial.manualNaming) || !Object.values(initial.targets).some(Boolean)) return;
+  // 入口常驻注册，开关一律在调用时现取：面板里把 automaticNaming / manualNaming / targets
+  // 打开后下一次输入或 /rename 就生效。注册与否在加载时定死的话，改完必须 /reload。
   // 终端能力按需加载：面板里把 workspace/tab 打开后，下一次命名就会去加载，不用 reload。
   let terminalPromise: Promise<TerminalNamingAdapter> | undefined;
   /** 取终端适配器（只加载一次）；加载失败按调用方处理。 */
@@ -146,13 +146,18 @@ export async function registerNaming(
 
   /** 先捕获终端身份，再生成标题；任一新请求或会话切换都会使旧结果失效。 */
   async function rename(args: string, ctx: ExtensionContext, automatic: boolean): Promise<void> {
+    const liveTargets = current().targets;
+    // 所有目标都关着时不做任何事：既不改名，也不白花一次模型调用。
+    if (!Object.values(liveTargets).some(Boolean)) {
+      report(pi, ctx, { message: i18n.t("namingNoTargets"), level: "warning" });
+      return;
+    }
     const currentGeneration = generation;
     const currentRequest = ++request;
     // 新请求和 session 生命周期变化都会使当前请求失效。
     const isCurrent = () => generation === currentGeneration && request === currentRequest;
     let targets: TerminalRenameOutcome[] = [];
     let resolutionError: unknown;
-    const liveTargets = current().targets;
     // 只有开了 workspace/tab 目标才需要终端；适配器不提前加载，面板打开开关后一样能用。
     if (liveTargets.workspace || liveTargets.tab) {
       try {
@@ -204,26 +209,30 @@ export async function registerNaming(
     }
   }
 
-  if (initial.manualNaming) {
-    pi.registerCommand(RENAME_COMMAND, {
-      description: i18n.t("renameDescription"),
-      getArgumentCompletions: () => null,
-      handler: async (args, ctx) => { await rename(args, ctx, false); },
+  // /rename 常驻注册；manualNaming 关掉时报告原因，而不是让命令凭空消失（Pi 没有内置 /rename 可回退）。
+  pi.registerCommand(RENAME_COMMAND, {
+    description: i18n.t("renameDescription"),
+    getArgumentCompletions: () => null,
+    handler: async (args, ctx) => {
+      if (!current().manualNaming) {
+        report(pi, ctx, { message: i18n.t("namingManualDisabled"), level: "warning" });
+        return;
+      }
+      await rename(args, ctx, false);
+    },
+  });
+  pi.on("input", (event, ctx) => {
+    if (!current().automaticNaming) return;
+    if (!eligible || attempted || event.source === "extension" || pi.getSessionName()) return;
+    const text = event.text.trim();
+    if (!text) return;
+    attempted = true;
+    const inputGeneration = generation;
+    void rename(text, ctx, true).catch((error: unknown) => {
+      if (generation !== inputGeneration) return;
+      report(pi, ctx, { message: i18n.t("namingFailed", { error: errorMessage(error) }), level: "error" });
     });
-  }
-  if (initial.automaticNaming) {
-    pi.on("input", (event, ctx) => {
-      if (!eligible || attempted || event.source === "extension" || pi.getSessionName()) return;
-      const text = event.text.trim();
-      if (!text) return;
-      attempted = true;
-      const inputGeneration = generation;
-      void rename(text, ctx, true).catch((error: unknown) => {
-        if (generation !== inputGeneration) return;
-        report(pi, ctx, { message: i18n.t("namingFailed", { error: errorMessage(error) }), level: "error" });
-      });
-    });
-  }
+  });
 }
 
 /** 配置错误在 session_start 报告，不注册不完整的命名功能。 */

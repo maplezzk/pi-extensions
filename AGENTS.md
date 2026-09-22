@@ -93,6 +93,8 @@ Two rules keep the panel honest:
 
 A change made in the panel takes effect immediately. Do not ask the user to `/reload`, and do not cache configuration at load time when the panel can change it — read it where it is used. The same applies to the command's arguments.
 
+The subtle version of that rule is **conditional registration**. Registering a hook or command only when a flag was on at load time looks like a harmless optimisation, but it makes the flag unreachable from the panel: the hook does not exist, so turning the flag on does nothing until `/reload`. Register the entrypoint unconditionally and check the flag inside the handler. If the feature is off, report why instead of staying silent — a command that vanishes looks like a broken package. A test asserting `events.has("x") === someFlag` is testing the defect, not the behaviour; assert what the entrypoint does instead.
+
 Every configuration field needs a panel row. Cover that with a test asserting the panel's field set equals the configuration's field set, so a field added later cannot silently miss the panel. Also test that picking each row's own displayed value round-trips the configuration unchanged.
 
 ## Development

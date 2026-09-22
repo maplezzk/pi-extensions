@@ -75,6 +75,14 @@
     "zh-CN": "统一命名 session 与允许修改的终端目标；省略名称时综合当前分支全部用户消息生成",
     "en-US": "Name the session and allowed terminal targets; omit the name to summarize all user messages on the current branch"
   },
+  "namingManualDisabled": {
+    "zh-CN": "手动命名已关闭：用 /config:naming 打开「手动命名」后再试",
+    "en-US": "Manual naming is off: enable it in /config:naming and retry"
+  },
+  "namingNoTargets": {
+    "zh-CN": "没有启用任何命名目标：用 /config:naming 至少打开 session、workspace 或 tab 之一",
+    "en-US": "No naming target is enabled: turn on session, workspace, or tab in /config:naming"
+  },
   "namingFailed": {
     "zh-CN": "命名失败：{error}",
     "en-US": "Naming failed: {error}"
@@ -160,8 +168,8 @@
     "en-US": "Manual /rename"
   },
   "panelDescManualNaming": {
-    "zh-CN": "注册 /rename 命令；省略名称时综合当前分支全部用户消息生成",
-    "en-US": "Register the /rename command; omitting the name summarizes all user messages on the current branch"
+    "zh-CN": "允许用 /rename 手动命名；省略名称时综合当前分支全部用户消息生成",
+    "en-US": "Allow manual naming through /rename; omitting the name summarizes all user messages on the current branch"
   },
   "panelLabelSessionTarget": {
     "zh-CN": "命名 session",
