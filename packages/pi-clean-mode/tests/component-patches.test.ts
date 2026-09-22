@@ -28,6 +28,7 @@ import {
 	BRANCH_LAST,
 	BRANCH_MIDDLE,
 	TREE_INDENT,
+	type ActivityCounters,
 } from "../src/activity.ts";
 import { installComponentPatches } from "../src/component-patches.ts";
 import { formatDuration } from "../src/duration.ts";
@@ -61,6 +62,18 @@ const ANSI_COLOR_CODES: Record<string, string> = {
 	dim: "38;5;240",
 };
 
+/** 工具行三档底色用的转义码；与 Pi 主题键同名，断言里直接按主题键引用。 */
+const ANSI_BG_CODES: Record<string, string> = {
+	toolSuccessBg: "48;5;236",
+	toolPendingBg: "48;5;238",
+	toolErrorBg: "48;5;52",
+};
+
+/** 某一档底色的转义前缀。 */
+function bgPrefix(color: string): string {
+	return `\u001b[${ANSI_BG_CODES[color]}m`;
+}
+
 /** 某一档色的转义前缀；用它断言「这段文字套的就是这一档」。 */
 function colorPrefix(color: keyof typeof ANSI_COLOR_CODES): string {
 	return `\u001b[${ANSI_COLOR_CODES[color]}m`;
@@ -70,6 +83,7 @@ function colorPrefix(color: keyof typeof ANSI_COLOR_CODES): string {
 function ansiTheme(): ThemePainter {
 	return {
 		fg: (color, text) => `${colorPrefix(color as keyof typeof ANSI_COLOR_CODES)}${text}\u001b[39m`,
+		bg: (color, text) => `${bgPrefix(color)}${text}\u001b[49m`,
 		bold: (text) => `\u001b[1m${text}\u001b[22m`,
 	};
 }
@@ -111,7 +125,7 @@ const OVERLONG_SUMMARY = `运行命令 ${"x".repeat(WIDTH * 2)}`;
  *
  * 它与活动块首行各报各的，所以断言要整行比，不能用子串比。
  */
-const RUN_STATUS_ROW = "  │ ⠋ 处理中 · 7s";
+const RUN_STATUS_ROW = "▌ 处理中 · 7s";
 /** 活动行首行在组件里的行号：折叠头子组件输出「空行 + 活动行」，所以是第 1 行。 */
 const ACTIVITY_HEAD_ROW = 1;
 /** 工具调用 id。 */
@@ -126,13 +140,13 @@ const WORK_TEXT = "intermediate narration";
 const TOOL_CWD = "/tmp";
 /** 折叠头的行号；折叠头子组件输出「空行 + 折叠头」，所以落在第 1 行。 */
 const HEADER_ROW = 1;
-/** 运行级折叠头的行首缩进：不画竖条，只留与「竖条 + 间隔」同宽的两列空格。 */
-const RUN_INDENT = "  ";
+/** 运行级粗竖条与动作组细竖条；与源码里的常量同值，断言才能算准文案列。 */
+const RUN_GUTTER = "▌";
 const GROUP_GUTTER = "│";
 /** 竖条与文案之间的间隔。 */
 const GUTTER_GAP = " ";
-/** 两级折叠头共用的左缩进列数：运行级是两列空格，组头是竖条 + 间隔。 */
-const HEADER_INDENT_COLUMNS = RUN_INDENT.length;
+/** 两级折叠头共用的左缩进列数：两级都是「竖条 + 间隔」。 */
+const HEADER_INDENT_COLUMNS = RUN_GUTTER.length + GUTTER_GAP.length;
 /** 文案列：两级折叠头都从缩进之后起写文案（折叠头不带来源前缀）。 */
 const HEADER_LABEL_COLUMNS = HEADER_INDENT_COLUMNS;
 /** 展开态箭头：实心下三角。 */
@@ -230,8 +244,10 @@ interface PatchHarness {
 	activityLines: string[];
 	/** 活动块在「组内只有一条」时的形态：去掉动作名，只留思考与输出尾巴。 */
 	activityDetailLines: string[];
-	/** 组头主词（如「运行命令」）；undefined 表示组内没有过半分类，组头用通用词。 */
+	/** 组头主词（如「运行命令」）；undefined 表示组内没有过半分类，组头改用构成文案。 */
 	groupActivityLabel: string | undefined;
+	/** 组内各分类的动作条数；undefined 表示拿不到，组头退回通用词「探索 · N 步」。 */
+	groupActivityCounts: Partial<ActivityCounters> | undefined;
 	/** 轮首槽位的状态行（只在在处理 + 耗时）；用例可直接改它模拟运行中。 */
 	runStatusLines: string[];
 	/** 运行级折叠被切换的次数。 */
@@ -270,8 +286,9 @@ function withPatches<T>(
 	const durations = new WeakMap<object, number>();
 	const activityLines: string[] = [];
 	const activityDetailLines: string[] = [];
-	const harness: { groupActivityLabel: string | undefined } = {
+	const harness: { groupActivityLabel: string | undefined; groupActivityCounts: Partial<ActivityCounters> | undefined } = {
 		groupActivityLabel: undefined,
+		groupActivityCounts: undefined,
 	};
 	const runStatusLines: string[] = [];
 	let runHeaderAssigned = false;
@@ -325,6 +342,7 @@ function withPatches<T>(
 		getRunStatusLines: () => runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === actionGroups.currentGroupId,
 		getGroupActivityLabel: () => harness.groupActivityLabel,
+		getGroupActivityCounts: () => harness.groupActivityCounts,
 		getRunDuration: (host) => durations.get(host),
 		getRunSteps: () => RUN_STEPS,
 	});
@@ -338,6 +356,12 @@ function withPatches<T>(
 			},
 			set groupActivityLabel(value: string | undefined) {
 				harness.groupActivityLabel = value;
+			},
+			get groupActivityCounts(): Partial<ActivityCounters> | undefined {
+				return harness.groupActivityCounts;
+			},
+			set groupActivityCounts(value: Partial<ActivityCounters> | undefined) {
+				harness.groupActivityCounts = value;
 			},
 			runStatusLines,
 			runToggles: () => runToggleCount,
@@ -396,7 +420,7 @@ test("本轮还没有工具行时，轮首只画状态行", () => {
 
 		const head = lines[ACTIVITY_HEAD_ROW];
 		assert.equal(head?.trimEnd(), RUN_STATUS_ROW, "状态行应落在空行之后的第一行");
-		// 状态行自带两列缩进，不铺底色，所以宽度由内容决定，不再补齐到整行。
+		// 状态行自带粗竖条前缀，不铺底色，所以宽度由内容决定，不再补齐到整行。
 		assert.ok(
 			(head ?? "").startsWith(RUN_STATUS_ROW),
 			`状态行应从行首开始，不带任何缩进：${JSON.stringify(head)}`,
@@ -880,14 +904,14 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 		);
 		assert.ok(runHeader, "前置条件：应渲染出运行级折叠头");
 
-		// 两级折叠头文案同列：运行级是两列缩进（不画竖条），组头是「细竖条 + 一个空格」。
+		// 两级行首都是「竖条 + 一个空格」，所以文案同列；运行级用粗竖条，组头用细竖条。
 		assert.ok(
-			runHeader.startsWith(`${RUN_INDENT}${RUN_HEADER_LABEL}`),
-			`运行级折叠头应是「两列缩进 + 文案」，不带竖条：${runHeader}`,
+			runHeader.startsWith(`${RUN_GUTTER}${GUTTER_GAP}${RUN_HEADER_LABEL}`),
+			`运行级折叠头应是「粗竖条 + 文案」：${runHeader}`,
 		);
 		assert.ok(
 			!runHeader.includes(GROUP_GUTTER),
-			`左侧轨道只属于动作组，运行级不应画竖条：${runHeader}`,
+			`运行级用的是粗竖条，不该混进动作组的细竖条：${runHeader}`,
 		);
 		// 文案只念一遍：折叠头是「一行说一件事」，重复拼接会让「用时 …」出现两次。
 		assert.equal(
@@ -917,7 +941,7 @@ test("两级折叠头的文案同列，箭头紧跟在文案右边", () => {
 	});
 });
 
-test("组头上方那行留白，轨道只画在组头行上", () => {
+test("组头上方那行留白，竖条只画在组头行上", () => {
 	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
 		const ids = seedActionGroup(harness.actionGroups, 3);
 		const headLines = linesOf(toolComponent(ids[0]));
@@ -936,17 +960,23 @@ test("组头上方那行留白，轨道只画在组头行上", () => {
 		const groupHeader = headLines.find((line) => line.includes(GROUP_HEADER_FRAGMENT));
 		assert.ok(groupHeader, "前置条件：应渲染出组头行");
 
-		// 竖条只出现在组头行上，与组头文案同一行；它独占的那一行则什么都不画。
-		assert.ok(
-			columnOf(groupHeader, GROUP_GUTTER) >= 0,
-			`组头行应带右侧轨道竖条：${JSON.stringify(stripAnsi(groupHeader))}`,
-		);
-		// 运行级不画竖条：它只有缩进，否则两根竖条会因为字形不同族
-		// （半格实心块与居中竖线）而错位。
+		// 细竖条只出现在组头行上，与组头文案同一行；它独占的那一行则什么都不画。
 		assert.equal(
-			columnOf(runHeader, GROUP_GUTTER),
-			-1,
-			`运行级折叠头不应有竖条：${JSON.stringify(stripAnsi(runHeader))}`,
+			columnOf(groupHeader, GROUP_GUTTER),
+			0,
+			`组头行应带细竖条，且落在第 0 列：${JSON.stringify(stripAnsi(groupHeader))}`,
+		);
+		// 运行级仍画自己的粗竖条：半格实心块与居中竖线不同族，只保证文案同列，
+		// 不假装上下接成一条对齐的轨道（中间那行留白就是为了不硬接）。
+		assert.equal(
+			columnOf(runHeader, RUN_GUTTER),
+			0,
+			`运行级应带粗竖条并落在第 0 列：${JSON.stringify(stripAnsi(runHeader))}`,
+		);
+		assert.equal(
+			columnOf(runHeader, RUN_HEADER_LABEL),
+			HEADER_LABEL_COLUMNS,
+			"两级竖条各自占满两列前缀，文案才同列",
 		);
 	});
 });
@@ -1084,5 +1114,197 @@ test("运行级折叠优先于动作组，组头也一并隐藏", () => {
 		for (const id of ids) {
 			assert.deepEqual(linesOf(toolComponent(id)), [], "运行折叠时所有工具行都应隐藏");
 		}
+	});
+});
+
+test("工具行铺 Pi 原生工具底色，并补齐到整宽", () => {
+	withPatches(
+		EXPANDED_STATE,
+		{ ...DEFAULT_CLEAN_MODE_CONFIG },
+		(harness) => {
+			const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+			const groupId = harness.actionGroups.currentGroupId;
+			// 展开这一组，成员行才会逐条出现。
+			toggleActionGroup(harness.actionGroups, groupId);
+			const component = toolComponent(ids[1]);
+			// Pi 在结果回来后才把 isPartial 置 false；这里直接摆出「已完成」的那条。
+			component.isPartial = false;
+
+			const memberLine = linesOf(component).find((line) => line.includes(MEMBER_SUMMARIES[1]));
+			assert.ok(memberLine, "前置条件：应渲染出成员摘要行");
+			assert.ok(
+				memberLine.includes(bgPrefix("toolSuccessBg")),
+				`已完成的工具行应铺成功档底色：${JSON.stringify(memberLine)}`,
+			);
+			assert.equal(
+				visibleWidth(memberLine),
+				WIDTH,
+				"底色块要铺到整宽，否则色块会在命令文字结束的地方断掉",
+			);
+		},
+		{ theme: ansiTheme() },
+	);
+});
+
+test("工具行底色分三档：进行中用 pending，出错用 error", () => {
+	withPatches(
+		EXPANDED_STATE,
+		{ ...DEFAULT_CLEAN_MODE_CONFIG },
+		(harness) => {
+			const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+			const groupId = harness.actionGroups.currentGroupId;
+			toggleActionGroup(harness.actionGroups, groupId);
+
+			const running = toolComponent(ids[1]);
+			running.isPartial = true;
+			const runningLine = linesOf(running).find((line) => line.includes(MEMBER_SUMMARIES[1]));
+			assert.ok(
+				runningLine?.includes(bgPrefix("toolPendingBg")),
+				`进行中的工具行应铺 pending 档：${JSON.stringify(runningLine)}`,
+			);
+
+			const failed = toolComponent(ids[2]);
+			failed.isPartial = false;
+			failed.result = { isError: true, content: [] };
+			const failedLine = linesOf(failed).find((line) => line.includes(MEMBER_SUMMARIES[2]));
+			assert.ok(
+				failedLine?.includes(bgPrefix("toolErrorBg")),
+				`出错的工具行应铺 error 档：${JSON.stringify(failedLine)}`,
+			);
+		},
+		{ theme: ansiTheme() },
+	);
+});
+
+test("组头也铺工具底色：当前组用进行中档，其余用已完成档", () => {
+	withPatches(
+		// 本轮还没结束，当前组才该是「进行中」。
+		{ ...EXPANDED_STATE, runSettled: false },
+		{ ...DEFAULT_CLEAN_MODE_CONFIG },
+		(harness) => {
+			const historicalIds = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+			// 再开一组：上一组就成了历史组，不再是「当前组」。
+			const currentIds = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+
+			const historical = linesOf(toolComponent(historicalIds[0])).find((line) =>
+				line.includes(GROUP_HEADER_FRAGMENT),
+			);
+			assert.ok(historical, "前置条件：历史组应渲染出组头行");
+			assert.ok(
+				historical.includes(bgPrefix("toolSuccessBg")),
+				`历史组头应铺已完成档：${JSON.stringify(historical)}`,
+			);
+			assert.equal(visibleWidth(historical), WIDTH, "组头底色同样要铺到整宽");
+
+			const current = linesOf(toolComponent(currentIds[0])).find((line) =>
+				line.includes(GROUP_HEADER_FRAGMENT),
+			);
+			assert.ok(
+				current?.includes(bgPrefix("toolPendingBg")),
+				`当前组头应铺进行中档：${JSON.stringify(current)}`,
+			);
+		},
+		{ theme: ansiTheme() },
+	);
+});
+
+test("本轮结束后组头不再显示进行中档", () => {
+	withPatches(
+		{ ...EXPANDED_STATE, runSettled: true },
+		{ ...DEFAULT_CLEAN_MODE_CONFIG },
+		(harness) => {
+			const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+			const header = linesOf(toolComponent(ids[0])).find((line) =>
+				line.includes(GROUP_HEADER_FRAGMENT),
+			);
+
+			assert.ok(header, "前置条件：应渲染出组头行");
+			assert.ok(
+				header.includes(bgPrefix("toolSuccessBg")),
+				`本轮结束后最后一组也是已完成档：${JSON.stringify(header)}`,
+			);
+			assert.ok(!header.includes(bgPrefix("toolPendingBg")), "不该再留着进行中的底色");
+		},
+		{ theme: ansiTheme() },
+	);
+});
+
+test("主题没有工具底色能力时，工具行退回纯文本", () => {
+	withPatches(
+		EXPANDED_STATE,
+		{ ...DEFAULT_CLEAN_MODE_CONFIG },
+		(harness) => {
+			const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+			const groupId = harness.actionGroups.currentGroupId;
+			toggleActionGroup(harness.actionGroups, groupId);
+			const memberLine = linesOf(toolComponent(ids[1])).find((line) =>
+				line.includes(MEMBER_SUMMARIES[1]),
+			);
+
+			assert.ok(memberLine, "前置条件：应渲染出成员摘要行");
+			assert.ok(
+				!memberLine.includes("\u001b[48;"),
+				`主题缺底色时不该出现任何底色码：${JSON.stringify(memberLine)}`,
+			);
+		},
+		// 只给前景色的主题替身：模拟主题里没有工具底色这几个键。
+		{ theme: { fg: (_color, text) => text, bold: (text) => text } },
+	);
+});
+
+test("组内没有过半分类时组头写构成，而不是通用词", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+		harness.groupActivityCounts = { command: 2, read: 1 };
+
+		const header = linesOf(toolComponent(ids[0])).find((line) =>
+			line.includes(i18n.t("activityCommand")),
+		);
+		assert.ok(header, `组头应写出构成里的分类：${JSON.stringify(stripAnsi(header ?? ""))}`);
+		assert.ok(
+			header.includes(`${i18n.t("activityCommand")} 2`),
+			`构成里应带上条数：${JSON.stringify(stripAnsi(header))}`,
+		);
+		assert.ok(header.includes(`${i18n.t("activityRead")} 1`), "计数为 1 的分类也要写出来");
+		assert.ok(
+			header.indexOf(i18n.t("activityCommand")) < header.indexOf(i18n.t("activityRead")),
+			"条数多的分类排在前面",
+		);
+		assert.ok(
+			!header.includes(GROUP_HEADER_FRAGMENT),
+			`有构成文案时不该再写通用词：${JSON.stringify(stripAnsi(header))}`,
+		);
+	});
+});
+
+test("拿不到分类计数时才退回通用词", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 3, MEMBER_SUMMARIES);
+		harness.groupActivityCounts = undefined;
+
+		const header = linesOf(toolComponent(ids[0])).find((line) =>
+			line.includes(GROUP_HEADER_FRAGMENT),
+		);
+		assert.ok(header, "计数缺失时应退回「探索 · N 步」");
+	});
+});
+
+test("构成文案过长时截断，箭头仍留在行内且不超宽", () => {
+	withPatches(EXPANDED_STATE, { ...DEFAULT_CLEAN_MODE_CONFIG }, (harness) => {
+		const ids = seedActionGroup(harness.actionGroups, 9, MEMBER_SUMMARIES);
+		// 四个分类都有、条数都不小：构成文案远超窄终端上能放下的宽度。
+		harness.groupActivityCounts = { command: 123, read: 45, search: 6, other: 2 };
+
+		const NARROW_WIDTH = 30;
+		const header = toolComponent(ids[0])
+			.render(NARROW_WIDTH)
+			.find((line) => line.includes(i18n.t("activityCommand")));
+		assert.ok(header, "前置条件：应渲染出组头行");
+		assert.equal(visibleWidth(header), NARROW_WIDTH, "截断后仍要正好占一行宽度");
+		assert.ok(
+			stripAnsi(header).trimEnd().endsWith(COLLAPSED_CHEVRON),
+			`箭头不能被长文案挤掉：${JSON.stringify(stripAnsi(header))}`,
+		);
+		assert.ok(stripAnsi(header).includes("…"), "截断处应有省略号");
 	});
 });

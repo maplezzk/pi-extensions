@@ -30,7 +30,10 @@ function harness(messages: string[] = []) {
   const ctx = {
     hasUI: true,
     ui: { notify: (message: string) => notices.push(message) },
-    sessionManager: { getBranch: () => messages.map((content) => ({ type: "message", message: { role: "user", content } })) },
+    sessionManager: {
+      getBranch: () => messages.map((content) => ({ type: "message", message: { role: "user", content } })),
+      getSessionId: () => "session-1",
+    },
   } as unknown as ExtensionCommandContext;
   const terminal: TerminalNamingAdapter = {
     resolve: (options) => resolveTerminalRenameTargets({ ...options, backend: "cmux", env: {

@@ -5,6 +5,7 @@
  */
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveModelRequestAuth, type ModelRequestAuth } from "pi-model-request";
 import { i18n } from "./i18n.ts";
 import {
   buildJudgeSystemPrompt,
@@ -27,10 +28,8 @@ const TRUNCATION_RETRY_MULTIPLIER = 2;
 /** Pi 的模型对象类型；对外暴露以便调用方构造判定来源。 */
 export type PiModel = Parameters<typeof completeSimple>[0];
 
-/** 鉴权结果；ok 为 false 时判定不可执行。 */
-export type JudgeAuth =
-  | { ok: true; apiKey?: string; headers?: Record<string, string>; env?: Record<string, string> }
-  | { ok: false; error: string };
+/** 鉴权结果；ok 为 false 时判定不可执行。与共享请求器的鉴权结果同形，避免两处定义漂移。 */
+export type JudgeAuth = ModelRequestAuth;
 
 /**
  * 模型解析所需的最小字段；JudgeModelSource 在它之上增加鉴权解析。
@@ -94,16 +93,19 @@ export function resolveJudgeModel<T>(source: JudgeModelResolution<T>): T | undef
   return source.findModel(configured.slice(0, separator), configured.slice(separator + 1));
 }
 
-/** 把 Pi 的扩展上下文包装成判定模型来源。 */
+/**
+ * 把 Pi 的扩展上下文包装成判定模型来源。
+ * 鉴权与 provider 会话头统一走共享请求器，判定流程只拿到已备好的请求头。
+ */
 export function createJudgeModelSource(
-  ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
+  ctx: Pick<ExtensionContext, "model" | "modelRegistry" | "sessionManager">,
   config: AutoGoalConfig,
 ): JudgeModelSource {
   return {
     configuredModel: config.model,
     sessionModel: ctx.model,
     findModel: (provider: string, modelId: string) => ctx.modelRegistry.find(provider, modelId),
-    resolveAuth: (model: PiModel) => ctx.modelRegistry.getApiKeyAndHeaders(model),
+    resolveAuth: (model: PiModel) => resolveModelRequestAuth(ctx, model),
   };
 }
 
@@ -120,7 +122,8 @@ export const piJudgeCompletion: JudgeCompletion = async ({
   signal,
 }) => {
   const response = await completeSimple(
-    model,
+    // 鉴权解析出 baseUrl 时按 Pi 核心的方式覆盖模型地址。
+    auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model,
     {
       systemPrompt,
       messages: [{

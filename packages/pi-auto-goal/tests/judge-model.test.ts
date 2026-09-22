@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   createJudgeModelInvoker,
+  createJudgeModelSource,
   resolveJudgeMaxTokens,
   resolveJudgeModel,
   type JudgeAuth,
@@ -9,6 +10,7 @@ import {
   type JudgeModelSource,
   type PiModel,
 } from "../src/judge-model.ts";
+import { parseConfig } from "../src/config.ts";
 import type { TurnSnapshot } from "../src/session-context.ts";
 
 /** 判定输入快照。 */
@@ -182,4 +184,40 @@ test("模型不存在与鉴权失败都显式报错", async () => {
     source: sourceWith({ resolveAuth: async () => ({ ok: false, error: "missing auth" }) }),
   });
   await assert.rejects(authFailed({ snapshot: SNAPSHOT }), /missing auth/);
+});
+
+test("createJudgeModelSource 为 opencode 系列补上 provider 会话头", async () => {
+  const ctx = {
+    model: TEST_MODEL,
+    modelRegistry: {
+      find: () => TEST_MODEL,
+      getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "key", headers: { "x-test": "1" }, env: {} }),
+    },
+    sessionManager: { getSessionId: () => "session-judge" },
+  };
+  const source = createJudgeModelSource(
+    ctx as unknown as Parameters<typeof createJudgeModelSource>[0],
+    parseConfig({}),
+  );
+
+  // 非 opencode 模型不添加会话头，鉴权头原样返回。
+  assert.deepEqual(await source.resolveAuth(TEST_MODEL), {
+    ok: true,
+    apiKey: "key",
+    headers: { "x-test": "1" },
+    env: {},
+  });
+
+  // opencode 系列必须带上会话头，否则判定请求会被 400 拒绝。
+  const opencodeModel: PiModel = { ...TEST_MODEL, provider: "opencode-go", baseUrl: "https://opencode.ai/zen/go/v1" };
+  assert.deepEqual(await source.resolveAuth(opencodeModel), {
+    ok: true,
+    apiKey: "key",
+    headers: {
+      "x-opencode-session": "session-judge",
+      "x-opencode-client": "pi",
+      "x-test": "1",
+    },
+    env: {},
+  });
 });

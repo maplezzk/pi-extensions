@@ -9,6 +9,8 @@ pi-extensions/
 ├── packages/
 │   ├── pi-extensions-i18n/      # Shared locale and catalog runtime
 │   ├── pi-extensions-tool-display/ # Tool-display host and shared rendering protocol
+│   ├── pi-model-request/ # Extension-side model requests (auth + provider session headers)
+│   ├── pi-gen-ui/               # Render json-render specs as Pi terminal panels
 │   ├── pi-distill/              # Tool-output distillation
 │   ├── pi-tool-supervisor/      # Post-edit file review
 │   ├── pi-terminal-mux/         # Terminal multiplexer abstraction (muxy/cmux/tmux/zellij/wezterm/herdr/otty/orca + headless fallback)
@@ -33,10 +35,13 @@ Each package owns its entrypoint, tests, configuration example, localization res
 - `pi-notifications` is independently installable; see `packages/pi-notifications/README.md` for its configuration, behavior, and tests.
 - `pi-naming` owns automatic Pi session titles and manual terminal naming; it uses pi-ai and terminal-mux, not session-tools. Automatic and manual naming share configurable session/workspace/tab targets.
 
+- `pi-gen-ui` renders json-render specs as Pi terminal panels. It embeds only `@json-render/core` as the engine and ships its own Pi TUI renderer — it does not embed `@json-render/ink`, whose Ink/React runtime would fight Pi for stdin/stdout. `render_ui` takes a hand-written spec and never touches the network; `compose_ui` builds a spec from candidate elements and only registers when a composition provider key is available.
+
 - `pi-distill` discovers active tools with object parameter schemas and observes their results through Pi's native `tool_call` and `tool_result` events. It does not register duplicate tools.
 - `pi-tool-supervisor` reviews the actual before/after diff of `edit` and `write` against configured rule files. It reports findings but is not an operating-system sandbox or an edit rollback mechanism.
 - `pi-extensions-tool-display` owns the actual Pi tool-display host, built-in tool renderer overrides, and the shared result-rendering middleware protocol. Feature packages register domain-specific panels through it.
 - `pi-extensions-i18n` owns locale selection, catalog validation, interpolation, and the `/pi-language` command. Feature packages use it instead of implementing separate locale runtimes.
+- `pi-model-request` owns how an extension issues its own model request: resolve auth from the model registry, add the provider session headers (`x-opencode-session`, `x-opencode-client`) that Pi's core adds to its own requests, apply a resolved `baseUrl`, and call the completion. Any package that calls `completeSimple`/`complete` itself must go through it instead of re-deriving those rules.
 - `pi-terminal-mux` owns terminal multiplexer detection and pane/surface operations. Extensions that need terminal interaction depend on it instead of re-implementing backend detection.
 - `pi-metrics` owns session metrics: the live elapsed spinner and per-turn/total summaries listen to Pi's native `input`, `agent_start`, `turn_start`, `turn_end`, `agent_end`, and `agent_settled` events without registering tools.
 - `pi-models-discovery` owns dynamic model discovery: it reads `discoverModels` providers from models.json, fetches `{baseUrl}/models`, persists a startup cache, and exposes `/model-discovery` plus `/model-discovery-refresh` commands.

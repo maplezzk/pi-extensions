@@ -2,15 +2,21 @@
  * 折叠头的视觉样式。
  *
  * 折叠头不能和正文长一个样：正文是流式叙述，折叠头是能被点开的结构行。三级用
- * 同一套语言区分，靠的是**左侧轨道 + 字重**，不是底色：
+ * 同一套语言区分，靠的是**左侧竖条 + 字重**，不是底色：
  *
- * - 运行级折叠头：不画竖条，只留两列缩进 + 加粗主文字色 —— 最强的一档，
- *   「这里收了一整轮」；
- * - 动作组头：细竖条 `│` + 普通字重 + 弱化色 —— 工作过程收在这里；
+ * - 运行级折叠头：粗竖条 `▌` + 加粗文案 —— 最强的一档，「这里收了一整轮」；
+ * - 动作组头：细竖条 `│` + 普通字重 + 弱化色 —— 弱一档，工作过程收在这里；
  * - 正文与工具行：不画竖条，保持 Pi 原本的样子。
  *
- * 轨道只有一条，就是动作组的细竖条；接成一条轨道的前提是字形同族 —— 半格实心块
- * 与居中竖线不同族（见 `RUN_INDENT`），混用得到的是错位的两截，不是同一条轨道。
+ * 两级竖条都从第 0 列起画，文案因此落在同一列；但两根竖条本身并不构成一条严格
+ * 对齐的连续轨道 —— 半格实心块 `▌` 画在格子左半边、居中的 `│` 画在格子中间，
+ * 横向差半格，所以组头块首行留白，不用竖条去接上下两端（接起来才显得歪）。竖条
+ * 只回答「收没收起来、收的是整轮还是一步」，粗细就是层级。
+ *
+ * 底色在这套语言里只出现在一个地方：工具行（成员摘要行与折叠态的组头）。它不表示
+ * 层级，而是表示「这条不是 Agent 写的字」—— Pi 原生工具行本来就有底色
+ * （`toolPendingBg` / `toolSuccessBg` / `toolErrorBg`），摘要行替掉原生行之后要把
+ * 这层语义接回来。底色只在工具行上用：折叠头、正文、活动块都不铺。
  *
  * 底色刻意不用来做层级：它只该出现在 diff 这类「内容本身有色」的地方。用底色区分
  * 层级有两个问题 —— 浅色主题下底色块会让整行对比度反转；而且它逼着每一行都补齐到
@@ -21,27 +27,29 @@
  */
 
 /**
- * 运行级折叠头的行首缩进：两列空格，与动作组的 `│ + 空格` 同宽。
+ * 运行级竖条：半格实心块，配加粗文案，是两级竖条里最强的一档。
  *
- * 运行级**不画竖条**。能在同一列上接成一条轨道的只有同族字形：半格实心块 `▌` 画在
- * 格子左半边、居中竖线 `│` 画在格子中间，实测错开约半个格，接起来是一截往左凸出的
- * 粗块；改用同为居中竖线的 `┃`（粗竖线）又有多数字体里粗细几乎一样的风险，「粗一档」
- * 就白写了。所以运行级只留缩进：文案与动作组文案落在同一列，层级靠「整轮最顶部 +
- * 加粗 + 主文字色」，左侧轨道只留给动作组。
+ * 它是实心块而不是更粗的竖线：`┃`（粗竖线）在多数字体里和 `│` 粗细几乎一样，
+ * 「粗一档」就白写了；半格实心块够重，代价是它画在格子左半边、与居中的 `│` 差半格，
+ * 所以两级竖条只能做到文案同列，做不到笔画对齐（见文件头）。
  */
-export const RUN_INDENT = "  ";
-/** 动作组竖条：细线，左侧轨道唯一的一档。 */
+export const RUN_GUTTER = "▌";
+/** 动作组竖条：细线，弱一档。 */
 export const GROUP_GUTTER = "│";
-/** 竖条与文案之间的间隔；组头与其下各行的文案因此从同一列起写。 */
+/** 竖条与文案之间的间隔；两级文案因此从同一列起写。 */
 export const GUTTER_GAP = " ";
 /**
  * 轨道前缀占用的列宽：竖条 1 列 + 间隔 1 列。
  *
  * 给整块内容（例如运行期间的扩展条目）加前缀时要按它把渲染宽度让出来，否则整行会超宽。
- * 值与 `renderGutterPrefix` 的产出绑在一起，测试会核对两者一致；运行级缩进
- * `RUN_INDENT` 也是这个宽度，两处文案因此同列。
+ * 值与 `renderGutterPrefix` 的产出绑在一起，测试会核对两者一致；运行级前缀
+ * `RUN_GUTTER + GUTTER_GAP` 也是这个宽度，两级文案因此同列。
  */
 export const GUTTER_PREFIX_WIDTH = 2;
+/** 工具行三档底色的主题键，与 Pi 原生工具行用的是同一组。 */
+const BG_TOOL_SUCCESS = "toolSuccessBg";
+const BG_TOOL_PENDING = "toolPendingBg";
+const BG_TOOL_ERROR = "toolErrorBg";
 /** 强调色：箭头等可点击提示。 */
 const COLOR_ACCENT = "accent";
 /** 主文字色：折叠头的主体信息。 */
@@ -59,6 +67,8 @@ const COLOR_DIM = "dim";
 export interface ThemePainter {
 	fg(color: string, text: string): string;
 	bold(text: string): string;
+	/** 底色；主题对象上有这个方法，但测试替身与老版本主题可能没有。 */
+	bg?(color: string, text: string): string;
 }
 
 /** 折叠头的着色能力；主题缺色时对应方法退化成原样文本。 */
@@ -73,6 +83,12 @@ export interface HeaderStyler {
 	dim(text: string): string;
 	/** 加粗：只能靠字重区分层级的地方用它。主题没有这个能力时原样返回。 */
 	bold(text: string): string;
+	/** 工具行底色：这条调用已经跑完。主题没有这个键时原样返回。 */
+	successBg(text: string): string;
+	/** 工具行底色：这条调用还在跑。 */
+	pendingBg(text: string): string;
+	/** 工具行底色：这条调用出错。 */
+	errorBg(text: string): string;
 }
 
 /**
@@ -103,6 +119,28 @@ function probeBold(theme: ThemePainter): ((text: string) => string) | undefined 
 	return (text) => theme.bold(text);
 }
 
+/**
+ * 探测底色是否可用。
+ *
+ * 语义同前景色：主题里没有这个键时 `theme.bg` 会抛，所以只能真的调一次。
+ * 主题对象上压根没有 `bg` 方法时（测试替身、老版本）也当作不可用。
+ */
+function probeBackground(
+	theme: ThemePainter,
+	color: string,
+): ((text: string) => string) | undefined {
+	const paint = theme.bg;
+	if (typeof paint !== "function") {
+		return undefined;
+	}
+	try {
+		paint.call(theme, color, " ");
+	} catch {
+		return undefined;
+	}
+	return (text) => paint.call(theme, color, text);
+}
+
 /** 原样返回文本；缺色时用它兜底。 */
 function identity(text: string): string {
 	return text;
@@ -130,5 +168,8 @@ export function createHeaderStyler(theme: ThemePainter): HeaderStyler {
 		muted: probeForeground(theme, COLOR_MUTED) ?? identity,
 		dim: probeForeground(theme, COLOR_DIM) ?? identity,
 		bold: probeBold(theme) ?? identity,
+		successBg: probeBackground(theme, BG_TOOL_SUCCESS) ?? identity,
+		pendingBg: probeBackground(theme, BG_TOOL_PENDING) ?? identity,
+		errorBg: probeBackground(theme, BG_TOOL_ERROR) ?? identity,
 	};
 }

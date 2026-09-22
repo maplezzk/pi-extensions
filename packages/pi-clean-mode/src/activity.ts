@@ -7,7 +7,7 @@
  * 屏幕上有两个位置报进度，分工固定，不说同一句话：
  *
  * - 轮首槽位（整轮最上面，`buildRunStatusLines`）：只报运行级状态「在处理 + 跑了多久」，
- *   和运行结束后的「用时」头是同一个槽位、同一种版式（两列缩进 + 加粗文案）；
+ *   和运行结束后的「用时」头是同一个槽位、同一种版式（粗竖条 `▌` + 加粗文案）；
  * - 活动块（接在当前动作组最后一条可见行的下面，`buildActivityLines`）：依次是思考头部、
  *   正在执行的工具与其输出尾巴，最后接一行本轮分类计数尾注。每行前面还带一段
  *   `├─` / `└─` 竖折（`renderActivityRows`）把自己挂在组头下面；只靠缩进时，看不出
@@ -26,7 +26,7 @@
  */
 
 import { formatDuration } from "./duration.js";
-import { RUN_INDENT } from "./header-style.js";
+import { GUTTER_GAP, RUN_GUTTER } from "./header-style.js";
 import { i18n } from "./i18n.js";
 
 /**
@@ -55,17 +55,17 @@ const COLOR_HEADING = "toolTitle";
 /** 从工具参数里尝试读取摘要的候选字段，按优先级排列。 */
 const TOOL_ARG_KEYS = ["command", "file_path", "path", "pattern", "query", "url"] as const;
 /**
- * 运行级状态行的缩进：与组件补丁里折叠头（「用时 …」）共用 `RUN_INDENT`。
+ * 运行级状态行的行首：与组件补丁里折叠头（「用时 …」）的粗竖条同列。
  *
- * 运行中与运行结束共用这一列，状态切换时文案不会横向跳；不画竖条，竖条只属于动作组
- * （半格块与居中细竖线不同族，混用会接成错位的两截，见 `header-style.ts`）。
+ * 运行中与运行结束共用这一列，状态切换时文案不会横向跳；细节行再深一级。
+ * 竖条从 `header-style` 取，两处一旦各写一个就会漂移。
  */
-const BAND_INDENT = RUN_INDENT;
+const BAND_INDENT = `${RUN_GUTTER}${GUTTER_GAP}`;
 /**
  * 活动块树形前缀的缩进：不缩，竖折直接顶在第 0 列。
  *
- * 组头的细竖条 `│` 也在第 0 列，两者连成一条从顶到底的左侧轨道；再缩一级就会让
- * 树形行与组头错开一列，轨道断成两段。
+ * 组头的细竖条 `│` 与运行级的粗竖条 `▌` 都在第 0 列，二级文案因此同列；再缩一级
+ * 就会让树形行与组头错开一列。
  * 展开的动作组里「每条命令一行」也用这一列，思考行才是和命令平级的兄弟项。
  */
 export const TREE_INDENT = "";
@@ -266,6 +266,43 @@ export function dominantActivityClass(counts: Partial<ActivityCounters> | undefi
 	return DOMINANT_ACTIVITY_CLASSES.find((bucket) => (counts[bucket] ?? 0) * 2 > total);
 }
 
+/**
+ * 组内分类计数的展示顺序：数量相同时按它排，渲染顺序才不会抖。
+ */
+const COMPOSITION_BUCKETS: ReadonlyArray<keyof ActivityCounters> = [
+	"command",
+	"read",
+	"search",
+	"other",
+];
+
+/**
+ * 把组内的分类计数拼成构成文案，例如 `运行命令 2 · 读取文件 1`；没可报的分类时返回 undefined。
+ *
+ * 组内动作混杂、没有一类严格过半时用它代替通用词「探索 · N 步」：与其写一句「探索」
+ * 让人猜这一组到底在干什么，不如把实际构成写出来。计数为 0 的分类不出现；`other` 也照写
+ * （「调用工具 1」）—— 构成文案要的就是如实，不再挑分类。
+ */
+export function activityCompositionLabel(
+	counts: Partial<ActivityCounters> | undefined,
+): string | undefined {
+	if (!counts) {
+		return undefined;
+	}
+
+	const parts = COMPOSITION_BUCKETS.filter((bucket) => (counts[bucket] ?? 0) > 0)
+		// 数量多的在前；`sort` 是稳定排序，数量相同时保持上面的固定顺序。
+		.sort((left, right) => (counts[right] ?? 0) - (counts[left] ?? 0))
+		.map((bucket) =>
+			i18n.t("activityCompositionPart", {
+				label: activityClassLabel(bucket),
+				count: String(counts[bucket] ?? 0),
+			}),
+		);
+
+	return parts.length === 0 ? undefined : parts.join(SEGMENT_SEPARATOR);
+}
+
 /** 从工具参数里取一段可读摘要，例如命令原文或文件路径。 */
 export function toolActivityDetail(toolName: string, args: unknown): string | undefined {
 	if (typeof args !== "object" || args === null) {
@@ -448,15 +485,15 @@ function lastNonEmptyLineIndex(lines: string[]): number | undefined {
  * 组装轮首的运行级状态行：在处理（并行时是并行文案）+ 跑了多久。
  *
  * 这一行由渲染层画在轮首，和运行结束后的「用时」头共用同一列与同一套版式
- * （两列缩进 + 加粗文案，不画竖条），因此它是整轮最上面那个槽位里唯一的内容，
+ * （粗竖条 `▌` + 加粗文案），因此它是整轮最上面那个槽位里唯一的内容，
  * 越往下的细节都不归它。
  *
  * 行首不画转动图标：这一行的耗时本身就每秒在变，「还在跑」已经说清楚了；再加一个
  * 每 150ms 转一下的图标，只会在顶部多一处跳动，和活动块里那个真正表示「这条命令在跑」
- * 的图标抢注意力。运行结束后换成 `用时 42s`，两者版式一致，切换时不跳列。
+ * 的图标抢注意力。运行结束后换成 `▌ 用时 42s`，两者版式一致，切换时不跳列。
  *
  * 行首也不加 `[clean]` 来源前缀：折叠头每轮都画、位置固定，前缀只会把文案右推到
- * 与细节行不同的列上。
+ * 与细节行不同的列上。粗竖条本身就是「这是 clean-mode 画的」的标记。
  */
 function buildRunStatusLine(input: ActivityRenderInput): string {
 	const { snapshot, nowMs, paint } = input;

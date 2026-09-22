@@ -458,8 +458,8 @@ function describeStreamedToolCall(call: StreamedToolCall): {
 /**
  * 取某个动作组的组头主词（如「运行命令」）。
  *
- * 组内有一类动作过半就用它命名，混在一起说不清时返回 undefined，由渲染层退回
- * 通用词「探索 · N 步」。
+ * 组内有一类动作过半就用它命名；混在一起说不清时返回 undefined，由渲染层改用构成文案
+ * （`运行命令 2 · 读取文件 1`）。
  */
 function lookupGroupActivityLabel(runtime: Runtime, groupId: number): string | undefined {
 	const dominant = dominantActivityClass(getActionGroupActivityCounts(runtime.actionGroups, groupId));
@@ -509,6 +509,7 @@ function installPatches(runtime: Runtime): void {
 		getRunStatusLines: () => runtime.activityArea.runStatusLines,
 		isCurrentActionGroup: (groupId) => groupId === runtime.actionGroups.currentGroupId,
 		getGroupActivityLabel: (groupId) => lookupGroupActivityLabel(runtime, groupId),
+		getGroupActivityCounts: (groupId) => getActionGroupActivityCounts(runtime.actionGroups, groupId),
 		getRunDuration: (host) => runtime.runDurations.getDuration(host),
 		getRunSteps: (host) => runtime.runDurations.getSteps(host),
 	});

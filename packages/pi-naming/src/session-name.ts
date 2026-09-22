@@ -3,11 +3,12 @@ import type {
   ExtensionContext,
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import { createModelRequester } from "pi-model-request";
 import { i18n } from "./i18n.ts";
 import { DEFAULT_TITLE_CONFIG, type TitleConfig } from "./config.ts";
 
 /** 生成标题所需的最小 session 上下文；终端消费者可复用该契约。 */
-export type SessionNameContext = Pick<ExtensionContext, "model" | "modelRegistry">;
+export type SessionNameContext = Pick<ExtensionContext, "model" | "modelRegistry" | "sessionManager">;
 
 /** 可注入的标题 completion，便于终端消费者和测试复用同一套请求逻辑。 */
 export type SessionNameCompletion = (...args: Parameters<typeof completeSimple>) => ReturnType<typeof completeSimple>;
@@ -147,12 +148,13 @@ export async function requestSessionName({
     throw new Error(i18n.t("sessionNameNoModel"));
   }
 
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (auth.ok === false) {
-    throw new Error(i18n.t("sessionNameAuthFailed", { error: auth.error }));
-  }
+  // 命名请求由扩展自己发出：鉴权与 provider 会话头交给共享请求器，与 Pi 核心行为一致。
+  const request = createModelRequester(ctx, {
+    base: completion,
+    authError: (error) => new Error(i18n.t("sessionNameAuthFailed", { error })),
+  });
 
-  const response = await completion(
+  const response = await request(
     model,
     {
       systemPrompt: [
@@ -171,9 +173,6 @@ export async function requestSessionName({
       ],
     },
     {
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      env: auth.env,
       maxTokens: resolveTitleMaxTokens(model, title.maxTokens),
       // 命名不需要高强度推理；档位可配置，降低思考占用预算的波动。
       reasoning: title.effort,
