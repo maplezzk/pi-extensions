@@ -31,12 +31,8 @@
     "zh-CN": "配置嵌套技能根目录",
     "en-US": "Configure nested skill roots"
   },
-  "configCommandInput": {
-    "zh-CN": "输入技能根目录（多个目录用逗号分隔）",
-    "en-US": "Enter skill roots (separate multiple roots with commas)"
-  },
   "configCommandUsage": {
-    "zh-CN": "用法：/config:nested-skills（打开配置输入）或 /config:nested-skills reset（恢复默认值）",
+    "zh-CN": "用法：/config:nested-skills（打开配置面板）或 /config:nested-skills reset（恢复默认值）",
     "en-US": "Usage: /config:nested-skills (open settings) or /config:nested-skills reset (restore defaults)"
   },
   "configCommandInteractiveOnly": {
@@ -44,11 +40,35 @@
     "en-US": "Nested skill configuration requires the TUI; run this command in an interactive Pi session."
   },
   "configCommandSaved": {
-    "zh-CN": "嵌套技能配置已保存：{path}。请执行 /reload 使配置生效。",
-    "en-US": "Nested skill configuration saved to {path}. Run /reload to apply it."
+    "zh-CN": "嵌套技能配置已保存：{path}。",
+    "en-US": "Nested skill configuration saved to {path}."
   },
   "configCommandInvalid": {
     "zh-CN": "嵌套技能配置无效：{error}",
     "en-US": "Invalid nested skill configuration: {error}"
+  },
+  "configSaveFailed": {
+    "zh-CN": "嵌套技能配置保存失败：{error}",
+    "en-US": "Failed to save nested skill configuration: {error}"
+  },
+  "configMenuTitle": {
+    "zh-CN": "嵌套技能配置",
+    "en-US": "Nested skill settings"
+  },
+  "configLabelSkillRoots": {
+    "zh-CN": "技能根目录",
+    "en-US": "Skill roots"
+  },
+  "configDescSkillRoots": {
+    "zh-CN": "逗号分隔的目录列表，递归扫描其中的 SKILL.md。",
+    "en-US": "Comma-separated directories scanned recursively for SKILL.md files."
+  },
+  "configInputPrompt": {
+    "zh-CN": "输入",
+    "en-US": "Input"
+  },
+  "configValueUnset": {
+    "zh-CN": "未设置",
+    "en-US": "unset"
   }
 }

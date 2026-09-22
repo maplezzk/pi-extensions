@@ -16,11 +16,11 @@ description: 配置与排查 pi-notifications 的外部通知命令、argv 参�
 - `adapter.args`：argv 字符串数组；支持 `{title}`、`{subtitle}`、`{message}` 占位符。
 - `timeoutMs`：正整数，默认 `3000`。
 
-修改配置后执行 `/reload`。配置文件损坏会明确提示，并使用默认配置继续启动。
+手动改配置文件后执行 `/reload`。配置文件损坏会明确提示，并使用默认配置继续启动。
 
-使用 `/config:notifications` 在 TUI 中修改完整通知配置，输入 `reset` 恢复默认值。保存后执行 `/reload`。
+使用 `/config:notifications` 在 TUI 面板中修改完整通知配置，执行 `/config:notifications reset` 恢复默认值。面板里改动即时保存并生效，不需要 `/reload`。
 
-Use `/config:notifications` to edit the complete notification configuration in the TUI, use `reset` for defaults, and run `/reload` after saving.
+Use `/config:notifications` to edit the complete notification configuration in the TUI panel, use `/config:notifications reset` for defaults. Panel changes are saved and applied immediately; no `/reload` is needed.
 
 ## 运行行为
 
