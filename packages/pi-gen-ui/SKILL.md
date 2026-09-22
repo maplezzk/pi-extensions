@@ -31,13 +31,18 @@ description: "配置与排查 pi-gen-ui 的面板渲染、交互面板、结果�
 命令：
 
 ```text
-/config:gen-ui              查看当前配置
-/config:gen-ui enable|disable
-/config:gen-ui catalog      重新生成组件参考文件并打印路径
-/json-render                     别名
+/config:gen-ui                    打开配置面板
+/config:gen-ui status             打印当前生效的配置
+/config:gen-ui enable|disable     两个工具的总开关
+/config:gen-ui reset              恢复默认值
+/config:gen-ui provider <auto|typesafe|gateway>
+/config:gen-ui model <id>         填 default 恢复通道默认模型
+/config:gen-ui composition <on|off>
+/config:gen-ui catalog            重新生成组件参考文件并打印路径
+/gen-ui                           别名
 ```
 
-改完配置文件执行 `/reload`。
+不带参数打开 `SettingsList` 面板（方向键选行、Enter/空格切开关、Enter 开二级列表、Esc 关闭），模型那一行在列表上方有过滤输入框。**面板和命令改的配置立即生效，不用 `/reload`**；只有手改 `config.json` 仍需 `/reload`。
 
 ## 排查
 

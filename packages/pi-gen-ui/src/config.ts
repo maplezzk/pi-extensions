@@ -67,7 +67,16 @@ export const DEFAULT_CONFIG: JsonRenderConfig = {
 };
 
 const VIEW_MODES: readonly InteractiveViewMode[] = ["auto", "always", "never"];
-const PROVIDERS: readonly CompositionProvider[] = ["gateway", "typesafe", "auto"];
+/** Transports the configuration accepts; the panel and the command validate against it. */
+export const COMPOSITION_PROVIDERS: readonly CompositionProvider[] = ["gateway", "typesafe", "auto"];
+
+/** Return a copy with the selected composition fields replaced. */
+export function withComposition(
+	config: JsonRenderConfig,
+	patch: Partial<CompositionConfig>,
+): JsonRenderConfig {
+	return { ...config, composition: { ...config.composition, ...patch } };
+}
 
 /** Clamp a numeric field into a safe range, falling back on invalid input. */
 function clampNumber(options: { value: unknown; fallback: number; min: number; max: number }): number {
@@ -110,7 +119,7 @@ export function normalizeConfig(raw: unknown): JsonRenderConfig {
           ? compositionRaw.enabled
           : DEFAULT_CONFIG.composition.enabled,
       provider:
-        typeof compositionRaw.provider === "string" && (PROVIDERS as readonly string[]).includes(compositionRaw.provider)
+        typeof compositionRaw.provider === "string" && (COMPOSITION_PROVIDERS as readonly string[]).includes(compositionRaw.provider)
           ? (compositionRaw.provider as CompositionProvider)
           : DEFAULT_CONFIG.composition.provider,
       model: optionalString(compositionRaw.model, DEFAULT_CONFIG.composition.model),

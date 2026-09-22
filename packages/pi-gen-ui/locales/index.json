@@ -24,20 +24,164 @@
     "en-US": "When the user must choose, type, or confirm something, use Select/MultiSelect/TextInput/ConfirmInput/Tabs in the spec and bind their values to state. The tool opens an interactive panel and returns the final state after the user acts."
   },
   "commandDescription": {
-    "zh-CN": "查看或修改 pi-gen-ui 配置，并输出生成的组件参考文件路径",
-    "en-US": "Inspect or change pi-gen-ui configuration and print the generated component reference path"
+    "zh-CN": "打开 pi-gen-ui 配置面板；带参数时按参数改单项配置，并输出组件参考文件路径",
+    "en-US": "Open the pi-gen-ui configuration panel, or change one setting by argument, and print the component reference path"
   },
   "commandUsage": {
-    "zh-CN": "用法：/config:gen-ui [enable|disable|status]",
-    "en-US": "Usage: /config:gen-ui [enable|disable|status]"
+    "zh-CN": "用法：/config:gen-ui 打开配置面板；也可带参数 enable|disable|status|reset|provider <auto|typesafe|gateway>|model <id>|composition <on|off>|catalog",
+    "en-US": "Usage: /config:gen-ui opens the configuration panel; arguments: enable|disable|status|reset|provider <auto|typesafe|gateway>|model <id>|composition <on|off>|catalog"
+  },
+  "configMenuTitle": {
+    "zh-CN": "pi-gen-ui 配置",
+    "en-US": "pi-gen-ui configuration"
+  },
+  "configOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configValueUnset": {
+    "zh-CN": "（未设置）",
+    "en-US": "(unset)"
+  },
+  "configSearchPrompt": {
+    "zh-CN": "过滤",
+    "en-US": "Filter"
+  },
+  "configInputPrompt": {
+    "zh-CN": "输入",
+    "en-US": "Value"
+  },
+  "configModelChannelDefault": {
+    "zh-CN": "按通道默认",
+    "en-US": "Channel default"
+  },
+  "configViewAuto": {
+    "zh-CN": "spec 用到交互组件时才打开",
+    "en-US": "Only when the spec uses interactive components"
+  },
+  "configViewAlways": {
+    "zh-CN": "总是打开",
+    "en-US": "Always open"
+  },
+  "configViewNever": {
+    "zh-CN": "从不打开",
+    "en-US": "Never open"
+  },
+  "configProviderAuto": {
+    "zh-CN": "自动（优先 TypeSafe 直连）",
+    "en-US": "Auto (prefers TypeSafe direct)"
+  },
+  "configProviderTypesafe": {
+    "zh-CN": "TypeSafe 直连",
+    "en-US": "TypeSafe direct"
+  },
+  "configProviderGateway": {
+    "zh-CN": "Vercel AI Gateway",
+    "en-US": "Vercel AI Gateway"
+  },
+  "configLabelEnabled": {
+    "zh-CN": "启用插件",
+    "en-US": "Plugin enabled"
+  },
+  "configDescEnabled": {
+    "zh-CN": "关闭后 render_ui 与 compose_ui 都不再工作；渲染和组合都会拒绝执行。",
+    "en-US": "When off, neither render_ui nor compose_ui runs: rendering and composition are both refused."
+  },
+  "configLabelInteractiveView": {
+    "zh-CN": "交互面板",
+    "en-US": "Interactive panel"
+  },
+  "configDescInteractiveView": {
+    "zh-CN": "决定何时接管键盘打开可交互面板；默认只在 spec 用到交互组件时打开。",
+    "en-US": "When the keyboard-interactive panel takes over input; by default only for specs that use interactive components."
+  },
+  "configLabelMaxResultLines": {
+    "zh-CN": "结果行数上限",
+    "en-US": "Result line limit"
+  },
+  "configDescMaxResultLines": {
+    "zh-CN": "渲染结果超过这个行数就折叠，展开工具结果可看全部。",
+    "en-US": "Rendered results longer than this collapse; expand the tool result to see everything."
+  },
+  "configLabelCompositionEnabled": {
+    "zh-CN": "启用组合（compose_ui）",
+    "en-US": "Composition (compose_ui)"
+  },
+  "configDescCompositionEnabled": {
+    "zh-CN": "由决策模型从候选元素里挑拣组合；关闭后 compose_ui 会拒绝执行，render_ui 不受影响。",
+    "en-US": "Let the decision model select and arrange candidates; when off, compose_ui refuses to run and render_ui is unaffected."
+  },
+  "configLabelProvider": {
+    "zh-CN": "组合通道",
+    "en-US": "Composition transport"
+  },
+  "configDescProvider": {
+    "zh-CN": "自动模式优先 TypeSafe 直连，没有对应 key 时退回 Vercel AI Gateway；钉死某个通道后不再回退。",
+    "en-US": "Auto prefers the TypeSafe direct call and falls back to Vercel AI Gateway when its key is missing; pinning a transport disables the fallback."
+  },
+  "configLabelModel": {
+    "zh-CN": "评估模型",
+    "en-US": "Evaluation model"
+  },
+  "configDescModel": {
+    "zh-CN": "送给组合通道的模型 id；只有通道认得的模型可用，留「按通道默认」即用 jev-latest 或 typesafe-ai/jev。",
+    "en-US": "Model id sent to the composition transport; only models the transport knows work. Leave it on the channel default for jev-latest or typesafe-ai/jev."
+  },
+  "configLabelApiKeyEnv": {
+    "zh-CN": "API key 环境变量",
+    "en-US": "API key variable"
+  },
+  "configDescApiKeyEnv": {
+    "zh-CN": "读取 key 的环境变量名；留空用通道默认（TYPESAFE_API_KEY 或 AI_GATEWAY_API_KEY）。",
+    "en-US": "Environment variable holding the key; leave empty for the transport default (TYPESAFE_API_KEY or AI_GATEWAY_API_KEY)."
+  },
+  "configLabelEndpoint": {
+    "zh-CN": "TypeSafe 端点",
+    "en-US": "TypeSafe endpoint"
+  },
+  "configDescEndpoint": {
+    "zh-CN": "仅 TypeSafe 直连使用；留空走官方端点。",
+    "en-US": "Only used by the TypeSafe direct transport; leave empty for the official endpoint."
+  },
+  "configLabelTimeout": {
+    "zh-CN": "单次评估超时",
+    "en-US": "Evaluation timeout"
+  },
+  "configDescTimeout": {
+    "zh-CN": "单次评估请求的毫秒上限，超时按失败回报，不会静默降级。",
+    "en-US": "Milliseconds allowed per evaluation request; a timeout is reported as a failure, never silently degraded."
+  },
+  "configReset": {
+    "zh-CN": "pi-gen-ui 配置已恢复默认值",
+    "en-US": "pi-gen-ui configuration restored to defaults"
+  },
+  "configResetFailed": {
+    "zh-CN": "恢复默认配置失败：{path}（{error}）",
+    "en-US": "Failed to restore the default configuration: {path} ({error})"
   },
   "enabled": {
     "zh-CN": "pi-gen-ui 已启用",
     "en-US": "pi-gen-ui enabled"
   },
   "disabled": {
-    "zh-CN": "pi-gen-ui 已禁用；已有会话需要 /reload 后生效",
-    "en-US": "pi-gen-ui disabled; run /reload for the change to take effect in this session"
+    "zh-CN": "pi-gen-ui 已禁用；render_ui 与 compose_ui 立即停止工作",
+    "en-US": "pi-gen-ui disabled; render_ui and compose_ui stop working immediately"
+  },
+  "providerSet": {
+    "zh-CN": "组合通道已设为 {provider}",
+    "en-US": "Composition transport set to {provider}"
+  },
+  "modelSet": {
+    "zh-CN": "评估模型已设为 {model}",
+    "en-US": "Evaluation model set to {model}"
+  },
+  "compositionSet": {
+    "zh-CN": "组合（compose_ui）：{state}",
+    "en-US": "Composition (compose_ui): {state}"
   },
   "status": {
     "zh-CN": "pi-gen-ui：{state}；结果最多显示 {maxLines} 行；交互面板 {view}；组合 {composition}；组件参考：{catalog}",
@@ -120,8 +264,8 @@
     "en-US": "compose_ui needs usable credentials (TYPESAFE_API_KEY or AI_GATEWAY_API_KEY) and can fail on missing credentials, network, or provider access. When it fails, do not retry the same call: author the spec yourself with render_ui instead."
   },
   "composeDisabled": {
-    "zh-CN": "compose_ui 已在配置中禁用；把 composition.enabled 设为 true 并 /reload 后可用。也可以直接用 render_ui 手写 spec。",
-    "en-US": "compose_ui is disabled in configuration; set composition.enabled to true and /reload to use it. You can also author the spec directly with render_ui."
+    "zh-CN": "compose_ui 已在配置中禁用（composition.enabled=false）；用 /config:gen-ui 打开面板改，立即生效，不用重启。也可以直接用 render_ui 手写 spec。",
+    "en-US": "compose_ui is disabled in configuration (composition.enabled=false). Change it in the /config:gen-ui panel; it applies immediately with no restart. You can also author the spec directly with render_ui."
   },
   "composeMissingKey": {
     "zh-CN": "compose_ui 没有找到可用的 API key（provider 设置为 {provider}）。默认自动模式会优先用 TYPESAFE_API_KEY 直连 TypeSafe，找不到再用 AI_GATEWAY_API_KEY 走 Vercel AI Gateway。请设置其中一个环境变量并重启 Pi，或在配置里指定 composition.apiKeyEnv；也可以直接用 render_ui 手写 spec。",

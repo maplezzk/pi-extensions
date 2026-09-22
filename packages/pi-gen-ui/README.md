@@ -141,12 +141,18 @@ The `typesafe` transport exists because core hard-codes Vercel AI Gateway's endp
 The commands:
 
 ```text
-/config:gen-ui              # show the effective configuration
-/config:gen-ui status       # same
-/config:gen-ui enable|disable
-/config:gen-ui catalog      # regenerate the component reference and print its path
-/json-render                     # alias
+/config:gen-ui                    # open the configuration panel
+/config:gen-ui status             # print the effective configuration
+/config:gen-ui enable|disable     # master switch for both tools
+/config:gen-ui reset              # restore defaults
+/config:gen-ui provider <auto|typesafe|gateway>
+/config:gen-ui model <id>         # "default" restores the transport default
+/config:gen-ui composition <on|off>
+/config:gen-ui catalog            # regenerate the component reference and print its path
+/gen-ui                           # alias
 ```
+
+A bare command opens a `SettingsList` panel: arrows move, Enter/Space flips a toggle, Enter opens a submenu, Esc closes. The model row has a filter input above the list because `SelectList`'s own filter only matches a prefix. Changes made from the panel or the command take effect immediately, with no `/reload`; only hand-editing `config.json` still needs one.
 
 ## How the model learns the catalog
 

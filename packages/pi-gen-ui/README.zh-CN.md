@@ -141,12 +141,18 @@
 命令：
 
 ```text
-/config:gen-ui              查看当前配置
-/config:gen-ui status       同上
-/config:gen-ui enable|disable
-/config:gen-ui catalog      重新生成组件参考文件并打印路径
-/json-render                     别名
+/config:gen-ui                    打开配置面板
+/config:gen-ui status             打印当前生效的配置
+/config:gen-ui enable|disable     两个工具的总开关
+/config:gen-ui reset              恢复默认值
+/config:gen-ui provider <auto|typesafe|gateway>
+/config:gen-ui model <id>         填 default 恢复通道默认模型
+/config:gen-ui composition <on|off>
+/config:gen-ui catalog            重新生成组件参考文件并打印路径
+/gen-ui                           别名
 ```
+
+不带参数会打开 `SettingsList` 面板：方向键选行，Enter/空格切开关，Enter 打开二级列表，Esc 关闭。模型那一行在列表上方多了个过滤输入框——`SelectList` 自带的过滤只做前缀匹配，搜不到 `llm-proxy/LOW` 这类名字。面板和命令改的配置立即生效，不用 `/reload`；只有手改 `config.json` 仍需 `/reload`。
 
 ## 模型怎么知道有哪些组件
 

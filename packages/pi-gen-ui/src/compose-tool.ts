@@ -111,6 +111,13 @@ export function createComposeUiTool(
       const warnings: string[] = [];
       const base: ComposeUiDetails = { warnings, interacted: false, steps: 0, elapsedMs: 0, inputTokens: null };
 
+      // The master switch stops both tools. render_ui refuses in the same place, so disabling
+      // the package never leaves compose_ui running against a paid provider.
+      if (!config.enabled) {
+        const text = i18n.t("toolDisabled");
+        return { content: [{ type: "text", text }], details: { ...base, error: text } };
+      }
+
       const availability = options.getAvailability();
       if (!availability.available) {
         const text =
