@@ -34,12 +34,7 @@ import {
 } from "./verdict-notice.ts";
 import { formatModelValue } from "./model-choice.ts";
 import { openConfigPanel } from "./config-panel.ts";
-import {
-  createNudgeDelivery,
-  registerNudgeContext,
-  triggerSystemNudge,
-  type NudgeDelivery,
-} from "./system-nudge.ts";
+import { registerNudgeContext, triggerSystemNudge } from "./system-nudge.ts";
 
 /** notify 级别常量，避免散落裸字符串。 */
 const NOTICE_INFO: NoticeLevel = "info";
@@ -72,8 +67,6 @@ const CONFIG_MODEL_REUSE_VALUES: readonly string[] = ["default", "current", "ses
 interface AutoGoalRuntime {
   /** 当前生效配置（改动配置后需要 /reload 重新加载）。 */
   config: AutoGoalConfig;
-  /** 催促投递状态：标记当前这一轮是否由催促触发。 */
-  nudge: NudgeDelivery;
   /** 当前会话 id，切换会话时重置预算。 */
   sessionId: string | undefined;
   /** 当前用户请求已自动干预的次数。 */
@@ -86,7 +79,6 @@ interface AutoGoalRuntime {
 function createRuntime(config: AutoGoalConfig): AutoGoalRuntime {
   return {
     config,
-    nudge: createNudgeDelivery(),
     sessionId: undefined,
     used: 0,
     inFlight: false,
@@ -116,8 +108,6 @@ function syncSession(
   if (runtime.sessionId === sessionId) return;
   runtime.sessionId = sessionId;
   runtime.used = 0;
-  // 催促属于上一个会话的那一轮，不能跟着会话走。
-  runtime.nudge.active = false;
 }
 
 /** 判定异步返回后确认会话没有被用户接管：仍然空闲，且叶节点没有变化。 */
@@ -311,7 +301,7 @@ function applyOutcome(
     case "continue": {
       // 先发送再记账：发送失败不应该消耗干预预算。
       try {
-        triggerSystemNudge(pi, runtime.nudge, outcome.message);
+        triggerSystemNudge(pi, outcome.message);
       } catch (error) {
         writeVerdictNotice(ctx, runtime, buildSendFailedNotice(errorText(error)));
         return;
@@ -336,13 +326,9 @@ function registerStopJudgement(pi: ExtensionAPI, runtime: AutoGoalRuntime): void
     if (event.source === "extension") return;
     syncSession(runtime, ctx);
     runtime.used = 0;
-    // 用户接管了会话，上一轮的催促指令不再适用。
-    runtime.nudge.active = false;
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
-    // 这一轮（可能是催促触发的一轮）已经彻底结束，催促不再进入后续请求。
-    runtime.nudge.active = false;
     if (!runtime.config.enabled) return;
     if (!JUDGE_MODES.has(ctx.mode)) return;
     // 已有判定在跑，或 Pi 还会继续（排队消息 / 其他扩展启动了新一轮）时不介入。
@@ -408,7 +394,7 @@ export default function piAutoGoal(pi: ExtensionAPI): void {
   const { config, error } = loadInitialConfig();
   const runtime = createRuntime(config);
   registerConfigCommand(pi, runtime);
-  registerNudgeContext(pi, runtime.nudge);
+  registerNudgeContext(pi);
   registerStopJudgement(pi, runtime);
 
   if (error !== undefined) {
@@ -425,14 +411,7 @@ export default function piAutoGoal(pi: ExtensionAPI): void {
 
 export { configPath, loadConfig, parseConfig, saveConfig } from "./config.ts";
 export type { AutoGoalConfig } from "./config.ts";
-export {
-  NUDGE_CUSTOM_TYPE,
-  createNudgeDelivery,
-  isNudgeMessage,
-  registerNudgeContext,
-  triggerSystemNudge,
-} from "./system-nudge.ts";
-export type { NudgeDelivery } from "./system-nudge.ts";
+export { NUDGE_CUSTOM_TYPE, isNudgeMessage, registerNudgeContext, triggerSystemNudge } from "./system-nudge.ts";
 export { collectTurnSnapshot, truncateText } from "./session-context.ts";
 export type { TurnSnapshot } from "./session-context.ts";
 export { createStopVerdictRequester, parseJudgeVerdict } from "./verdict.ts";
