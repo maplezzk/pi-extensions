@@ -37,7 +37,7 @@ test("每个面板项都有本地化标题、说明与当前值", () => {
 	assert.equal(enabled?.currentValue, labels.off, "关闭态应显示关闭文案");
 
 	const rows = items.find((item) => item.id === ACTIVITY_ROWS_ID);
-	assert.equal(rows?.currentValue, "2");
+	assert.equal(rows?.currentValue, i18n.t("configActivityRowsOption", { count: "2" }));
 	assert.equal(typeof rows?.submenu, "function", "行数项应打开二级选择列表");
 });
 
@@ -57,11 +57,30 @@ test("开关项可切换，未知字段或未知取值不写配置", () => {
 	assert.equal(applyPanelChange(config, ENABLED_ID, "maybe"), undefined);
 });
 
-test("行数项只接受合法数字", () => {
+test("行数项按展示文本写回，未知取值不写配置", () => {
 	const config = configWith({ activityRows: 4 });
-	assert.equal(applyPanelChange(config, ACTIVITY_ROWS_ID, "3")?.activityRows, 3);
+	const threeRows = i18n.t("configActivityRowsOption", { count: "3" });
+	assert.equal(applyPanelChange(config, ACTIVITY_ROWS_ID, threeRows)?.activityRows, 3);
+	// 裸数字不再是合法输入：面板回传的是展示文本，两侧必须用同一套候选表。
+	assert.equal(applyPanelChange(config, ACTIVITY_ROWS_ID, "3"), undefined);
 	assert.equal(applyPanelChange(config, ACTIVITY_ROWS_ID, OUT_OF_RANGE_ROWS), undefined);
 	assert.equal(applyPanelChange(config, ACTIVITY_ROWS_ID, "abc"), undefined);
+});
+
+test("二级列表回传展示文本，选中后行内不会退回裸数字", () => {
+	const item = toSettingItems(configWith({ activityRows: 4 })).find(
+		(entry) => entry.id === ACTIVITY_ROWS_ID,
+	);
+	assert.ok(item?.submenu);
+
+	const picked: string[] = [];
+	const submenu = item.submenu(item.currentValue, (value?: string) => {
+		if (value !== undefined) picked.push(value);
+	});
+	// 列表刚打开就选中当前值，直接回车等于不改动，但回传的仍应是展示文本。
+	submenu.handleInput("\r");
+
+	assert.deepEqual(picked, [i18n.t("configActivityRowsOption", { count: "4" })]);
 });
 
 test("自定义开关文案同样能写回配置", () => {
