@@ -75,10 +75,12 @@ export {
   sendOrcaCommand,
   sendOrcaEscape,
   readOrcaScreen,
+  parseOrcaTerminalTabInfo,
+  decideOrcaCloseStep,
   closeOrcaSurface,
   renameOrcaTerminal,
 } from "./orca.ts";
-export type { OrcaEnvelope } from "./orca.ts";
+export type { OrcaEnvelope, OrcaTerminalState, OrcaCloseDecision } from "./orca.ts";
 
 // ── 便捷函数 ──
 import {
