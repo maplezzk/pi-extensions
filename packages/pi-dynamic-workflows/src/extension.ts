@@ -1,8 +1,9 @@
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionAPI, type ExtensionCommandContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource } from "pi-extensions-i18n";
 import { Type } from "typebox";
-import { loadConfig, saveConfig } from "./config.ts";
+import { openConfigPanel } from "./config-panel.ts";
+import { loadConfig, saveConfig, type WorkflowConfig } from "./config.ts";
 import { cancelRunningWorkflow, createWorkflowTool, renderWorkflowThemed } from "./index.ts";
 import { NOTICE_SOURCE } from "./notice.ts";
 
@@ -19,11 +20,14 @@ export default function extension(pi: ExtensionAPI) {
   }
 
   const config = loadConfig();
-  const workflowTool = createWorkflowTool({ pi });
+  /** 当前注册的 workflow_cancel 工具；异步模式关闭时为空。 */
+  let activeCancelTool: ToolDefinition | undefined;
+  // 热重载：异步模式判定每次调用时现取，所以面板改一项后续调用立刻按新配置走（不用 /reload）。
+  const workflowTool = createWorkflowTool({ pi, isAsync: () => activeCancelTool !== undefined });
   pi.registerTool(workflowTool);
 
-  // 异步模式：注册 workflow_cancel 工具
-  if (config.async) {
+  /** 注册异步模式专属的 workflow_cancel 工具。 */
+  const registerCancelTool = (): ToolDefinition => {
     const cancelTool = defineTool({
       name: "workflow_cancel",
       label: "Cancel Workflow",
@@ -47,8 +51,28 @@ export default function extension(pi: ExtensionAPI) {
         return new Text(theme.fg("toolTitle", theme.bold("workflow_cancel")), 0, 0);
       },
     });
-    pi.registerTool(cancelTool);
+    return cancelTool;
+  };
+
+  // 异步模式：注册 workflow_cancel 工具
+  if (config.background) {
+    activeCancelTool = registerCancelTool();
+    pi.registerTool(activeCancelTool);
   }
+
+  /**
+   * 按一份新配置调整工作区：后续调用看到新配置，正在运行的 workflow 不被打断。
+   * 工具注册是一次性的，所以这里只挂上 workflow_cancel；异步关闭时仅改标志位。
+   */
+  const applyConfig = (next: WorkflowConfig): void => {
+    if (next.background === (activeCancelTool !== undefined)) return;
+    if (next.background) {
+      activeCancelTool = registerCancelTool();
+      pi.registerTool(activeCancelTool);
+      return;
+    }
+    activeCancelTool = undefined;
+  };
 
   // 注册异步模式的结果消息渲染器
   pi.registerMessageRenderer("workflow_result", (message: any, _options: any, theme: any) => {
@@ -84,12 +108,12 @@ export default function extension(pi: ExtensionAPI) {
     };
   });
 
-  registerConfigCommand(pi);
+  registerConfigCommand(pi, applyConfig);
 
   pi.on("session_start", () => {
     const active = pi.getActiveTools();
     const toolNames = [workflowTool.name];
-    if (loadConfig().async) toolNames.push("workflow_cancel");
+    if (activeCancelTool !== undefined) toolNames.push("workflow_cancel");
     for (const name of toolNames) {
       if (!active.includes(name)) {
         pi.setActiveTools([...pi.getActiveTools(), name]);
@@ -103,43 +127,42 @@ export default function extension(pi: ExtensionAPI) {
   });
 }
 
-/** /config:workflow 交互式配置命令；旧名称保留为兼容别名。 */
-function registerConfigCommand(pi: ExtensionAPI) {
+/** /config:workflow 配置面板命令；旧名称保留为兼容别名。 */
+function registerConfigCommand(pi: ExtensionAPI, applyConfig: (config: WorkflowConfig) => void) {
   const command = {
     description: i18n.t("commandDescription"),
-    handler: async (_args, ctx) => {
-      if (!ctx.hasUI) return;
-      while (true) {
-        const cfg = loadConfig();
-        const EXIT = i18n.t("exit");
-        const on = i18n.t("on");
-        const off = i18n.t("off");
-        const choices = [
-          i18n.t("toggleBackend", { value: cfg.backend }),
-          i18n.t("toggleAsync", { value: cfg.async ? on : off }),
-          EXIT,
-        ];
-        const choice = await ctx.ui.select(i18n.t("configTitle"), choices);
-        if (choice === undefined || choice === EXIT) return;
-
-        if (choice === choices[0]) {
-          const saved = saveConfig({ backend: cfg.backend === "subagent" ? "workflow" : "subagent" });
-          notifyWithSource({
-            ctx,
-            source: NOTICE_SOURCE,
-            level: "info",
-            message: i18n.t("savedBackend", { value: saved.backend }),
-          });
-        } else if (choice === choices[1]) {
-          const saved = saveConfig({ async: !cfg.async });
-          notifyWithSource({
-            ctx,
-            source: NOTICE_SOURCE,
-            level: "info",
-            message: `${i18n.t("savedAsync", { value: saved.async ? on : off })} ${i18n.t("reloadHint")}`,
-          });
-        }
+    /** 保存成功后立刻热重载工具，让新配置在本次会话生效。 */
+    onChange(ctx: ExtensionCommandContext, next: WorkflowConfig): void {
+      try {
+        const saved = saveConfig(next);
+        applyConfig(saved);
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: "info",
+          message: i18n.t("configSaved", {
+            backend: saved.backend,
+            async: saved.background ? i18n.t("on") : i18n.t("off"),
+          }),
+        });
+      } catch (error) {
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: "error",
+          message: i18n.t("configSaveFailed", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        });
       }
+    },
+    /** 打开配置面板；每改一项都保存并立即生效，Esc 关闭。 */
+    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+      if (!ctx.hasUI) return;
+      await openConfigPanel(ctx, {
+        getConfig: () => loadConfig(),
+        onChange: (next) => command.onChange(ctx, next),
+      });
     },
   };
   for (const name of ["config:workflow", "workflow-config", "pi-workflow-config"] as const) {

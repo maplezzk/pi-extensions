@@ -5,7 +5,7 @@ description: "启用与排查 pi-metrics 的耗时、TPS、TTFT、token 和成�
 
 # 配置 pi-metrics
 
-配置文件为 `<Pi agent 目录>/extensions/pi-metrics/config.json`，字段有 `enabled`（默认 `true`）和 `display`（`"on-stop"` 默认 / `"live"`）。可以使用 `/config:metrics` 打开 TUI 菜单（每次选择都会保存并重新打开，选「完成」退出），或用 `/config:metrics enable|disable|live|on-stop|reset` 直接改一项。手动修改配置文件后执行 `/reload`。
+配置文件为 `<Pi agent 目录>/extensions/pi-metrics/config.json`，字段有 `enabled`（默认 `true`）和 `display`（`"on-stop"` 默认 / `"live"`）。使用 `/config:metrics` 打开 TUI 配置面板：总开关回车原地切换，显示时机回车打开二级列表；每改一项立即写盘并生效，不需要 `/reload`。也可用 `/config:metrics enable|disable|live|on-stop|reset` 直接改一项。手动修改配置文件后执行 `/reload`。
 
 `display` 决定指标行何时出现：`on-stop` 只在整段运行停下后出一行汇总（总耗时 · 混合 TPS · TTFT · in/out · stall · 费率），`live` 每轮结束就出一行。spinner 上的实时耗时两种模式都有。
 

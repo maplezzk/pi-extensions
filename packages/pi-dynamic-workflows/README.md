@@ -25,12 +25,12 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 ## Configuration
 
-Run `/config:workflow` to interactively configure:
+Run `/config:workflow` to open the settings panel (Enter opens a picker for the backend, Enter toggles async mode in place; every change is saved and applied immediately, so no `/reload` is needed):
 
 - **Execution backend**: `workflow` (built-in in-process agent) or `subagent` (requires `pi-interactive-subagents` to be installed and loaded; each agent gets a real tool session)
 - **Async mode**: run workflows in the background with a live status widget
 
-Config is persisted to `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`.
+Config is persisted to `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`. The on-disk key for async mode is still `async` (`{"backend": "workflow", "async": false}`); the value is validated on write.
 
 Environment variables are supported as fallback only:
 

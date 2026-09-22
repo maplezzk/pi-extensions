@@ -47,17 +47,21 @@
     "zh-CN": "指标配置",
     "en-US": "Metrics settings"
   },
-  "configEnabled": {
-    "zh-CN": "启用指标：{value}",
-    "en-US": "Metrics enabled: {value}"
+  "configLabelEnabled": {
+    "zh-CN": "启用指标",
+    "en-US": "Enable metrics"
   },
-  "configDisabled": {
-    "zh-CN": "禁用指标：{value}",
-    "en-US": "Metrics disabled: {value}"
+  "configLabelDisplay": {
+    "zh-CN": "显示时机",
+    "en-US": "Display timing"
   },
-  "configDisplay": {
-    "zh-CN": "显示时机：{value}",
-    "en-US": "Display: {value}"
+  "configDescEnabled": {
+    "zh-CN": "关闭后不注册任何指标处理器",
+    "en-US": "Turn off to register no metric handlers"
+  },
+  "configDescDisplay": {
+    "zh-CN": "每轮实时一行，或停下后只汇总一行",
+    "en-US": "One line per turn, or a single summary line when stopped"
   },
   "configDisplayLive": {
     "zh-CN": "每轮实时一行",
@@ -75,17 +79,13 @@
     "zh-CN": "关",
     "en-US": "off"
   },
-  "configDone": {
-    "zh-CN": "完成",
-    "en-US": "Done"
-  },
   "configCommandInteractiveOnly": {
     "zh-CN": "指标配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
     "en-US": "Metrics configuration requires the TUI; run this command in an interactive Pi session."
   },
   "configCommandSaved": {
-    "zh-CN": "指标配置已保存：{path}。请执行 /reload 使配置生效。",
-    "en-US": "Metrics configuration saved to {path}. Run /reload to apply it."
+    "zh-CN": "指标配置已保存：{path}。",
+    "en-US": "Metrics configuration saved to {path}."
   },
   "configCommandInvalid": {
     "zh-CN": "指标配置无效：{error}",

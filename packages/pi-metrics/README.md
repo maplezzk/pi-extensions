@@ -11,7 +11,7 @@ Session metrics for the [Pi coding agent](https://github.com/earendil-works/pi):
   - `on-stop` (default): the transcript stays quiet during the run. When the agent fully settles (`agent_settled` — including auto-retries, compaction continuations, or Esc interruption), one summary line reports the total elapsed time, blended TPS, TTFT, summed in/out tokens, stalls, and blended cost.
   - `live`: one line per turn, right when the turn ends (the line already carries the turn duration, so no separate elapsed notice is emitted). A multi-turn run also gets a final `⏱ <duration>` line.
 - Telemetry for every turn is persisted as `tps` custom session entries in both modes, and restored after session resume or `/tree` navigation.
-- Metrics are exposed through session entries and notifications. Use `/config:metrics` to open the TUI settings menu, or `/config:metrics enable|disable|live|on-stop|reset` to change a setting directly.
+- Metrics are exposed through session entries and notifications. Use `/config:metrics` to open the TUI settings panel, or `/config:metrics enable|disable|live|on-stop|reset` to change a setting directly.
 
 ## Configuration
 
@@ -29,7 +29,7 @@ The configuration file is `<pi-agent-dir>/extensions/pi-metrics/config.json`:
 | `enabled` | `true` / `false` | `true` | Master switch. `false` registers no metric handlers at all. |
 | `display` | `"on-stop"` / `"live"` | `"on-stop"` | When metric lines appear: one summary line after the run stops, or one line per turn. |
 
-Use `/config:metrics` for the interactive menu (each selection is saved and the menu reopens until you pick **Done**), or the direct form to change one field. Run `/reload` after editing the file by hand.
+Use `/config:metrics` for the settings panel (Enter toggles the master switch in place and opens a picker for the display timing; every change is saved and applied immediately, so no `/reload` is needed), or the direct form to change one field. Run `/reload` after editing the file by hand.
 
 ## How the summary line is computed
 
