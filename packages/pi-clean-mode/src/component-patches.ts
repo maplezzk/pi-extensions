@@ -21,7 +21,7 @@ import {
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { MouseRegion, truncateToWidth, visibleWidth, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { renderTreePrefix } from "./activity.js";
+import { activityCompositionLabel, renderTreePrefix, type ActivityCounters } from "./activity.js";
 import {
 	TOOL_ROW_GROUP_HEADER,
 	TOOL_ROW_HIDDEN,
@@ -31,7 +31,7 @@ import {
 import { formatDuration } from "./duration.js";
 import { debugLog } from "./debug-logger.js";
 import type { HeaderStyler } from "./header-style.js";
-import { GROUP_GUTTER, renderGutterPrefix, RUN_INDENT } from "./header-style.js";
+import { GUTTER_GAP, GROUP_GUTTER, renderGutterPrefix, RUN_GUTTER } from "./header-style.js";
 import { i18n } from "./i18n.js";
 import {
 	resolveAssistantMessageRender,
@@ -124,6 +124,10 @@ interface ToolMessageHost {
 	toolCallId?: string;
 	/** Pi 在构造时写入的工具名；动作摘要缺失时用它兜底。 */
 	toolName?: string;
+	/** Pi 在调用还没结束时置 true；工具行底色靠它分「进行中」与「已完成」。 */
+	isPartial?: boolean;
+	/** Pi 的工具结果；出错时 `isError` 为 true，工具行底色靠它分出错误档。 */
+	result?: unknown;
 	/** Pi 记录的工具输出展开状态；工具行箭头靠它决定朝向。 */
 	expanded?: boolean;
 	/** Pi 的展开开关；点工具行箭头时调它。 */
@@ -223,6 +227,13 @@ export interface ComponentPatchDeps {
 	getRunDuration: (host: object) => number | undefined;
 	/** 查询某个承载者所属那一轮的工具调用数。 */
 	getRunSteps: (host: object) => number | undefined;
+	/**
+	 * 取某个动作组里各分类的动作条数（`{ read, search, command, other }`）。
+	 *
+	 * 没有一类过半时组头不再写通用词，而是把实际构成写出来（`运行命令 2 · 读取文件 1`），
+	 * 所以除了主词之外还得拿到计数。
+	 */
+	getGroupActivityCounts: (groupId: number) => Partial<ActivityCounters> | undefined;
 }
 
 /** 把 Pi 的 hasToolCalls 映射成业务分类；映射规则见本文件顶部说明。 */
@@ -230,12 +241,54 @@ function classifyAssistantMessage(hasToolCalls: boolean): AssistantMessageKind {
 	return hasToolCalls ? "work" : "final";
 }
 
+/** 工具行三档底色的状态位；Pi 的工具组件上有，测试替身可能没有。 */
+interface ToolRowBackgroundState {
+	/** 调用还没结束。 */
+	isPartial?: unknown;
+	/** 工具结果；出错时 `isError` 为 true。 */
+	result?: unknown;
+}
+
+/**
+ * 这一行该铺哪一档底色。
+ *
+ * 三档照搬 Pi 原生工具行：还在跑 `toolPendingBg`、出错 `toolErrorBg`、其余
+ * `toolSuccessBg`。读不到状态（老版本 Pi、测试替身）时按「已完成」算 —— 工具行绝大多数
+ * 时候是已完成态，猜错的代价最小。
+ */
+function resolveToolRowBackground(
+	host: ToolMessageHost,
+	deps: ComponentPatchDeps,
+): (text: string) => string {
+	const state = host as ToolRowBackgroundState;
+	if (state.isPartial === true) {
+		return deps.styler.pendingBg;
+	}
+
+	const result = state.result;
+	if (typeof result === "object" && result !== null && (result as { isError?: unknown }).isError === true) {
+		return deps.styler.errorBg;
+	}
+
+	return deps.styler.successBg;
+}
+
+/**
+ * 把一行补齐到渲染宽度。
+ *
+ * 铺底色的行必须自己补到整宽：底色块到哪结束由字符串长度决定，不补齐就会在文字结束的
+ * 地方断掉，看着像一块没画完的色块。只加空格，不加可见字符。
+ */
+function padToWidth(line: string, width: number): string {
+	const missing = width - visibleWidth(line);
+	return missing > 0 ? `${line}${" ".repeat(missing)}` : line;
+}
+
 /**
  * 组装运行级折叠头。「用时」在左，箭头紧随其后。
  *
- * 行首只有 `RUN_INDENT` 两列缩进，不画竖条：左侧轨道只属于动作组（半格块 `▌` 与居中
- * 的细竖条不同族，接起来是错位的一截，见 `header-style.ts`）。这一行靠位置（整轮最
- * 顶部）、加粗与主文字色区别于正文，文案仍与动作组文案同列。
+ * 行首是粗竖条 `▌`（加粗 + 主文字色），两级竖条里最强的一档：正文从不画竖条，
+ * 所以一眼就能看出「这里收了一整轮」。文案仍与动作组文案同列。
  */
 function buildRunHeaderLine(
 	host: AssistantMessageHost,
@@ -245,7 +298,8 @@ function buildRunHeaderLine(
 	const chevron = deps.getState().collapsed ? COLLAPSED_CHEVRON : EXPANDED_CHEVRON;
 	// 箭头紧跟在文案右边：先看到「这一轮用了多久」，紧接着就知道这行能点开。
 	return [
-		RUN_INDENT,
+		RUN_GUTTER,
+		GUTTER_GAP,
 		deps.styler.bold(deps.styler.primary(i18n.t("runHeader", { duration }))),
 		" ",
 		deps.styler.muted(i18n.t("runHeaderSteps", { count: String(deps.getRunSteps(host) ?? 0) })),
@@ -278,7 +332,7 @@ function createRunHeaderComponent(
 			const status = deps.isCurrentRunHost(host) ? deps.getRunStatusLines() : [];
 			if (status.length > 0) {
 				// 状态行非空就意味着这一轮还在跑，耗时还没写入，不可能同时要画耗时头。
-				// 状态行与耗时头同列同款（都是两列缩进 + 加粗文案），所以这里不用再包装一层。
+				// 状态行与耗时头同列同款（都是 `▌ + 文案`），所以这里不用再包装一层。
 				return [HEADER_LEADING_BLANK, ...status];
 			}
 
@@ -471,15 +525,21 @@ const MIN_GROUP_SIZE_FOR_SUMMARY = 2;
 /**
  * 多条组的组头文案：组内有一类动作过半就用它命名（`运行命令 · 12 步`）。
  *
- * 没有过半的分类时退回通用词（`探索 · 7 步`）：一类只多出一条却说成「读取文件 · 8 步」
- * 是误导，不如不报。
+ * 没有过半的分类时不再写一句让人猜的通用词，而是把这一组实际由什么组成写出来
+ * （`运行命令 2 · 读取文件 1`）；连构成都拿不到（旧数据、计数缺失）才退回「探索 · N 步」。
+ * 一类只多出一条却说成「读取文件 · 8 步」是误导，不如报构成。
  */
 function buildSummaryLabel(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
 	const count = String(group.groupSize);
 	const activity = deps.getGroupActivityLabel(group.membership.groupId);
-	return activity === undefined
-		? i18n.t("actionGroupHeader", { count })
-		: i18n.t("actionGroupSteps", { label: activity, count });
+	if (activity !== undefined) {
+		return i18n.t("actionGroupSteps", { label: activity, count });
+	}
+
+	return (
+		activityCompositionLabel(deps.getGroupActivityCounts(group.membership.groupId)) ??
+		i18n.t("actionGroupHeader", { count })
+	);
 }
 
 /**
@@ -488,24 +548,38 @@ function buildSummaryLabel(group: ToolRowGroupInfo, deps: ComponentPatchDeps): s
  * 组内只有一条时直接用这条动作的摘要（「运行命令 ls -la」），这样才能既收起原始
  * 输出又不丢失「刚才做了什么」；两条以上才汇总成「主词 · N 步」。
  *
- * 行首是细竖条 `│`（弱化色），与运行级状态行同列起写，是左侧轨道唯一的一档；
+ * 行首是细竖条 `│`（弱化色），与运行级粗竖条同列起写，比它弱一档；
  * 文案与竖条同属这一档，也用弱化色 —— 组头是「一行汇总」，不是正文，不该比正文还抢眼。
- * 层级在这里靠竖直的粗细与色档区分，而不是底色块。
+ *
+ * 整行铺工具底色（当前组用「进行中」档，其余用「已完成」档）：折叠态下这一行就是工具调用的
+ * 替身，得和 Agent 写的正文分开。底色要铺到整宽，所以标签先按可用宽度截断。
  *
  * 分类计数不在这里：它跟着活动块走作为尾注，免得组头、活动块、轮首三处都在报进度。
  */
-function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatchDeps): string {
+function buildActionGroupHeaderRow(
+	group: ToolRowGroupInfo,
+	deps: ComponentPatchDeps,
+	width: number,
+): string {
 	const showsStepCount = group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY;
 	const label = showsStepCount
 		? buildSummaryLabel(group, deps)
 		: (group.summary ?? i18n.t("actionGroupHeader", { count: String(group.groupSize) }));
 	const chevron = group.groupExpanded ? EXPANDED_CHEVRON : COLLAPSED_CHEVRON;
-	return [
-		renderGutterPrefix(deps.styler),
-		deps.styler.muted(label),
-		ARROW_GAP,
-		deps.styler.accent(chevron),
-	].join("");
+	const prefix = renderGutterPrefix(deps.styler);
+	const tail = `${ARROW_GAP}${deps.styler.accent(chevron)}`;
+	// 先把标签截到「行宽减去前缀与箭头」，否则长构成文案会把箭头挤出屏幕。
+	const labelWidth = Math.max(0, width - visibleWidth(prefix) - visibleWidth(tail));
+	const line = `${prefix}${deps.styler.muted(
+		truncateToWidth(label, labelWidth, TRUNCATION_ELLIPSIS),
+	)}${tail}`;
+	const state = deps.getState();
+	// 只有「当前组 + 本轮还没结束」才算进行中：运行结束后所有组头都是已完成的颜色，
+	// 否则最后一组会一直带着「还在跑」的底色。
+	const inProgress = !state.runSettled && deps.isCurrentActionGroup(group.membership.groupId);
+	const band = inProgress ? deps.styler.pendingBg : deps.styler.successBg;
+
+	return band(padToWidth(line, width));
 }
 
 /**
@@ -518,8 +592,9 @@ function buildActionGroupHeaderRow(group: ToolRowGroupInfo, deps: ComponentPatch
 function buildActionGroupHeaderLines(
 	group: ToolRowGroupInfo,
 	deps: ComponentPatchDeps,
+	width: number,
 ): string[] {
-	return [ACTION_GROUP_HEADER_BLANK, buildActionGroupHeaderRow(group, deps)];
+	return [ACTION_GROUP_HEADER_BLANK, buildActionGroupHeaderRow(group, deps, width)];
 }
 
 /** 组装成员命令摘要行所需的输入。 */
@@ -540,6 +615,8 @@ interface ToolRowRenderInput {
  * 组装展开的组里一条成员命令的摘要行：`├─ 读取 src/index.ts ▶`。
  *
  * 摘要是「有这条命令」的提示，不是正文，用弱化色（与组头同档）；箭头仍用强调色。
+ * 整行铺工具底色（进行中 / 已完成 / 出错三档，与 Pi 原生工具行一致）：这条不是 Agent
+ * 写的字，靠底色与正文分开，而不是靠读者去认前缀。底色铺到整宽，色块才不会中途断掉。
  *
  * 组展开后成员不再直接铺原始输出，而是一条命令一行——一屏能看完整组跑过哪些命令，
  * 要看哪条的原文再点哪条；否则一屏装不下几条，组里跑了多少、还剩哪些没看都看不出来。
@@ -563,7 +640,9 @@ function buildToolSummaryLine({ host, group, deps, width }: ToolRowRenderInput):
 	const text = deps.styler.muted(truncateToWidth(summary, textWidth, TRUNCATION_ELLIPSIS));
 	const line = `${prefix}${text}${ARROW_GAP}${deps.styler.accent(arrow)}`;
 	// 宽度小到连前缀都放不下时，宁可丢掉箭头也不能撑破布局。
-	return visibleWidth(line) > width ? truncateToWidth(line, width, TRUNCATION_ELLIPSIS) : line;
+	const fitted =
+		visibleWidth(line) > width ? truncateToWidth(line, width, TRUNCATION_ELLIPSIS) : line;
+	return resolveToolRowBackground(host, deps)(padToWidth(fitted, width));
 }
 
 /**
@@ -848,13 +927,13 @@ function renderGroupHeaderRow(input: ToolRowRenderInput): string[] {
 	const { host, group, deps, width, originalRender } = input;
 	if (!group.groupExpanded) {
 		// 收起时成员行整行隐藏，没有正文可点，命中区归零避免鼠标透传算错行。
-		const headerLines = buildActionGroupHeaderLines(group, deps);
+		const headerLines = buildActionGroupHeaderLines(group, deps, width);
 		clearToolRowHitAreas(host);
 		host[TOOL_ROW_HEADER_HEIGHT_KEY] = headerLines.length;
 		return appendActivityTail(headerLines, { group, deps, width });
 	}
 
-	const headerLines = buildActionGroupHeaderLines(group, deps);
+	const headerLines = buildActionGroupHeaderLines(group, deps, width);
 	host[TOOL_ROW_HEADER_HEIGHT_KEY] = headerLines.length;
 
 	if (group.groupSize >= MIN_GROUP_SIZE_FOR_SUMMARY) {
