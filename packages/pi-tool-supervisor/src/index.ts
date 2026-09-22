@@ -62,6 +62,7 @@ import {
   type ReviewTrigger,
 } from "./review-utils.ts";
 import { askTypeSafe, type TypeSafeConnection } from "./typesafe-client.ts";
+import { openSupervisorPanel } from "./config-panel.ts";
 import {
   buildJudgmentFindings,
   buildJudgmentQuestions,
@@ -94,22 +95,6 @@ const EDIT_TOOL = "edit";
 const WRITE_TOOL = "write";
 const ALL_TOOLS = "*";
 const DEFAULT_REVIEW_TOOLS = [EDIT_TOOL, WRITE_TOOL];
-const REVIEW_TRIGGERS = [BEFORE_TRIGGER, AFTER_TRIGGER];
-const CONFIG_ENABLED_CHOICE_INDEX = 0;
-const CONFIG_TIMEOUT_CHOICE_INDEX = 1;
-const CONFIG_FILE_CONTEXT_CHOICE_INDEX = 2;
-const CONFIG_RULES_CHOICE_INDEX = 3;
-const CONFIG_REVIEWER_CHOICE_OFFSET = 4;
-const REVIEWER_STATUS_CHOICE_INDEX = 0;
-const REVIEWER_NAME_CHOICE_INDEX = 1;
-const REVIEWER_BACKEND_CHOICE_INDEX = 2;
-const REVIEWER_MODEL_CHOICE_INDEX = 3;
-const REVIEWER_RULES_CHOICE_INDEX = 4;
-const REVIEWER_TOOLS_CHOICE_INDEX = 5;
-const REVIEWER_TRIGGER_CHOICE_INDEX = 6;
-const REVIEWER_CONDITION_CHOICE_INDEX = 7;
-const REVIEWER_PATTERNS_CHOICE_INDEX = 8;
-const REVIEWER_DELETE_CHOICE_INDEX = 9;
 /** `REVIEW_BACKENDS` 里的 TypeSafe 取值；用常量避免散落的字面量比较。 */
 const TYPE_SAFE_BACKEND: ReviewBackend = REVIEW_BACKENDS[1];
 const CONDITION_NOT_MATCHED_MESSAGE_KEY = "conditionNotMatched";
@@ -983,153 +968,7 @@ async function processFileReviewResult(
   });
 }
 
-async function inputPositiveInteger(
-  ctx: ExtensionCommandContext,
-  title: string,
-  current: number,
-): Promise<number | undefined> {
-  const value = await ctx.ui.input(title, String(current));
-  if (value === undefined) return undefined;
-  if (!/^\d+$/.test(value.trim()) || Number(value) <= 0) {
-    notify(ctx, i18n.t("positiveInteger"), "error");
-    return undefined;
-  }
-  return Number(value);
-}
-
-async function inputModel(
-  ctx: ExtensionCommandContext,
-  current: string,
-): Promise<string | undefined> {
-  const value = await ctx.ui.input(i18n.t("modelInput"), current);
-  if (value === undefined) return undefined;
-  const normalized = value.trim();
-  if (!/^[^/\s]+\/[^/\s]+$/.test(normalized)) {
-    notify(ctx, i18n.t("modelInvalid"), "error");
-    return undefined;
-  }
-  return normalized;
-}
-
-async function inputList(
-  ctx: ExtensionCommandContext,
-  title: string,
-  current: string[],
-  required: boolean,
-): Promise<string[] | undefined> {
-  const value = await ctx.ui.input(title, current.join(", "));
-  if (value === undefined) return undefined;
-  const items = value.split(",").map((item) => item.trim()).filter(Boolean);
-  if (required && items.length === 0) {
-    notify(ctx, i18n.t("listRequired"), "error");
-    return undefined;
-  }
-  return items;
-}
-
-/** 引擎选项的本地化标签，以及把选中标签反查回 backend。 */
-function backendChoice(labels: Record<ReviewBackend, string>): { labels: string[]; resolve: (selected: string) => ReviewBackend | undefined } {
-  return {
-    labels: REVIEW_BACKENDS.map((backend) => labels[backend]),
-    resolve: (selected) => REVIEW_BACKENDS.find((backend) => labels[backend] === selected),
-  };
-}
-
-/** 切换审查引擎；切到 model 时必须先拿到可用的 provider/model，否则保持原设置。 */
-async function switchReviewerBackend(
-  ctx: ExtensionCommandContext,
-  reviewer: FileEditReviewReviewerConfig,
-): Promise<void> {
-  const choices = backendChoice({ model: i18n.t("backendModel"), typesafe: i18n.t("backendTypesafe") });
-  const selected = choices.resolve((await ctx.ui.select(i18n.t("backendInput"), choices.labels)) ?? "");
-  if (!selected || selected === reviewerBackend(reviewer)) return;
-  if (selected === TYPE_SAFE_BACKEND) {
-    delete reviewer.model;
-    reviewer.backend = TYPE_SAFE_BACKEND;
-    reviewer.typesafeModel ??= DEFAULT_TYPESAFE_MODEL;
-    return;
-  }
-  const model = await inputModel(ctx, reviewer.model ?? "");
-  if (!model) return;
-  delete reviewer.backend;
-  delete reviewer.typesafeModel;
-  reviewer.model = model;
-}
-
-/** Edits reviewer lifecycle fields and persists validated user choices through the caller. */
-async function editReviewer(
-  ctx: ExtensionCommandContext,
-  reviewer: FileEditReviewReviewerConfig,
-): Promise<"deleted" | "back"> {
-  while (true) {
-    const rulesFiles = reviewer.rulesFiles ?? (reviewer.rulesFile ? [reviewer.rulesFile] : []);
-    const isTypesafe = reviewerBackend(reviewer) === TYPE_SAFE_BACKEND;
-    const choices = [
-      i18n.t("status", { value: reviewer.enabled === false ? i18n.t("disabled") : i18n.t("enabled") }),
-      i18n.t("name", { value: reviewer.name }),
-      i18n.t("backendConfig", { value: isTypesafe ? i18n.t("backendTypesafe") : i18n.t("backendModel") }),
-      isTypesafe
-        ? i18n.t("typesafeModel", { value: reviewer.typesafeModel ?? DEFAULT_TYPESAFE_MODEL })
-        : i18n.t("model", { value: reviewer.model ?? "" }),
-      i18n.t("rules", { value: rulesFiles.join(", ") }),
-      i18n.t("tools", { value: (reviewer.tools ?? DEFAULT_REVIEW_TOOLS).join(", ") }),
-      i18n.t("triggerConfig", { value: reviewerTrigger(reviewer) }),
-      i18n.t("conditionConfig", { value: reviewer.condition ?? i18n.t("conditionNone") }),
-      i18n.t("patterns", { value: reviewer.filePatterns?.join(", ") || i18n.t("allFiles") }),
-      i18n.t("deleteReviewer"),
-      i18n.t("back"),
-    ];
-    const choice = await ctx.ui.select(i18n.t("editReviewer", { name: reviewer.name }), choices);
-    if (choice === undefined || choice === i18n.t("back")) return "back";
-
-    if (choice === choices[REVIEWER_STATUS_CHOICE_INDEX]) {
-      reviewer.enabled = reviewer.enabled === false;
-    } else if (choice === choices[REVIEWER_NAME_CHOICE_INDEX]) {
-      const value = await ctx.ui.input(i18n.t("reviewerName"), reviewer.name);
-      if (value?.trim()) reviewer.name = value.trim();
-    } else if (choice === choices[REVIEWER_BACKEND_CHOICE_INDEX]) {
-      await switchReviewerBackend(ctx, reviewer);
-    } else if (choice === choices[REVIEWER_MODEL_CHOICE_INDEX]) {
-      if (isTypesafe) {
-        const value = await ctx.ui.input(i18n.t("typesafeModelInput"), reviewer.typesafeModel ?? DEFAULT_TYPESAFE_MODEL);
-        const typesafeModel = value?.trim();
-        if (typesafeModel) reviewer.typesafeModel = typesafeModel;
-      } else {
-        const value = await inputModel(ctx, reviewer.model ?? "");
-        if (value !== undefined) reviewer.model = value;
-      }
-    } else if (choice === choices[REVIEWER_RULES_CHOICE_INDEX]) {
-      const value = await inputList(ctx, i18n.t("listInput"), rulesFiles, true);
-      if (value !== undefined) {
-        delete reviewer.rulesFile;
-        reviewer.rulesFiles = value;
-      }
-    } else if (choice === choices[REVIEWER_TOOLS_CHOICE_INDEX]) {
-      const value = await inputList(ctx, i18n.t("toolsInput"), reviewer.tools ?? DEFAULT_REVIEW_TOOLS, true);
-      if (value !== undefined) reviewer.tools = value.includes(ALL_TOOLS) ? [ALL_TOOLS] : value;
-    } else if (choice === choices[REVIEWER_TRIGGER_CHOICE_INDEX]) {
-      const value = await ctx.ui.select(i18n.t("triggerInput"), REVIEW_TRIGGERS);
-      if (value) reviewer.trigger = value as ReviewTrigger;
-    } else if (choice === choices[REVIEWER_CONDITION_CHOICE_INDEX]) {
-      const value = await ctx.ui.input(i18n.t("conditionInput"), reviewer.condition ?? "");
-      if (value !== undefined) {
-        const condition = value.trim();
-        if (condition) reviewer.condition = condition;
-        else delete reviewer.condition;
-      }
-    } else if (choice === choices[REVIEWER_PATTERNS_CHOICE_INDEX]) {
-      const value = await inputList(ctx, i18n.t("listInputOptional"), reviewer.filePatterns ?? [], false);
-      if (value !== undefined) reviewer.filePatterns = value;
-    } else if (choice === choices[REVIEWER_DELETE_CHOICE_INDEX]) {
-      const confirmed = await ctx.ui.confirm(
-        i18n.t("deleteTitle"),
-        i18n.t("deleteMessage", { name: reviewer.name }),
-      );
-      if (confirmed) return "deleted";
-    }
-  }
-}
-
+/** 把配置写回 config.json，并在重新加载出现警告时显式提示（不静默降级）。 */
 async function saveFileEditReviewConfig(
   ctx: ExtensionCommandContext,
   config: FileEditReviewConfig,
@@ -1143,97 +982,99 @@ async function saveFileEditReviewConfig(
   }
 }
 
-async function addReviewer(
+/**
+ * 新增 reviewer：依次问出名称、引擎、模型、规则文件，凑齐后返回配置对象。
+ * 任一步取消或校验失败就返回 undefined，由调用方放弃这次新增。
+ */
+async function askNewReviewer(
   ctx: ExtensionCommandContext,
   reviewers: FileEditReviewReviewerConfig[],
-): Promise<boolean> {
-  const name = await ctx.ui.input(i18n.t("reviewerName"), `reviewer-${reviewers.length + 1}`);
-  if (!name?.trim()) return false;
-  const choices = backendChoice({ model: i18n.t("backendModel"), typesafe: i18n.t("backendTypesafe") });
-  const backend = choices.resolve((await ctx.ui.select(i18n.t("backendInput"), choices.labels)) ?? "");
-  if (!backend) return false;
-  if (backend === TYPE_SAFE_BACKEND) {
+): Promise<FileEditReviewReviewerConfig | undefined> {
+  const name = (await ctx.ui.input(i18n.t("reviewerName"), `reviewer-${reviewers.length + 1}`))?.trim();
+  if (!name) return undefined;
+  const backend = await ctx.ui.select(i18n.t("backendInput"), [i18n.t("backendModel"), i18n.t("backendTypesafe")]);
+  if (!backend) return undefined;
+  const isTypesafe = backend === i18n.t("backendTypesafe");
+  if (isTypesafe) {
     const model = await ctx.ui.input(i18n.t("typesafeModelInput"), DEFAULT_TYPESAFE_MODEL);
-    if (model === undefined) return false;
-    const rulesFiles = await inputList(ctx, i18n.t("listInput"), [], true);
-    if (!rulesFiles) return false;
-    reviewers.push({
-      name: name.trim(),
+    if (model === undefined) return undefined;
+    const rulesFiles = await askRuleFiles(ctx);
+    if (!rulesFiles) return undefined;
+    return {
+      name,
       backend: TYPE_SAFE_BACKEND,
       typesafeModel: model.trim() || DEFAULT_TYPESAFE_MODEL,
       rulesFiles,
       enabled: true,
       tools: [...DEFAULT_REVIEW_TOOLS],
       trigger: AFTER_TRIGGER,
-    });
-    return true;
+    };
   }
-  const model = await inputModel(ctx, "llm-proxy/LOW");
-  if (!model) return false;
-  const rulesFiles = await inputList(ctx, i18n.t("listInput"), [], true);
-  if (!rulesFiles) return false;
-  reviewers.push({ name: name.trim(), model, rulesFiles, enabled: true, tools: [...DEFAULT_REVIEW_TOOLS], trigger: AFTER_TRIGGER });
-  return true;
+  const model = (await ctx.ui.input(i18n.t("modelInput"), "llm-proxy/LOW"))?.trim();
+  if (!model || !/^[^/\s]+\/[^/\s]+$/.test(model)) {
+    if (model !== undefined) notify(ctx, i18n.t("modelInvalid"), "error");
+    return undefined;
+  }
+  const rulesFiles = await askRuleFiles(ctx);
+  if (!rulesFiles) return undefined;
+  return { name, model, rulesFiles, enabled: true, tools: [...DEFAULT_REVIEW_TOOLS], trigger: AFTER_TRIGGER };
 }
 
-async function runReviewConfigUi(ctx: ExtensionCommandContext, configPath: string): Promise<void> {
+/** 向新增流程要规则文件列表；至少一项，取消或留空都返回 undefined。 */
+async function askRuleFiles(ctx: ExtensionCommandContext): Promise<string[] | undefined> {
+  const value = await ctx.ui.input(i18n.t("listInput"), "");
+  if (value === undefined) return undefined;
+  const items = value.split(",").map((item) => item.trim()).filter(Boolean);
+  if (items.length === 0) {
+    notify(ctx, i18n.t("listRequired"), "error");
+    return undefined;
+  }
+  return items;
+}
+
+/**
+ * 打开配置面板。
+ *
+ * 面板改一项就写盘一次，所以面板里改完就是运行期生效的配置，不需要 /reload。
+ * 重新加载产生的警告照常提示，不静默吞掉。
+ */
+async function runReviewConfigPanel(ctx: ExtensionCommandContext, configPath: string): Promise<void> {
+  /** 当前配置副本；面板读写都基于它，每次改动先同步更新它再排队写盘。 */
+  let config = loadFileEditReviewConfig().config;
+  /**
+   * 写盘队列。
+   *
+   * SettingsList 的 onChange 是同步回调，无法 await，所以写盘按顺序排成一条链。
+   * 内存里的 config 同步更新（面板下一次读到的就是最新值），磁盘写入按顺序跟上；
+   * 面板关闭后等这条链清空，保证最后一次改动已经落盘（不静默丢改动）。
+   */
+  let pendingWrite: Promise<void> = Promise.resolve();
+  /** 同步更新内存配置，排队写盘。 */
+  const persist = (next: FileEditReviewConfig): Promise<void> => {
+    config = next;
+    pendingWrite = pendingWrite.then(() => saveFileEditReviewConfig(ctx, next, configPath));
+    return pendingWrite;
+  };
   const loaded = loadFileEditReviewConfig();
   if (loaded.warnings.length > 0) {
     notify(ctx, i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }), "warning");
   }
-  const config: FileEditReviewConfig = {
-    ...loaded.config,
-    reviewers: loaded.config.reviewers.map((reviewer) => ({ ...reviewer })),
-  };
 
-  while (true) {
-    const reviewerChoices = config.reviewers.map(
-      (reviewer) => `${reviewer.enabled === false ? "○" : "●"} ${reviewer.name} · ${reviewerModelLabel(reviewer)}`,
-    );
-    const choices = [
-      i18n.t("enabledConfig", { value: config.enabled ? i18n.t("enabled") : i18n.t("disabled") }),
-      i18n.t("timeoutConfig", { value: config.timeoutSeconds }),
-      i18n.t("fileContextConfig", { value: config.maxFileContextChars }),
-      i18n.t("rulesConfig", { value: config.maxRuleLines }),
-      ...reviewerChoices,
-      i18n.t("addReviewer"),
-    ];
-    const choice = await ctx.ui.select(i18n.t("configTitle"), choices);
-    if (choice === undefined) return;
-
-    if (choice === choices[CONFIG_ENABLED_CHOICE_INDEX]) {
-      config.enabled = !config.enabled;
-      await saveFileEditReviewConfig(ctx, config, configPath);
-    } else if (choice === choices[CONFIG_TIMEOUT_CHOICE_INDEX]) {
-      const value = await inputPositiveInteger(ctx, i18n.t("timeoutInput"), config.timeoutSeconds);
-      if (value !== undefined) {
-        config.timeoutSeconds = value;
-        await saveFileEditReviewConfig(ctx, config, configPath);
-      }
-    } else if (choice === choices[CONFIG_FILE_CONTEXT_CHOICE_INDEX]) {
-      const value = await inputPositiveInteger(ctx, i18n.t("fileContextInput"), config.maxFileContextChars);
-      if (value !== undefined) {
-        config.maxFileContextChars = value;
-        await saveFileEditReviewConfig(ctx, config, configPath);
-      }
-    } else if (choice === choices[CONFIG_RULES_CHOICE_INDEX]) {
-      const value = await inputPositiveInteger(ctx, i18n.t("rulesInput"), config.maxRuleLines);
-      if (value !== undefined) {
-        config.maxRuleLines = value;
-        await saveFileEditReviewConfig(ctx, config, configPath);
-      }
-    } else if (choice === choices[CONFIG_REVIEWER_CHOICE_OFFSET + config.reviewers.length]) {
-      const added = await addReviewer(ctx, config.reviewers);
-      if (added) await saveFileEditReviewConfig(ctx, config, configPath);
-    } else if (choice.startsWith("● ") || choice.startsWith("○ ")) {
-      const index = reviewerChoices.indexOf(choice);
-      if (index >= 0) {
-        const result = await editReviewer(ctx, config.reviewers[index]);
-        if (result === "deleted") config.reviewers.splice(index, 1);
-        await saveFileEditReviewConfig(ctx, config, configPath);
-      }
-    }
-  }
+  await openSupervisorPanel(ctx, {
+    getConfig: () => config,
+    getModels: () => ctx.modelRegistry.getAvailable().map((model) => ({ provider: model.provider, model: model.id })),
+    onChange: (next) => {
+      void persist(next);
+    },
+    onAddReviewer: async (current) => {
+      const reviewer = await askNewReviewer(ctx, current.reviewers);
+      if (!reviewer) return undefined;
+      await persist({ ...current, reviewers: [...current.reviewers, reviewer] });
+      return reviewer;
+    },
+  });
+  // 面板已关，但可能还有排队的写盘；等它们完成再返回。
+  await pendingWrite;
 }
 
 function registerReviewConfigCommand(pi: ExtensionAPI): void {
@@ -1244,7 +1085,7 @@ function registerReviewConfigCommand(pi: ExtensionAPI): void {
         notify(ctx, i18n.t("interactiveOnly"), "warning");
         return;
       }
-      await runReviewConfigUi(ctx, getPiSupervisorConfigPath());
+      await runReviewConfigPanel(ctx, getPiSupervisorConfigPath());
     },
   };
   for (const name of ["config:tool-supervisor", "pi-tool-supervisor"] as const) {

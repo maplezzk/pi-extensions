@@ -18,7 +18,7 @@ pi install npm:pi-models-discovery
 /config:model-discovery
 ```
 
-交互式添加 / 删除 / 重新发现 provider：输入 id、baseUrl、api 类型、apiKey（可留空）、显示名（可留空），确认后写入 models.json 并**立即生效**（无需 /reload）。写入前自动备份到 `models.json.discovery-bak`。
+命令打开配置面板，列出所有标记了 `discoverModels` 的 provider；选中某个 provider 打开它的字段页（发现开关、baseUrl、api 类型、apiKey、显示名），并可立即重新发现或删除它。添加 provider 时依次问 id、baseUrl、api 类型、apiKey（可留空）、显示名（可留空），写入 models.json 后**立即生效**（无需 /reload）。写入前自动备份到 `models.json.discovery-bak`。
 
 注意：写回时 models.json 中的注释与自定义排版不被保留（会格式化为 4 空格缩进）。
 

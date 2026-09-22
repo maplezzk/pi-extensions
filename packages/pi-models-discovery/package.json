@@ -16,7 +16,7 @@
     "SKILL.md"
   ],
   "scripts": {
-    "test": "tsx --test tests/catalog.test.ts",
+    "test": "tsx --test tests/catalog.test.ts tests/config-panel.test.ts tests/config-panel-wiring.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"

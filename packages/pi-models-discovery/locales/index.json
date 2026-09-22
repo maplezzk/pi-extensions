@@ -182,5 +182,109 @@
   "removed": {
     "zh-CN": "已删除 {id}（备份：{backup}）",
     "en-US": "Removed {id} (backup: {backup})"
+  },
+  "panelTitle": {
+    "zh-CN": "模型发现 provider（共 {count} 个）",
+    "en-US": "Model-discovery providers ({count})"
+  },
+  "panelProviderTitle": {
+    "zh-CN": "provider：{id}",
+    "en-US": "Provider: {id}"
+  },
+  "panelLabelAdd": {
+    "zh-CN": "添加 provider",
+    "en-US": "Add provider"
+  },
+  "panelDescAdd": {
+    "zh-CN": "填入 id、baseUrl、api 后写入 models.json 并立即发现模型。",
+    "en-US": "Enter an id, baseUrl and api; the entry is written to models.json and models are discovered immediately."
+  },
+  "panelLabelEnabled": {
+    "zh-CN": "模型发现",
+    "en-US": "Model discovery"
+  },
+  "panelDescEnabled": {
+    "zh-CN": "关闭后去掉该 provider 的 discoverModels 标记，模型条目不参与发现（provider 本身保留）。",
+    "en-US": "Turning this off removes the discoverModels marker so this provider is no longer discovered; the provider entry itself is kept."
+  },
+  "panelLabelName": {
+    "zh-CN": "显示名",
+    "en-US": "Display name"
+  },
+  "panelDescName": {
+    "zh-CN": "模型列表里显示的名字；留空回落到 provider id。",
+    "en-US": "Name shown in the model list; empty falls back to the provider id."
+  },
+  "panelLabelBaseUrl": {
+    "zh-CN": "baseUrl",
+    "en-US": "baseUrl"
+  },
+  "panelDescBaseUrl": {
+    "zh-CN": "发现请求打向 {baseUrl}/models；必须以 http:// 或 https:// 开头。",
+    "en-US": "Discovery requests go to {baseUrl}/models; it must start with http:// or https://."
+  },
+  "panelLabelApi": {
+    "zh-CN": "api 类型",
+    "en-US": "API type"
+  },
+  "panelDescApi": {
+    "zh-CN": "Pi 用哪种协议与这个 provider 对话。",
+    "en-US": "Which protocol Pi uses to talk to this provider."
+  },
+  "panelLabelApiKey": {
+    "zh-CN": "apiKey",
+    "en-US": "apiKey"
+  },
+  "panelDescApiKey": {
+    "zh-CN": "可留空；支持 $ENV_VAR 插值。",
+    "en-US": "Optional; supports $ENV_VAR interpolation."
+  },
+  "panelLabelRediscover": {
+    "zh-CN": "立即重新发现模型",
+    "en-US": "Rediscover models now"
+  },
+  "panelDescRediscover": {
+    "zh-CN": "立刻请求 {baseUrl}/models 刷新模型列表并更新缓存。",
+    "en-US": "Requests {baseUrl}/models now, refreshes the model list and updates the cache."
+  },
+  "panelLabelRemove": {
+    "zh-CN": "删除此 provider",
+    "en-US": "Remove this provider"
+  },
+  "panelDescRemove": {
+    "zh-CN": "从 models.json 移除该 provider 并注销其模型，会先让你确认。",
+    "en-US": "Removes the provider and unregisters its models from models.json; you are asked to confirm first."
+  },
+  "panelActionHint": {
+    "zh-CN": "回车执行",
+    "en-US": "Press Enter to run"
+  },
+  "panelValueUnset": {
+    "zh-CN": "（未设置）",
+    "en-US": "(unset)"
+  },
+  "panelOn": {
+    "zh-CN": "开",
+    "en-US": "On"
+  },
+  "panelOff": {
+    "zh-CN": "关",
+    "en-US": "Off"
+  },
+  "panelInputPrompt": {
+    "zh-CN": "值",
+    "en-US": "Value"
+  },
+  "panelConfirmRemove": {
+    "zh-CN": "删除 provider「{id}」？",
+    "en-US": "Remove provider \"{id}\"?"
+  },
+  "panelRemoveMessage": {
+    "zh-CN": "将从 models.json 移除该 provider 并注销其模型。此操作可重新添加恢复。",
+    "en-US": "This removes the provider and unregisters its models from models.json. It can be added again later."
+  },
+  "panelProviderMissing": {
+    "zh-CN": "models.json 中找不到 provider「{id}」的条目，无法写回。",
+    "en-US": "models.json has no entry for provider \"{id}\"; the change cannot be written back."
   }
 }

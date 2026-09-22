@@ -52,6 +52,7 @@ import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-codin
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { NOTICE_TAG_COLOR, createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { openDiscoveryPanel, type PanelProvider } from "./config-panel.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -64,7 +65,7 @@ const NOTICE_TAG = "models";
 const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
 /** 本扩展的提示来源。 */
 const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
-const API_CHOICES = ["openai-completions", "anthropic-messages", "openai-responses", "google-generative-ai"] as const;
+
 
 /** 用户可见消息（级别与 ctx.ui.notify 的 type 对齐）；供通知中继与无 ctx 的收集队列共用 */
 interface Notice {
@@ -84,6 +85,8 @@ interface DiscoveryProviderEntry {
 	api?: string;
 	headers?: Record<string, string>;
 	compat?: Record<string, unknown>;
+	/** 发现标记；面板关闭发现时写 false（实际会删掉这个键）。 */
+	discoverModels?: boolean;
 }
 
 interface ModelsResponse {
@@ -484,41 +487,220 @@ function registerFromCache(
 	});
 }
 
+/**
+ * 把带 discoverModels 标记的 provider 转成面板读的形态。
+ * 面板不直接碰磁盘，改完由 persistProvider 写回 models.json。
+ */
+function toPanelProvider(entry: DiscoveryProviderEntry): PanelProvider {
+	return {
+		id: entry.id,
+		baseUrl: entry.baseUrl ?? "",
+		api: entry.api ?? "",
+		apiKey: entry.apiKey ?? "",
+		name: entry.name ?? "",
+		enabled: true,
+	};
+}
+
+/** 读取当前 models.json 里所有带发现标记的 provider，供面板渲染。 */
+async function readPanelProviders(): Promise<{ providers: PanelProvider[]; error: string | null }> {
+	const { data, error } = await readModelsFile();
+	if (error) return { providers: [], error };
+	return { providers: pickDiscoveryProviders(data).map(toPanelProvider), error: null };
+}
+
+/**
+ * 面板改一个 provider 的字段后写回 models.json。
+ * 沿用原条目的其余字段（headers/compat 等面板不管的键），只覆盖面板能改的四项。
+ */
+async function persistProvider(provider: PanelProvider): Promise<{ backup: string }> {
+	const { data, error } = await readModelsFile();
+	if (error) throw new Error(error);
+	const providers = (data.providers ?? {}) as Record<string, Record<string, unknown>>;
+	const existing = providers[provider.id];
+	if (!existing) throw new Error(i18n.t("panelProviderMissing", { id: provider.id }));
+	const entry: Record<string, unknown> = { ...existing, baseUrl: provider.baseUrl, api: provider.api };
+	if (provider.enabled) entry[DISCOVERY_MARKER] = true;
+	else delete entry[DISCOVERY_MARKER];
+	if (provider.apiKey) entry.apiKey = provider.apiKey;
+	else delete entry.apiKey;
+	if (provider.name) entry.name = provider.name;
+	else delete entry.name;
+	providers[provider.id] = entry;
+	data.providers = providers;
+	return writeModelsFile(data);
+}
+
+/** 新增 provider 时写入 models.json 的条目。 */
+async function persistNewProvider(provider: PanelProvider): Promise<{ backup: string }> {
+	const { data, error } = await readModelsFile();
+	if (error) throw new Error(error);
+	const providers = (data.providers ?? {}) as Record<string, Record<string, unknown>>;
+	const entry: Record<string, unknown> = {
+		baseUrl: provider.baseUrl,
+		api: provider.api,
+		[DISCOVERY_MARKER]: true,
+	};
+	if (provider.apiKey) entry.apiKey = provider.apiKey;
+	if (provider.name) entry.name = provider.name;
+	providers[provider.id] = entry;
+	data.providers = providers;
+	return writeModelsFile(data);
+}
+
+/** 从 models.json 删掉一个 provider 条目。 */
+async function deleteProvider(id: string): Promise<{ backup: string }> {
+	const { data, error } = await readModelsFile();
+	if (error) throw new Error(error);
+	const providers = (data.providers ?? {}) as Record<string, Record<string, unknown>>;
+	delete providers[id];
+	data.providers = providers;
+	return writeModelsFile(data);
+}
+
+/**
+ * 用 models.json 当前内容重新注册一个 provider，行为与启动期一致：
+ * 指纹命中缓存就直接注册缓存里的模型，不请求网络；否则走在线发现。
+ */
+async function reloadProvider(options: {
+	/** 扩展 API，用来注册或注销 provider。 */
+	pi: ExtensionAPI;
+	/** models.json 中读到的 provider 条目。 */
+	entry: DiscoveryProviderEntry;
+	/** 本次会话共享的 /models 请求缓存。 */
+	fetchCache: FetchCache;
+	/** 收集过程中产生的提示，由调用方决定发给谁。 */
+	notices: Notice[];
+}): Promise<void> {
+	const { pi, entry, fetchCache, notices } = options;
+	if (entry.discoverModels === false) {
+		pi.unregisterProvider(entry.id);
+		return;
+	}
+	const cache = await readCache(notices);
+	const cached = cache.providers[entry.id];
+	if (
+		cached &&
+		cached.fingerprint === providerFingerprint(entry) &&
+		Array.isArray(cached.models) &&
+		cached.models.length > 0
+	) {
+		registerFromCache(pi, entry, cached.models, notices);
+		return;
+	}
+	await discoverAndRegister(pi, entry, fetchCache, notices);
+}
+
+/** 按 id 从 models.json 现读一个 provider 条目；没有发现标记时返回 undefined。 */
+async function readProviderEntry(id: string): Promise<DiscoveryProviderEntry | undefined> {
+	const { data } = await readModelsFile();
+	return pickDiscoveryProviders(data).find((entry) => entry.id === id);
+}
+
 /** /config:model-discovery 交互式配置命令；旧名称保留为兼容别名。 */
 function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache, sink: NoticeSink) {
+	/** 面板读 provider 列表、写回 models.json，并把改动即时注册到运行期。 */
+	const openPanel = async (ctx: CommandCtx): Promise<void> => {
+		const first = await readPanelProviders();
+		if (first.error) {
+			sink({ level: "error", message: `${LOG_PREFIX} ${first.error}` }, ctx);
+			return;
+		}
+		let providers = first.providers;
+		/**
+		 * 变更队列。
+		 *
+		 * SettingsList 的 onChange 是同步回调，无法 await，所以写盘+重新注册按顺序排成一条链；
+		 * 面板关闭后等这条链清空，保证最后一次改动已落盘并已注册（不静默丢改动）。
+		 */
+		let pendingChange: Promise<void> = Promise.resolve();
+		/** 把一个变更追加到队尾，保证先后顺序与面板操作一致。 */
+		const enqueue = (change: () => Promise<void>): void => {
+			pendingChange = pendingChange.then(change);
+		};
+		await openDiscoveryPanel(ctx, {
+			getProviders: () => providers,
+			onProviderChange: (provider) => {
+				// 面板下一次读到的必须是刚改过的值，所以内存副本同步更新，落盘排队跟上。
+				providers = providers.map((current) => (current.id === provider.id ? provider : current));
+				enqueue(async () => {
+					const notices: Notice[] = [];
+					try {
+						await persistProvider(provider);
+					} catch (err) {
+						flushNotices(ctx, [{
+							level: "error",
+							message: `${LOG_PREFIX} ${err instanceof Error ? err.message : String(err)}`,
+						}]);
+						return;
+					}
+					const entry = await readProviderEntry(provider.id);
+					if (!entry) {
+						pi.unregisterProvider(provider.id);
+					} else {
+						await reloadProvider({ pi, entry, fetchCache, notices });
+					}
+					// 面板行上的当前值来自本地副本，网络提示照常发出来，不静默降级。
+					flushNotices(ctx, notices);
+				});
+			},
+			onProviderRemoved: (id) => {
+				providers = providers.filter((provider) => provider.id !== id);
+			},
+			onProviderAdd: (provider) => {
+				providers = [...providers, provider];
+				enqueue(() => addProviderFromPanel({ pi, ctx, provider, fetchCache, sink }));
+			},
+			actions: {
+				rediscover: (provider) => {
+					// 也走同一条队列：保证“改字段”与“立即重新发现”不会交叠写盘。
+					enqueue(async () => {
+						const entry = await readProviderEntry(provider.id) ?? {
+							id: provider.id,
+							baseUrl: provider.baseUrl,
+							api: provider.api,
+							apiKey: provider.apiKey || undefined,
+							name: provider.name || undefined,
+						};
+						const notices: Notice[] = [];
+						const result = await discoverAndRegister(pi, entry, fetchCache, notices);
+						flushNotices(ctx, notices);
+						if (result) {
+							sink({ level: "info", message: i18n.t("rediscovered", { id: provider.id, count: result.count }) }, ctx);
+						}
+					});
+					return pendingChange;
+				},
+				remove: async (provider) => {
+					/** 删除结果；由队列里的那段代码写入。 */
+					let removed = false;
+					enqueue(async () => {
+						try {
+							const { backup } = await deleteProvider(provider.id);
+							pi.unregisterProvider(provider.id);
+							const notices: Notice[] = [];
+							await removeCachedModels(provider.id, notices);
+							flushNotices(ctx, notices);
+							sink({ level: "info", message: i18n.t("removed", { id: provider.id, backup }) }, ctx);
+							removed = true;
+						} catch (err) {
+							sink({ level: "error", message: `${LOG_PREFIX} ${err instanceof Error ? err.message : String(err)}` }, ctx);
+						}
+					});
+					await pendingChange;
+					return removed;
+				},
+			},
+		});
+		// 面板已关，但队列里可能还有写盘与重新注册；等它们完成再返回。
+		await pendingChange;
+	};
+
 	const command = {
 		description: i18n.t("commandDescription"),
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) return;
-			while (true) {
-				const { data, error } = await readModelsFile();
-				if (error) {
-					sink({ level: "error", message: `${LOG_PREFIX} ${error}` }, ctx);
-					return;
-				}
-				const providers = pickDiscoveryProviders(data);
-				const ADD = i18n.t("add");
-				const EXIT = i18n.t("exit");
-				const choices = [
-					...providers.map((p) => `${p.id} — ${p.baseUrl ?? "?"}（${p.api ?? "?"}）`),
-					ADD,
-					EXIT,
-				];
-				const choice = await ctx.ui.select(
-					providers.length > 0 ? i18n.t("title", { count: providers.length }) : i18n.t("emptyTitle"),
-					choices,
-				);
-				if (choice === undefined || choice === EXIT) return;
-
-				if (choice === ADD) {
-					await addProviderFlow(pi, ctx, data, fetchCache, sink);
-					continue;
-				}
-				const selected = providers[choices.indexOf(choice)];
-				if (selected) {
-					await manageProviderFlow(pi, ctx, data, selected, fetchCache, sink);
-				}
-			}
+			await openPanel(ctx);
 		},
 	};
 	for (const name of ["config:model-discovery", "model-discovery", "pi-model-discovery"] as const) {
@@ -581,104 +763,45 @@ function flushNotices(ctx: CommandCtx, notices: Notice[]): void {
 	for (const notice of notices) notifyWithSource({ ctx, source: NOTICE_SOURCE, level: notice.level, message: notice.message });
 }
 
-/** /config:model-discovery 添加 provider 交互流程 */
-async function addProviderFlow(pi: ExtensionAPI, ctx: CommandCtx, data: Record<string, unknown>, fetchCache: FetchCache, sink: NoticeSink) {
-	const existingIds = new Set(Object.keys((data.providers ?? {}) as Record<string, unknown>));
-	const id = (await ctx.ui.input(i18n.t("providerId")))?.trim();
-	if (!id) return;
-	if (!/^[a-z0-9][a-z0-9-]*$/i.test(id)) {
-		sink({ level: "error", message: i18n.t("invalidId") }, ctx);
-		return;
-	}
-	if (existingIds.has(id)) {
-		sink({ level: "error", message: i18n.t("exists", { id }) }, ctx);
-		return;
-	}
-	const baseUrl = (await ctx.ui.input(i18n.t("baseUrl")))?.trim();
-	if (!baseUrl) return;
-	if (!/^https?:\/\//.test(baseUrl)) {
-		sink({ level: "error", message: i18n.t("invalidUrl") }, ctx);
-		return;
-	}
-	const api = await ctx.ui.select(i18n.t("api"), [...API_CHOICES]);
-	if (!api) return;
-	const apiKey = (await ctx.ui.input(i18n.t("apiKey")))?.trim();
-	const name = (await ctx.ui.input(i18n.t("displayName", { id })))?.trim();
-
-	const entry: Record<string, unknown> = { baseUrl, api, [DISCOVERY_MARKER]: true };
-	if (name) entry.name = name;
-	if (apiKey) entry.apiKey = apiKey;
-	const summary = i18n.t("summary", { id, baseUrl, api, apiKey: apiKey || i18n.t("noKey"), name: name || id });
-	if (!(await ctx.ui.confirm(i18n.t("confirmAdd"), summary))) return;
-
-	const providers = (data.providers ?? {}) as Record<string, unknown>;
-	providers[id] = entry;
-	data.providers = providers;
+/** /config:model-discovery 新增 provider：写回 models.json 后立刻做首次发现。 */
+async function addProviderFromPanel(options: {
+	/** 扩展 API。 */
+	pi: ExtensionAPI;
+	/** 命令上下文，用来发提示。 */
+	ctx: CommandCtx;
+	/** 面板里填好的新 provider。 */
+	provider: PanelProvider;
+	/** 本次会话共享的 /models 请求缓存。 */
+	fetchCache: FetchCache;
+	/** 提示出口。 */
+	sink: NoticeSink;
+}): Promise<void> {
+	const { pi, ctx, provider, fetchCache, sink } = options;
 	try {
-		const { backup } = await writeModelsFile(data);
+		const { backup } = await persistNewProvider(provider);
 		sink({ level: "info", message: i18n.t("written", { backup }) }, ctx);
 	} catch (err) {
 		sink({ level: "error", message: `${LOG_PREFIX} ${err instanceof Error ? err.message : err}` }, ctx);
 		return;
 	}
-
 	const notices: Notice[] = [];
 	const result = await discoverAndRegister(
 		pi,
-		{ id, name: name || undefined, baseUrl, apiKey: apiKey || undefined, api },
+		{
+			id: provider.id,
+			name: provider.name || undefined,
+			baseUrl: provider.baseUrl,
+			apiKey: provider.apiKey || undefined,
+			api: provider.api,
+		},
 		fetchCache,
 		notices,
 	);
 	flushNotices(ctx, notices);
 	if (result) {
-		sink({ level: "info", message: i18n.t("discovered", { id, count: result.count }) }, ctx);
+		sink({ level: "info", message: i18n.t("discovered", { id: provider.id, count: result.count }) }, ctx);
 	} else {
-		sink({ level: "warning", message: i18n.t("firstFailed", { id }) }, ctx);
-	}
-}
-
-/** /config:model-discovery 管理 provider（重新发现/删除）交互流程 */
-async function manageProviderFlow(
-	pi: ExtensionAPI,
-	ctx: CommandCtx,
-	data: Record<string, unknown>,
-	entry: DiscoveryProviderEntry,
-	fetchCache: FetchCache,
-	sink: NoticeSink,
-) {
-	const REDISCOVER = i18n.t("rediscover");
-	const REMOVE = i18n.t("remove");
-	const BACK = i18n.t("back");
-	const action = await ctx.ui.select(
-		i18n.t("manageTitle", { id: entry.id, baseUrl: entry.baseUrl ?? "?", api: entry.api ?? "?" }),
-		[REDISCOVER, REMOVE, BACK],
-	);
-	if (action === undefined || action === BACK) return;
-
-	if (action === REDISCOVER) {
-		const notices: Notice[] = [];
-		const result = await discoverAndRegister(pi, entry, fetchCache, notices);
-		flushNotices(ctx, notices);
-		if (result) {
-			sink({ level: "info", message: i18n.t("rediscovered", { id: entry.id, count: result.count }) }, ctx);
-		}
-		return;
-	}
-
-	// REMOVE
-	if (!(await ctx.ui.confirm(i18n.t("confirmRemove", { id: entry.id }), i18n.t("removeMessage")))) return;
-	const providers = (data.providers ?? {}) as Record<string, unknown>;
-	delete providers[entry.id];
-	data.providers = providers;
-	try {
-		const { backup } = await writeModelsFile(data);
-		pi.unregisterProvider(entry.id);
-		const notices: Notice[] = [];
-		await removeCachedModels(entry.id, notices);
-		flushNotices(ctx, notices);
-		sink({ level: "info", message: i18n.t("removed", { id: entry.id, backup }) }, ctx);
-	} catch (err) {
-		sink({ level: "error", message: `${LOG_PREFIX} ${err instanceof Error ? err.message : err}` }, ctx);
+		sink({ level: "warning", message: i18n.t("firstFailed", { id: provider.id }) }, ctx);
 	}
 }
 

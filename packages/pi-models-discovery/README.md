@@ -18,7 +18,7 @@ pi install npm:pi-models-discovery
 /config:model-discovery
 ```
 
-Interactively add / remove / rediscover providers: enter id, baseUrl, api type, apiKey (optional), display name (optional). Changes are written to models.json and take effect **immediately** (no /reload required). A backup is written to `models.json.discovery-bak` before each write.
+Interactively add / remove / rediscover providers. The command opens a settings panel that lists every provider marked with `discoverModels`; selecting one opens its fields (enable/disable discovery, baseUrl, api type, apiKey, display name) plus actions to rediscover or remove it. Adding a provider asks for id, baseUrl, api type, apiKey (optional) and display name (optional). Changes are written to models.json and take effect **immediately** (no /reload required). A backup is written to `models.json.discovery-bak` before each write.
 
 Note: comments and custom formatting in models.json are not preserved on write (the file is reformatted with 4-space indentation).
 
