@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-clean-mode-v0.3.0...pi-clean-mode-v0.4.0) (2026-09-22)
+
+
+### Features
+
+* **clean-mode:** 工具行铺 Pi 原生底色、收起时隐藏 info 通知、组头混杂时写构成 ([713d677](https://github.com/maplezzk/pi-extensions/commit/713d6779a8eee9deb4ccdc64d18379b3c4157023))
+* **clean-mode:** 工具行铺 Pi 原生底色、收起时隐藏 info 通知、组头混杂时写构成 ([73feb1a](https://github.com/maplezzk/pi-extensions/commit/73feb1afa2b4d177c78153d9b2700478691d1492))
+
 ## [0.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-clean-mode-v0.2.0...pi-clean-mode-v0.3.0) (2026-09-21)
 
 

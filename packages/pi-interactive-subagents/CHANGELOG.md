@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.16.3](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.2...pi-interactive-subagents-v3.16.3) (2026-09-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.6.5 to ^0.6.6
+
 ## [3.16.2](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.1...pi-interactive-subagents-v3.16.2) (2026-09-21)
 
 
