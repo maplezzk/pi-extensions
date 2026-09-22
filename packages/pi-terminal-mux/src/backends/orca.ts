@@ -363,58 +363,118 @@ export function readOrcaScreen(handle: string, lines = 50): string {
 }
 
 /**
- * 查询 terminal 是否仍在 list 中（三态）。
- * true = 确认存在；false = 成功取到 list 且 handle 不在其中；
- * null = 查询本身失败（runtime 不可达/响应异常），不能当作“已关闭”。
+ * 目标 terminal 的状态（三态，供关闭流程判定）。
+ * present 附带所在 tab 的占用情况：tabCount = 同一 tabId 下的 terminal 数量（tabId 缺失时为 null）。
  */
-function queryOrcaTerminalExists(handle: string): boolean | null {
+export type OrcaTerminalState =
+  | { kind: "absent" }
+  | { kind: "present"; tabId: string | null; tabCount: number | null }
+  | { kind: "unknown" };
+
+/** 关闭 pane 的下一步动作。 */
+export type OrcaCloseDecision = "done" | "retry-close" | "close-tab" | "skip-tab";
+
+/**
+ * 解析 `terminal list --json`，得到 handle 的状态与所在 tab 的 terminal 数量。
+ * 纯函数便于单测；列表结构异常时返回 unknown（不可判定，不能当作“已关闭”）。
+ */
+export function parseOrcaTerminalTabInfo(raw: string, handle: string): OrcaTerminalState {
+  const parsed = parseOrcaJson(raw);
+  const terminals = parsed?.result?.["terminals"];
+  if (!Array.isArray(terminals)) return { kind: "unknown" };
+
+  const entries = terminals.filter(
+    (t): t is Record<string, unknown> => typeof t === "object" && t !== null,
+  );
+  const self = entries.find((t) => t["handle"] === handle);
+  if (!self) return { kind: "absent" };
+
+  const tabId = typeof self["tabId"] === "string" ? self["tabId"] : null;
+  const tabCount = tabId === null ? null : entries.filter((t) => t["tabId"] === tabId).length;
+  return { kind: "present", tabId, tabCount };
+}
+
+/**
+ * 判定关闭 pane 的下一步动作。
+ *
+ * 关键约束：split 出来的子 pane 与源 pane（可能是 agent 自己的会话）共享同一个 tab，
+ * 而 `--tab` 会关掉整个 tab —— 所以只有确认 tab 内只有自己时才允许升级到 `--tab`。
+ * unknown（list 查询失败/结构异常）不可判定，同样不升级：宁可留下残留 pane，
+ * 也不能连带杀掉同 tab 的其它会话。
+ */
+export function decideOrcaCloseStep(params: {
+  state: OrcaTerminalState;
+  targetIsAgentPane: boolean;
+  retried: boolean;
+}): OrcaCloseDecision {
+  const { state, targetIsAgentPane, retried } = params;
+  if (state.kind === "absent") return "done";
+  if (state.kind === "unknown") return "skip-tab";
+  if (targetIsAgentPane) return "skip-tab";
+  if (!retried) return "retry-close";
+  return state.tabCount === 1 ? "close-tab" : "skip-tab";
+}
+
+/** 查询 terminal 状态；查询失败/响应异常统一归一为 unknown。 */
+function queryOrcaTerminalState(handle: string): OrcaTerminalState {
   try {
-    const raw = orcaExec(["terminal", "list", "--json"]);
-    const parsed = parseOrcaJson(raw);
-    const terminals = parsed?.result?.["terminals"];
-    if (!Array.isArray(terminals)) return null;
-    return terminals.some(
-      (t) => typeof t === "object" && t !== null && (t as Record<string, unknown>)["handle"] === handle,
-    );
+    return parseOrcaTerminalTabInfo(orcaExec(["terminal", "list", "--json"]), handle);
   } catch {
-    return null;
+    return { kind: "unknown" };
   }
 }
 
 /**
  * 关闭 terminal。
  *
- * create() 和 createSplit() 生成的 pane 可能与其他 pane 共享 tab。
- * 策略（best-effort，绝不 throw，避免 pollForExit 退出流程被打断）：
- *   1. `terminal close`（关 pane/session）
- *   2. 验证 handle 是否还在列表；不在了则完成
- *   3. 仍在则补 `terminal close --tab`（单 pane tab 的残留情况）
- *   4. 清理 BFS marker；仍失败仅 log warn
+ * create() 与 createSplit() 产物可能与其他 pane 共享 tab，因此必须区分「关 pane」和「关 tab」：
+ *   1. `terminal close`（只关这个 pane）
+ *   2. 校验 list：仍在则再 `terminal close` 一次后复查 —— close 生效与子进程真正退出之间存在
+ *      竞态，首次校验的“仍在”多为误判。
+ *   3. 仍存在时，仅当同一 tab 内只有这一个 terminal（tabCount===1）且目标不是 agent pane，
+ *      才补 `terminal close --tab`（单 pane tab 的残留情况）；共享 tab 一律不关 tab，否则会
+ *      连带关掉同 tab 的其它会话。
+ *   4. list 查询失败（unknown）视为不可判定，不升级为关 tab，只记 warn。
+ *   5. 清理 BFS marker；失败仅 log warn，绝不 throw（避免打断 pollForExit 退出流程）。
  */
 export function closeOrcaSurface(handle: string): void {
+  const targetIsAgentPane = handle === AGENT_ORCA_TERMINAL_HANDLE;
   try {
     orcaExecSilent(["terminal", "close", "--terminal", handle, "--json"]);
+    let state = queryOrcaTerminalState(handle);
 
-    let exists = queryOrcaTerminalExists(handle);
-    if (exists === false) {
-      orcaLog(`[close] terminal ${handle} closed`);
-      return;
-    }
-    if (exists === null) {
-      // 查询失败不能当作已关闭；继续尝试 --tab 兜底
-      orcaLog(`[close] WARN terminal ${handle} list query failed, cannot verify close`);
+    if (decideOrcaCloseStep({ state, targetIsAgentPane, retried: false }) === "retry-close") {
+      orcaExecSilent(["terminal", "close", "--terminal", handle, "--json"]);
+      state = queryOrcaTerminalState(handle);
     }
 
-    orcaLog(`[close] terminal ${handle} still present, trying --tab`);
-    orcaExecSilent(["terminal", "close", "--terminal", handle, "--tab", "--json"]);
-
-    exists = queryOrcaTerminalExists(handle);
-    if (exists === false) {
-      orcaLog(`[close] terminal ${handle} closed via --tab`);
-    } else if (exists === null) {
-      orcaLog(`[close] WARN terminal ${handle} close sent but unverifiable (list query failed)`);
-    } else {
-      orcaLog(`[close] WARN terminal ${handle} still present after close --tab`);
+    switch (decideOrcaCloseStep({ state, targetIsAgentPane, retried: true })) {
+      case "done":
+        orcaLog(`[close] terminal ${handle} closed`);
+        return;
+      case "close-tab": {
+        const tabId = state.kind === "present" ? state.tabId : null;
+        orcaLog(`[close] terminal ${handle} sole occupant of tab ${tabId}, trying --tab`);
+        orcaExecSilent(["terminal", "close", "--terminal", handle, "--tab", "--json"]);
+        if (queryOrcaTerminalState(handle).kind === "absent") {
+          orcaLog(`[close] terminal ${handle} closed via --tab`);
+        } else {
+          orcaLog(`[close] WARN terminal ${handle} still present after close --tab`);
+        }
+        return;
+      }
+      default:
+        // skip-tab：绝不关整个 tab，只记录原因（残留 pane 交给用户手动关）。
+        if (state.kind === "unknown") {
+          orcaLog(`[close] WARN terminal ${handle} list query failed/unusable, skip --tab (unverifiable)`);
+        } else if (targetIsAgentPane) {
+          orcaLog(`[close] WARN terminal ${handle} is the agent pane itself, skip --tab`);
+        } else if (state.kind === "present") {
+          orcaLog(
+            `[close] WARN terminal ${handle} shares tab ${state.tabId} with ${(state.tabCount ?? 0) - 1} sibling terminal(s), skip --tab to protect them`,
+          );
+        }
+        return;
     }
   } finally {
     cleanupOrcaStateForSurface(handle);
