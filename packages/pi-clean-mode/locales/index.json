@@ -15,6 +15,10 @@
     "zh-CN": "{label} · {count} 步",
     "en-US": "{label} · {count} steps"
   },
+  "activityCompositionPart": {
+    "zh-CN": "{label} {count}",
+    "en-US": "{label} {count}"
+  },
   "activityThinking": {
     "zh-CN": "思考",
     "en-US": "Thinking"
@@ -164,8 +168,8 @@
     "en-US": "Collapse extension entries"
   },
   "configDescHideExtensionEntries": {
-    "zh-CN": "折叠时把扩展写入的条目（如 distill 审计行）一并收起；通知提示仍可见",
-    "en-US": "Also collapse custom entries written by extensions (e.g. distill audit rows); notices stay visible"
+    "zh-CN": "折叠时把扩展写入的条目（如 distill 审计行）一并收起；info 级通知也跟着收，警告与错误仍可见",
+    "en-US": "Also collapse custom entries written by extensions (e.g. distill audit rows); info notices collapse too, warnings and errors stay visible"
   },
   "collapsedNotice": {
     "zh-CN": "清爽模式：已收起工作过程，按 {key} 展开",

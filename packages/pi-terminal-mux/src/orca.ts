@@ -9,16 +9,18 @@ export {
   AGENT_ORCA_TERMINAL_HANDLE,
   closeOrcaSurface,
   createOrcaSurface,
+  decideOrcaCloseStep,
   extractOrcaCreateHandle,
   extractOrcaReadTail,
   extractOrcaSplitHandle,
   isOrcaRuntimeAvailable,
   orcaSplitDirection,
   parseOrcaJson,
+  parseOrcaTerminalTabInfo,
   readOrcaScreen,
   renameOrcaTerminal,
   sendOrcaCommand,
   sendOrcaEscape,
   splitOrcaTerminal,
 } from "./backends/orca.ts";
-export type { OrcaEnvelope } from "./backends/orca.ts";
+export type { OrcaEnvelope, OrcaTerminalState, OrcaCloseDecision } from "./backends/orca.ts";

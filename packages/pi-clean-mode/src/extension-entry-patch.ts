@@ -16,8 +16,9 @@
  *   tool-supervisor 审计行、pi-metrics 的逐轮遥测；
  * - 会话恢复窗口（session_start 之后、首次 agent_start 之前）—— 历史轮次留下的
  *   条目，与历史工具行一样属于工作过程。
- * 运行结束后才出现的条目（提示、汇总）保持可见；pi-extensions-i18n 的通知条目
- * 无论何时都豁免，否则「配置读取失败」这类警告会被一起收掉。
+ * 运行结束后才出现的条目（提示、汇总）保持可见；pi-extensions-i18n 的通知条目按级别区分
+ * —— `info` 级（metrics 的逐轮遥测、配置保存成功）属于过程噪声，跟着工作过程一起收起；
+ * `warning` / `error` 是扩展出错时唯一能说话的地方，无论何时都留着，否则警告会被静默吞掉。
  */
 
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
@@ -105,6 +106,24 @@ export function readExtensionEntryCustomType(host: ExtensionEntryHost): string |
 }
 
 /**
+ * 读通知条目的级别。
+ *
+ * 通知条目由 pi-extensions-i18n 写成 `{ tag, color, level, message, ... }`。读不出来
+ * （别的包用了同一个 customType、字段改过、老版本）时返回 undefined，调用方按「留着」处理
+ * —— 宁可多显示一条，也不能把警告静默吞掉。
+ */
+export function readExtensionEntryNoticeLevel(host: ExtensionEntryHost): string | undefined {
+	const payload = host.entry as { data?: unknown } | undefined;
+	const data = payload?.data;
+	if (typeof data !== "object" || data === null) {
+		return undefined;
+	}
+
+	const level = (data as { level?: unknown }).level;
+	return typeof level === "string" ? level : undefined;
+}
+
+/**
  * 判定条目第一次渲染时是否落在「工作窗口」内。
  *
  * 运行中本身就是工作过程；会话恢复窗口内的条目属于历史轮次的工作过程，同样按
@@ -181,26 +200,32 @@ export interface ExtensionEntryHideInput {
 	config: CleanModeConfig;
 	/** entry 的 customType；无法读出时为 undefined。 */
 	customType?: string;
+	/** 通知条目的级别（`info` / `warning` / `error`）；非通知或读不出来时为 undefined。 */
+	noticeLevel?: string;
 	/** 该条目是否在工作窗口内首次渲染，由补丁层标记后传入。 */
 	isWorkEntry: boolean;
 }
+
+/** 收起时会一起藏掉的通知级别：只有 info。 */
+const HIDDEN_NOTICE_LEVEL = "info";
 
 /**
  * 判定一条扩展条目在当前位置该不该隐藏。
  *
  * 任一前置条件不成立就放行原始渲染：总开关关闭、条目折叠开关关闭、当前不是折叠态、
- * 条目不属于工作过程。通知条目是唯一的类型豁免 —— 它是扩展在出错时唯一能说话的
- * 地方，收起来等于把警告藏了。
+ * 条目不属于工作过程。通知条目不是全部豁免：`info` 级通知（遥测、回执）和普通工作条目
+ * 一样收起，`warning` / `error` 留着 —— 扩展出错时只有它俩能说话，收起来等于把警告藏了。
  */
 export function shouldHideExtensionEntry(input: ExtensionEntryHideInput): boolean {
-	const { state, config, customType, isWorkEntry } = input;
+	const { state, config, customType, noticeLevel, isWorkEntry } = input;
 	if (!config.enabled || !config.hideExtensionEntries || !state.collapsed) {
 		return false;
 	}
 	if (!isWorkEntry) {
 		return false;
 	}
-	return customType !== NOTICE_ENTRY_TYPE;
+
+	return customType !== NOTICE_ENTRY_TYPE || noticeLevel === HIDDEN_NOTICE_LEVEL;
 }
 
 /** Container.render 的补丁签名；容器接口只保证返回行数组。 */
@@ -343,6 +368,7 @@ export function installExtensionEntryPatch(deps: ExtensionEntryPatchDeps): () =>
 						state,
 						config,
 						customType: readExtensionEntryCustomType(entryHost),
+						noticeLevel: readExtensionEntryNoticeLevel(entryHost),
 						isWorkEntry,
 					})
 				) {
