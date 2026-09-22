@@ -16,6 +16,7 @@ import {
   registerDistillToolDisplayMiddleware,
 } from "../src/tool-display-bridge.ts";
 import { Text } from "@earendil-works/pi-tui";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import {
   extendDistillToolParameters,
@@ -38,6 +39,8 @@ import {
 import { processToolResult } from "../src/index.ts";
 
 process.env.PI_EXTENSIONS_LOCALE = "en-US";
+// 配置面板构造 SettingsList 时要取主题色，测试进程里必须先初始化一次。
+initTheme();
 
 type TestContext = Parameters<typeof processToolResult>[0];
 type TestResult = Parameters<typeof processToolResult>[1];
@@ -1552,16 +1555,36 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     // 非 TUI 模式下不带 ANSI 颜色。
     assert.doesNotMatch(statsMessage, /\u001B\[/);
 
-    const selections: Array<string | undefined> = ["Tool outputRequest", "write", "custom-tool", undefined, undefined];
+    // 配置面板走 ctx.ui.custom：拿到面板组件后按方向键选中目标行，空格原地切换开关。
+    // 工具行列在 13 个固定字段之后，按名字排序：bash, custom-tool, edit, find, grep, ls, read, write。
+    const FIXED_PANEL_ROWS = 13;
+    const TOOL_ROWS = ["bash", "custom-tool", "edit", "find", "grep", "ls", "read", "write"];
+    const DOWN = "\u001B[B";
+    const UP = "\u001B[A";
+    const SPACE = " ";
+    /** 模拟按键：方向键平移选中项，空格切换开关。 */
+    const pressKeys = (component: { handleInput(data: string): void }, keys: string[]): void => {
+      for (const key of keys) component.handleInput(key);
+    };
+    /** 造一串同向按键。 */
+    const repeat = (key: string, count: number): string[] => Array.from({ length: count }, () => key);
+
     await commandHandler?.("", {
       hasUI: true,
       ui: {
-        select: async (_title: string, choices: string[]) => {
-          const target = selections.shift();
-          if (!target) return undefined;
-          return choices.find((choice) => choice.startsWith(target));
+        custom: async (factory: any) => {
+          const component = factory({ requestRender: () => undefined }, {
+            fg: (_color: string, text: string) => text,
+            bold: (text: string) => text,
+          }, undefined, () => undefined) as { handleInput(data: string): void };
+          // write 默认关闭、custom-tool 默认开启；空格会把各自的值换成相反的那个。
+          pressKeys(component, [
+            ...repeat(DOWN, FIXED_PANEL_ROWS + TOOL_ROWS.indexOf("write")),
+            SPACE,
+            ...repeat(UP, TOOL_ROWS.indexOf("write") - TOOL_ROWS.indexOf("custom-tool")),
+            SPACE,
+          ]);
         },
-        input: async () => undefined,
         notify: () => undefined,
       },
     });

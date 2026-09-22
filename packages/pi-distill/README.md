@@ -58,6 +58,16 @@ Open the interactive configuration command with:
 /config:distill
 ```
 
+It opens a settings panel: field name on the left, current value on the right, one description line under the selection. Enter or Space flips a switch in place; enumerations, numbers and the summarizer model open a submenu with a filter box on top. Changes are written to disk and applied to the running session immediately, so Esc closes the panel with the new configuration already live. The model list comes from the models Pi has registered and can also be typed by hand.
+
+Non-interactive forms are still available:
+
+```text
+/config:distill status
+/config:distill enable
+/config:distill disable
+```
+
 ## The idea
 
 We are not trying to make the agent see less information. We are trying to avoid making it carry thousands of log lines into context just to find one conclusion.
