@@ -123,10 +123,6 @@
     "zh-CN": "用法：/config:naming（打开配置菜单）或 /config:naming reset（恢复默认值）",
     "en-US": "Usage: /config:naming (open the settings menu) or /config:naming reset (restore defaults)"
   },
-  "configCommandInput": {
-    "zh-CN": "输入配置值",
-    "en-US": "Enter a configuration value"
-  },
   "configCommandInteractiveOnly": {
     "zh-CN": "命名配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
     "en-US": "Naming configuration requires the TUI; run this command in an interactive Pi session."
@@ -134,54 +130,6 @@
   "configMenuTitle": {
     "zh-CN": "命名配置",
     "en-US": "Naming settings"
-  },
-  "configAutomaticNaming": {
-    "zh-CN": "自动命名：{value}",
-    "en-US": "Automatic naming: {value}"
-  },
-  "configManualNaming": {
-    "zh-CN": "手动 /rename：{value}",
-    "en-US": "Manual /rename: {value}"
-  },
-  "configSessionTarget": {
-    "zh-CN": "命名 session：{value}",
-    "en-US": "Name session: {value}"
-  },
-  "configWorkspaceTarget": {
-    "zh-CN": "命名 workspace：{value}",
-    "en-US": "Name workspace: {value}"
-  },
-  "configTabTarget": {
-    "zh-CN": "命名 tab：{value}",
-    "en-US": "Name tab: {value}"
-  },
-  "configMaxLength": {
-    "zh-CN": "最大标题长度：{value}",
-    "en-US": "Maximum title length: {value}"
-  },
-  "configMaxTokens": {
-    "zh-CN": "输出预算：{value} tokens",
-    "en-US": "Output budget: {value} tokens"
-  },
-  "configEffort": {
-    "zh-CN": "思考档位：{value}",
-    "en-US": "Thinking effort: {value}"
-  },
-  "configPreferredLength": {
-    "zh-CN": "首选标题长度：{value}",
-    "en-US": "Preferred title length: {value}"
-  },
-  "configLanguage": {
-    "zh-CN": "标题语言：{value}",
-    "en-US": "Title language: {value}"
-  },
-  "configInstructions": {
-    "zh-CN": "标题提示：{value}",
-    "en-US": "Title instructions: {value}"
-  },
-  "configTimeout": {
-    "zh-CN": "请求超时：{value} ms",
-    "en-US": "Request timeout: {value} ms"
   },
   "configOn": {
     "zh-CN": "开",
@@ -191,64 +139,116 @@
     "zh-CN": "关",
     "en-US": "off"
   },
-  "configEmpty": {
-    "zh-CN": "未设置",
-    "en-US": "not set"
-  },
-  "configPresetValue": {
-    "zh-CN": "常用值：{value}",
-    "en-US": "Common value: {value}"
-  },
-  "configCustom": {
-    "zh-CN": "自定义…",
-    "en-US": "Custom…"
-  },
-  "configCancel": {
-    "zh-CN": "取消",
-    "en-US": "Cancel"
-  },
-  "configDone": {
-    "zh-CN": "完成",
-    "en-US": "Done"
-  },
-  "configMaxLengthInput": {
-    "zh-CN": "最大标题长度（正整数）",
-    "en-US": "Maximum title length (positive integer)"
-  },
-  "configMaxTokensInput": {
-    "zh-CN": "输出预算（正整数，思考与标题共享）",
-    "en-US": "Output budget (positive integer, shared by thinking and title)"
-  },
-  "configEffortInput": {
-    "zh-CN": "思考档位",
-    "en-US": "Thinking effort"
-  },
-  "configEffortInvalid": {
-    "zh-CN": "思考档位无效：{value}；可选值：{options}",
-    "en-US": "Invalid thinking effort: {value}; allowed: {options}"
-  },
-  "configPreferredLengthInput": {
-    "zh-CN": "首选标题长度（正整数）",
-    "en-US": "Preferred title length (positive integer)"
-  },
-  "configLanguageInput": {
-    "zh-CN": "标题语言",
-    "en-US": "Title language"
-  },
-  "configInstructionsInput": {
-    "zh-CN": "标题提示（可留空）",
-    "en-US": "Title instructions (can be empty)"
-  },
-  "configTimeoutInput": {
-    "zh-CN": "请求超时（毫秒，正整数）",
-    "en-US": "Request timeout (positive milliseconds)"
-  },
   "configCommandSaved": {
-    "zh-CN": "命名配置已保存：{path}。请执行 /reload 使配置生效。",
-    "en-US": "Naming configuration saved to {path}. Run /reload to apply it."
+    "zh-CN": "命名配置已保存并立即生效：{path}",
+    "en-US": "Naming configuration saved and applied immediately: {path}"
   },
   "configCommandInvalid": {
     "zh-CN": "命名配置无效：{error}",
     "en-US": "Invalid naming configuration: {error}"
+  },
+  "panelLabelAutomaticNaming": {
+    "zh-CN": "自动命名",
+    "en-US": "Automatic naming"
+  },
+  "panelDescAutomaticNaming": {
+    "zh-CN": "首条用户消息后自动生成并应用会话标题",
+    "en-US": "Generate and apply a session title after the first user message"
+  },
+  "panelLabelManualNaming": {
+    "zh-CN": "手动 /rename",
+    "en-US": "Manual /rename"
+  },
+  "panelDescManualNaming": {
+    "zh-CN": "注册 /rename 命令；省略名称时综合当前分支全部用户消息生成",
+    "en-US": "Register the /rename command; omitting the name summarizes all user messages on the current branch"
+  },
+  "panelLabelSessionTarget": {
+    "zh-CN": "命名 session",
+    "en-US": "Name session"
+  },
+  "panelDescSessionTarget": {
+    "zh-CN": "将生成的标题写入 Pi 会话名",
+    "en-US": "Write the generated title to the Pi session name"
+  },
+  "panelLabelWorkspaceTarget": {
+    "zh-CN": "命名 workspace",
+    "en-US": "Name workspace"
+  },
+  "panelDescWorkspaceTarget": {
+    "zh-CN": "同时修改终端工作区名称（需后端支持且目标独占）",
+    "en-US": "Also rename the terminal workspace (needs backend support and exclusive ownership)"
+  },
+  "panelLabelTabTarget": {
+    "zh-CN": "命名 tab",
+    "en-US": "Name tab"
+  },
+  "panelDescTabTarget": {
+    "zh-CN": "同时修改终端标签页名称（需后端支持且目标独占）",
+    "en-US": "Also rename the terminal tab (needs backend support and exclusive ownership)"
+  },
+  "panelLabelMaxLength": {
+    "zh-CN": "最大标题长度",
+    "en-US": "Maximum title length"
+  },
+  "panelDescMaxLength": {
+    "zh-CN": "标题允许的最多 Unicode 码点数",
+    "en-US": "Maximum number of Unicode code points allowed in a title"
+  },
+  "panelLabelPreferredLength": {
+    "zh-CN": "首选标题长度",
+    "en-US": "Preferred title length"
+  },
+  "panelDescPreferredLength": {
+    "zh-CN": "提示模型尽量控制在该长度以内，不得大于最大长度",
+    "en-US": "Ask the model to stay within this length; must not exceed the maximum length"
+  },
+  "panelLabelLanguage": {
+    "zh-CN": "标题语言",
+    "en-US": "Title language"
+  },
+  "panelDescLanguage": {
+    "zh-CN": "auto 表示跟随消息的主要语言",
+    "en-US": "auto follows the dominant language of the messages"
+  },
+  "panelLabelInstructions": {
+    "zh-CN": "标题提示",
+    "en-US": "Title instructions"
+  },
+  "panelDescInstructions": {
+    "zh-CN": "附加给命名模型的自定义要求，可留空",
+    "en-US": "Extra instructions for the naming model; can be empty"
+  },
+  "panelLabelTimeout": {
+    "zh-CN": "请求超时（毫秒）",
+    "en-US": "Request timeout (ms)"
+  },
+  "panelDescTimeout": {
+    "zh-CN": "单次命名模型请求的超时时间",
+    "en-US": "Timeout for one naming model request"
+  },
+  "panelLabelMaxTokens": {
+    "zh-CN": "输出预算",
+    "en-US": "Output budget"
+  },
+  "panelDescMaxTokens": {
+    "zh-CN": "思考与标题共享的输出 token 上限",
+    "en-US": "Output token budget shared by thinking and the title"
+  },
+  "panelLabelEffort": {
+    "zh-CN": "思考档位",
+    "en-US": "Thinking effort"
+  },
+  "panelDescEffort": {
+    "zh-CN": "命名请求使用的推理强度",
+    "en-US": "Reasoning effort used for naming requests"
+  },
+  "panelInputPrompt": {
+    "zh-CN": "输入",
+    "en-US": "Input"
+  },
+  "panelValueUnset": {
+    "zh-CN": "未设置",
+    "en-US": "not set"
   }
 }

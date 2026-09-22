@@ -5,9 +5,9 @@ description: 配置 Pi 统一 /rename、首条消息命名和终端目标归属�
 
 # 配置 pi-naming / Configure pi-naming
 
-读取 `<pi-agent-dir>/extensions/pi-naming/config.json`，遵守 `PI_CODING_AGENT_DIR`。使用 `/config:naming` 打开 TUI 配置菜单，输入 `reset` 恢复默认值，保存后 reload。字段和默认值见关联文档和配置示例。
+读取 `<pi-agent-dir>/extensions/pi-naming/config.json`，遵守 `PI_CODING_AGENT_DIR`。使用 `/config:naming` 打开 TUI 配置面板（Pi 自带 SettingsList），输入 `reset` 恢复默认值；面板里改一项立即生效，不需要 reload。字段和默认值见关联文档和配置示例。
 
-Use `/config:naming` to open the normal TUI settings menu; use `reset` for defaults and reload after saving.
+Use `/config:naming` to open the TUI settings panel (Pi's SettingsList); use `reset` for defaults. Changes apply immediately, no reload needed after saving.
 
 - `automaticNaming` / `manualNaming` 控制自动输入和 `/rename [名称]`，`targets` 直接分别控制 session/workspace/tab。Control automatic input and `/rename [name]`; `targets` directly selects session/workspace/tab.
 - `title` 控制长度、语言、补充提示、超时、输出预算和思考档位（`maxTokens` 默认 2048、`effort` 默认 low，二者与 `maxLength` 相互独立）；模型鉴权复用 Pi。Controls length, language, instructions, timeout, output budget and thinking effort (`maxTokens` default 2048, `effort` default low, both independent from `maxLength`); model authentication comes from Pi.

@@ -13,6 +13,7 @@ import {
   type NoticeColor,
   type NoticeSource,
 } from "./notice.ts";
+import { openLanguagePanel } from "./language-panel.ts";
 
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
@@ -226,51 +227,41 @@ function registerLocaleCommand(pi: ExtensionAPI): void {
         return;
       }
 
-      let preference = directPreference;
-      if (!preference) {
-        const options = [
-          i18n.t("zh"),
-          i18n.t("en"),
-          i18n.t("auto"),
-        ];
-        const current = getLocalePreference();
-        const currentOption = current === "zh-CN"
-          ? options[0]
-          : current === "en-US"
-            ? options[1]
-            : options[2];
-        const selected = await ctx.ui.select(
-          `${i18n.t("title")} [${currentOption}]`,
-          options,
-        );
-        if (selected === undefined) return;
-        preference = selected === options[0]
-          ? "zh-CN"
-          : selected === options[1]
-            ? "en-US"
-            : "auto";
+      // 保存并提示结果；直接参数与面板选定走同一条路径。
+      const apply = (preference: LocalePreference): void => {
+        try {
+          const configPath = saveLocalePreference(preference);
+          const envOverride = process.env[LOCALE_ENV];
+          const overrideNotice = envOverride
+            ? `\n${i18n.t("envOverride", { env: LOCALE_ENV })}`
+            : "";
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: "info",
+            message: `${i18n.t("saved", { locale: preference })}${overrideNotice}\n${configPath}`,
+          });
+        } catch (error) {
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: "error",
+            message: i18n.t("failed", { error: String(error) }),
+          });
+        }
+      };
+
+      if (directPreference) {
+        apply(directPreference);
+        return;
       }
 
-      try {
-        const configPath = saveLocalePreference(preference);
-        const envOverride = process.env[LOCALE_ENV];
-        const overrideNotice = envOverride
-          ? `\n${i18n.t("envOverride", { env: LOCALE_ENV })}`
-          : "";
-        notifyWithSource({
-          ctx,
-          source: NOTICE_SOURCE,
-          level: "info",
-          message: `${i18n.t("saved", { locale: preference })}${overrideNotice}\n${configPath}`,
-        });
-      } catch (error) {
-        notifyWithSource({
-          ctx,
-          source: NOTICE_SOURCE,
-          level: "error",
-          message: i18n.t("failed", { error: String(error) }),
-        });
-      }
+      // 无参数：打开 SettingsList 面板，选中一项立即写盘生效。
+      await openLanguagePanel(ctx, {
+        translator: i18n,
+        getPreference: () => getLocalePreference(),
+        onChange: apply,
+      });
     },
   };
   for (const name of ["config:language", "pi-language"] as const) {
