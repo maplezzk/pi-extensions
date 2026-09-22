@@ -16,7 +16,9 @@ description: "配置与排查 session squash 提醒阈值、强制压缩比例�
 
 ## 修改
 
-优先使用 `/config:session-tools`；`/pi-session-tools` 是兼容别名。强制模式使用 `/config:session-tools force 0.9`，关闭使用 `force off`。不要给强制比例写 `"90%"` 字符串。
+优先使用 `/config:session-tools`；`/pi-session-tools` 是兼容别名。不带参数时打开配置面板：面板上「强制压缩比例」是候选列表（回车打开二级列表，含「关闭强制」与常见比例），「提醒阈值」是自由文本（回车打开预填当前值的输入框）。改动立即写盘并同步运行期状态，无需 `/reload`；关闭强制会立即退出强制模式并恢复工具。
+
+也可以用命令参数直接修改。强制模式使用 `/config:session-tools force 0.9`，关闭使用 `force off`。不要给强制比例写 `"90%"` 字符串。
 
 提醒阈值只在正常停止且跨过阈值时提示。强制阈值达到后只开放 `session_log` 与 `session_squash`，直到压缩成功；不要绕过或静默关闭。
 

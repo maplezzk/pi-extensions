@@ -30,7 +30,7 @@ When the conversation crosses a threshold (default 150k / 200k / 250k / 300k tok
 { "squashContextThresholds": ["150k", "200k", "75%"] }   // k, numbers and percentages can be mixed
 ```
 
-Or use the interactive command `/config:session-tools` (alias `/pi-session-tools`).
+Or use the interactive command `/config:session-tools` (alias `/pi-session-tools`). With no argument it opens a configuration panel covering both fields: the forced ratio row opens a candidate list on Enter (with "forced squash off" plus common ratios), and the thresholds row opens a text input prefilled with the current value. Each change is written to disk and applied to the running session immediately, so no `/reload` is needed.
 
 The environment variable `PI_SESSION_TOOLS_SQUASH_THRESHOLDS` (comma separated, e.g. `150k,75%`) is also supported.
 
@@ -45,7 +45,7 @@ Forced squash is disabled by default. Enable it with a JSON number from `0` to `
 }
 ```
 
-Or run `/config:session-tools force 0.9`; use `/config:session-tools force off` to disable it. Percentage strings such as `"90%"` are not accepted for forced squash.
+Or run `/config:session-tools force 0.9`; use `/config:session-tools force off` to disable it. Percentage strings such as `"90%"` are not accepted for forced squash. Turning forced squash off from the configuration panel also leaves forced mode and restores the previous tool set immediately.
 
 After each completed assistant tool batch, the extension checks context usage. At the forced threshold it aborts the current agent loop before another model turn, saves the active tool set, and permits only `session_log` and `session_squash`. Other tool calls are blocked. If the agent stops without squashing, another forced turn starts automatically. The restriction remains until `session_squash` succeeds, then the previous tools are restored and work continues from the summary. Already-running tools are allowed to finish so file mutations are not interrupted halfway.
 

@@ -73,12 +73,12 @@ The button and mouse handling need a Pi build with the component mouse API (`@ea
 ## Commands
 
 ```text
-/config:session-resources             Show the # reference usage hint
+/config:session-resources             Open the configuration panel
 /config:session-resources enable      Enable the # resource picker
 /config:session-resources disable     Disable the # resource picker
 ```
 
-`show`/`hide` remain compatibility aliases for `enable`/`disable`, and `/session-resources` remains available as a command alias. The setting is stored in `<pi-agent-dir>/extensions/pi-session-resources/config.json`; use [`config.example.json`](./config.example.json) as a starting point:
+`show`/`hide` remain compatibility aliases for `enable`/`disable`, and `/session-resources` remains available as a command alias. With no argument the command opens a panel listing every configuration field: Enter or Space flips the boolean in place, and each change is written to disk and applied immediately, so no `/reload` is needed. The setting is stored in `<pi-agent-dir>/extensions/pi-session-resources/config.json`; use [`config.example.json`](./config.example.json) as a starting point:
 
 ```json
 {
@@ -86,7 +86,7 @@ The button and mouse handling need a Pi build with the component mouse API (`@ea
 }
 ```
 
-Use `/config:session-resources enable` or `/config:session-resources disable` to change and persist it. Run `/reload` after changing the file manually.
+Run `/reload` only after changing the file manually.
 
 ## Install
 

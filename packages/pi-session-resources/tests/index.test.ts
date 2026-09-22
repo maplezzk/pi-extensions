@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
+import {
+  initTheme,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import sessionResourcesExtension from "../src/index.ts";
 import { loadConfig } from "../src/config.ts";
@@ -19,6 +20,14 @@ type EditorFactory = Exclude<
   Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0],
   undefined
 >;
+
+/** 面板组件只需要按键入口；其余 Component 成员在测试里用不到。 */
+type KeyboardComponent = {
+  handleInput(data: string): void;
+};
+
+/** Enter 键的原始序列；开关行用它原地切换。 */
+const ENTER = "\r";
 
 /** Creates a minimal Pi API mock that captures registered events and commands. */
 function createPiMock(): {
@@ -48,6 +57,8 @@ function createPiMock(): {
 }
 
 test("registers a composable custom editor picker without persistent widgets or shortcuts", async () => {
+  // 面板渲染需要已初始化的主题（getSettingsListTheme 读取全局主题）。
+  initTheme("dark");
   const agentDir = mkdtempSync(join(tmpdir(), "pi-session-resources-agent-"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -57,6 +68,8 @@ test("registers a composable custom editor picker without persistent widgets or 
   let editorFactory: EditorFactory | undefined;
   let previousEditorRead = false;
   const notifications: { message: string; level?: string }[] = [];
+  let panelOpened = false;
+  let panelComponent: KeyboardComponent | undefined;
   const context = {
     mode: "tui",
     cwd: resolve("/workspace/project"),
@@ -75,6 +88,23 @@ test("registers a composable custom editor picker without persistent widgets or 
       /** Captures the editor wrapper installed by the extension. */
       setEditorComponent(factory: EditorFactory): void {
         editorFactory = factory;
+      },
+      /** Executes the panel factory so tests can drive the real SettingsList. */
+      async custom<T>(factory: unknown): Promise<T> {
+        panelOpened = true;
+        const create = factory as (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: (result: undefined) => void,
+        ) => KeyboardComponent;
+        panelComponent = create(
+          { requestRender: () => undefined },
+          { fg: (_color: string, text: string) => text, bold: (text: string) => text },
+          undefined,
+          () => undefined,
+        );
+        return undefined as T;
       },
       /** Records command feedback, including the Pi notify level. */
       notify(message: string, type?: "info" | "warning" | "error"): void {
@@ -107,6 +137,15 @@ test("registers a composable custom editor picker without persistent widgets or 
   );
 
   const command = commands.get("config:session-resources") as SessionResourcesCommand;
+  await command.handler("", context as unknown as ExtensionCommandContext);
+  assert.equal(panelOpened, true, "bare command must open the configuration panel");
+
+  // 面板唯一的开关行用 Enter 原地切换：开 → 关，立即写盘并同步运行期状态。
+  assert.ok(panelComponent);
+  panelComponent.handleInput(ENTER);
+  assert.match(notifications.at(-1)?.message ?? "", /^\[resources\] .*disabled/);
+  assert.equal(loadConfig().enabled, false);
+
   await command.handler("disable", context as unknown as ExtensionCommandContext);
   assert.match(notifications.at(-1)?.message ?? "", /^\[resources\] .*disabled/);
   assert.equal(notifications.at(-1)?.level, "info");

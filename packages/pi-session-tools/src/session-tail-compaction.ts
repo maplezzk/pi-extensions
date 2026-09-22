@@ -55,6 +55,7 @@ import {
 } from "./session-tail-compaction-utils.ts";
 import { NOTICE_SOURCE } from "./source-tag.ts";
 import { i18n } from "./i18n.ts";
+import { openConfigPanel, type ConfigPanelHandlers, type SessionToolsPanelConfig } from "./config-panel.ts";
 import { registerSquashMessageRenderer } from "./squash-message-renderer.ts";
 import {
   notifyWithSource,
@@ -737,8 +738,7 @@ const FORCE_CONFIG_COMMAND = "force";
 /** 关闭强制阈值时接受的值。 */
 const FORCE_CONFIG_DISABLED_VALUES = new Set(["off", "none", "disabled"]);
 
-/** 配置命令：交互式设置压缩阈值（支持 k / 百分比 / 数字）。
- * 带参数时直接保存并返回；无参数时展示当前值并弹输入框。 */
+/** 配置命令：不带参数打开配置面板；带参数直接保存并返回。 */
 async function handleConfigCommand(
   args: string,
   ctx: ExtensionCommandContext,
@@ -749,7 +749,11 @@ async function handleConfigCommand(
     return;
   }
   const requested = args.trim();
-  if (requested) {
+  if (!requested) {
+    await openSessionToolsPanel(ctx, onForceDisabled);
+    return;
+  }
+  {
     const [command, ...commandArgs] = requested.split(/\s+/);
     if (command.toLowerCase() === FORCE_CONFIG_COMMAND) {
       const forceValue = commandArgs.join(" ").trim().toLowerCase();
@@ -802,28 +806,65 @@ async function handleConfigCommand(
       }),
       "info",
     );
+  }
+}
+
+/**
+ * 把面板改动落到配置文件与运行期状态。
+ *
+ * 强制压缩关闭时必须复用原有的 `onForceDisabled`（退出强制模式并恢复工具集合），
+ * 否则写盘成功但当前会话仍卡在强制状态。
+ */
+function applyPanelConfig(
+  ctx: ExtensionCommandContext,
+  onForceDisabled: () => void,
+  next: SessionToolsPanelConfig,
+): void {
+  const previousForce = forceSquashRatio;
+  try {
+    saveSquashThresholds(next.squashContextThresholds);
+    saveForceSquashRatio(next.forceSquashContextThreshold);
+  } catch (error) {
+    notifySession(
+      ctx,
+      i18n.t("configSaveFailed", {
+        path: squashConfigPath(),
+        error: error instanceof Error ? error.message : String(error),
+      }),
+      "error",
+    );
     return;
   }
-  const current = serializeThresholds(squashThresholds).join(", ");
-  const value = await ctx.ui.input(
-    i18n.t("configPrompt", { current }),
-    current,
-  );
-  if (value === undefined) return;
-  const parsed = parseSquashThresholds(value.split(","));
-  if (parsed.length === 0) {
-    notifySession(ctx, i18n.t("configParseError", { value }), "error");
-    return;
+  if (previousForce !== null && next.forceSquashContextThreshold === null) {
+    onForceDisabled();
   }
-  const configPath = saveSquashThresholds(parsed);
-  notifySession(
-    ctx,
-    i18n.t("configSaved", {
-      thresholds: serializeThresholds(parsed).join(", "),
-      path: configPath,
+}
+
+/** 打开配置面板，把面板接口接到当前配置与运行期状态上。 */
+async function openSessionToolsPanel(
+  ctx: ExtensionCommandContext,
+  onForceDisabled: () => void,
+): Promise<void> {
+  await openConfigPanel(ctx, createSessionToolsPanelHandlers(ctx, onForceDisabled));
+}
+
+/**
+ * 构造面板接口：读取当前配置，改动后写盘并同步运行期状态。
+ *
+ * 单独导出便于测试直接验证「关闭强制必须退出强制模式」这条连线；
+ * 面板本身只依赖这个接口，不碰模块内部可变状态。
+ */
+export function createSessionToolsPanelHandlers(
+  ctx: ExtensionCommandContext,
+  onForceDisabled: () => void,
+): ConfigPanelHandlers {
+  return {
+    getConfig: () => ({
+      squashContextThresholds: squashThresholds,
+      forceSquashContextThreshold: forceSquashRatio,
     }),
-    "info",
-  );
+    onChange: (next) => applyPanelConfig(ctx, onForceDisabled, next),
+  };
 }
 
 /** 阈值提示消息的投递模式：agent 停止后立即投递（followUp）并触发下一轮（triggerTurn）。 */

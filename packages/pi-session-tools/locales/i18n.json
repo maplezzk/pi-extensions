@@ -136,16 +136,44 @@
     "en-US": "Could not parse env var {env}; default thresholds are used."
   },
   "configCommandDescription": {
-    "zh-CN": "配置提醒阈值或强制压缩比例（force 0.9 / force off）",
-    "en-US": "Configure reminder thresholds or forced squash ratio (force 0.9 / force off)"
+    "zh-CN": "配置提醒阈值或强制压缩比例（不带参数打开配置面板）",
+    "en-US": "Configure reminder thresholds or forced squash ratio (run without arguments to open the configuration panel)"
+  },
+  "configMenuTitle": {
+    "zh-CN": "pi-session-tools 配置",
+    "en-US": "pi-session-tools configuration"
+  },
+  "configInputPrompt": {
+    "zh-CN": "输入",
+    "en-US": "Value"
+  },
+  "configForceOff": {
+    "zh-CN": "关闭强制",
+    "en-US": "Forced squash off"
+  },
+  "configLabelForce": {
+    "zh-CN": "强制压缩比例",
+    "en-US": "Forced squash ratio"
+  },
+  "configDescForce": {
+    "zh-CN": "上下文达到「该比例 × 上下文窗口」时中止任务并只开放 session_log / session_squash；选「关闭强制」即不启用。",
+    "en-US": "When context reaches this ratio of the context window, the task is interrupted and only session_log / session_squash stay available; pick off to disable it."
+  },
+  "configLabelThresholds": {
+    "zh-CN": "提醒阈值",
+    "en-US": "Reminder thresholds"
+  },
+  "configDescThresholds": {
+    "zh-CN": "上下文跨过任一阈值时提醒主 agent 压缩；逗号分隔，支持 150k、75% 或数字。",
+    "en-US": "Remind the agent to squash when context crosses any threshold; comma-separated, supporting 150k, 75%, or numbers."
+  },
+  "configSaveFailed": {
+    "zh-CN": "配置保存失败：{path}（{error}）。",
+    "en-US": "Failed to save the configuration: {path} ({error})."
   },
   "configNoUi": {
     "zh-CN": "当前环境无交互 UI，无法用命令配置，请直接编辑配置文件。",
     "en-US": "No interactive UI available; edit the config file directly instead."
-  },
-  "configPrompt": {
-    "zh-CN": "输入新的压缩阈值（逗号分隔，支持 150k、75% 或数字；留空取消）：\n当前：{current}",
-    "en-US": "Enter new squash thresholds (comma-separated; supports 150k, 75%, or numbers; leave empty to cancel):\nCurrent: {current}"
   },
   "configParseError": {
     "zh-CN": "阈值解析失败：{value}（示例：150k,200k,75%）",

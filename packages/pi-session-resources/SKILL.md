@@ -5,14 +5,14 @@ description: "启用、禁用与排查 pi-session-resources 的 # 文件、URL �
 
 # 配置 pi-session-resources
 
-配置文件为 `<Pi agent 目录>/extensions/pi-session-resources/config.json`，默认启用选择器。可以使用 `/config:session-resources enable|disable` 修改并持久化配置：
+配置文件为 `<Pi agent 目录>/extensions/pi-session-resources/config.json`，默认启用选择器。不带参数执行 `/config:session-resources` 会打开配置面板：面板上每一行是配置字段，回车/空格原地切换开关，改动立即写盘并生效，无需 `/reload`。也可以直接用命令参数修改：
 
 ```text
 /config:session-resources
 /config:session-resources enable|disable
 ```
 
-`show|hide` 分别兼容 `enable|disable`，`/session-resources` 是命令别名。修改配置文件后执行 `/reload`。
+`show|hide` 分别兼容 `enable|disable`，`/session-resources` 是命令别名。
 
 ## 排查
 
