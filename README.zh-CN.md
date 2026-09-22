@@ -19,6 +19,7 @@
 | [`pi-naming`](./packages/pi-naming) | 统一自动和手动命名会话及允许修改的终端目标。 | [English](./packages/pi-naming/README.md) · [中文](./packages/pi-naming/README.zh-CN.md) |
 | [`pi-auto-goal`](./packages/pi-auto-goal) | 每次完全停止后用第二个模型判定是否属于擅自早停，是则以用户语气要求 agent 继续。 | [English](./packages/pi-auto-goal/README.md) · [中文](./packages/pi-auto-goal/README.zh-CN.md) |
 | [`pi-clean-mode`](./packages/pi-clean-mode) | 把一轮 agent 运行折叠成一行耗时头，展开前只显示最终答案。 | [English](./packages/pi-clean-mode/README.md) · [中文](./packages/pi-clean-mode/README.zh-CN.md) |
+| [`pi-gen-ui`](./packages/pi-gen-ui) | 通过 `render_ui` 工具把 json-render JSON spec 渲染成 Pi 终端原生面板（表格、图表、提示块、输入控件），并可选接入 Jev 组合。 | [English](./packages/pi-gen-ui/README.md) · [中文](./packages/pi-gen-ui/README.zh-CN.md) |
 | [`pi-distill`](./packages/pi-distill) | 在所有已启用 object-schema 工具的超长输出占满上下文前进行提炼。 | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
 | [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配规则在工具执行前后进行审查，并对 `edit`、`write` 使用真实 diff。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
 | [`pi-metrics`](./packages/pi-metrics) | 在 working spinner 实时显示会话全程耗时，并在 agent 停下后给一行汇总（`on-stop`，默认），或按 `live` 模式每轮一行。 | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |

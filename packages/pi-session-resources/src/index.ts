@@ -8,6 +8,7 @@ import { collectSessionResources, collectToolResources, ResourceIndex } from "./
 import { i18n } from "./i18n.ts";
 import { isFullscreenTui, SessionResourceEditor } from "./picker.ts";
 import { configPath, loadConfig, saveConfig } from "./config.ts";
+import { openConfigPanel } from "./config-panel.ts";
 import { NOTICE_TAG_COLOR, installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
@@ -101,6 +102,33 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
     resources.clear();
   });
 
+  /**
+   * Persists the picker switch and reports a write failure.
+   *
+   * Both the command actions and the panel go through here, so the running
+   * session and the file can never disagree.
+   */
+  function applyEnabled(enabled: boolean, ctx: ExtensionCommandContext): void {
+    try {
+      saveConfig({ enabled });
+      pickerEnabled = enabled;
+      notify(ctx, i18n.t(pickerEnabled ? "enabled" : "disabled"), "info");
+    } catch (error) {
+      notify(ctx, i18n.t("configSaveFailed", {
+        path: configPath(),
+        error: error instanceof Error ? error.message : String(error),
+      }), "error");
+    }
+  }
+
+  /** Opens the TUI configuration panel bound to the live picker state. */
+  async function openPanel(ctx: ExtensionCommandContext): Promise<void> {
+    await openConfigPanel(ctx, {
+      getConfig: () => ({ enabled: pickerEnabled }),
+      onChange: (next) => applyEnabled(next.enabled, ctx),
+    });
+  }
+
   const command = {
     description: i18n.t("commandDescription"),
     /** Completes supported enable and disable actions plus legacy visibility names. */
@@ -108,11 +136,11 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
       const matches = COMMAND_ACTIONS.filter((action) => action.startsWith(prefix));
       return matches.length > 0 ? matches.map((action) => ({ value: action, label: action })) : null;
     },
-    /** Reports usage or toggles # resource-reference completion. */
+    /** Reports usage, opens the panel, or toggles # resource-reference completion. */
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const action = args.trim().toLowerCase();
       if (!action) {
-        notify(ctx, i18n.t(pickerEnabled ? "referenceHint" : "referenceDisabledHint"), "info");
+        await openPanel(ctx);
         return;
       }
       if (!COMMAND_ACTIONS.includes(action as CommandAction)) {
@@ -120,23 +148,14 @@ export default function sessionResourcesExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      const enabled = action === COMMAND_ACTION.enable || action === COMMAND_ACTION.show;
-      try {
-        saveConfig({ enabled });
-        pickerEnabled = enabled;
-        notify(ctx, i18n.t(pickerEnabled ? "enabled" : "disabled"), "info");
-      } catch (error) {
-        notify(ctx, i18n.t("configSaveFailed", {
-          path: configPath(),
-          error: error instanceof Error ? error.message : String(error),
-        }), "error");
-      }
+      applyEnabled(action === COMMAND_ACTION.enable || action === COMMAND_ACTION.show, ctx);
     },
   };
   for (const name of COMMAND_NAMES) pi.registerCommand(name, command);
 }
 
 export { configPath, loadConfig, parseConfig, saveConfig } from "./config.ts";
+export * from "./config-panel.ts";
 export * from "./autocomplete.ts";
 export * from "./collector.ts";
 export * from "./picker.ts";

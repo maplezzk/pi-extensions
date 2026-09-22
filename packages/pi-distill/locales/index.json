@@ -7,22 +7,6 @@
     "zh-CN": "强制工具调用规则：每次调用任何带有 outputRequest 的工具时，Agent 都必须在 arguments 中通过 outputRequest 自主决策需要返回什么内容。绝不能省略、传 null 或空字符串。两种模式：需要完整原始输出时传 RAW；需要节省 token 或只提取部分信息时传描述性 outputRequest。RAW 必须是严格的三个 ASCII 字母。",
     "en-US": "MANDATORY tool-call rule: whenever a tool exposes outputRequest, the Agent must include outputRequest in the arguments of every call and use it to actively decide what to return. Never omit it, use null, or use an empty string. Two modes: use RAW when the full original output is needed; use a descriptive outputRequest when you want to save tokens or extract only part of the result. RAW must be exactly the three ASCII letters."
   },
-  "positiveInteger": {
-    "zh-CN": "请输入大于 0 的整数。",
-    "en-US": "Enter a positive integer."
-  },
-  "nonNegativeInteger": {
-    "zh-CN": "请输入大于或等于 0 的整数。",
-    "en-US": "Enter a non-negative integer."
-  },
-  "modelInput": {
-    "zh-CN": "模型（provider/model；留空使用当前会话模型）",
-    "en-US": "Model (provider/model; leave empty to use the current session model)"
-  },
-  "modelInvalid": {
-    "zh-CN": "请输入 provider/model，或留空使用当前会话模型。",
-    "en-US": "Use provider/model, or leave empty to use the current session model."
-  },
   "configWarnings": {
     "zh-CN": "配置有警告，将以可用值打开：{warnings}",
     "en-US": "Configuration warnings; opening with usable values: {warnings}"
@@ -30,6 +14,10 @@
   "savedWarnings": {
     "zh-CN": "Distill 已保存，但有警告：{warnings}",
     "en-US": "Distill saved with warnings: {warnings}"
+  },
+  "configSaveFailed": {
+    "zh-CN": "写入 Distill 配置失败，面板里的改动没有生效：{error}",
+    "en-US": "Could not write the Distill configuration; the panel change did not take effect: {error}"
   },
   "interactiveOnly": {
     "zh-CN": "交互式设置需要在带 UI 的 Pi 会话中运行。",
@@ -51,85 +39,9 @@
     "zh-CN": "当前会话模型",
     "en-US": "Current session model"
   },
-  "status": {
-    "zh-CN": "状态：{value}",
-    "en-US": "Status: {value}"
-  },
-  "model": {
-    "zh-CN": "模型：{value}",
-    "en-US": "Model: {value}"
-  },
-  "minOutput": {
-    "zh-CN": "最小输出：{value} 字符",
-    "en-US": "Min output: {value} chars"
-  },
-  "summaryLimit": {
-    "zh-CN": "摘要上限：{value} 字符",
-    "en-US": "Summary limit: {value} chars"
-  },
-  "finalLimit": {
-    "zh-CN": "最终输出上限：{value} 字符",
-    "en-US": "Final output limit: {value} chars"
-  },
-  "timeout": {
-    "zh-CN": "超时：{value}s",
-    "en-US": "Timeout: {value}s"
-  },
-  "timeoutRetryCount": {
-    "zh-CN": "超时重试：{value} 次",
-    "en-US": "Timeout retries: {value}"
-  },
-  "errorRetryCount": {
-    "zh-CN": "异常重试：{value} 次",
-    "en-US": "Error retries: {value}"
-  },
-  "threshold": {
-    "zh-CN": "长输出阈值：{value}x",
-    "en-US": "Long-output threshold: {value}x"
-  },
-  "summarizeErrors": {
-    "zh-CN": "提炼错误：{value}",
-    "en-US": "Summarize errors: {value}"
-  },
-  "auditRenderer": {
-    "zh-CN": "审计渲染器：{value}",
-    "en-US": "Audit renderer: {value}"
-  },
-  "showOutputRequest": {
-    "zh-CN": "显示 outputRequest：{value}",
-    "en-US": "Show outputRequest: {value}"
-  },
-  "showSummary": {
-    "zh-CN": "显示摘要：{value}",
-    "en-US": "Show summary: {value}"
-  },
-  "toolOverrides": {
-    "zh-CN": "工具 outputRequest",
-    "en-US": "Tool outputRequest"
-  },
-  "toolSettingsTitle": {
-    "zh-CN": "工具 outputRequest 设置",
-    "en-US": "Tool outputRequest settings"
-  },
-  "toolStatus": {
-    "zh-CN": "{tool}：{value}",
-    "en-US": "{tool}: {value}"
-  },
   "noConfigurableTools": {
     "zh-CN": "当前没有可配置的工具。",
     "en-US": "No configurable tools are currently available."
-  },
-  "minOutputTitle": {
-    "zh-CN": "最小输出字符数",
-    "en-US": "Minimum output chars"
-  },
-  "summaryLimitTitle": {
-    "zh-CN": "摘要字符上限",
-    "en-US": "Summary character limit"
-  },
-  "finalLimitTitle": {
-    "zh-CN": "最终输出字符上限",
-    "en-US": "Final output character limit"
   },
   "outputLimitExceeded": {
     "zh-CN": "输出超过 {maxChars} 个字符，完整内容已写入：{path}",
@@ -138,18 +50,6 @@
   "outputLimitWriteFailed": {
     "zh-CN": "无法写入超长输出临时文件，将返回截断内容：{error}",
     "en-US": "Failed to write oversized output to a temp file; returning truncated content: {error}"
-  },
-  "timeoutTitle": {
-    "zh-CN": "提炼模型超时（秒）",
-    "en-US": "Summarizer timeout (seconds)"
-  },
-  "timeoutRetryCountTitle": {
-    "zh-CN": "提炼超时重试次数",
-    "en-US": "Distillation timeout retry count"
-  },
-  "errorRetryCountTitle": {
-    "zh-CN": "提炼非超时异常重试次数",
-    "en-US": "Distillation non-timeout error retry count"
   },
   "retryingSummary": {
     "zh-CN": "提炼发生{kind}，正在进行第 {retry}/{limit} 次重试：{error}",
@@ -171,9 +71,145 @@
     "zh-CN": "扩展 outputRequest 参数失败：{error}",
     "en-US": "Failed to extend the outputRequest parameter: {error}"
   },
-  "thresholdTitle": {
-    "zh-CN": "长输出阈值",
-    "en-US": "Long-output threshold"
+  "panelLabelEnabled": {
+    "zh-CN": "启用提炼",
+    "en-US": "Distillation"
+  },
+  "panelDescEnabled": {
+    "zh-CN": "总开关：关闭后不再为任何工具注入 outputRequest，也不调用提炼模型。",
+    "en-US": "Master switch: when off, no tool gets an outputRequest and the summarizer is never called."
+  },
+  "panelLabelModel": {
+    "zh-CN": "提炼模型",
+    "en-US": "Summarizer model"
+  },
+  "panelDescModel": {
+    "zh-CN": "调用提炼模型时使用的 provider/model；选「当前会话模型」表示跟随会话。",
+    "en-US": "provider/model used for distillation; pick the current session model to follow the session."
+  },
+  "panelLabelMinChars": {
+    "zh-CN": "最小输出字符数",
+    "en-US": "Minimum output chars"
+  },
+  "panelDescMinChars": {
+    "zh-CN": "工具输出达到此字符数才调用提炼模型。",
+    "en-US": "Tool output must reach this length before the summarizer runs."
+  },
+  "panelLabelMaxChars": {
+    "zh-CN": "摘要字符上限",
+    "en-US": "Summary character limit"
+  },
+  "panelDescMaxChars": {
+    "zh-CN": "提炼结果超过此字符数时写入文件，只把路径交给 Agent。",
+    "en-US": "Summaries longer than this are written to a file and only the path is returned."
+  },
+  "panelLabelMaxOutputChars": {
+    "zh-CN": "最终输出字符上限",
+    "en-US": "Final output character limit"
+  },
+  "panelDescMaxOutputChars": {
+    "zh-CN": "最终返回给 Agent 的内容超过此字符数时写入文件。",
+    "en-US": "Content above this length is written to a file before being returned."
+  },
+  "panelLabelTimeoutSeconds": {
+    "zh-CN": "模型超时（秒）",
+    "en-US": "Model timeout (seconds)"
+  },
+  "panelDescTimeoutSeconds": {
+    "zh-CN": "单次提炼模型调用最长等待时间。",
+    "en-US": "Maximum wait for one summarizer call."
+  },
+  "panelLabelTimeoutRetryCount": {
+    "zh-CN": "超时重试次数",
+    "en-US": "Timeout retries"
+  },
+  "panelDescTimeoutRetryCount": {
+    "zh-CN": "提炼因超时失败后的额外重试次数，0 表示不重试。",
+    "en-US": "Extra retries after a timeout, 0 disables them."
+  },
+  "panelLabelErrorRetryCount": {
+    "zh-CN": "异常重试次数",
+    "en-US": "Error retries"
+  },
+  "panelDescErrorRetryCount": {
+    "zh-CN": "提炼因非超时异常失败后的额外重试次数，0 表示不重试。",
+    "en-US": "Extra retries after a non-timeout failure, 0 disables them."
+  },
+  "panelLabelMissedCompressionRatio": {
+    "zh-CN": "长输出提醒倍数",
+    "en-US": "Long-output reminder ratio"
+  },
+  "panelDescMissedCompressionRatio": {
+    "zh-CN": "没有 outputRequest 的输出超过最小字符数这么多倍时提醒。",
+    "en-US": "Warn when output without an outputRequest exceeds the minimum length by this factor."
+  },
+  "panelLabelSummarizeErrors": {
+    "zh-CN": "提炼错误输出",
+    "en-US": "Summarize error output"
+  },
+  "panelDescSummarizeErrors": {
+    "zh-CN": "工具返回错误且达到最小长度时是否仍调用提炼模型。",
+    "en-US": "Whether failed tools are still distilled once they reach the minimum length."
+  },
+  "panelLabelRenderEnabled": {
+    "zh-CN": "审计渲染器",
+    "en-US": "Audit renderer"
+  },
+  "panelDescRenderEnabled": {
+    "zh-CN": "是否在会话里显示提炼审计卡片。",
+    "en-US": "Whether the distillation audit card is shown in the transcript."
+  },
+  "panelLabelRenderShowPrompt": {
+    "zh-CN": "审计卡显示 outputRequest",
+    "en-US": "Audit card shows outputRequest"
+  },
+  "panelDescRenderShowPrompt": {
+    "zh-CN": "审计卡里是否显示本次调用的 outputRequest。",
+    "en-US": "Whether the audit card includes the call's outputRequest."
+  },
+  "panelLabelRenderShowResult": {
+    "zh-CN": "审计卡显示提炼结果",
+    "en-US": "Audit card shows the summary"
+  },
+  "panelDescRenderShowResult": {
+    "zh-CN": "审计卡里是否显示提炼后的内容。",
+    "en-US": "Whether the audit card includes the distilled content."
+  },
+  "panelLabelTool": {
+    "zh-CN": "工具：{tool}",
+    "en-US": "Tool: {tool}"
+  },
+  "panelDescTool": {
+    "zh-CN": "是否给 {tool} 注入 outputRequest 并提炼其结果；edit/write 未配置时默认关闭。",
+    "en-US": "Whether {tool} gets an outputRequest and result distillation; edit/write default to off."
+  },
+  "panelSearchPrompt": {
+    "zh-CN": "过滤",
+    "en-US": "Filter"
+  },
+  "panelUseCustom": {
+    "zh-CN": "使用 “{value}”",
+    "en-US": "Use “{value}”"
+  },
+  "configArgumentEnable": {
+    "zh-CN": "启用工具输出提炼。",
+    "en-US": "Enable tool-output distillation."
+  },
+  "configArgumentDisable": {
+    "zh-CN": "停用工具输出提炼。",
+    "en-US": "Disable tool-output distillation."
+  },
+  "configArgumentStatus": {
+    "zh-CN": "打印当前配置，不打开面板。",
+    "en-US": "Print the current configuration instead of opening the panel."
+  },
+  "configStatusReport": {
+    "zh-CN": "Distill：{value}\n模型：{model}\n最小输出：{minChars} 字符\n摘要上限：{maxChars} 字符\n最终输出上限：{maxOutputChars} 字符\n超时：{timeoutSeconds}s（超时重试 {timeoutRetryCount} 次，异常重试 {errorRetryCount} 次）\n长输出阈值：{missedCompressionRatio}x\n提炼错误：{summarizeErrors}\n审计渲染器：{render}\n配置文件：{path}",
+    "en-US": "Distill: {value}\nModel: {model}\nMin output: {minChars} chars\nSummary limit: {maxChars} chars\nFinal output limit: {maxOutputChars} chars\nTimeout: {timeoutSeconds}s (timeout retries {timeoutRetryCount}, error retries {errorRetryCount})\nLong-output threshold: {missedCompressionRatio}x\nSummarize errors: {summarizeErrors}\nAudit renderer: {render}\nConfig file: {path}"
+  },
+  "configUnknownArgument": {
+    "zh-CN": "未知参数 “{argument}”；可用参数：enable、disable、status。",
+    "en-US": "Unknown argument “{argument}”; available arguments: enable, disable, status."
   },
   "commandDescription": {
     "zh-CN": "交互式配置工具输出提炼",

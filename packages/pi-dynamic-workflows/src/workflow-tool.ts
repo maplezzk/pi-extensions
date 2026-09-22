@@ -62,6 +62,8 @@ export interface WorkflowToolOptions {
   cwd?: string;
   concurrency?: number;
   pi?: { sendMessage: (message: any, options?: any) => void };
+  /** 异步模式判定：每次调用时现取，配置改了立即生效；不传就每次重读配置文件。 */
+  isAsync?: () => boolean;
 }
 
 let runningWorkflow: { name: string; abortController: AbortController; cleanWidget?: () => void } | null = null;
@@ -130,7 +132,7 @@ export function createWorkflowTool(options: WorkflowToolOptions = {}): ToolDefin
       const parsed = parseWorkflowScript(script);
 
       // === 异步模式 ===
-      const isAsync = loadConfig().async && options.pi;
+      const isAsync = (options.isAsync ? options.isAsync() : loadConfig().async) && options.pi;
       if (isAsync) {
         if (runningWorkflow) {
           throw new Error(i18n.t("alreadyRunning", { name: runningWorkflow.name }));

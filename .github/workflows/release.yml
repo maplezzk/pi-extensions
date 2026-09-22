@@ -63,6 +63,7 @@ jobs:
           - dir: packages/pi-notifications
           - dir: packages/pi-auto-goal
           - dir: packages/pi-clean-mode
+          - dir: packages/pi-gen-ui
     steps:
       - uses: actions/checkout@v4
 

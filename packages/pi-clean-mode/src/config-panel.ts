@@ -46,6 +46,35 @@ const ACTIVITY_ROW_VALUES: string[] = Array.from(
 /** 行数列表最多同时显示几行；超出的部分由 SelectList 滚动。 */
 const ROW_MENU_MAX_VISIBLE = 8;
 
+/** 候选项：展示文本与写回值分开，写回值才是配置里存的。 */
+export interface PanelOption {
+	/** 面板上显示的文本。 */
+	label: string;
+	/** 写回配置的值。 */
+	value: string;
+}
+
+/** 活动区行数的候选项：显示「N 行」，写回数字字符串。 */
+function rowCountOptions(): PanelOption[] {
+	return ACTIVITY_ROW_VALUES.map((value) => ({
+		label: i18n.t("configActivityRowsOption", { count: value }),
+		value,
+	}));
+}
+
+/** 按配置值取展示文本；不在候选表里就直接显示原值。 */
+export function optionLabelForValue(options: readonly PanelOption[], value: string): string {
+	return options.find((option) => option.value === value)?.label ?? value;
+}
+
+/** 按展示文本反查写回值；找不到说明候选表变了，返回 undefined 由调用方保持不变。 */
+export function optionValueFromLabel(
+	options: readonly PanelOption[],
+	label: string,
+): string | undefined {
+	return options.find((option) => option.label === label)?.value;
+}
+
 /** 面板项。 */
 interface PanelItemSpec {
 	/** 配置字段名。 */
@@ -132,21 +161,24 @@ export function panelToggleLabels(): ToggleLabels {
 	return { on: i18n.t("configValueOn"), off: i18n.t("configValueOff") };
 }
 
-/** 活动区行数的二级选择列表：Enter 选定，Esc 不改动直接返回。 */
+/**
+ * 活动区行数的二级选择列表：Enter 选定，Esc 不改动直接返回。
+ *
+ * 回传的是**展示文本**而不是数字：SettingsList 会把回传值直接显示在右侧，
+ * 回传「3 行」才能跟开关行的「开/关」一样保持本地化，而不是退回裸值 3。
+ */
 function createRowCountSubmenu(
-	currentValue: string,
+	currentLabel: string,
 	done: (selectedValue?: string) => void,
 ): Component {
-	const items: SelectItem[] = ACTIVITY_ROW_VALUES.map((value) => ({
-		value,
-		label: i18n.t("configActivityRowsOption", { count: value }),
-	}));
+	const options = rowCountOptions();
+	const items: SelectItem[] = options.map((option) => ({ value: option.label, label: option.label }));
 	const list = new SelectList(
 		items,
-		Math.min(items.length, ROW_MENU_MAX_VISIBLE),
+		Math.max(1, Math.min(items.length, ROW_MENU_MAX_VISIBLE)),
 		getSelectListTheme(),
 	);
-	const currentIndex = ACTIVITY_ROW_VALUES.indexOf(currentValue);
+	const currentIndex = options.findIndex((option) => option.label === currentLabel);
 	if (currentIndex >= 0) {
 		list.setSelectedIndex(currentIndex);
 	}
@@ -177,7 +209,7 @@ export function toSettingItems(
 				id: item.id,
 				label,
 				description,
-				currentValue: String(config[item.id]),
+				currentValue: optionLabelForValue(rowCountOptions(), String(config[item.id])),
 				// 二级列表接管 Enter，避免在 1-6 之间反复循环。
 				submenu: createRowCountSubmenu,
 			};
@@ -201,7 +233,8 @@ export function applyPanelChange(
 ): CleanModeConfig | undefined {
 	// SettingsList 回调只给 id 字符串，所以这里按字段名分派，与面板项声明保持一致。
 	if (id === ACTIVITY_ROWS_ID) {
-		return withActivityRows(config, Number.parseInt(value, DECIMAL_RADIX));
+		const raw = optionValueFromLabel(rowCountOptions(), value);
+		return raw === undefined ? undefined : withActivityRows(config, Number.parseInt(raw, DECIMAL_RADIX));
 	}
 	if (value === labels.on) {
 		return withBooleanConfigField(config, id, true);

@@ -7,9 +7,37 @@
     "zh-CN": "Workflow 配置",
     "en-US": "Workflow Config"
   },
-  "exit": {
-    "zh-CN": "退出",
-    "en-US": "Exit"
+  "configLabelBackend": {
+    "zh-CN": "执行后端",
+    "en-US": "Execution backend"
+  },
+  "configLabelAsync": {
+    "zh-CN": "异步模式",
+    "en-US": "Async mode"
+  },
+  "configDescBackend": {
+    "zh-CN": "内置 agent，或 pi-interactive-subagents 子会话",
+    "en-US": "Built-in agent, or pi-interactive-subagents child sessions"
+  },
+  "configDescAsync": {
+    "zh-CN": "后台执行 workflow，并注册 workflow_cancel 工具",
+    "en-US": "Run workflows in the background and register the workflow_cancel tool"
+  },
+  "configBackendWorkflow": {
+    "zh-CN": "内置 workflow agent",
+    "en-US": "Built-in workflow agent"
+  },
+  "configBackendSubagent": {
+    "zh-CN": "subagent 子会话",
+    "en-US": "Subagent sessions"
+  },
+  "configSaved": {
+    "zh-CN": "配置已保存：执行后端 {backend}，异步模式 {async}。",
+    "en-US": "Saved: backend {backend}, async mode {async}."
+  },
+  "configSaveFailed": {
+    "zh-CN": "配置保存失败：{error}",
+    "en-US": "Failed to save configuration: {error}"
   },
   "on": {
     "zh-CN": "开启",
@@ -18,26 +46,6 @@
   "off": {
     "zh-CN": "关闭",
     "en-US": "off"
-  },
-  "toggleBackend": {
-    "zh-CN": "切换执行后端（当前：{value}）",
-    "en-US": "Toggle execution backend (current: {value})"
-  },
-  "toggleAsync": {
-    "zh-CN": "切换异步模式（当前：{value}）",
-    "en-US": "Toggle async mode (current: {value})"
-  },
-  "savedBackend": {
-    "zh-CN": "执行后端已切换为：{value}",
-    "en-US": "Execution backend switched to: {value}"
-  },
-  "savedAsync": {
-    "zh-CN": "异步模式已切换为：{value}",
-    "en-US": "Async mode switched to: {value}"
-  },
-  "reloadHint": {
-    "zh-CN": "需 /reload 生效",
-    "en-US": "Requires /reload to take effect"
   },
   "cancelToolDescription": {
     "zh-CN": "取消正在后台运行的 workflow",

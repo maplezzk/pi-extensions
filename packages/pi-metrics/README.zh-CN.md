@@ -11,7 +11,7 @@
   - `on-stop`（默认）：运行过程中对话区保持干净；AI 完全停止（`agent_settled`，覆盖自动重试、compaction 续跑以及 Esc 中断）后只出一行汇总：总耗时、混合 TPS、TTFT、in/out 合计、stall 和综合费率。
   - `live`：每轮结束时立刻出一行（该行已包含本轮耗时，不再单独发耗时提示）；整段超过一轮时再补一行 `⏱ <耗时>`。
 - 两种模式都会把每轮遥测写进 `tps` custom session entry，恢复 session 或 `/tree` 后照常恢复显示。
-- Metrics 通过 session entry 和通知提供。使用 `/config:metrics` 打开 TUI 配置菜单，或用 `/config:metrics enable|disable|live|on-stop|reset` 直接改一项。
+- Metrics 通过 session entry 和通知提供。使用 `/config:metrics` 打开 TUI 配置面板，或用 `/config:metrics enable|disable|live|on-stop|reset` 直接改一项。
 
 ## 配置
 
@@ -29,7 +29,7 @@
 | `enabled` | `true` / `false` | `true` | 总开关；`false` 时完全不注册指标处理器。 |
 | `display` | `"on-stop"` / `"live"` | `"on-stop"` | 指标行何时出现：整段停下后汇总一行，还是每轮一行。 |
 
-用 `/config:metrics` 打开交互菜单（每次选择都会保存并重新打开菜单，选「完成」退出），或用带参数的形式改单个字段；手动修改文件后执行 `/reload`。可参考 [`config.example.json`](./config.example.json)。
+用 `/config:metrics` 打开配置面板（总开关回车切换，显示时机回车选；每改一项立即写盘并生效，不需要 `/reload`），或用带参数的形式改单个字段；手动修改文件后执行 `/reload`。可参考 [`config.example.json`](./config.example.json)。
 
 ## 汇总行是怎么算的
 

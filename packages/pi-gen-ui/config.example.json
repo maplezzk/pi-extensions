@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "maxResultLines": 60,
+  "interactiveView": "auto",
+  "composition": {
+    "enabled": true,
+    "provider": "auto",
+    "model": "",
+    "apiKeyEnv": "",
+    "endpoint": "",
+    "timeoutMs": 10000
+  }
+}

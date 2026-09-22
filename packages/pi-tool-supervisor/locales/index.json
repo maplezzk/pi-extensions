@@ -242,5 +242,185 @@
   "localizationFailed": {
     "zh-CN": "行号定位请求失败，只报告规则级别的问题：{message}",
     "en-US": "The line localization request failed, so issues are reported at rule level only: {message}"
+  },
+  "panelOn": {
+    "zh-CN": "开",
+    "en-US": "On"
+  },
+  "panelOff": {
+    "zh-CN": "关",
+    "en-US": "Off"
+  },
+  "panelInputPrompt": {
+    "zh-CN": "值",
+    "en-US": "Value"
+  },
+  "panelSearchPrompt": {
+    "zh-CN": "过滤",
+    "en-US": "Filter"
+  },
+  "panelActionHint": {
+    "zh-CN": "回车执行",
+    "en-US": "Press Enter to run"
+  },
+  "panelValueUnset": {
+    "zh-CN": "（未设置）",
+    "en-US": "(unset)"
+  },
+  "panelLabelEnabled": {
+    "zh-CN": "总开关",
+    "en-US": "Master switch"
+  },
+  "panelDescEnabled": {
+    "zh-CN": "关闭后工具审查完全不执行，编辑不再经过审查模型。",
+    "en-US": "When off, tool review never runs and edits are no longer checked by a review model."
+  },
+  "panelLabelTimeout": {
+    "zh-CN": "审查超时（秒）",
+    "en-US": "Review timeout (seconds)"
+  },
+  "panelDescTimeout": {
+    "zh-CN": "单个审查模型的请求超时；超时按审查失败处理，不打回编辑。",
+    "en-US": "Request timeout for one review model; a timeout is reported as a failed review and does not revert the edit."
+  },
+  "panelLabelFileContext": {
+    "zh-CN": "文件上下文上限（字符）",
+    "en-US": "File context limit (chars)"
+  },
+  "panelDescFileContext": {
+    "zh-CN": "发给审查模型的修改后文件内容上限，超出时只保留改动附近的片段。",
+    "en-US": "Maximum post-edit file content sent to the review model; beyond this only the area around the change is kept."
+  },
+  "panelLabelRuleLines": {
+    "zh-CN": "规则最大行数",
+    "en-US": "Maximum rule lines"
+  },
+  "panelDescRuleLines": {
+    "zh-CN": "规则文件超过该行数时发出拆分提醒，审查仍然执行。",
+    "en-US": "Rule files longer than this produce a split warning; the review still runs."
+  },
+  "panelLabelTypesafeApiKey": {
+    "zh-CN": "TypeSafe API Key",
+    "en-US": "TypeSafe API key"
+  },
+  "panelDescTypesafeApiKey": {
+    "zh-CN": "留空时回退到 TYPESAFE_API_KEY 环境变量。",
+    "en-US": "Empty falls back to the TYPESAFE_API_KEY environment variable."
+  },
+  "panelLabelTypesafeEndpoint": {
+    "zh-CN": "TypeSafe 端点",
+    "en-US": "TypeSafe endpoint"
+  },
+  "panelDescTypesafeEndpoint": {
+    "zh-CN": "留空时回退到 TYPESAFE_ENDPOINT 环境变量。",
+    "en-US": "Empty falls back to the TYPESAFE_ENDPOINT environment variable."
+  },
+  "panelLabelAddReviewer": {
+    "zh-CN": "添加审查器",
+    "en-US": "Add reviewer"
+  },
+  "panelDescAddReviewer": {
+    "zh-CN": "依次填写名称、引擎、模型与规则文件，保存后立刻生效。",
+    "en-US": "Asks for a name, engine, model and rule files in turn; takes effect as soon as it is saved."
+  },
+  "panelReviewerTitle": {
+    "zh-CN": "审查器：{name}",
+    "en-US": "Reviewer: {name}"
+  },
+  "panelLabelReviewerEnabled": {
+    "zh-CN": "启用",
+    "en-US": "Enabled"
+  },
+  "panelDescReviewerEnabled": {
+    "zh-CN": "关闭后该审查器不参与触发，其余审查器不受影响。",
+    "en-US": "When off, this reviewer never triggers; other reviewers are unaffected."
+  },
+  "panelLabelReviewerName": {
+    "zh-CN": "名称",
+    "en-US": "Name"
+  },
+  "panelDescReviewerName": {
+    "zh-CN": "审计卡片和未通过诊断里显示的名字。",
+    "en-US": "Name shown in the audit card and in rejection diagnostics."
+  },
+  "panelLabelBackend": {
+    "zh-CN": "审查引擎",
+    "en-US": "Review engine"
+  },
+  "panelDescBackend": {
+    "zh-CN": "对话模型把 diff 交给模型判断；TypeSafe 把规则当判据交给 System One。",
+    "en-US": "Chat model sends the diff to a model; TypeSafe sends each rule to System One as a judgment."
+  },
+  "panelLabelModel": {
+    "zh-CN": "审查模型",
+    "en-US": "Review model"
+  },
+  "panelDescModel": {
+    "zh-CN": "回车打开可搜索的可用模型列表，输入任意片段都能过滤。",
+    "en-US": "Enter opens a searchable list of available models; typing any fragment filters it."
+  },
+  "panelLabelTypesafeModel": {
+    "zh-CN": "TypeSafe 模型",
+    "en-US": "TypeSafe model"
+  },
+  "panelDescTypesafeModel": {
+    "zh-CN": "留空使用默认值 jev-latest。",
+    "en-US": "Empty uses the default, jev-latest."
+  },
+  "panelLabelRulesFiles": {
+    "zh-CN": "规则文件",
+    "en-US": "Rule files"
+  },
+  "panelDescRulesFiles": {
+    "zh-CN": "逗号分隔；至少一个，留空不会被接受。",
+    "en-US": "Comma-separated; at least one is required and an empty value is rejected."
+  },
+  "panelLabelTools": {
+    "zh-CN": "工具范围",
+    "en-US": "Tools"
+  },
+  "panelDescTools": {
+    "zh-CN": "逗号分隔的工具名；填 * 表示全部工具。",
+    "en-US": "Comma-separated tool names; * means every tool."
+  },
+  "panelLabelTrigger": {
+    "zh-CN": "触发阶段",
+    "en-US": "Trigger"
+  },
+  "panelDescTrigger": {
+    "zh-CN": "before 在工具执行前审查，未通过会直接阻止该次调用；after 在执行后审查。",
+    "en-US": "Before reviews ahead of the tool and blocks the call when it fails; after reviews once the tool has run."
+  },
+  "panelTriggerBefore": {
+    "zh-CN": "执行前（可阻止）",
+    "en-US": "Before (can block)"
+  },
+  "panelTriggerAfter": {
+    "zh-CN": "执行后",
+    "en-US": "After"
+  },
+  "panelLabelCondition": {
+    "zh-CN": "条件模块",
+    "en-US": "Condition module"
+  },
+  "panelDescCondition": {
+    "zh-CN": "本地 JS 模块路径，返回是否应用本审查器；留空表示始终应用。",
+    "en-US": "Path to a local JS module that decides whether this reviewer applies; empty means always."
+  },
+  "panelLabelFilePatterns": {
+    "zh-CN": "文件匹配",
+    "en-US": "File patterns"
+  },
+  "panelDescFilePatterns": {
+    "zh-CN": "逗号分隔的 glob；留空匹配全部文件（仍受规则 front matter 约束）。",
+    "en-US": "Comma-separated globs; empty matches every file (rule front matter still applies)."
+  },
+  "panelLabelRemove": {
+    "zh-CN": "删除此审查器",
+    "en-US": "Remove this reviewer"
+  },
+  "panelDescRemove": {
+    "zh-CN": "从配置里移除该审查器，会先让你确认。",
+    "en-US": "Removes this reviewer from the configuration; you are asked to confirm first."
   }
 }

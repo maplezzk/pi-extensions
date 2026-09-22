@@ -65,7 +65,7 @@ const CONFIG_MODEL_REUSE_VALUES: readonly string[] = ["default", "current", "ses
 
 /** 扩展运行期状态。 */
 interface AutoGoalRuntime {
-  /** 当前生效配置（改动配置后需要 /reload 重新加载）。 */
+  /** 当前生效配置（面板或配置命令改完立即写回这里；手改配置文件才需 /reload）。 */
   config: AutoGoalConfig;
   /** 当前会话 id，切换会话时重置预算。 */
   sessionId: string | undefined;

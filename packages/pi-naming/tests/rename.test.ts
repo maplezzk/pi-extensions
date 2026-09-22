@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { createSurfaceRenameContext, resolveTerminalRenameTargets, TERMINAL_RENAME_CONTEXT_ENV, type TerminalRenameTarget } from "pi-terminal-mux";
 import { parseConfig } from "../src/config.ts";
 import { registerNaming, registerNamingConfigCommand, type TerminalNamingAdapter } from "../src/index.ts";
 import type { SessionNameRequest } from "../src/session-name.ts";
+
+// 配置面板要用 Pi 的 SettingsList 主题，测试里先初始化一次。
+initTheme();
 
 type Input = { text?: string; source?: string };
 type Handler = (event: Input, ctx: ExtensionContext) => unknown;
@@ -62,17 +66,21 @@ test("命名仅按 targets 请求明确终端目标，不转换后端环境变�
   assert.deepEqual(options, { tab: false, workspace: true });
 });
 
-test("配置菜单保存 targets 后，reload 的自动与手动入口只作用于保存的目标", async () => {
+test("配置面板保存 targets 后，自动与手动入口只作用于保存的目标", async () => {
   const menu = harness();
   let saved = parseConfig({});
-  let selectedTarget = false;
+  /** 用键盘驱动真实面板：下移到「命名 session」那一行再回车原地切换。 */
+  const drivePanel = (element: { handleInput(data: string): void }): void => {
+    element.handleInput("\u001b[B");
+    element.handleInput("\u001b[B");
+    element.handleInput("\r");
+  };
   Object.assign(menu.ctx.ui, {
-    select: async (_title: string, choices: string[]) => {
-      if (!selectedTarget) {
-        selectedTarget = true;
-        return choices.find((choice) => /session|会话/.test(choice));
-      }
-      return choices.at(-1);
+    custom: async (factory: (tui: unknown, theme: unknown, kb: unknown, done: () => void) => { handleInput(data: string): void }) => {
+      // 面板只用到 theme.fg / theme.bold 包一层文字，返回原文即可。
+      const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+      const component = factory({ requestRender: () => undefined }, theme, {}, () => undefined);
+      drivePanel(component);
     },
     input: async () => assert.fail("unexpected config input"),
   });
@@ -92,7 +100,7 @@ test("配置菜单保存 targets 后，reload 的自动与手动入口只作用�
 
   const reloaded = harness();
   await registerNaming(reloaded.pi, parseConfig({ automaticNaming: true, manualNaming: false, targets: { workspace: false, tab: false } }), {
-    loadTerminal: async () => assert.fail("terminal must not load after reload"),
+    loadTerminal: async () => assert.fail("terminal must not load when only the session target is on"),
     requestName: async () => "Automatic session",
   });
   reloaded.events.get("session_start")!({}, reloaded.ctx);
@@ -100,6 +108,45 @@ test("配置菜单保存 targets 后，reload 的自动与手动入口只作用�
   await flush();
   assert.equal(reloaded.name(), "Automatic session");
   assert.equal(reloaded.renamed.length, 0);
+});
+
+test("面板改动写入运行期配置后，下一个命名请求立即生效，不用 /reload", async () => {
+  const h = harness(["Task"]);
+  const runtime = { config: parseConfig({}) };
+  const requests: SessionNameRequest[] = [];
+  await registerNaming(h.pi, runtime.config, {
+    runtime,
+    loadTerminal: async () => h.terminal,
+    requestName: async (request) => { requests.push(request); return "Generated"; },
+  });
+
+  // 模拟面板把 targets 与标题语言改掉：改的就是运行期持有者，没有 reload。
+  runtime.config = parseConfig({ targets: { session: false, workspace: true, tab: false }, title: { language: "English" } });
+  // 不带参数走模型命名，才能看到 title 配置是否被重新读取。
+  await h.commands.get("rename")!.handler("", h.ctx);
+
+  assert.equal(h.name(), undefined);
+  assert.deepEqual(h.renamed.map(([reference]) => reference.operation), ["workspace"]);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.title?.language, "English");
+});
+
+test("终端目标在加载时关着、面板打开后不需要 reload 也能改名", async () => {
+  const h = harness();
+  // 加载时只开 session，终端适配器此时不应被加载。
+  const runtime = { config: parseConfig({ targets: { session: true, workspace: false, tab: false } }) };
+  let terminalLoads = 0;
+  await registerNaming(h.pi, runtime.config, {
+    runtime,
+    loadTerminal: async () => { terminalLoads++; return h.terminal; },
+  });
+  assert.equal(terminalLoads, 0);
+
+  // 面板把 workspace 打开；下一次 /rename 应加载终端并改名。
+  runtime.config = parseConfig({ targets: { session: false, workspace: true, tab: false } });
+  await h.commands.get("rename")!.handler("Live terminal", h.ctx);
+  assert.equal(terminalLoads, 1);
+  assert.deepEqual(h.renamed.map(([reference]) => reference.operation), ["workspace"]);
 });
 
 test("首条真实输入和手动生成使用相同目标、标题配置", async () => {
@@ -156,18 +203,69 @@ test("session-only 不加载终端；目标开关不阻止其他目标", async (
   assert.equal(terminalOnly.renamed.length, 1);
 });
 
-test("禁用入口或全部目标时不注册；自动与手动可分别启用", async () => {
-  for (const config of [{ automaticNaming: false, manualNaming: false }, { targets: { session: false, workspace: false, tab: false } }]) {
-    const h = harness();
-    await registerNaming(h.pi, parseConfig(config), { loadTerminal: async () => assert.fail("unexpected load") });
-    assert.equal(h.events.size, 0);
-    assert.equal(h.commands.size, 0);
-  }
+test("入口常驻注册，开关在调用时生效：关掉手动命名只报告原因，不丢命令", async () => {
+  const h = harness();
+  await registerNaming(h.pi, parseConfig({ automaticNaming: false, manualNaming: false }), {
+    loadTerminal: async () => assert.fail("unexpected load"),
+    requestName: async () => assert.fail("unexpected model"),
+  });
+  // /rename 必须还在：Pi 没有内置 /rename 可回退，命令凭空消失用户只会以为插件坏了。
+  assert.deepEqual([...h.commands.keys()], ["rename"]);
+  await h.commands.get("rename")!.handler("Name", h.ctx);
+  assert.equal(h.name(), undefined);
+  assert.match(h.notices.at(-1) ?? "", /手动命名已关闭/);
+});
+
+test("所有目标都关着时不改名也不花模型调用，只报告原因", async () => {
+  const h = harness(["Task"]);
+  await registerNaming(h.pi, parseConfig({ targets: { session: false, workspace: false, tab: false } }), {
+    loadTerminal: async () => assert.fail("unexpected load"),
+    requestName: async () => assert.fail("unexpected model"),
+  });
+  await h.commands.get("rename")!.handler("", h.ctx);
+  assert.equal(h.name(), undefined);
+  assert.equal(h.renamed.length, 0);
+  assert.match(h.notices.at(-1) ?? "", /没有启用任何命名目标/);
+});
+
+test("面板把入口开关打开后，不需要 /reload 就能用", async () => {
+  // 加载时两个入口都关着：以前这里会直接 return，之后怎么改都没反应。
+  const manual = harness();
+  const manualRuntime = { config: parseConfig({ automaticNaming: false, manualNaming: false }) };
+  await registerNaming(manual.pi, manualRuntime.config, {
+    runtime: manualRuntime,
+    loadTerminal: async () => manual.terminal,
+    requestName: async () => assert.fail("unexpected model"),
+  });
+  // 面板打开手动命名：下一个 /rename 立即生效。
+  manualRuntime.config = parseConfig({ automaticNaming: false, manualNaming: true });
+  await manual.commands.get("rename")!.handler("Manual title", manual.ctx);
+  assert.equal(manual.name(), "Manual title");
+
+  const automatic = harness();
+  const automaticRuntime = { config: parseConfig({ automaticNaming: false, manualNaming: false }) };
+  await registerNaming(automatic.pi, automaticRuntime.config, {
+    runtime: automaticRuntime,
+    loadTerminal: async () => automatic.terminal,
+    requestName: async () => "Generated",
+  });
+  // 面板打开自动命名：下一次输入立即生效。
+  automaticRuntime.config = parseConfig({ automaticNaming: true, manualNaming: false });
+  automatic.events.get("session_start")!({}, automatic.ctx);
+  automatic.events.get("input")!({ text: "Task", source: "interactive" }, automatic.ctx);
+  await flush();
+  assert.equal(automatic.name(), "Generated");
+});
+
+test("自动与手动可分别启用", async () => {
   for (const automaticNaming of [true, false]) {
     const h = harness();
     await registerNaming(h.pi, parseConfig({ automaticNaming, manualNaming: !automaticNaming }), { loadTerminal: async () => h.terminal });
-    assert.equal(h.events.has("input"), automaticNaming);
-    assert.equal(h.commands.has("rename"), !automaticNaming);
+    // 两个入口都已注册；开关只决定调用时走不走实际命名。
+    assert.equal(h.events.has("input"), true);
+    assert.equal(h.commands.has("rename"), true);
+    await h.commands.get("rename")!.handler("Manual", h.ctx);
+    assert.equal(h.name(), automaticNaming ? undefined : "Manual");
   }
 });
 

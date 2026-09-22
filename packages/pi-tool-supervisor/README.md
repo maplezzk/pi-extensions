@@ -167,6 +167,8 @@ Use the interactive configuration command:
 /config:tool-supervisor
 ```
 
+It opens a settings panel: the top level holds the master switch, timeout, file-context and rule-line limits, and the TypeSafe connection, then one row per reviewer. Selecting a reviewer opens its fields (enable, name, review engine, review model, rule files, tools, trigger, condition module, file patterns) and a delete action. The review-model row opens a searchable list of the models available in this session. Every change is written to the configuration file immediately, so no `/reload` is required.
+
 ## Configuration
 
 The default configuration path is:

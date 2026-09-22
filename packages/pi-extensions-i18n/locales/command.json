@@ -38,5 +38,9 @@
   "envOverride": {
     "zh-CN": "当前由 {env} 环境变量覆盖，持久化值将在移除环境变量后生效。",
     "en-US": "The {env} environment variable currently overrides this value; the persisted setting will apply after it is removed."
+  },
+  "panelDesc": {
+    "zh-CN": "界面与 prompt 使用的语言；回车从列表选择，选定立即生效",
+    "en-US": "Language used for the UI and prompts; press Enter to pick from the list, applied immediately"
   }
 }

@@ -73,12 +73,12 @@ Pi 只在 fullscreen 模式把鼠标事件交给组件，所以需要用 `pi --t
 ## 命令
 
 ```text
-/config:session-resources             显示 # 引用使用提示
+/config:session-resources             打开配置面板
 /config:session-resources enable      启用 # 资源选择器
 /config:session-resources disable     禁用 # 资源选择器
 ```
 
-`show`/`hide` 分别兼容 `enable`/`disable`，`/session-resources` 继续作为命令别名保留。配置保存在 `<Pi agent 目录>/extensions/pi-session-resources/config.json`，可参考 [`config.example.json`](./config.example.json)：
+`show`/`hide` 分别兼容 `enable`/`disable`，`/session-resources` 继续作为命令别名保留。不带参数时打开配置面板，面板列出全部配置字段：回车/空格原地切换布尔开关，改动立即写盘并生效，无需 `/reload`。配置保存在 `<Pi agent 目录>/extensions/pi-session-resources/config.json`，可参考 [`config.example.json`](./config.example.json)：
 
 ```json
 {
@@ -86,7 +86,7 @@ Pi 只在 fullscreen 模式把鼠标事件交给组件，所以需要用 `pi --t
 }
 ```
 
-使用 `/config:session-resources enable|disable` 会写入配置文件；手动修改文件后执行 `/reload`。
+只有手动改文件后才需要执行 `/reload`。
 
 ## 安装
 

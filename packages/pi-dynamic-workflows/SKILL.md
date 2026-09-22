@@ -11,13 +11,13 @@ description: "配置与排查 pi-dynamic-workflows 的执行后端和异步模�
 
 ## 修改
 
-优先在 Pi 中运行 `/config:workflow`：
+优先在 Pi 中运行 `/config:workflow`（执行后端回车开二级列表，异步模式回车原地切换；改动立即生效）：
 
 - `backend: "workflow"` 使用内置进程内 agent；
 - `backend: "subagent"` 要求 `pi-interactive-subagents` 已安装并加载；
 - `async: true` 让 workflow 后台执行并显示实时状态。
 
-`/workflow-config` 和 `/pi-workflow-config` 仅为兼容别名。不要在没有 subagent 扩展时选择 `subagent`，也不要用环境变量覆盖后误以为 JSON 未生效。
+写盘字段名仍为 `backend` 与 `async`，优先级是 JSON 配置 > 环境变量 > 默认值。`/workflow-config` 和 `/pi-workflow-config` 仅为兼容别名。不要在没有 subagent 扩展时选择 `subagent`，也不要用环境变量覆盖后误以为 JSON 未生效。
 
 ## 验证
 

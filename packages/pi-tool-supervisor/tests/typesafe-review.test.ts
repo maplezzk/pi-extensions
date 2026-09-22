@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadFileEditReviewConfig } from "../src/review-utils.ts";
+import { createScriptedUi, down, ENTER } from "./panel-driver.ts";
 
 process.env.PI_EXTENSIONS_LOCALE = "zh-CN";
 
@@ -317,7 +318,8 @@ type ConfigCommand = {
   handler: (args: string, ctx: unknown) => Promise<void>;
 };
 
-test("配置 UI 可以把 model reviewer 切换到 typesafe 引擎并持久化", async () => {
+test("配置面板可以把 model reviewer 切换到 typesafe 引擎并持久化", async () => {
+  initTheme("dark");
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-typesafe-ui-"));
@@ -341,25 +343,19 @@ test("配置 UI 可以把 model reviewer 切换到 typesafe 引擎并持久化",
     } as unknown as Parameters<typeof piSupervisorExtension>[0];
     piSupervisorExtension(pi);
 
-    let editorVisits = 0;
-    let switched = false;
+    // 打开 1（顶层）：进入唯一的 reviewer 字段页。
+    // 打开 2（字段页）：第 3 行是「审查引擎」，Enter 开候选列表，下移到 TypeSafe 再 Enter。
+    // 打开 3（顶层）：切完引擎后字段页变成 TypeSafe 版本，Esc 退出。
+    const ui = createScriptedUi([
+      [...down(6), ENTER],
+      [...down(2), ENTER, ...down(1), ENTER],
+      ["\u001B"],
+    ]);
     const ctx = {
       hasUI: true,
+      modelRegistry: { getAvailable: () => [] },
       ui: {
-        select: async (_title: string, choices: string[]) => {
-          if (choices.includes("TypeSafe 判断")) {
-            switched = true;
-            return "TypeSafe 判断";
-          }
-          const reviewerRow = choices.find((choice) => choice.startsWith("● "));
-          if (reviewerRow) return editorVisits++ === 0 ? reviewerRow : undefined;
-          if (!switched) {
-            const backendRow = choices.find((choice) => choice.startsWith("审查引擎："));
-            if (backendRow) return backendRow;
-          }
-          return "返回";
-        },
-        input: async (_title: string, current: string) => current,
+        custom: ui.custom,
         confirm: async () => false,
         notify: () => undefined,
       },

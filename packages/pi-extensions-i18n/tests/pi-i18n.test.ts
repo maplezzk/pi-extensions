@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import {
   createTranslator,
   getLocale,
@@ -53,10 +54,21 @@ piI18n({
 const registeredCommand = registeredCommands.find((command) => command.name === "config:language");
 assert.ok(registeredCommand);
 assert.ok(registeredCommands.find((command) => command.name === "pi-language"));
+// 无参数执行命令时打开 SettingsList 面板，不再走 ctx.ui.select。
+initTheme();
+/** 用键盘驱动语言面板：下移一次到「English (en-US)」再回车选定。 */
+const selectEnglishViaPanel = (component: { handleInput(data: string): void }): void => {
+  component.handleInput("\u001b[B");
+  component.handleInput("\r");
+};
 registeredCommand.options.handler("", {
   hasUI: true,
   ui: {
-    select: async () => "English (en-US)",
+    custom: async (factory: (tui: unknown, theme: unknown, kb: unknown, done: () => void) => { handleInput(data: string): void }) => {
+      // 面板只用到 theme.fg / theme.bold 包一层文字，返回原文即可。
+      const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+      selectEnglishViaPanel(factory({ requestRender: () => undefined }, theme, {}, () => undefined));
+    },
     notify: () => undefined,
   },
 }).then(async () => {

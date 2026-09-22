@@ -7,7 +7,7 @@ description: "配置 Pi 扩展共享语言并排查 locale 优先级、持久化
 
 ## 修改语言
 
-优先使用 `/config:language zh-CN|en-US|auto`；不带参数时使用交互界面。设置持久化到实际 Pi agent 目录的 `extensions/pi-extensions-i18n/config.json`。
+优先使用 `/config:language zh-CN|en-US|auto`；不带参数时打开 TUI 配置面板（Pi 自带 SettingsList），回车从列表选择，选定立即写盘生效。设置持久化到实际 Pi agent 目录的 `extensions/pi-extensions-i18n/config.json`。
 
 语言优先级：
 

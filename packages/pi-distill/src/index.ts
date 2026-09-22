@@ -64,6 +64,16 @@ import {
   type OutputSummaryDecision,
 } from "./summary-utils.ts";
 import { estimateHeuristicTokens } from "./token-estimator.ts";
+import {
+  PANEL_FIELD,
+  PANEL_FIELD_IDS,
+  TOOL_FIELD_PREFIX,
+  applyPanelChange,
+  defaultToolEnabled,
+  openConfigPanel,
+  toolFieldId,
+  type DistillPanelConfig,
+} from "./config-panel.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -1297,12 +1307,11 @@ function toToolResultEventResult(result: ToolResult): ToolResultEventPatch {
   };
 }
 
-type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "maxOutputChars" | "timeoutSeconds" | "timeoutRetryCount" | "errorRetryCount" | "missedCompressionRatio" | "summarizeErrors">> & {
-  tools: DistillToolConfig;
-  render: DistillRenderConfig;
-};
-
-function getDistillUiConfig(): DistillUiConfig {
+/**
+ * 面板读取的配置快照：读的时候重新 load 一次，所以面板里改完马上就能被后续工具事件用上，
+ * 不需要 /reload。
+ */
+function getDistillPanelConfig(): DistillPanelConfig {
   const loaded = loadDistillConfig();
   const config = loaded.config;
   return {
@@ -1319,74 +1328,69 @@ function getDistillUiConfig(): DistillUiConfig {
     missedCompressionRatio: config?.missedCompressionRatio ?? 10,
     summarizeErrors: config?.summarizeErrors ?? true,
     tools: Object.fromEntries(
-      Object.entries(config?.tools ?? {}).map(([toolName, override]) => [toolName, { ...override }]),
+      Object.entries(config?.tools ?? {}).map(([toolName, override]) => [toolName, override.enabled]),
     ),
-    render: { ...loaded.render },
+    renderEnabled: loaded.render.enabled,
+    renderShowPrompt: loaded.render.showPrompt,
+    renderShowResult: loaded.render.showResult,
   };
 }
 
-async function editDistillNumber(
-  ctx: ExtensionCommandContext,
-  title: string,
-  current: number,
-): Promise<number | undefined> {
-  const value = await ctx.ui.input(title, String(current));
-  if (value === undefined) return undefined;
-  if (!/^\d+$/.test(value.trim()) || Number(value) <= 0) {
-    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "error", message: i18n.t("positiveInteger") });
-    return undefined;
-  }
-  return Number(value);
-}
-
-async function editDistillNonNegativeInteger(
-  ctx: ExtensionCommandContext,
-  title: string,
-  current: number,
-): Promise<number | undefined> {
-  const value = await ctx.ui.input(title, String(current));
-  if (value === undefined) return undefined;
-  const normalized = value.trim();
-  const parsed = Number(normalized);
-  if (!/^\d+$/.test(normalized) || !Number.isSafeInteger(parsed)) {
-    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "error", message: i18n.t("nonNegativeInteger") });
-    return undefined;
-  }
-  return parsed;
-}
-
-async function editDistillModel(
-  ctx: ExtensionCommandContext,
-  current: string,
-): Promise<string | undefined> {
-  const value = await ctx.ui.input(
-    i18n.t("modelInput"),
-    current || "llm-proxy/LOW",
-  );
-  if (value === undefined) return undefined;
-  const normalized = value.trim();
-  if (normalized && !/^[^/\s]+\/[^/\s]+$/.test(normalized)) {
-    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "error", message: i18n.t("modelInvalid") });
-    return undefined;
-  }
-  return normalized;
-}
-
+/**
+ * 把面板快照写回配置文件，并让本次会话立即生效。
+ *
+ * 工具开关只在与默认值不同时才写进 tools，配置里不会堆上一大堆等于默认值的条目。
+ * 写盘后重新 loadDistillConfig 只为了把解析警告报给用户；保存失败必须报错，不能默默吞掉。
+ */
 async function saveDistillConfigFile(
   ctx: ExtensionCommandContext,
-  config: DistillUiConfig,
+  config: DistillPanelConfig,
   configPath: string,
   onSaved?: () => void,
 ): Promise<void> {
-  await mkdir(dirname(configPath), { recursive: true });
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const tools: DistillToolConfig = {};
+  for (const [toolName, enabled] of Object.entries(config.tools)) {
+    if (enabled !== defaultToolEnabled(toolName)) tools[toolName] = { enabled };
+  }
+  const file: DistillConfigFile = {
+    enabled: config.enabled,
+    model: config.model,
+    minChars: config.minChars,
+    maxChars: config.maxChars,
+    maxOutputChars: config.maxOutputChars,
+    timeoutSeconds: config.timeoutSeconds,
+    timeoutRetryCount: config.timeoutRetryCount,
+    errorRetryCount: config.errorRetryCount,
+    missedCompressionRatio: config.missedCompressionRatio,
+    summarizeErrors: config.summarizeErrors,
+    tools,
+    render: {
+      enabled: config.renderEnabled,
+      showPrompt: config.renderShowPrompt,
+      showResult: config.renderShowResult,
+    },
+  };
+  try {
+    await mkdir(dirname(configPath), { recursive: true });
+    await writeFile(configPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+  } catch (error) {
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: "error",
+      message: i18n.t("configSaveFailed", { error: error instanceof Error ? error.message : String(error) }),
+    });
+    return;
+  }
   const saved = loadDistillConfig();
   if (saved.warnings.length > 0) {
     notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }) });
   }
+  // 写盘之后立刻重算工具 schema，本次会话不必重启或 /reload。
   onSaved?.();
 }
 
+/** 当前可配置的工具名，按名字排序去重。 */
 function getConfigurableToolNames(pi: Pick<ExtensionAPI, "getAllTools">): string[] {
   return [...new Set(
     pi.getAllTools()
@@ -1395,34 +1399,7 @@ function getConfigurableToolNames(pi: Pick<ExtensionAPI, "getAllTools">): string
   )].sort();
 }
 
-async function runDistillToolConfigUi(
-  ctx: ExtensionCommandContext,
-  pi: Pick<ExtensionAPI, "getAllTools">,
-  config: DistillUiConfig,
-  configPath: string,
-  onSaved: () => void,
-): Promise<void> {
-  const toolNames = getConfigurableToolNames(pi);
-  if (toolNames.length === 0) {
-    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("noConfigurableTools") });
-    return;
-  }
-
-  while (true) {
-    const choices = toolNames.map((toolName) => i18n.t("toolStatus", {
-      tool: toolName,
-      value: isDistillToolEnabled(config, toolName) ? i18n.t("on") : i18n.t("off"),
-    }));
-    const choice = await ctx.ui.select(i18n.t("toolSettingsTitle"), choices);
-    if (choice === undefined) return;
-    const index = choices.indexOf(choice);
-    if (index < 0) return;
-    const toolName = toolNames[index];
-    config.tools[toolName] = { enabled: !isDistillToolEnabled(config, toolName) };
-    await saveDistillConfigFile(ctx, config, configPath, onSaved);
-  }
-}
-
+/** 打开配置面板；改一项立即写盘并生效。 */
 async function runDistillConfigUi(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
@@ -1433,117 +1410,115 @@ async function runDistillConfigUi(
   if (loaded.warnings.length > 0) {
     notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }) });
   }
-  const config = getDistillUiConfig();
-
-  while (true) {
-    const choices = [
-      i18n.t("status", { value: config.enabled ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("model", { value: config.model || i18n.t("currentModel") }),
-      i18n.t("minOutput", { value: config.minChars }),
-      i18n.t("summaryLimit", { value: config.maxChars }),
-      i18n.t("finalLimit", { value: config.maxOutputChars }),
-      i18n.t("timeout", { value: config.timeoutSeconds }),
-      i18n.t("timeoutRetryCount", { value: config.timeoutRetryCount }),
-      i18n.t("errorRetryCount", { value: config.errorRetryCount }),
-      i18n.t("threshold", { value: config.missedCompressionRatio }),
-      i18n.t("summarizeErrors", { value: config.summarizeErrors ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("auditRenderer", { value: config.render.enabled ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("showOutputRequest", { value: config.render.showPrompt ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("showSummary", { value: config.render.showResult ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("toolOverrides"),
-    ];
-    const choice = await ctx.ui.select(i18n.t("settingsTitle"), choices);
-    if (choice === undefined) return;
-
-    if (choice === choices[0]) {
-      config.enabled = !config.enabled;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[1]) {
-      const value = await editDistillModel(ctx, config.model);
-      if (value !== undefined) {
-        config.model = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[2]) {
-      const value = await editDistillNumber(ctx, i18n.t("minOutputTitle"), config.minChars);
-      if (value !== undefined) {
-        config.minChars = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[3]) {
-      const value = await editDistillNumber(ctx, i18n.t("summaryLimitTitle"), config.maxChars);
-      if (value !== undefined) {
-        config.maxChars = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[4]) {
-      const value = await editDistillNumber(ctx, i18n.t("finalLimitTitle"), config.maxOutputChars);
-      if (value !== undefined) {
-        config.maxOutputChars = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[5]) {
-      const value = await editDistillNumber(ctx, i18n.t("timeoutTitle"), config.timeoutSeconds);
-      if (value !== undefined) {
-        config.timeoutSeconds = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[6]) {
-      const value = await editDistillNonNegativeInteger(
-        ctx,
-        i18n.t("timeoutRetryCountTitle"),
-        config.timeoutRetryCount,
-      );
-      if (value !== undefined) {
-        config.timeoutRetryCount = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[7]) {
-      const value = await editDistillNonNegativeInteger(
-        ctx,
-        i18n.t("errorRetryCountTitle"),
-        config.errorRetryCount,
-      );
-      if (value !== undefined) {
-        config.errorRetryCount = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[8]) {
-      const value = await editDistillNumber(ctx, i18n.t("thresholdTitle"), config.missedCompressionRatio);
-      if (value !== undefined) {
-        config.missedCompressionRatio = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[9]) {
-      config.summarizeErrors = !config.summarizeErrors;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[10]) {
-      config.render.enabled = !config.render.enabled;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[11]) {
-      config.render.showPrompt = !config.render.showPrompt;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[12]) {
-      config.render.showResult = !config.render.showResult;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[13]) {
-      await runDistillToolConfigUi(ctx, pi, config, configPath, onSaved);
-    }
+  const toolNames = getConfigurableToolNames(pi);
+  if (toolNames.length === 0) {
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("noConfigurableTools") });
   }
+
+  // 面板开着的时候以内存里的这份配置为准：每改一项先更新它、再排队写盘。
+  // 如果每次都重新读盘，两次快速切换会读到前一次还没落盘的状态，后写的会把先写的盖掉。
+  // 排队写盘 + 读内存也修好了“切完立刻 Esc”丢改动的问题。
+  let current = getDistillPanelConfig();
+  let pendingSave: Promise<void> = Promise.resolve();
+  await openConfigPanel(ctx, {
+    getConfig: () => current,
+    // 没有模型注册表时只留「当前会话模型」一项，不因为拿不到列表就打不开面板。
+    getModels: () => ctx.modelRegistry?.getAvailable() ?? [],
+    getToolNames: () => toolNames,
+    onChange: (config) => {
+      current = config;
+      pendingSave = pendingSave.then(
+        () => saveDistillConfigFile(ctx, current, configPath, onSaved),
+        () => saveDistillConfigFile(ctx, current, configPath, onSaved),
+      );
+    },
+  });
+  await pendingSave;
 }
 
+/** 带参数时的状态输出：一条纯文本报告，不打开面板。 */
+function buildDistillStatusReport(config: DistillPanelConfig, configPath: string): string {
+  const onOff = (value: boolean): string => value ? i18n.t("on") : i18n.t("off");
+  return i18n.t("configStatusReport", {
+    value: onOff(config.enabled),
+    model: config.model || i18n.t("currentModel"),
+    minChars: config.minChars,
+    maxChars: config.maxChars,
+    maxOutputChars: config.maxOutputChars,
+    timeoutSeconds: config.timeoutSeconds,
+    timeoutRetryCount: config.timeoutRetryCount,
+    errorRetryCount: config.errorRetryCount,
+    missedCompressionRatio: config.missedCompressionRatio,
+    summarizeErrors: onOff(config.summarizeErrors),
+    render: onOff(config.renderEnabled),
+    path: configPath,
+  });
+}
+
+/** 处理 enable / disable / status 参数；返回 false 表示参数不认识。 */
+async function runDistillConfigArgument(
+  value: string,
+  ctx: ExtensionCommandContext,
+  configPath: string,
+  onSaved: () => void,
+): Promise<boolean> {
+  const argument = value.trim();
+  if (argument === "enable" || argument === "disable") {
+    const config = getDistillPanelConfig();
+    config.enabled = argument === "enable";
+    await saveDistillConfigFile(ctx, config, configPath, onSaved);
+    return true;
+  }
+  if (argument === "status") {
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: "info",
+      message: buildDistillStatusReport(getDistillPanelConfig(), configPath),
+    });
+    return true;
+  }
+  return false;
+}
+
+/** 配置命令支持的参数。 */
+const DISTILL_CONFIG_ARGUMENTS: readonly string[] = ["enable", "disable", "status"];
+
+/** 注册 /config:distill 及其兼容别名 /pi-distill。 */
 function registerDistillConfigCommand(
   pi: ExtensionAPI,
   onSaved: (ctx: ExtensionCommandContext) => void,
 ): void {
   const command = {
     description: i18n.t("commandDescription"),
-    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+    /** 补全受支持的参数。 */
+    getArgumentCompletions: () => DISTILL_CONFIG_ARGUMENTS.map((value) => ({ value, label: value })),
+    /** 不带参数打开面板，带 enable/disable/status 时只做对应动作。 */
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
         notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("interactiveOnly") });
         return;
       }
-      await runDistillConfigUi(ctx, pi, getDistillConfigPath(), () => onSaved(ctx));
+      const configPath = getDistillConfigPath();
+      const argument = args.trim();
+      if (argument.length > 0) {
+        const handled = await runDistillConfigArgument(
+          argument,
+          ctx,
+          configPath,
+          () => onSaved(ctx),
+        );
+        if (!handled) {
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: "error",
+            message: i18n.t("configUnknownArgument", { argument }),
+          });
+        }
+        return;
+      }
+      await runDistillConfigUi(ctx, pi, configPath, () => onSaved(ctx));
     },
   };
   for (const name of ["config:distill", "pi-distill"] as const) {

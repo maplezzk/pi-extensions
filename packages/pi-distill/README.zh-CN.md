@@ -58,6 +58,16 @@ pi install npm:pi-distill
 /config:distill
 ```
 
+不带参数时打开设置面板：左边字段名、右边当前值、选中项下方一行说明。开关按回车或空格原地切换；枚举、数值和提炼模型按回车打开二级列表，列表上方带过滤输入框，模型还能直接手输。改一项立即写盘并对本次会话生效，Esc 关闭时新配置已经生效。模型列表来自 Pi 当前注册的模型。
+
+带参数时不开面板，只做对应动作：
+
+```text
+/config:distill status
+/config:distill enable
+/config:distill disable
+```
+
 ## 核心思想
 
 我们不是想让 Agent 少看信息，而是避免它为了找一句结论，被迫把几千行日志一起带进上下文。

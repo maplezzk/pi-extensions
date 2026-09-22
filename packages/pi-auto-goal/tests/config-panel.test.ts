@@ -4,6 +4,7 @@ import { DEFAULT_AUTO_GOAL_CONFIG, parseConfig, type AutoGoalConfig } from "../s
 import {
   applyPanelChange,
   CONFIG_PANEL_IDS,
+  filterOptions,
   panelToggleLabels,
   toSettingItems,
 } from "../src/config-panel.ts";
@@ -151,4 +152,41 @@ test("二级列表回车选中当前值对应的那一项", () => {
 
   assert.deepEqual(selected, [i18n.t("configModelCurrent")]);
   assert.equal(applyPanelChange(DEFAULT_AUTO_GOAL_CONFIG, "model", selected[0] ?? "")?.model, "");
+});
+
+test("模型列表可以直接打字过滤，不用逐条翻", () => {
+  const item = toSettingItems(DEFAULT_AUTO_GOAL_CONFIG, [
+    { provider: "llm-proxy", id: "LOW" },
+    { provider: "cider", id: "gpt-5" },
+  ]).find((entry) => entry.id === "model");
+  assert.ok(item?.submenu);
+
+  const selected: string[] = [];
+  const submenu = item.submenu("", (value?: string) => {
+    if (value !== undefined) selected.push(value);
+  });
+  // 「low」不是任何候选的前缀，靠模糊匹配才能命中 llm-proxy/LOW。
+  for (const char of "low") submenu.handleInput(char);
+  submenu.handleInput("\r");
+
+  assert.deepEqual(selected, ["llm-proxy/LOW"]);
+});
+
+test("过滤按关键词缩小候选，空关键词不丢任何项", () => {
+  const options = [
+    { label: i18n.t("configModelCurrent"), value: "" },
+    { label: "llm-proxy/LOW", value: "llm-proxy/LOW" },
+    { label: "cider/gpt-5", value: "cider/gpt-5" },
+  ];
+  assert.deepEqual(
+    filterOptions(options, "low").map((option) => option.value),
+    ["llm-proxy/LOW"],
+  );
+  assert.deepEqual(
+    filterOptions(options, "gpt").map((option) => option.value),
+    ["cider/gpt-5"],
+  );
+  assert.equal(filterOptions(options, "").length, options.length);
+  assert.equal(filterOptions(options, "   ").length, options.length);
+  assert.deepEqual(filterOptions(options, "nothing-matches"), []);
 });

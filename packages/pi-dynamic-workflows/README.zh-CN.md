@@ -24,12 +24,12 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 ## 配置
 
-运行 `/config:workflow` 进行交互式配置：
+运行 `/config:workflow` 打开配置面板（执行后端回车开二级列表，异步模式回车原地切换；每改一项立即写盘并生效，不需要 `/reload`）：
 
 - **执行后端**：`workflow`（内置进程内 agent）或 `subagent`（需安装并加载 `pi-interactive-subagents`，每个 agent 拥有真实工具会话）
 - **异步模式**：后台运行 workflow，带实时状态 widget
 
-配置持久化到 `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`。
+配置持久化到 `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`。异步模式在文件里的字段名仍是 `async`（`{"backend": "workflow", "async": false}`），写盘前会做校验。
 
 环境变量仅作兜底支持：
 

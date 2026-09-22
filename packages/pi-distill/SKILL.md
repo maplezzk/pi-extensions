@@ -13,7 +13,9 @@ description: "配置与排查 pi-distill 的模型、压缩阈值、重试、工
 
 ## 修改
 
-优先让用户在 Pi 中运行 `/config:distill`；`/pi-distill` 只是兼容别名。手工配置时只使用包内 `config.example.json` 已声明的字段：
+优先让用户在 Pi 中运行 `/config:distill`；`/pi-distill` 只是兼容别名。不带参数时打开设置面板（开关原地切换，枚举与模型走二级列表，模型可搜索、可手输），改一项立即写盘并对本次会话生效，不需要 `/reload`。带参数时不打开面板：`enable`、`disable`、`status`。
+
+手工配置时只使用包内 `config.example.json` 已声明的字段：
 
 - `model` 留空时使用当前会话模型，否则必须是可用的 `provider/model`；
 - `minChars` 控制何时提炼，`maxChars` 与 `maxOutputChars` 控制大结果落盘和返回上限；

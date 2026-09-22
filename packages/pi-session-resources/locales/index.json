@@ -4,8 +4,28 @@
     "en-US": "Manage the # session resource picker"
   },
   "commandUsage": {
-    "zh-CN": "用法：/config:session-resources [enable|disable]",
-    "en-US": "Usage: /config:session-resources [enable|disable]"
+    "zh-CN": "用法：/config:session-resources [enable|disable]；不带参数打开配置面板",
+    "en-US": "Usage: /config:session-resources [enable|disable]; run without arguments to open the configuration panel"
+  },
+  "configMenuTitle": {
+    "zh-CN": "pi-session-resources 配置",
+    "en-US": "pi-session-resources configuration"
+  },
+  "configOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configLabelEnabled": {
+    "zh-CN": "启用插件",
+    "en-US": "Plugin enabled"
+  },
+  "configDescEnabled": {
+    "zh-CN": "关闭后输入框不再提供 # 会话资源选择器；已插入的引用不受影响。",
+    "en-US": "When off, the editor no longer offers the # session resource picker; references already inserted are unaffected."
   },
   "configLoadFailed": {
     "zh-CN": "会话资源配置读取失败：{path}（{error}）。当前使用启用状态。",
@@ -14,14 +34,6 @@
   "configSaveFailed": {
     "zh-CN": "会话资源配置保存失败：{path}（{error}）。",
     "en-US": "Failed to save session resource configuration: {path} ({error})."
-  },
-  "referenceHint": {
-    "zh-CN": "在输入框键入 # 并继续输入即可筛选会话资源；←/→ 或 Tab/Shift+Tab 切换类型，↑/↓ 选择，Enter 插入引用",
-    "en-US": "Type # in the editor and continue typing to filter session resources; Left/Right or Tab/Shift+Tab switch types, Up/Down selects, and Enter inserts the reference"
-  },
-  "referenceDisabledHint": {
-    "zh-CN": "# 会话资源选择器当前已禁用；使用 /config:session-resources enable 启用",
-    "en-US": "The # session resource picker is disabled; use /config:session-resources enable to enable it"
   },
   "enabled": {
     "zh-CN": "# 会话资源选择器已启用",

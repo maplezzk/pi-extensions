@@ -12,6 +12,13 @@ const MAX_TIMER_MS = 2_147_483_647;
 /** 思考档位：与 pi-ai 的 ThinkingLevel 一致，优先级由低到高。 */
 export const TITLE_EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
+/** 标题长度与超时等数值字段的候选预设；配置面板与命令行共用同一份。 */
+export const MAX_LENGTH_PRESETS = ["15", "30", "60"] as const;
+export const PREFERRED_LENGTH_PRESETS = ["10", "20", "40"] as const;
+export const LANGUAGE_PRESETS = ["auto", "中文", "English", "日本語"] as const;
+export const TIMEOUT_PRESETS = ["5000", "10000", "30000"] as const;
+export const MAX_TOKENS_PRESETS = ["1024", "2048", "4096"] as const;
+
 export type TitleEffort = typeof TITLE_EFFORT_LEVELS[number];
 
 /** 标题请求的默认输出预算；推理模型的思考与标题共享该额度。 */

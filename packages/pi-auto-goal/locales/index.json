@@ -203,13 +203,17 @@
     "zh-CN": "当前会话模型",
     "en-US": "current session model"
   },
+  "configSearchPrompt": {
+    "zh-CN": "过滤",
+    "en-US": "Filter"
+  },
   "configCommandInteractiveOnly": {
     "zh-CN": "自动催停配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
     "en-US": "Auto-continue configuration requires the TUI; run this command in an interactive Pi session."
   },
   "configCommandSaved": {
-    "zh-CN": "自动催停配置已保存：{path}。请执行 /reload 使配置生效。",
-    "en-US": "Auto-continue configuration saved to {path}. Run /reload to apply it."
+    "zh-CN": "自动催停配置已保存：{path}。改动已立即生效；只有手动编辑该文件才需要 /reload。",
+    "en-US": "Auto-continue configuration saved to {path}. The change applies immediately; only editing the file by hand needs /reload."
   },
   "configCommandInvalid": {
     "zh-CN": "自动催停配置无效：{error}",

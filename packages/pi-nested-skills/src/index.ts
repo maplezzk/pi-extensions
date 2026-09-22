@@ -7,19 +7,16 @@ import { fuzzyFilter } from "@earendil-works/pi-tui";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import {
   NOTICE_TAG_COLOR,
-  createTranslator,
-  loadCatalog,
   installNoticeRenderer,
   notifyWithSource,
   type NoticeColor,
   type NoticeLevel,
   type NoticeSource,
 } from "pi-extensions-i18n";
-import { loadConfig, parseConfig, saveConfig, type LoadedNestedSkillsConfig } from "./config.ts";
+import { loadConfig, parseConfig, saveConfig, type LoadedNestedSkillsConfig, type NestedSkillsConfig } from "./config.ts";
+import { openConfigPanel } from "./config-panel.ts";
+import { i18n } from "./i18n.ts";
 import { scanSkillRoots, type NestedSkill, type SkillScanResult } from "./skills.ts";
-
-const messages = loadCatalog(new URL("../locales/index.json", import.meta.url));
-const i18n = createTranslator(messages);
 
 /** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
 const NOTICE_TAG = "skills";
@@ -33,8 +30,6 @@ const COMMAND_ALIASES = [COMMAND_NAME] as const;
 const CONFIG_COMMAND_ALIASES = ["config:nested-skills", "nested-skills-config", "pi-nested-skills-config"] as const;
 const CONFIG_RESET_COMMAND = "reset";
 const DEFAULT_CONFIG_ROOT = "skills";
-const ROOT_INPUT_SEPARATOR = ",";
-const ROOT_DISPLAY_SEPARATOR = ", ";
 const NOTICE_WARNING: NoticeLevel = "warning";
 const NOTICE_INFO: NoticeLevel = "info";
 const NOTICE_ERROR: NoticeLevel = "error";
@@ -223,8 +218,45 @@ function formatSkillsMessage(index: SkillIndex): string {
   return lines.join("\n");
 }
 
-/** 注册配置命令，通过 TUI 输入逗号分隔的技能根目录。 */
-function registerConfigCommand(pi: ExtensionAPI): void {
+/**
+ * 运行期状态：配置和扫描索引都放在这里。
+ *
+ * 配置面板改完根目录后直接就地重建，让 resources_discover、输入转换、补全和 /skills
+ * 都看到新索引；否则用户改完配置看起来没反应，只能 /reload。
+ */
+interface RuntimeState {
+  loaded: LoadedNestedSkillsConfig;
+  index: SkillIndex;
+}
+
+/** 按根目录重新扫描并重建索引，同时刷新运行期配置。 */
+function rebuildIndex(state: RuntimeState, config: NestedSkillsConfig): void {
+  state.loaded = { config, source: "file", warnings: [], explicit: true };
+  state.index = buildSkillIndex(scanSkillRoots(config.skillRoots));
+}
+
+/** 保存一项配置并令其立即生效；写盘失败也要把新配置用在本次会话里。 */
+function applyConfig(state: RuntimeState, config: NestedSkillsConfig, ctx: ExtensionCommandContext): void {
+  rebuildIndex(state, config);
+  try {
+    saveConfig(config);
+  } catch (error) {
+    notify(ctx, i18n.t("configSaveFailed", {
+      error: error instanceof Error ? error.message : String(error),
+    }), NOTICE_ERROR);
+  }
+}
+
+/** 打开 TUI 配置面板；每改一项立即写盘并重建技能索引。 */
+async function openSkillsConfigPanel(state: RuntimeState, ctx: ExtensionCommandContext): Promise<void> {
+  await openConfigPanel(ctx, {
+    getConfig: () => state.loaded.config,
+    onChange: (config) => applyConfig(state, config, ctx),
+  });
+}
+
+/** 注册配置命令：无参数打开面板，`reset` 恢复默认值。 */
+function registerConfigCommand(pi: ExtensionAPI, state: RuntimeState): void {
   const command = {
     description: i18n.t("configCommandDescription"),
     getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
@@ -236,7 +268,9 @@ function registerConfigCommand(pi: ExtensionAPI): void {
       }
       if (argument === CONFIG_RESET_COMMAND) {
         try {
-          const path = saveConfig(parseConfig({ skillRoots: [DEFAULT_CONFIG_ROOT] }));
+          const config = parseConfig({ skillRoots: [DEFAULT_CONFIG_ROOT] });
+          const path = saveConfig(config);
+          rebuildIndex(state, loadConfig().config);
           notify(ctx, i18n.t("configCommandSaved", { path }), NOTICE_INFO);
         } catch (error) {
           notify(ctx, i18n.t("configCommandInvalid", {
@@ -249,33 +283,18 @@ function registerConfigCommand(pi: ExtensionAPI): void {
         notify(ctx, i18n.t("configCommandInteractiveOnly"), NOTICE_WARNING);
         return;
       }
-
-      const current = loadConfig().config;
-      const input = await ctx.ui.input(
-        i18n.t("configCommandInput"),
-        current.skillRoots.join(ROOT_DISPLAY_SEPARATOR),
-      );
-      if (input === undefined) return;
-      try {
-        const roots = input.split(ROOT_INPUT_SEPARATOR).map((root) => root.trim()).filter(Boolean);
-        const path = saveConfig(parseConfig({ skillRoots: roots }));
-        notify(ctx, i18n.t("configCommandSaved", { path }), NOTICE_INFO);
-      } catch (error) {
-        notify(ctx, i18n.t("configCommandInvalid", {
-          error: error instanceof Error ? error.message : String(error),
-        }), NOTICE_ERROR);
-      }
+      await openSkillsConfigPanel(state, ctx);
     },
   };
   for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
 }
 
-function registerSkillsCommand(pi: ExtensionAPI, index: SkillIndex): void {
+function registerSkillsCommand(pi: ExtensionAPI, state: RuntimeState): void {
   const command = {
     description: i18n.t("commandDescription"),
-    getArgumentCompletions: (): AutocompleteItem[] => commandItems(index),
+    getArgumentCompletions: (): AutocompleteItem[] => commandItems(state.index),
     handler: async (_args: string, _ctx: SkillCommandContext) => {
-      await pi.sendUserMessage(formatSkillsMessage(index), { deliverAs: "followUp" });
+      await pi.sendUserMessage(formatSkillsMessage(state.index), { deliverAs: "followUp" });
     },
   };
 
@@ -308,18 +327,20 @@ export default function nestedSkillsExtension(pi: ExtensionAPI): void {
   // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
   installNoticeRenderer(pi);
   const loaded = loadConfig();
-  const scan = scanSkillRoots(loaded.config.skillRoots);
-  const index = buildSkillIndex(scan);
+  const state: RuntimeState = {
+    loaded,
+    index: buildSkillIndex(scanSkillRoots(loaded.config.skillRoots)),
+  };
 
   pi.on("resources_discover", () => ({
     // 每个 SKILL.md 单独交给原生 loader，绕过“父目录含 SKILL.md 后停止递归”的规则，
     // 同时保留 Pi 原生的 frontmatter 校验、正文展开和资源来源信息。
-    skillPaths: index.skillPaths,
+    skillPaths: state.index.skillPaths,
   }));
 
   pi.on("input", (event) => {
     if (!INPUT_SOURCES.has(event.source)) return { action: "continue" as const };
-    const transformed = transformSkillInput(event.text, index);
+    const transformed = transformSkillInput(event.text, state.index);
     if (!transformed) return { action: "continue" as const };
     return {
       action: "transform" as const,
@@ -329,13 +350,14 @@ export default function nestedSkillsExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_start", (_event, ctx) => {
-    notifyDiagnostics(ctx, loaded, index);
-    if (index.aliases.size === 0) return;
-    ctx.ui.addAutocompleteProvider((current) => createAutocompleteProvider(current, index));
+    notifyDiagnostics(ctx, state.loaded, state.index);
+    if (state.index.aliases.size === 0) return;
+    // 每次会话开始都按当前索引重新注册，配置面板改了根目录后补全才能跟上。
+    ctx.ui.addAutocompleteProvider((current) => createAutocompleteProvider(current, state.index));
   });
 
-  registerConfigCommand(pi);
-  registerSkillsCommand(pi, index);
+  registerConfigCommand(pi, state);
+  registerSkillsCommand(pi, state);
 }
 
 export { buildSkillIndex, createAutocompleteProvider, formatSkillsMessage };

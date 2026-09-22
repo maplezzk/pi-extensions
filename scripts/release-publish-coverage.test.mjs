@@ -28,6 +28,7 @@ test("真实发布工作流覆盖 matrix 与专用自动发布 job，并去重",
     "packages/pi-notifications",
     "packages/pi-auto-goal",
     "packages/pi-clean-mode",
+    "packages/pi-gen-ui",
     "packages/pi-terminal-mux",
     "packages/pi-naming",
   ]);

@@ -12,7 +12,9 @@ import {
   registerSupervisorToolDisplayMiddleware,
 } from "../src/tool-display-bridge.ts";
 import { Text } from "@earendil-works/pi-tui";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import { createScriptedUi, down, DOWN, ENTER } from "./panel-driver.ts";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -1296,7 +1298,8 @@ test("未匹配 reviewer 的工具结果保持完整透传", async () => {
 
 type ConfigCommand = { handler: (args: string, ctx: unknown) => Promise<void> };
 
-test("配置 UI 可以编辑并持久化 reviewer 的 tools 和 trigger", async () => {
+test("配置面板可以编辑并持久化 reviewer 的 tools 和 trigger", async () => {
+  initTheme("dark");
   const { default: piSupervisorExtension } = await import("../src/index.ts");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-config-ui-"));
@@ -1310,8 +1313,6 @@ test("配置 UI 可以编辑并持久化 reviewer 的 tools 和 trigger", async 
       reviewers: [{ name: "reviewer", model: "provider/model", rulesFile: "rules.md" }],
     }));
     const commands = new Map<string, ConfigCommand>();
-    let configSelections = 0;
-    let editSelections = 0;
     const pi = {
       getAllTools: () => [],
       registerEntryRenderer: () => undefined,
@@ -1320,33 +1321,38 @@ test("配置 UI 可以编辑并持久化 reviewer 的 tools 和 trigger", async 
       on: () => undefined,
     } as unknown as Parameters<typeof piSupervisorExtension>[0];
     piSupervisorExtension(pi);
+
+    // 面板是两层的：每次打开都按一段脚本送按键。
+    // 打开 1（顶层）：下移到唯一 reviewer 行，Enter 进字段页。
+    // 打开 2（字段页）：下移到「工具范围」，Enter 开输入框。输入框预填当前值且光标在行首，
+    // ctrl+k（删到行尾）清空后输入 "bash, *"，Enter 确认。
+    // 打开 3（顶层）：回到顶层，再次进入字段页。
+    // 打开 4（字段页）：下移到「触发阶段」（第 7 行），Enter 开列表，下移到 before，Enter 选定。
+    // 打开 5（顶层）：Esc 退出面板。
+    const ui = createScriptedUi([
+      [...down(6), ENTER],
+      [...down(5), ENTER, "\u000B", ..."bash, *".split(""), ENTER],
+      [...down(6), ENTER],
+      [...down(6), ENTER, DOWN, ENTER],
+      ["\u001B"],
+    ]);
     const ctx = {
       hasUI: true,
+      modelRegistry: { getAvailable: () => [] },
       ui: {
-        select: async (_title: string, choices: string[]) => {
-          if (choices.some((choice) => choice.startsWith("● "))) {
-            return configSelections++ === 0 ? choices.find((choice) => choice.startsWith("● ")) : undefined;
-          }
-          if (editSelections === 0) {
-            editSelections += 1;
-            return choices.find((choice) => choice.startsWith("工具范围："));
-          }
-          if (editSelections === 1) {
-            editSelections += 1;
-            return choices.find((choice) => choice.startsWith("触发阶段："));
-          }
-          if (choices.includes("before") && choices.includes("after")) return "before";
-          return "返回";
-        },
-        input: async (title: string, current: string) => title.startsWith("工具范围") ? "bash, *" : current,
+        custom: ui.custom,
         confirm: async () => false,
         notify: () => undefined,
       },
     };
     await commands.get("config:tool-supervisor")?.handler("", ctx);
-    const saved = JSON.parse(await (await import("node:fs/promises")).readFile(configPath, "utf8"));
-    assert.deepEqual(saved.reviewers[0].tools, ["*"]);
-    assert.equal(saved.reviewers[0].trigger, "before");
+    assert.equal(ui.openCount(), 5, "面板应该按顶层/字段页交替打开，并在最后被 Esc 关闭");
+
+    const saved = JSON.parse(await readFile(configPath, "utf8")) as {
+      reviewers: { tools?: string[]; trigger?: string }[];
+    };
+    assert.deepEqual(saved.reviewers[0]?.tools, ["*"]);
+    assert.equal(saved.reviewers[0]?.trigger, "before");
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
