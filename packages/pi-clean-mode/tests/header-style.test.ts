@@ -3,9 +3,10 @@ import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	createHeaderStyler,
+	GUTTER_GAP,
 	GUTTER_PREFIX_WIDTH,
 	renderGutterPrefix,
-	RUN_INDENT,
+	RUN_GUTTER,
 	type ThemePainter,
 } from "../src/header-style.ts";
 
@@ -90,12 +91,41 @@ test("轨道前缀带弱化色，并且宽度的声明值与实际一致", () =>
 	);
 });
 
-test("运行级只有缩进、没有竖条，且与轨道前缀同宽", () => {
-	// 文案列靠两边的宽度相同才能对齐：半格实心块与居中竖线不同族，混用会错位。
+test("运行级竖条与动作组前缀同宽，两级文案才能同列", () => {
+	// 文案列靠两边的宽度相同才能对齐；两根竖条的笔画本身对不齐（半格实心块与
+	// 居中竖线不同族），能对齐的只有宽度与文案列。
 	assert.equal(
-		visibleWidth(RUN_INDENT),
+		visibleWidth(`${RUN_GUTTER}${GUTTER_GAP}`),
 		GUTTER_PREFIX_WIDTH,
-		"运行级缩进应与动作组前缀同宽，两级文案才能同列",
+		"运行级前缀应与动作组前缀同宽，两级文案才能同列",
 	);
-	assert.equal(RUN_INDENT.trim(), "", "运行级不应画任何竖条字符");
+	assert.notEqual(RUN_GUTTER.trim(), "", "运行级应真的画出一根竖条");
+	assert.notEqual(RUN_GUTTER, "│", "运行级用实心粗块，与动作组的细竖条不同字形");
+});
+
+test("主题没有工具底色能力时，三档底色都退化成原样文本", () => {
+	const styler = createHeaderStyler(missingColorTheme());
+
+	assert.equal(styler.successBg("行"), "行");
+	assert.equal(styler.pendingBg("行"), "行");
+	assert.equal(styler.errorBg("行"), "行");
+});
+
+test("三档工具底色各取自己的主题键", () => {
+	const seen: string[] = [];
+	const theme: ThemePainter = {
+		fg: (_color, text) => text,
+		bold: (text) => text,
+		bg: (color, text) => {
+			seen.push(color);
+			return `[${color}]${text}`;
+		},
+	};
+	const styler = createHeaderStyler(theme);
+
+	assert.equal(styler.successBg("行"), "[toolSuccessBg]行");
+	assert.equal(styler.pendingBg("行"), "[toolPendingBg]行");
+	assert.equal(styler.errorBg("行"), "[toolErrorBg]行");
+	// 构造时每个键各探一次，渲染时不再探测：缺键的代价只在启动时付一次。
+	assert.deepEqual(seen.slice(0, 3).sort(), ["toolErrorBg", "toolPendingBg", "toolSuccessBg"]);
 });

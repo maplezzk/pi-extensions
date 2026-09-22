@@ -47,13 +47,17 @@ interface EntryHostShape {
 
 /** 结构上等同于 Pi 的 CustomEntryComponent：三个特征字段齐全。 */
 class FakeEntryComponent extends Container implements EntryHostShape {
-	entry: { customType: string };
+	entry: { customType: string; data?: unknown };
 	renderer = (): unknown => undefined;
 	hasContent = (): boolean => true;
 
-	constructor(customType: string) {
+	/**
+	 * @param customType 条目的 customType。
+	 * @param data 条目载荷；通知条目用它带 level。
+	 */
+	constructor(customType: string, data?: unknown) {
 		super();
-		this.entry = { customType };
+		this.entry = data === undefined ? { customType } : { customType, data };
 		this.addChild({ render: () => [`entry:${customType}`], invalidate: () => {} });
 	}
 }
@@ -254,9 +258,42 @@ test("折叠判定：只有工作条目 + 折叠态 + 开关都打开才隐藏",
 		false,
 	);
 	assert.equal(
+		shouldHideExtensionEntry({
+			state: collapsed,
+			config,
+			customType: NOTICE_ENTRY_TYPE,
+			noticeLevel: "info",
+			isWorkEntry: true,
+		}),
+		true,
+		"info 级通知属于过程噪声，跟工作过程一起收起",
+	);
+	assert.equal(
+		shouldHideExtensionEntry({
+			state: collapsed,
+			config,
+			customType: NOTICE_ENTRY_TYPE,
+			noticeLevel: "warning",
+			isWorkEntry: true,
+		}),
+		false,
+		"警告不能被静默吞掉",
+	);
+	assert.equal(
+		shouldHideExtensionEntry({
+			state: collapsed,
+			config,
+			customType: NOTICE_ENTRY_TYPE,
+			noticeLevel: "error",
+			isWorkEntry: true,
+		}),
+		false,
+		"错误同样不能被静默吞掉",
+	);
+	assert.equal(
 		shouldHideExtensionEntry({ state: collapsed, config, customType: NOTICE_ENTRY_TYPE, isWorkEntry: true }),
 		false,
-		"通知条目豁免",
+		"读不出版本（未带 level）的通知按可见处理，宁可多显示一条",
 	);
 });
 
@@ -337,6 +374,17 @@ test("Pi 内部那份 Container 上的条目同样会被收起", () => {
 
 		box.state = stateWith({ collapsed: true, runSettled: false });
 		assert.deepEqual(entry.render(RENDER_WIDTH), [], "收起后不占行");
+	});
+});
+
+test("收起态下 info 级通知跟着收起，警告仍可见", () => {
+	withPatch({ state: stateWith({ collapsed: true, runSettled: false }), config: configWith({}), restoreWindow: false }, () => {
+		// 真实的 metrics 条目就是这个形状：customType 是通知类型，载荷里带 level。
+		const info = new FakeEntryComponent(NOTICE_ENTRY_TYPE, { tag: "metrics", level: "info", message: "TPS" });
+		assert.deepEqual(info.render(RENDER_WIDTH), [], "info 级通知在收起态应不占行");
+
+		const warning = new FakeEntryComponent(NOTICE_ENTRY_TYPE, { tag: "clean-mode", level: "warning", message: "x" });
+		assert.equal(warning.render(RENDER_WIDTH).length, SINGLE_LINE, "警告必须留着");
 	});
 });
 
