@@ -1,5 +1,6 @@
 {
   "packages/pi-extensions-i18n": "0.8.0",
+  "packages/pi-model-request": "0.1.0",
   "packages/pi-distill": "1.9.2",
   "packages/pi-tool-supervisor": "0.9.0",
   "packages/pi-extensions-tool-display": "1.3.2",

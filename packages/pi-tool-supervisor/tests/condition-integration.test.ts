@@ -48,7 +48,8 @@ function createContext(
   cwd: string,
   modelRegistry: Record<string, unknown>,
 ): ExtensionContext {
-  return { cwd, modelRegistry } as unknown as ExtensionContext;
+  // 审查请求由扩展自己发出，会读取 session id 补 provider 会话头。
+  return { cwd, modelRegistry, sessionManager: { getSessionId: () => "session-test" } } as unknown as ExtensionContext;
 }
 
 /** Registers the supervisor against a handler-capturing Pi test double. */

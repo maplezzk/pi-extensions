@@ -44,6 +44,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { NOTICE_TAG_COLOR, createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { createModelRequester } from "pi-model-request";
 import {
   buildSummaryPrompt,
   buildSummarySystemPrompt,
@@ -788,19 +789,19 @@ async function summarizeOutput(
     );
   }
 
-  const auth = await context.ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (auth.ok === false) throw new Error(`Summarizer authentication failed: ${auth.error}`);
+  // 摘要请求由扩展自己发出：鉴权与 provider 会话头交给共享请求器，与 Pi 核心行为一致。
+  const request = createModelRequester(context.ctx, {
+    base: completion,
+    authError: (error) => new Error(`Summarizer authentication failed: ${error}`),
+  });
 
   const completionOptions = {
-    apiKey: auth.apiKey,
-    headers: auth.headers,
-    env: auth.env,
     maxTokens: Math.max(256, Math.ceil(config.maxChars / 2)),
     onPayload: addSummaryJsonResponseFormat,
     signal,
   } satisfies SummaryCompletionOptions;
   const { text: rawResponse, usage } = await completeSummaryMessage(
-    completion,
+    request,
     model,
     [
       buildSummarySystemPrompt(),
@@ -824,7 +825,7 @@ async function summarizeOutput(
     let repaired: { text: string; usage: SummaryUsage | undefined };
     try {
       repaired = await completeSummaryMessage(
-        completion,
+        request,
         model,
         buildJsonRepairPrompt(rawResponse, error.message),
         completionOptions,

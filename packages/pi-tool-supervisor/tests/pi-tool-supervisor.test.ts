@@ -672,6 +672,7 @@ filePatterns:
     const context = {
       cwd: projectDir,
       signal: controller.signal,
+      sessionManager: { getSessionId: () => "session-test" },
       modelRegistry: {
         find: () => {
           findCalls += 1;
@@ -786,6 +787,7 @@ filePatterns:
     const context = {
       cwd: projectDir,
       signal: controller.signal,
+      sessionManager: { getSessionId: () => "session-test" },
       modelRegistry: {
         find: () => faux.getModel(),
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
@@ -1036,6 +1038,7 @@ test("generic before rejected 阻断时诊断使用工具名并追加独立审�
     const context = {
       cwd: agentDir,
       ui: { notify: recordNotification },
+      sessionManager: { getSessionId: () => "session-test" },
       modelRegistry: {
         find: () => faux.getModel(),
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
@@ -1156,6 +1159,7 @@ test("edit/write after 使用实际快照 diff，并在无变化时跳过模型"
     piSupervisorExtension(pi);
     const context = {
       cwd: agentDir,
+      sessionManager: { getSessionId: () => "session-test" },
       modelRegistry: {
         find: () => faux.getModel(),
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
@@ -1218,6 +1222,7 @@ test("custom exact 和 wildcard after 成功审查 input/result，并保留工�
     piSupervisorExtension(pi);
     const context = {
       cwd: agentDir,
+      sessionManager: { getSessionId: () => "session-test" },
       modelRegistry: {
         find: () => faux.getModel(),
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
@@ -1429,6 +1434,74 @@ test("新配置不存在时读取 pi-file-edit-review 旧配置", async () => {
     assert.equal(loaded.config.reviewers[0]?.name, "legacy");
     assert.match(loaded.warnings[0] ?? "", /\/pi-tool-supervisor/);
   } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("opencode 系列审查请求补上 Pi 的 provider 会话头", async () => {
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  type TestHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-tool-supervisor-session-headers-"));
+  const handlers = new Map<string, TestHandler>();
+  const requestHeaders: Array<Record<string, string | null> | undefined> = [];
+  const faux = registerFauxProvider({ provider: "provider", models: [{ id: "model" }] });
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const target = join(agentDir, "example.ts");
+    const rulesFile = join(agentDir, "headers.md");
+    await writeFile(target, "const value = 1;\n");
+    await writeFile(rulesFile, "---\nfilePatterns:\n  - '**/*.ts'\n---\n# headers\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "config.json"), JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "headers", model: "provider/model", rulesFile, tools: ["write"], trigger: "after" }],
+    }));
+    faux.setResponses([(_context, options) => {
+      requestHeaders.push(options?.headers);
+      return fauxAssistantMessage(JSON.stringify({ passed: true, summary: "ok", findings: [] }));
+    }]);
+
+    const pi = {
+      getAllTools: () => ["write"].map((name) => ({ name, sourceInfo: { source: "test" } })),
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: TestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piSupervisorExtension>[0];
+    piSupervisorExtension(pi);
+
+    // 自定义 provider id 但 baseUrl 命中 opencode.ai：审查请求同样需要会话头。
+    const context = {
+      cwd: agentDir,
+      sessionManager: { getSessionId: () => "session-headers" },
+      modelRegistry: {
+        find: () => ({ ...faux.getModel(), baseUrl: "https://opencode.ai/zen/go/v1" }),
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: { "x-test": "1" }, env: {} }),
+      },
+    };
+    const input = { path: "example.ts", content: "const value = 2;\n" };
+    await handlers.get("tool_call")?.({ toolName: "write", toolCallId: "write-headers", input }, context);
+    await writeFile(target, "const value = 2;\n");
+    const result = await handlers.get("tool_result")?.({
+      toolName: "write",
+      toolCallId: "write-headers",
+      input,
+      content: [{ type: "text", text: "written" }],
+      details: {},
+      isError: false,
+    }, context) as { details: { fileEditReview: { status: string } } };
+
+    assert.equal(result.details.fileEditReview.status, "passed");
+    assert.equal(requestHeaders.length, 1);
+    assert.equal(requestHeaders[0]?.["x-opencode-session"], "session-headers");
+    assert.equal(requestHeaders[0]?.["x-opencode-client"], "pi");
+    assert.equal(requestHeaders[0]?.["x-test"], "1");
+  } finally {
+    faux.unregister();
+    await handlers.get("session_shutdown")?.();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   }

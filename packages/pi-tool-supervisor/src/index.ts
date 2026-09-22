@@ -9,6 +9,7 @@
 
 import { complete } from "@earendil-works/pi-ai/compat";
 import { NOTICE_TAG_COLOR, createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
+import { createModelRequester } from "pi-model-request";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -357,10 +358,13 @@ async function reviewWithModel(options: RunReviewerOptions): Promise<FileEditRev
   context.signal?.addEventListener("abort", abortFromParent, { once: true });
   const timeout = setTimeout(() => controller.abort(), config.timeoutSeconds * MILLISECONDS_PER_SECOND);
   try {
-    const auth = await context.ctx.modelRegistry.getApiKeyAndHeaders(model);
-    if (auth.ok === false) throw new Error(`审查模型鉴权失败：${auth.error}`);
+    // 审查请求由扩展自己发出：鉴权与 provider 会话头交给共享请求器，与 Pi 核心行为一致。
+    const request = createModelRequester(context.ctx, {
+      base: complete,
+      authError: (error) => new Error(`审查模型鉴权失败：${error}`),
+    });
     if (context.signal?.aborted) return createAbortedResult();
-    const response = await complete(
+    const response = await request(
       model,
       {
         messages: [{
@@ -370,9 +374,6 @@ async function reviewWithModel(options: RunReviewerOptions): Promise<FileEditRev
         }],
       },
       {
-        apiKey: auth.apiKey,
-        headers: auth.headers,
-        env: auth.env,
         maxTokens: REVIEW_MAX_TOKENS,
         signal: controller.signal,
       },

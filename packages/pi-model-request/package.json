@@ -1,7 +1,7 @@
 {
-  "name": "pi-naming",
-  "version": "0.5.2",
-  "description": "Configurable Pi session naming and manual terminal workspace/tab renaming",
+  "name": "pi-model-request",
+  "version": "0.1.0",
+  "description": "Issue a one-off model request from a pi extension the same way Pi core does: resolve auth, add provider session headers, call the completion",
   "type": "module",
   "main": "./index.ts",
   "exports": {
@@ -10,11 +10,8 @@
   "files": [
     "index.ts",
     "src",
-    "locales",
     "README.md",
     "README.zh-CN.md",
-    "SKILL.md",
-    "config.example.json",
     "tsconfig.json"
   ],
   "scripts": {
@@ -23,26 +20,17 @@
     "build": "npm run typecheck",
     "check": "npm run typecheck && npm test && npm pack --dry-run --json > /dev/null"
   },
-  "pi": {
-    "extensions": [
-      "./index.ts",
-      "../pi-extensions-i18n/index.ts"
-    ],
-    "skills": [
-      "./SKILL.md"
-    ]
-  },
   "engines": {
     "node": ">=22"
   },
   "license": "MIT",
   "author": "maplezzk",
-  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-naming",
+  "homepage": "https://github.com/maplezzk/pi-extensions/tree/main/packages/pi-model-request",
   "bugs": "https://github.com/maplezzk/pi-extensions/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maplezzk/pi-extensions.git",
-    "directory": "packages/pi-naming"
+    "directory": "packages/pi-model-request"
   },
   "publishConfig": {
     "access": "public",
@@ -52,26 +40,17 @@
     "pi-package",
     "pi",
     "pi-extension",
-    "terminal",
-    "rename",
-    "workspace"
+    "model",
+    "completion",
+    "coding-agent"
   ],
-  "dependencies": {
-    "pi-extensions-i18n": "^0.8.0",
-    "pi-model-request": "^0.1.0",
-    "pi-terminal-mux": "^0.6.5"
-  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.80.0",
     "@earendil-works/pi-ai": ">=0.80.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
     "@types/node": "24.12.4",
-    "pi-model-request": "^0.1.0",
-    "pi-terminal-mux": "^0.6.5",
     "tsx": "4.23.1",
-    "typescript": "5.9.3",
-    "@earendil-works/pi-ai": "0.85.1"
+    "typescript": "5.9.3"
   }
 }
