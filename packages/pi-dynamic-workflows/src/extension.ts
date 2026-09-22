@@ -55,7 +55,7 @@ export default function extension(pi: ExtensionAPI) {
   };
 
   // 异步模式：注册 workflow_cancel 工具
-  if (config.background) {
+  if (config.async) {
     activeCancelTool = registerCancelTool();
     pi.registerTool(activeCancelTool);
   }
@@ -65,8 +65,8 @@ export default function extension(pi: ExtensionAPI) {
    * 工具注册是一次性的，所以这里只挂上 workflow_cancel；异步关闭时仅改标志位。
    */
   const applyConfig = (next: WorkflowConfig): void => {
-    if (next.background === (activeCancelTool !== undefined)) return;
-    if (next.background) {
+    if (next.async === (activeCancelTool !== undefined)) return;
+    if (next.async) {
       activeCancelTool = registerCancelTool();
       pi.registerTool(activeCancelTool);
       return;
@@ -142,7 +142,7 @@ function registerConfigCommand(pi: ExtensionAPI, applyConfig: (config: WorkflowC
           level: "info",
           message: i18n.t("configSaved", {
             backend: saved.backend,
-            async: saved.background ? i18n.t("on") : i18n.t("off"),
+            async: saved.async ? i18n.t("on") : i18n.t("off"),
           }),
         });
       } catch (error) {

@@ -12,13 +12,13 @@ import {
 import { configPath, loadConfig, parseConfig, saveConfig, type WorkflowConfig } from "../src/config.ts";
 
 /** 配置里的字段名；新增字段必须同时出现在面板上，否则这条用例会失败。 */
-const CONFIG_FIELDS: readonly string[] = ["backend", "background"];
+const CONFIG_FIELDS: readonly string[] = ["backend", "async"];
 
 /** 全部取非默认值，避免往返一致靠默认值蒙对。 */
-const CUSTOM_CONFIG: WorkflowConfig = { backend: "subagent", background: true };
+const CUSTOM_CONFIG: WorkflowConfig = { backend: "subagent", async: true };
 
 /** 开关字段的面板 id。 */
-const PANEL_ID_BACKGROUND = "background";
+const PANEL_ID_ASYNC = "async";
 
 /**
  * 在干净的配置目录下跑一段回调：先清掉会干扰配置读取的环境变量。
@@ -65,16 +65,16 @@ test("每一行都带上标题、说明和当前值", () => {
 test("枚举项提供 submenu，开关项提供 values", () => {
   const items = toSettingItems(CUSTOM_CONFIG);
   const backend = items.find((item) => item.id === "backend");
-  const background = items.find((item) => item.id === PANEL_ID_BACKGROUND);
+  const asyncItem = items.find((item) => item.id === PANEL_ID_ASYNC);
   assert.equal(typeof backend?.submenu, "function");
   assert.equal(backend?.values, undefined);
-  assert.equal(background?.submenu, undefined);
-  assert.equal(background?.values?.length, 2);
+  assert.equal(asyncItem?.submenu, undefined);
+  assert.equal(asyncItem?.values?.length, 2);
 });
 
 /** 取每一行当前显示的文本写回去，配置必须原样保持。 */
 test("把每一行的当前显示值写回后配置往返一致", () => {
-  for (const config of [CUSTOM_CONFIG, { backend: "workflow", background: false } as WorkflowConfig]) {
+  for (const config of [CUSTOM_CONFIG, { backend: "workflow", async: false } as WorkflowConfig]) {
     for (const item of toSettingItems(config)) {
       const next = applyPanelChange(config, item.id, item.currentValue);
       assert.notEqual(next, undefined, `${item.id} 拒绝了自己的当前值`);
@@ -91,20 +91,20 @@ test("枚举和开关写回的是配置值而不是文案", () => {
   const workflow = applyPanelChange(CUSTOM_CONFIG, "backend", labelOf("configBackendWorkflow"));
   assert.equal(workflow?.backend, "workflow");
 
-  assert.equal(applyPanelChange(CUSTOM_CONFIG, PANEL_ID_BACKGROUND, offLabel)?.background, false);
+  assert.equal(applyPanelChange(CUSTOM_CONFIG, PANEL_ID_ASYNC, offLabel)?.async, false);
   assert.equal(
-    applyPanelChange({ backend: "workflow", background: false }, PANEL_ID_BACKGROUND, onLabel)?.background,
+    applyPanelChange({ backend: "workflow", async: false }, PANEL_ID_ASYNC, onLabel)?.async,
     true,
   );
   // 候选表里没有的开关文案必须保持不变，而不是默默当成 off。
-  assert.equal(applyPanelChange(CUSTOM_CONFIG, PANEL_ID_BACKGROUND, "也许"), undefined);
+  assert.equal(applyPanelChange(CUSTOM_CONFIG, PANEL_ID_ASYNC, "也许"), undefined);
 });
 
 /** 未知字段或候选表外的值一律不写，避免过期面板写进没人提供的配置。 */
 test("未知字段和候选表外的值不会改配置", () => {
   assert.equal(applyPanelChange(CUSTOM_CONFIG, "not.a.field", "x"), undefined);
   assert.equal(applyPanelChange(CUSTOM_CONFIG, "backend", "claude"), undefined);
-  assert.equal(applyPanelChange(CUSTOM_CONFIG, PANEL_ID_BACKGROUND, "maybe"), undefined);
+  assert.equal(applyPanelChange(CUSTOM_CONFIG, PANEL_ID_ASYNC, "maybe"), undefined);
 });
 
 /** 候选表里没有的执行后端原样展示。 */
@@ -112,7 +112,7 @@ test("候选表外的执行后端原样展示", () => {
   assert.equal(optionLabelForValue([], "legacy"), "legacy");
 });
 
-/** 配置读取走 PI_CODING_AGENT_DIR，面板改动落盘后能重新读出；写盘字段名保持历史 `async`。 */
+/** 配置读取走 PI_CODING_AGENT_DIR，面板改动落盘后能重新读出。 */
 test("面板改动写入配置目录后可以重新读出", () => {
   withIsolatedAgentDir((directory) => {
     const path = join(directory, "extensions", "pi-dynamic-workflows", "config.json");
@@ -120,20 +120,28 @@ test("面板改动写入配置目录后可以重新读出", () => {
     const next = applyPanelChange(loadConfig(), "backend", labelOf("configBackendSubagent"));
     assert.notEqual(next, undefined);
     saveConfig(next as WorkflowConfig);
-    assert.deepEqual(loadConfig(), { backend: "subagent", background: false });
+    assert.deepEqual(loadConfig(), { backend: "subagent", async: false });
     const stored = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
-    assert.equal(stored.async, false, "落盘字段名保持历史 async");
-    assert.equal(stored.background, undefined);
+    assert.equal(stored.async, false);
   });
 });
 
-/** 旧的 `async` 写法仍然读得出来，用户既有配置不会失效。 */
-test("旧的 async 字段名仍然生效", () => {
+/**
+ * `WorkflowConfig` 是对外导出的公共类型，字段名必须保持历史 `async`；
+ * `async` 是上下文关键字，作为属性名完全合法，不需要也不应该改名。
+ */
+test("运行期字段名保持 async，且与写盘字段名一致", () => {
   withIsolatedAgentDir((directory) => {
     const path = join(directory, "config.json");
     writeFileSync(path, JSON.stringify({ backend: "subagent", async: true }), "utf-8");
-    assert.deepEqual(loadConfig(path), { backend: "subagent", background: true });
-    assert.deepEqual(parseConfig({ async: true }), { backend: "workflow", background: true });
+    assert.deepEqual(loadConfig(path), { backend: "subagent", async: true });
+    assert.deepEqual(parseConfig({ async: true }), { backend: "workflow", async: true });
+    // saveConfig 与文件里的现有值合并，写回的字段名也是 async。
+    assert.deepEqual(saveConfig({ backend: "workflow" }, path), { backend: "workflow", async: true });
+    const stored = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(stored).sort(), ["async", "backend"]);
+    // 旧的 background 写法是中间产物，没有发布过，不应继续接受。
+    assert.throws(() => parseConfig({ background: true }), /unknown/);
   });
 });
 
@@ -141,8 +149,8 @@ test("旧的 async 字段名仍然生效", () => {
 test("saveConfig 会建出缺失的目录", () => {
   withIsolatedAgentDir((directory) => {
     const path = join(directory, "nested", "config.json");
-    assert.deepEqual(saveConfig({ background: true }, path), { backend: "workflow", background: true });
-    assert.deepEqual(loadConfig(path), { backend: "workflow", background: true });
+    assert.deepEqual(saveConfig({ async: true }, path), { backend: "workflow", async: true });
+    assert.deepEqual(loadConfig(path), { backend: "workflow", async: true });
   });
 });
 

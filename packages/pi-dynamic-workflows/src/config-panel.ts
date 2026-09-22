@@ -37,7 +37,7 @@ const PANEL_KIND = {
 } as const;
 
 /** 面板覆盖的配置字段名。 */
-export type PanelFieldId = "backend" | "background";
+export type PanelFieldId = "backend" | "async";
 
 /** 面板项定义。 */
 interface PanelItemSpec {
@@ -76,7 +76,7 @@ const PANEL_ITEMS: readonly PanelItemSpec[] = [
     descriptionKey: "configDescBackend",
   },
   {
-    id: "background",
+    id: "async",
     kind: PANEL_KIND.toggle,
     labelKey: "configLabelAsync",
     descriptionKey: "configDescAsync",
@@ -171,7 +171,7 @@ export function toSettingItems(config: WorkflowConfig): SettingItem[] {
         id: item.id,
         label,
         description,
-        currentValue: config.background ? labels.on : labels.off,
+        currentValue: config.async ? labels.on : labels.off,
         values: [labels.on, labels.off],
       };
     }
@@ -196,10 +196,10 @@ export function applyPanelChange(
   id: string,
   value: string,
 ): WorkflowConfig | undefined {
-  if (id === "background") {
+  if (id === "async") {
     const labels = toggleLabels();
     if (value !== labels.on && value !== labels.off) return undefined;
-    return parseConfig({ ...config, background: value === labels.on });
+    return parseConfig({ ...config, async: value === labels.on });
   }
   if (id === "backend") {
     const stored = optionValueFromLabel(backendOptions(), value);

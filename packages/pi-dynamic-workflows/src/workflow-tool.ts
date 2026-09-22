@@ -132,7 +132,7 @@ export function createWorkflowTool(options: WorkflowToolOptions = {}): ToolDefin
       const parsed = parseWorkflowScript(script);
 
       // === 异步模式 ===
-      const isAsync = (options.isAsync ? options.isAsync() : loadConfig().background) && options.pi;
+      const isAsync = (options.isAsync ? options.isAsync() : loadConfig().async) && options.pi;
       if (isAsync) {
         if (runningWorkflow) {
           throw new Error(i18n.t("alreadyRunning", { name: runningWorkflow.name }));
