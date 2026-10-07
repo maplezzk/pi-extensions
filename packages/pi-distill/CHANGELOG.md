@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.10.0...pi-distill-v1.10.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **pi-distill:** 跳过 codemode，避免 grammar 约束采样下整轮请求失败 ([5b096a8](https://github.com/maplezzk/pi-extensions/commit/5b096a87c6331d43457a234be61925949d80f804))
+* **pi-distill:** 跳过 codemode，避免 grammar 约束采样下整轮请求失败 ([3cd5266](https://github.com/maplezzk/pi-extensions/commit/3cd5266d9a5e14689ff5b4378466370d6e1eb316))
+
 ## [1.10.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.9.3...pi-distill-v1.10.0) (2026-10-05)
 
 

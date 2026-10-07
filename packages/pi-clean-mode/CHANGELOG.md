@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-clean-mode-v0.5.0...pi-clean-mode-v0.5.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **clean-mode:** 接轨道的块与工具行对齐左边缘并改用同一套底色 ([429ab6f](https://github.com/maplezzk/pi-extensions/commit/429ab6ffb4f4f6718b07017c4f436732665ff982))
+* **clean-mode:** 接轨道的块与工具行对齐左边缘并改用同一套底色 ([3c36c0d](https://github.com/maplezzk/pi-extensions/commit/3c36c0df8d08b8781235cbb1b59d974b35ce0a5c))
+
 ## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-clean-mode-v0.4.0...pi-clean-mode-v0.5.0) (2026-10-05)
 
 
