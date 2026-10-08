@@ -2536,6 +2536,70 @@ describe("subagents widget rendering", () => {
   });
 });
 
+describe("in-process sessions sharing this module", () => {
+  // Pi caches an extension's module per cwd, so an SDK session another extension starts
+  // in-process (no UI) runs this factory again over the same module state.
+  function session(hasUI: boolean) {
+    const handlers: Record<string, Array<(event: unknown, ctx: unknown) => void>> = {};
+    const widgets: unknown[] = [];
+    let disposed = false;
+    const guard = () => {
+      if (disposed) throw new Error("This extension ctx is stale after session replacement or reload.");
+    };
+    const ctx = {
+      get hasUI() { guard(); return hasUI; },
+      get ui() { guard(); return { setWidget: (_key: string, value: unknown) => widgets.push(value) }; },
+    };
+    const { api } = createMockExtensionApi();
+    api.on = (event: string, handler: (event: unknown, ctx: unknown) => void) => { (handlers[event] ??= []).push(handler); };
+    subagentsModule.default(api);
+    const emit = (event: string) => { for (const handler of handlers[event] ?? []) handler({}, ctx); };
+    return { widgets, emit, dispose: () => { disposed = true; } };
+  }
+
+  it("keeps the UI session's ctx and running agents when a headless session ends", () => {
+    const testApi = (subagentsModule as any).__test__;
+    const agent = createWidgetAgentFixture({ id: VISIBLE_AGENT_ID, name: VISIBLE_AGENT_NAME });
+    const main = session(true);
+    const child = session(false);
+    try {
+      main.emit("session_start");
+      testApi.runningSubagents.set(agent.id, agent);
+      child.emit("session_start");
+      child.emit("session_shutdown");
+      child.dispose();
+
+      assert.ok(testApi.runningSubagents.has(agent.id), "the main session's agent must stay watched");
+      testApi.updateWidget();
+      assert.equal(main.widgets.length, 1, "the widget still renders through the main session's ctx");
+    } finally {
+      main.emit("session_shutdown");
+      testApi.runningSubagents.delete(agent.id);
+    }
+  });
+
+  it("leaves a newer UI session's state alone when the session it replaced shuts down", () => {
+    const testApi = (subagentsModule as any).__test__;
+    const agent = createWidgetAgentFixture({ id: VISIBLE_AGENT_ID, name: VISIBLE_AGENT_NAME });
+    const old = session(true);
+    const next = session(true);
+    try {
+      old.emit("session_start");
+      next.emit("session_start");
+      testApi.runningSubagents.set(agent.id, agent);
+      old.emit("session_shutdown");
+      old.dispose();
+
+      assert.ok(testApi.runningSubagents.has(agent.id), "the newer session's agent must stay watched");
+      testApi.updateWidget();
+      assert.equal(next.widgets.length, 1, "the widget renders through the newer session's ctx");
+    } finally {
+      next.emit("session_shutdown");
+      testApi.runningSubagents.delete(agent.id);
+    }
+  });
+});
+
 describe("cmux.ts", () => {
   describe("shellEscape", () => {
     it("wraps in single quotes", () => {
