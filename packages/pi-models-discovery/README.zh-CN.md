@@ -91,7 +91,7 @@ pi install npm:pi-models-discovery
   }
 }
 ```
-- 模型元数据可携带 `name` / `context_window`（或 `contextWindow`）/ `max_tokens`（或 `maxTokens`），缺失时用默认值。
+- 模型元数据可携带 `name` / `context_window`（或 `contextWindow`，或 vLLM 的 `max_model_len`）/ `max_tokens`（或 `maxTokens`），缺失时用默认值。
 
 旧的 `/model-discovery`、`/model-discovery-refresh`、`/pi-model-discovery` 和 `/pi-model-discovery-refresh` 名称仍作为兼容别名保留。
 

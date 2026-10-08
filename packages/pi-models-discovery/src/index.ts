@@ -96,6 +96,8 @@ interface ModelsResponse {
 		name?: string;
 		context_window?: number;
 		contextWindow?: number;
+		/** vLLM reports the served context window here. */
+		max_model_len?: number;
 		max_tokens?: number;
 		maxTokens?: number;
 	}>;
@@ -375,7 +377,7 @@ async function fetchModels(
 			buildModel(
 				m.id,
 				m.name,
-				m.context_window ?? m.contextWindow,
+				m.context_window ?? m.contextWindow ?? m.max_model_len,
 				m.max_tokens ?? m.maxTokens,
 				entry.compat,
 			),
