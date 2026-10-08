@@ -91,7 +91,7 @@ Forces a rediscovery of every discovery provider and updates the local cache, no
   }
 }
 ```
-- Model metadata may carry `name` / `context_window` (or `contextWindow`) / `max_tokens` (or `maxTokens`); defaults are used when absent.
+- Model metadata may carry `name` / `context_window` (or `contextWindow`, or vLLM's `max_model_len`) / `max_tokens` (or `maxTokens`); defaults are used when absent.
 
 The old `/model-discovery`, `/model-discovery-refresh`, `/pi-model-discovery`, and `/pi-model-discovery-refresh` names remain available as compatibility aliases.
 

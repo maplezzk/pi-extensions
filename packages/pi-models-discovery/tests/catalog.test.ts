@@ -25,7 +25,7 @@ test("default export is an extension factory", async () => {
 });
 
 /** 隔离 agent 配置目录与网络；通过扩展入口验证读取、注册和缓存。 */
-async function discoveryHarness(t: TestContext) {
+async function discoveryHarness(t: TestContext, entries?: Array<Record<string, unknown>>) {
 	const dir = await mkdtemp(join(tmpdir(), "pi-models-discovery-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -37,7 +37,7 @@ async function discoveryHarness(t: TestContext) {
 	const requests: Array<{ url: string; headers: RequestInit["headers"] }> = [];
 	t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
 		requests.push({ url, headers: init.headers });
-		return Response.json({ data: [{ id: `model-${requests.length}` }] });
+		return Response.json({ data: entries ?? [{ id: `model-${requests.length}` }] });
 	});
 	const registrations = new Map<string, Parameters<ExtensionAPI["registerProvider"]>[1]>();
 	const commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
@@ -195,6 +195,18 @@ test("persistent cache is reused and invalidated when modelsUrl is added, change
 		"https://catalog.example.com/second",
 		"https://api.example.com/v1/models",
 	]);
+});
+
+test("context window falls back to vLLM max_model_len", async (t) => {
+	const h = await discoveryHarness(t, [
+		{ id: "vllm", max_model_len: 200_000 },
+		{ id: "explicit", context_window: 128_000, max_model_len: 200_000 },
+		{ id: "bare" },
+	]);
+	await h.configure({ foo: discoveryProvider });
+	await h.start();
+	const windows = h.registrations.get("foo")!.models!.map((m) => [m.id, m.contextWindow]);
+	assert.deepEqual(windows, [["vllm", 200_000], ["explicit", 128_000], ["bare", 1_000_000]]);
 });
 
 test("discovered models expose xhigh and max thinking levels", () => {
