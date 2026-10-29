@@ -37,6 +37,8 @@
  *   以免空列表清掉 models.json 手写 models。
  * - 发现模型默认隐藏 xhigh/max；provider.compat.thinkingLevelMap 可显式开启或覆盖档位，
  *   provider.compat.reasoning 可关闭推理；逐模型差异用 provider.modelOverrides 覆盖。
+ * - modelApis 按模型 ID 精确覆盖协议，未匹配的沿用 provider.api；首次发现、缓存与刷新统一应用。
+ *   覆盖值不写入目录缓存，改映射不必重新联网发现。
  * - 发现请求的 apiKey 解析仅支持字面量与 $ENV_VAR/${ENV_VAR} 插值；
  *   "!command" 形式的 apiKey 跳过发现（显式警告），pi 发起聊天请求时仍由 pi 自身解析。
  * - /config:model-discovery 命令对 models.json 的修改立即生效（registerProvider 运行时可直接调用）；
@@ -52,6 +54,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { NOTICE_TAG_COLOR, createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 import { openDiscoveryPanel, type PanelProvider } from "./config-panel.ts";
+import { applyModelApis, isModelApis } from "./model-apis.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -83,6 +86,8 @@ interface DiscoveryProviderEntry {
 	modelsUrl?: string;
 	apiKey?: string;
 	api?: string;
+	/** Exact model ID → API mapping; validated before discovery or cache registration. */
+	modelApis?: unknown;
 	headers?: Record<string, string>;
 	compat?: Record<string, unknown>;
 	/** 发现标记；面板关闭发现时写 false（实际会删掉这个键）。 */
@@ -255,6 +260,7 @@ function pickDiscoveryProviders(data: Record<string, unknown>): DiscoveryProvide
 			modelsUrl: typeof value.modelsUrl === "string" ? value.modelsUrl : undefined,
 			apiKey: typeof value.apiKey === "string" ? value.apiKey : undefined,
 			api: typeof value.api === "string" ? value.api : undefined,
+			modelApis: value.modelApis,
 			headers:
 				value.headers && typeof value.headers === "object"
 					? (value.headers as Record<string, string>)
@@ -466,17 +472,21 @@ function createRefreshModels(entry: DiscoveryProviderEntry, notices: Notice[], s
 			if (state.lastModels.length === 0) {
 				throw new Error(i18n.t("offlineNoCache"));
 			}
-			return state.lastModels;
+			return applyModelApis(state.lastModels, entry.api!, isModelApis(entry.modelApis) ? entry.modelApis : undefined);
 		}
 		const refreshed = await fetchModels(entry, notices);
 		state.lastModels = refreshed;
 		await persistCachedModels(entry, refreshed, notices);
-		return refreshed;
+		return applyModelApis(refreshed, entry.api!, isModelApis(entry.modelApis) ? entry.modelApis : undefined);
 	};
 }
 
 /** 校验 baseUrl/api 齐备；缺失时推入警告并返回 false */
 function validateEntry(entry: DiscoveryProviderEntry, notices: Notice[]): entry is DiscoveryProviderEntry & { baseUrl: string; api: string } {
+	if (entry.modelApis !== undefined && !isModelApis(entry.modelApis)) {
+		notices.push({ level: "warning", message: `${LOG_PREFIX} ${entry.id}: ${i18n.t("invalidModelApis")}` });
+		return false;
+	}
 	if (!entry.baseUrl || !entry.api) {
 		notices.push({
 			level: "warning",
@@ -510,7 +520,7 @@ async function discoverAndRegister(
 		pi.registerProvider(entry.id, {
 			baseUrl: entry.baseUrl,
 			api: entry.api as Api,
-			models,
+			models: applyModelApis(models, entry.api, isModelApis(entry.modelApis) ? entry.modelApis : undefined),
 			refreshModels,
 		});
 		await persistCachedModels(entry, models, notices);
@@ -548,7 +558,7 @@ function registerFromCache(
 	pi.registerProvider(entry.id, {
 		baseUrl: entry.baseUrl,
 		api: entry.api as Api,
-		models,
+		models: applyModelApis(models, entry.api, isModelApis(entry.modelApis) ? entry.modelApis : undefined),
 		refreshModels,
 	});
 }
@@ -562,6 +572,7 @@ function toPanelProvider(entry: DiscoveryProviderEntry): PanelProvider {
 		id: entry.id,
 		baseUrl: entry.baseUrl ?? "",
 		api: entry.api ?? "",
+		...(isModelApis(entry.modelApis) && Object.keys(entry.modelApis).length ? { modelApis: entry.modelApis } : {}),
 		apiKey: entry.apiKey ?? "",
 		name: entry.name ?? "",
 		enabled: true,
@@ -577,7 +588,7 @@ async function readPanelProviders(): Promise<{ providers: PanelProvider[]; error
 
 /**
  * 面板改一个 provider 的字段后写回 models.json。
- * 沿用原条目的其余字段（headers/compat 等面板不管的键），只覆盖面板能改的四项。
+ * 沿用原条目的其余字段（headers/compat 等面板不管的键），只覆盖面板可编辑字段。
  */
 async function persistProvider(provider: PanelProvider): Promise<{ backup: string }> {
 	const { data, error } = await readModelsFile();
@@ -586,6 +597,8 @@ async function persistProvider(provider: PanelProvider): Promise<{ backup: strin
 	const existing = providers[provider.id];
 	if (!existing) throw new Error(i18n.t("panelProviderMissing", { id: provider.id }));
 	const entry: Record<string, unknown> = { ...existing, baseUrl: provider.baseUrl, api: provider.api };
+	if (provider.modelApis && Object.keys(provider.modelApis).length) entry.modelApis = provider.modelApis;
+	else delete entry.modelApis;
 	if (provider.enabled) entry[DISCOVERY_MARKER] = true;
 	else delete entry[DISCOVERY_MARKER];
 	if (provider.apiKey) entry.apiKey = provider.apiKey;
@@ -609,6 +622,7 @@ async function persistNewProvider(provider: PanelProvider): Promise<{ backup: st
 	};
 	if (provider.apiKey) entry.apiKey = provider.apiKey;
 	if (provider.name) entry.name = provider.name;
+	if (provider.modelApis && Object.keys(provider.modelApis).length) entry.modelApis = provider.modelApis;
 	providers[provider.id] = entry;
 	data.providers = providers;
 	return writeModelsFile(data);
@@ -725,6 +739,7 @@ function registerDiscoveryCommand(pi: ExtensionAPI, fetchCache: FetchCache, sink
 							id: provider.id,
 							baseUrl: provider.baseUrl,
 							api: provider.api,
+							modelApis: provider.modelApis,
 							apiKey: provider.apiKey || undefined,
 							name: provider.name || undefined,
 						};
@@ -859,6 +874,7 @@ async function addProviderFromPanel(options: {
 			baseUrl: provider.baseUrl,
 			apiKey: provider.apiKey || undefined,
 			api: provider.api,
+			modelApis: provider.modelApis,
 		},
 		fetchCache,
 		notices,

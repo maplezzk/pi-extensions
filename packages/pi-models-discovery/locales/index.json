@@ -235,6 +235,18 @@
     "zh-CN": "apiKey",
     "en-US": "apiKey"
   },
+  "panelLabelModelApis": {
+    "zh-CN": "逐模型协议",
+    "en-US": "Per-model APIs"
+  },
+  "panelDescModelApis": {
+    "zh-CN": "按模型 ID 精确匹配的 JSON 协议映射，例如 {\"model-a\":\"openai-responses\"}；留空或 {} 清除。",
+    "en-US": "JSON API overrides keyed by exact model ID, e.g. {\"model-a\":\"openai-responses\"}; empty input or {} clears them."
+  },
+  "invalidModelApis": {
+    "zh-CN": "modelApis 必须是模型 ID 到非空 API 字符串的 JSON 对象；无效配置不会应用。",
+    "en-US": "modelApis must be a JSON object mapping model IDs to nonempty API strings; invalid configuration is not applied."
+  },
   "panelDescApiKey": {
     "zh-CN": "可留空；支持 $ENV_VAR 插值。",
     "en-US": "Optional; supports $ENV_VAR interpolation."

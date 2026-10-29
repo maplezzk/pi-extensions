@@ -26,6 +26,7 @@ import {
 	Text,
 } from "@earendil-works/pi-tui";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { parseModelApis, type ModelApis } from "./model-apis.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -47,6 +48,8 @@ export const PROVIDER_FIELD = {
 	baseUrl: "baseUrl",
 	/** api 类型。 */
 	api: "api",
+	/** Exact model ID → API overrides. */
+	modelApis: "modelApis",
 	/** API Key；支持 $ENV_VAR 插值。 */
 	apiKey: "apiKey",
 	/** 动作：立刻请求 {baseUrl}/models 刷新模型。 */
@@ -81,6 +84,7 @@ export interface PanelProvider {
 	baseUrl: string;
 	/** api 类型。 */
 	api: string;
+	modelApis?: ModelApis;
 	/** apiKey；空串表示未设置。 */
 	apiKey: string;
 	/** 显示名；空串表示未设置（回落为 id）。 */
@@ -120,6 +124,7 @@ const PROVIDER_ROWS: readonly {
 	{ id: PROVIDER_FIELD.name, kind: "text", labelKey: "panelLabelName", descriptionKey: "panelDescName" },
 	{ id: PROVIDER_FIELD.baseUrl, kind: "text", labelKey: "panelLabelBaseUrl", descriptionKey: "panelDescBaseUrl" },
 	{ id: PROVIDER_FIELD.api, kind: "choice", labelKey: "panelLabelApi", descriptionKey: "panelDescApi" },
+	{ id: PROVIDER_FIELD.modelApis, kind: "text", labelKey: "panelLabelModelApis", descriptionKey: "panelDescModelApis" },
 	{ id: PROVIDER_FIELD.apiKey, kind: "text", labelKey: "panelLabelApiKey", descriptionKey: "panelDescApiKey" },
 	{ id: PROVIDER_FIELD.rediscover, kind: "action", labelKey: "panelLabelRediscover", descriptionKey: "panelDescRediscover" },
 	{ id: PROVIDER_FIELD.remove, kind: "action", labelKey: "panelLabelRemove", descriptionKey: "panelDescRemove" },
@@ -170,6 +175,8 @@ function readProviderField(provider: PanelProvider, id: ProviderFieldId): string
 			return provider.baseUrl;
 		case PROVIDER_FIELD.api:
 			return provider.api;
+		case PROVIDER_FIELD.modelApis:
+			return JSON.stringify(provider.modelApis ?? {});
 		case PROVIDER_FIELD.apiKey:
 			return provider.apiKey;
 		default:
@@ -218,6 +225,12 @@ export function applyProviderChange(
 		}
 		case PROVIDER_FIELD.apiKey:
 			return { ...provider, apiKey: value.trim() };
+		case PROVIDER_FIELD.modelApis: {
+			const modelApis = parseModelApis(value);
+			if (!modelApis) return undefined;
+			const { modelApis: _previous, ...rest } = provider;
+			return Object.keys(modelApis).length ? { ...rest, modelApis } : rest;
+		}
 		default:
 			return undefined;
 	}
@@ -228,15 +241,20 @@ function createTextSubmenu(
 	value: string,
 	placeholder: string,
 	done: (value?: string) => void,
+	validate?: (value: string) => boolean,
 ): Component {
 	const input = new Input({ prompt: `${i18n.t("panelInputPrompt")} `, placeholder });
 	input.setValue(value);
 	input.focused = true;
-	input.onSubmit = (submitted) => done(submitted);
+	let invalid = false;
+	input.onSubmit = (submitted) => {
+		invalid = validate !== undefined && !validate(submitted);
+		if (!invalid) done(submitted);
+	};
 	input.onEscape = () => done(undefined);
 	return {
 		/** 一行可编辑文本。 */
-		render: (width) => input.render(width),
+		render: (width) => [...input.render(width), ...(invalid ? new Text(i18n.t("invalidModelApis"), 0, 0).render(width) : [])],
 		/** 无本地缓存。 */
 		invalidate: () => input.invalidate(),
 		/** 按键全部交给输入框。 */
@@ -321,7 +339,8 @@ export function buildProviderItems(provider: PanelProvider): SettingItem[] {
 				description,
 				currentValue,
 				submenu: (_current, done) =>
-					createTextSubmenu(readProviderField(provider, row.id), description, done),
+					createTextSubmenu(readProviderField(provider, row.id), description, done,
+						row.id === PROVIDER_FIELD.modelApis ? (value) => parseModelApis(value) !== undefined : undefined),
 			};
 		}
 		return actionRow({ id: row.id, label, description, currentValue: i18n.t("panelActionHint") });

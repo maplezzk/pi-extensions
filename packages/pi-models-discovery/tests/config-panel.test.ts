@@ -23,6 +23,7 @@ import {
 	optionValueFromLabel,
 	type PanelProvider,
 } from "../src/config-panel.ts";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 
 // 面板文案在测试里要能取到，指向临时 agent 目录以免读用户真实设置。
@@ -35,6 +36,7 @@ const PROVIDER_EDITABLE_FIELDS: readonly string[] = [
 	"name",
 	"baseUrl",
 	"api",
+	"modelApis",
 	"apiKey",
 	"rediscover",
 	"remove",
@@ -99,6 +101,37 @@ test("开关与枚举写回的是机器值，不是本地化文案", () => {
 
 	const api = applyProviderChange(customProvider(), PROVIDER_FIELD.api, "openai-responses");
 	assert.equal(api?.api, "openai-responses");
+});
+
+test("逐模型协议可编辑、清除，且非默认映射能往返一致", () => {
+	const provider = customProvider();
+	const mapped = applyProviderChange(provider, PROVIDER_FIELD.modelApis, '{"model-a":"openai-responses"}')!;
+	assert.deepEqual(mapped.modelApis, { "model-a": "openai-responses" });
+	const row = buildProviderItems(mapped).find((item) => item.id === PROVIDER_FIELD.modelApis)!;
+	assert.deepEqual(applyProviderChange(mapped, row.id, row.currentValue), mapped);
+	assert.deepEqual(applyProviderChange(mapped, row.id, "{}"), provider);
+	assert.deepEqual(applyProviderChange(mapped, row.id, ""), provider);
+	for (const invalid of ['{"model-a":null}', '{"model-a":""}', '[]', 'null', '{broken']) {
+		assert.equal(applyProviderChange(mapped, row.id, invalid), undefined);
+	}
+});
+
+test("逐模型协议输入错误留在编辑器并展示校验消息", () => {
+	initTheme("dark");
+	const row = buildProviderItems(customProvider()).find((item) => item.id === PROVIDER_FIELD.modelApis)!;
+	let submitted: string | undefined;
+	const submenu = row.submenu!(row.currentValue, (value) => { submitted = value; });
+	submenu.handleInput!("\u0001");
+	submenu.handleInput!("\u000b");
+	submenu.handleInput!("[]");
+	submenu.handleInput!("\r");
+	assert.equal(submitted, undefined);
+	assert.ok(submenu.render(120).join("\n").includes("modelApis"));
+	submenu.handleInput!("\u0001");
+	submenu.handleInput!("\u000b");
+	submenu.handleInput!('{"model-a":"openai-responses"}');
+	submenu.handleInput!("\r");
+	assert.equal(submitted, '{"model-a":"openai-responses"}');
 });
 
 test("文本字段写回前去掉首尾空白", () => {
