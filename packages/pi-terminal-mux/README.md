@@ -69,7 +69,7 @@ If the forced backend's runtime is unavailable, `getMuxBackend()` returns `null`
 
 ### Herdr surface mode
 
-Herdr keeps the backward-compatible breadth-first split mode by default. Set `PI_SUBAGENT_HERDR_MODE=tab` to create one background tab per subagent, or `split` to select the original pane layout explicitly. `createSurfaceSplit()` always remains an explicit pane split.
+Herdr keeps the backward-compatible breadth-first split mode by default. Set `PI_SUBAGENT_HERDR_MODE=tab` to create one background tab per subagent, or `split` to select the original pane layout explicitly. `createSurfaceSplit()` always remains an explicit pane split. If a tracked split pane is closed, the next split safely starts a fresh breadth-first sequence from the agent pane instead of reusing the stale pane ID.
 
 ```bash
 export PI_SUBAGENT_HERDR_MODE=tab

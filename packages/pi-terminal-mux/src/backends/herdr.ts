@@ -119,6 +119,10 @@ function parseHerdrJson(output: string): unknown {
  * 从 herdr JSON 响应中提取 pane 的公开 id。
  * pane split 响应格式：`{ "id": "...", "result": { "type": "pane_info", "pane": { "pane_id": "1-2", ... } } }`
  */
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function extractPaneId(json: unknown): string | null {
   if (!json || typeof json !== "object") return null;
   const obj = json as Record<string, unknown>;
@@ -127,7 +131,7 @@ function extractPaneId(json: unknown): string | null {
   const r = result as Record<string, unknown>;
   // 多种结果类型都包含 pane：pane_info、pane_created 等
   const pane = (r.pane ?? r.root_pane) as Record<string, unknown> | undefined;
-  if (pane && typeof pane.pane_id === "string") return pane.pane_id;
+  if (pane && isNonBlankString(pane.pane_id)) return pane.pane_id;
   return null;
 }
 
@@ -152,7 +156,7 @@ function extractCreatedHerdrTab(json: unknown): CreatedHerdrTab | null {
   const record = result as Record<string, unknown>;
   const tab = record.tab as Record<string, unknown> | undefined;
   const rootPane = record.root_pane as Record<string, unknown> | undefined;
-  if (typeof tab?.tab_id !== "string" || typeof rootPane?.pane_id !== "string") return null;
+  if (!isNonBlankString(tab?.tab_id) || !isNonBlankString(rootPane?.pane_id)) return null;
   return { tabId: tab.tab_id, paneId: rootPane.pane_id };
 }
 
@@ -179,7 +183,7 @@ function createHerdrSplitSurface(name: string): string {
   const lockPath = `${markerFile}${HERDR_LOCK_SUFFIX}`;
 
   return withFileLock(lockPath, {}, () => {
-    const state = new BfsSplitStateManager(markerFile);
+    let state = new BfsSplitStateManager(markerFile);
 
     if (state.panes().length === 0) {
       const output = herdrExec([
@@ -199,15 +203,18 @@ function createHerdrSplitSurface(name: string): string {
         return newPaneId;
       }
       herdrLog(`[split] first split returned no pane id, output=${JSON.stringify(output)}`);
-      return "";
+      throw new Error(i18n.t("error.herdrSplitFailed"));
     }
 
     const next = state.next();
-    if (!next) return "";
+    if (!next) {
+      throw new Error(i18n.t("error.herdrSplitFailed"));
+    }
 
     let { source } = next;
-    const { direction } = next;
+    let direction = next.direction;
     let output: string;
+    let isRecovered = false;
     try {
       output = herdrExec([
         ...HERDR_PANE_SPLIT_COMMAND,
@@ -218,29 +225,36 @@ function createHerdrSplitSurface(name: string): string {
       ]);
     } catch {
       try { rmSync(markerFile); } catch { /* ignore */ }
+      state = new BfsSplitStateManager(markerFile);
+      isRecovered = true;
       herdrLog(`[split] pane ${source} gone, resetting from agent pane ${AGENT_HERDR_PANE_ID}`);
       source = AGENT_HERDR_PANE_ID;
+      direction = HERDR_SPLIT_RIGHT;
       output = herdrExec([
         ...HERDR_PANE_SPLIT_COMMAND,
         source,
         HERDR_SPLIT_DIRECTION_FLAG,
-        HERDR_SPLIT_RIGHT,
+        direction,
         HERDR_NO_FOCUS_FLAG,
       ]);
     }
 
     const newPaneId = extractPaneId(parseHerdrJson(output));
     if (newPaneId) {
-      state.advance();
-      state.add(newPaneId);
+      if (isRecovered) {
+        state.add(newPaneId);
+      } else {
+        state.advance();
+        state.add(newPaneId);
+      }
       renameHerdrPane(newPaneId, name);
       herdrLog(
-        `[split] mode=next dir=${direction} from=${source} new=${newPaneId} name=${JSON.stringify(name)}`,
+        `[split] mode=${isRecovered ? "recovered" : "next"} dir=${direction} from=${source} new=${newPaneId} name=${JSON.stringify(name)}`,
       );
       return newPaneId;
     }
     herdrLog(`[split] next split returned no pane id, output=${JSON.stringify(output)}`);
-    return "";
+    throw new Error(i18n.t("error.herdrSplitFailed"));
   });
 }
 
@@ -415,6 +429,9 @@ export function renameHerdrWorkspace(title: string): boolean {
  * 使用 `herdr pane run <id> <cmd>` 一条命令搞定（SKILL.md 保证会发真实 Enter）。
  */
 export function sendHerdrCommand(paneId: string, command: string): void {
+  if (!paneId.trim()) {
+    throw new Error(i18n.t("error.missingHerdrPaneId"));
+  }
   herdrExecSilent(["pane", "run", paneId, command]);
 }
 

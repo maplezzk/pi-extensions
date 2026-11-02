@@ -170,20 +170,56 @@ describe("BfsSplitStateManager", () => {
     assert.deepEqual(r3b, { source: "p2", direction: "right" });
   });
 
-  // remove 正确清理：移除 pane 后 pos 修正
-  test("remove adjusts position when removing before cursor", () => {
+  // 移除游标前的 pane 后，原本的下一个源仍可访问
+  test("remove keeps the next source when removing before cursor", (): void => {
     const dir = makeTempDir();
-    const manager = new BfsSplitStateManager(join(dir, "state.json"));
-
-    manager.add("p1");
-    manager.advance(); // pos=1
-    manager.add("p2"); // panes=[p1,p2], pos=1 (round complete triggers on next)
+    const markerPath = join(dir, "state.json");
+    writeFileSync(markerPath, JSON.stringify({ panes: ["p1", "p2", "p3"], pos: 1, base: 2, dir: "right" }));
+    const manager = new BfsSplitStateManager(markerPath);
 
     manager.remove("p1");
 
-    // p1 removed, p2 should still be accessible
-    const panes = manager.panes();
-    assert.deepEqual(panes, ["p2"]);
+    assert.deepEqual(manager.panes(), ["p2", "p3"]);
+    assert.deepEqual(manager.next(), { source: "p2", direction: "right" });
+  });
+
+  // 移除当前源会结束本轮并从剩余 pane 开始下一轮
+  test("remove starts the next round when removing the current source", (): void => {
+    const dir = makeTempDir();
+    const markerPath = join(dir, "state.json");
+    writeFileSync(markerPath, JSON.stringify({ panes: ["p1", "p2"], pos: 1, base: 2, dir: "right" }));
+    const manager = new BfsSplitStateManager(markerPath);
+
+    manager.remove("p2");
+
+    assert.deepEqual(manager.panes(), ["p1"]);
+    assert.deepEqual(manager.next(), { source: "p1", direction: "down" });
+  });
+
+  // 移除当前轮次之后新增的 pane 不影响当前源
+  test("remove keeps the current source when removing after cursor", (): void => {
+    const dir = makeTempDir();
+    const markerPath = join(dir, "state.json");
+    writeFileSync(markerPath, JSON.stringify({ panes: ["p1", "p2", "p3"], pos: 1, base: 2, dir: "right" }));
+    const manager = new BfsSplitStateManager(markerPath);
+
+    manager.remove("p3");
+
+    assert.deepEqual(manager.panes(), ["p1", "p2"]);
+    assert.deepEqual(manager.next(), { source: "p2", direction: "right" });
+  });
+
+  // 删除当前轮次的最后一个源不能留下越界游标
+  test("remove keeps a valid next source when removing the last current-round pane", (): void => {
+    const dir = makeTempDir();
+    const markerPath = join(dir, "state.json");
+    writeFileSync(markerPath, JSON.stringify({ panes: ["p1", "p2", "p3"], pos: 2, base: 3, dir: "right" }));
+    const manager = new BfsSplitStateManager(markerPath);
+
+    manager.remove("p3");
+
+    assert.deepEqual(manager.panes(), ["p1", "p2"]);
+    assert.deepEqual(manager.next(), { source: "p1", direction: "down" });
   });
 
   // 全部移除后 marker 文件被删除，next() 返回 null
@@ -214,6 +250,43 @@ describe("BfsSplitStateManager", () => {
     // 新实例应恢复状态
     const m2 = new BfsSplitStateManager(markerPath);
     assert.deepEqual(m2.panes(), ["p1", "p2"]);
+  });
+
+  // 兼容旧版 remove() 留下的越界轮次状态，未消费的源保持原方向。
+  test("keeps an unconsumed source in an old oversized round", (): void => {
+    const dir = makeTempDir();
+    const markerPath = join(dir, "state.json");
+    writeFileSync(markerPath, JSON.stringify({ panes: ["p1"], pos: 0, base: 2, dir: "right" }));
+
+    const manager = new BfsSplitStateManager(markerPath);
+
+    assert.deepEqual(manager.next(), { source: "p1", direction: "right" });
+  });
+
+  // 已消费的旧轮次会在恢复时进入下一轮。
+  test("recovers an old marker with a removed current-round pane", (): void => {
+    const dir = makeTempDir();
+    const markerPath = join(dir, "state.json");
+    writeFileSync(markerPath, JSON.stringify({ panes: ["p1"], pos: 1, base: 2, dir: "right" }));
+
+    const manager = new BfsSplitStateManager(markerPath);
+
+    assert.deepEqual(manager.next(), { source: "p1", direction: "down" });
+    manager.advance();
+    manager.add("p2");
+    assert.deepEqual(new BfsSplitStateManager(markerPath).next(), { source: "p1", direction: "right" });
+  });
+
+  // 空白 pane ID 不能从缓存进入 BFS source。
+  test("rejects blank pane IDs in a marker", (): void => {
+    const dir = makeTempDir();
+    const markerPath = join(dir, "state.json");
+    writeFileSync(markerPath, JSON.stringify({ panes: ["   "], pos: 0, base: 1, dir: "right" }));
+
+    const manager = new BfsSplitStateManager(markerPath);
+
+    assert.deepEqual(manager.panes(), []);
+    assert.equal(manager.next(), null);
   });
 
   // 文件损坏时回退到初始状态
