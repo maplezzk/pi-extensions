@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.8](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.6.7...pi-terminal-mux-v0.6.8) (2026-11-02)
+
+
+### Bug Fixes
+
+* 修复 Herdr 分屏状态失效导致子 Agent 启动失败 ([35945a3](https://github.com/maplezzk/pi-extensions/commit/35945a340ccd4758ccfb20db9f9862e8e46f49d9))
+* 修复 Herdr 分屏状态失效导致子 Agent 启动失败 ([53540de](https://github.com/maplezzk/pi-extensions/commit/53540de63c8a5cdd1822f543da301043a1c9793b))
+
 ## [0.6.7](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.6.6...pi-terminal-mux-v0.6.7) (2026-10-05)
 
 
