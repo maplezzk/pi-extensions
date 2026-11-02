@@ -51,6 +51,14 @@
     "zh-CN": "不支持的 Herdr surface 模式：{value}。可选值：split、tab。",
     "en-US": "Unsupported Herdr surface mode: {value}. Choose split or tab."
   },
+  "error.herdrSplitFailed": {
+    "zh-CN": "Herdr 创建 subagent pane 时未返回有效的 pane ID。",
+    "en-US": "Herdr did not return a valid pane ID while creating a subagent pane."
+  },
+  "error.missingHerdrPaneId": {
+    "zh-CN": "无法发送命令：Herdr pane ID 为空。",
+    "en-US": "Cannot send a command because the Herdr pane ID is empty."
+  },
   "error.renameIncomplete": {
     "zh-CN": "{backend} 未完成终端改名。",
     "en-US": "{backend} did not complete terminal renaming."

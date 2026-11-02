@@ -16,6 +16,7 @@ let backend: typeof import("../src/backends/herdr.ts");
 let tempDirectory = "";
 let commandLog = "";
 let closeFailureMarker = "";
+let splitStateMarker = "";
 
 const originalEnvironment = {
   HERDR_ENV: process.env.HERDR_ENV,
@@ -24,6 +25,10 @@ const originalEnvironment = {
   HERDR_PANE_ID: process.env.HERDR_PANE_ID,
   HERDR_TEST_LOG: process.env.HERDR_TEST_LOG,
   HERDR_TEST_CLOSE_FAILURE_MARKER: process.env.HERDR_TEST_CLOSE_FAILURE_MARKER,
+  HERDR_TEST_FAIL_PANE_ID: process.env.HERDR_TEST_FAIL_PANE_ID,
+  HERDR_TEST_EMPTY_SPLIT: process.env.HERDR_TEST_EMPTY_SPLIT,
+  HERDR_TEST_WHITESPACE_SPLIT: process.env.HERDR_TEST_WHITESPACE_SPLIT,
+  HERDR_TEST_WHITESPACE_TAB_ROOT: process.env.HERDR_TEST_WHITESPACE_TAB_ROOT,
   PI_SUBAGENT_HERDR_MODE: process.env.PI_SUBAGENT_HERDR_MODE,
   PATH: process.env.PATH,
 };
@@ -40,6 +45,9 @@ before(async () => {
   tempDirectory = mkdtempSync(join(tmpdir(), "pi-terminal-mux-herdr-test-"));
   commandLog = join(tempDirectory, "commands.jsonl");
   closeFailureMarker = join(tempDirectory, "fail-next-close");
+  splitStateMarker = "/tmp/herdr-subagent-pane-w-test_p1.json";
+  rmSync(splitStateMarker, { force: true });
+  rmSync(`${splitStateMarker}.lock`, { recursive: true, force: true });
   const fakeHerdr = join(tempDirectory, "herdr");
   writeFileSync(
     fakeHerdr,
@@ -53,11 +61,21 @@ if (args[0] === "workspace" && args[1] === "get") {
   process.stdout.write(JSON.stringify({
     result: {
       tab: { tab_id: "w-test:t2" },
-      root_pane: { pane_id: "w-test:p2" },
+      root_pane: { pane_id: process.env.HERDR_TEST_WHITESPACE_TAB_ROOT === "1" ? "   " : "w-test:p2" },
     },
   }));
 } else if (args[0] === "pane" && args[1] === "split") {
-  process.stdout.write(JSON.stringify({ result: { pane: { pane_id: "w-test:p99" } } }));
+  if (args[2] === process.env.HERDR_TEST_FAIL_PANE_ID) {
+    process.stderr.write("simulated pane split failure");
+    process.exit(1);
+  }
+  if (process.env.HERDR_TEST_EMPTY_SPLIT === "1") {
+    process.stdout.write(JSON.stringify({ result: {} }));
+  } else if (process.env.HERDR_TEST_WHITESPACE_SPLIT === "1") {
+    process.stdout.write(JSON.stringify({ result: { pane: { pane_id: "   " } } }));
+  } else {
+    process.stdout.write(JSON.stringify({ result: { pane: { pane_id: "w-test:p99" } } }));
+  }
 } else if (
   args[0] === "tab" &&
   args[1] === "close" &&
@@ -90,6 +108,8 @@ after(() => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
+  rmSync(splitStateMarker, { force: true });
+  rmSync(`${splitStateMarker}.lock`, { recursive: true, force: true });
   if (tempDirectory) rmSync(tempDirectory, { recursive: true, force: true });
 });
 
@@ -124,6 +144,119 @@ test("herdr 未配置模式时保持 BFS 分屏", () => {
     ["workspace", "get", "w-test"],
     ["pane", "rename", "w-test:p99", "test-workspace[default split agent]"],
     ["pane", "close", "w-test:p99"],
+  ]);
+});
+
+test("herdr 创建失败时不返回空 surface 或向空 pane ID 发送命令", (): void => {
+  const commandOffset = readRecordedCommands().length;
+  rmSync(splitStateMarker, { force: true });
+  process.env.HERDR_TEST_EMPTY_SPLIT = "1";
+  try {
+    assert.throws(() => backend.createHerdrSurface("empty split agent"), /pane ID/);
+    assert.throws(() => backend.sendHerdrCommand("   ", "echo should-not-run"), /pane ID/);
+  } finally {
+    delete process.env.HERDR_TEST_EMPTY_SPLIT;
+  }
+
+  const commands = readRecordedCommands().slice(commandOffset);
+  assert.deepEqual(commands, [
+    ["pane", "split", "w-test:p1", "--direction", "right", "--no-focus"],
+  ]);
+  assert.equal(commands.some((args) => args[0] === "pane" && args[1] === "run"), false);
+});
+
+test("herdr 拒绝 CLI 返回的空白 pane ID，不向其执行后续命令", (): void => {
+  const commandOffset = readRecordedCommands().length;
+  rmSync(splitStateMarker, { force: true });
+  process.env.HERDR_TEST_WHITESPACE_SPLIT = "1";
+  try {
+    assert.throws(() => backend.createHerdrSurface("whitespace split agent"), /pane ID/);
+  } finally {
+    delete process.env.HERDR_TEST_WHITESPACE_SPLIT;
+  }
+
+  assert.deepEqual(readRecordedCommands().slice(commandOffset), [
+    ["pane", "split", "w-test:p1", "--direction", "right", "--no-focus"],
+  ]);
+});
+
+test("herdr 不将 marker 中的空白 pane ID 用作 split source", (): void => {
+  const commandOffset = readRecordedCommands().length;
+  writeFileSync(splitStateMarker, JSON.stringify({
+    panes: ["   "],
+    pos: 0,
+    base: 1,
+    dir: "right",
+  }));
+
+  const surface = backend.createHerdrSurface("cached whitespace split agent");
+  assert.equal(surface, "w-test:p99");
+  backend.closeHerdrSurface(surface);
+
+  assert.deepEqual(readRecordedCommands().slice(commandOffset), [
+    ["pane", "split", "w-test:p1", "--direction", "right", "--no-focus"],
+    ["workspace", "get", "w-test"],
+    ["pane", "rename", "w-test:p99", "test-workspace[cached whitespace split agent]"],
+    ["pane", "close", "w-test:p99"],
+  ]);
+});
+
+test("herdr 恢复失效 split source 后仅持久化新的 BFS 状态", (): void => {
+  const commandOffset = readRecordedCommands().length;
+  writeFileSync(splitStateMarker, JSON.stringify({
+    panes: ["w-test:gone"],
+    pos: 0,
+    base: 1,
+    dir: "down",
+  }));
+  process.env.HERDR_TEST_FAIL_PANE_ID = "w-test:gone";
+  let surface = "";
+  try {
+    surface = backend.createHerdrSurface("recovered split agent");
+  } finally {
+    delete process.env.HERDR_TEST_FAIL_PANE_ID;
+  }
+
+  assert.equal(surface, "w-test:p99");
+  assert.equal(readFileSync(splitStateMarker, "utf8"), JSON.stringify({
+    panes: ["w-test:p99"],
+    pos: 0,
+    base: 1,
+    dir: "down",
+  }));
+  assert.deepEqual(readRecordedCommands().slice(commandOffset), [
+    ["pane", "split", "w-test:gone", "--direction", "down", "--no-focus"],
+    ["pane", "split", "w-test:p1", "--direction", "right", "--no-focus"],
+    ["workspace", "get", "w-test"],
+    ["pane", "rename", "w-test:p99", "test-workspace[recovered split agent]"],
+  ]);
+  backend.closeHerdrSurface(surface);
+});
+
+test("herdr tab 模式拒绝空白 root pane ID", (): void => {
+  const commandOffset = readRecordedCommands().length;
+  process.env.PI_SUBAGENT_HERDR_MODE = "tab";
+  process.env.HERDR_TEST_WHITESPACE_TAB_ROOT = "1";
+  try {
+    assert.throws(() => backend.createHerdrSurface("whitespace tab agent"), /Unexpected herdr tab create output/);
+  } finally {
+    delete process.env.HERDR_TEST_WHITESPACE_TAB_ROOT;
+    delete process.env.PI_SUBAGENT_HERDR_MODE;
+  }
+
+  assert.deepEqual(readRecordedCommands().slice(commandOffset), [
+    ["workspace", "get", "w-test"],
+    [
+      "tab",
+      "create",
+      "--workspace",
+      "w-test",
+      "--cwd",
+      process.cwd(),
+      "--label",
+      "test-workspace[whitespace tab agent]",
+      "--no-focus",
+    ],
   ]);
 });
 
