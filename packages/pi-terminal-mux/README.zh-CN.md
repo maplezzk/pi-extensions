@@ -68,7 +68,7 @@ closeSurface(surface);
 
 ### Herdr surface 模式
 
-Herdr 默认保持向后兼容的广度优先分屏模式。设置 `PI_SUBAGENT_HERDR_MODE=tab` 后，每个 subagent 会创建独立后台 Tab；设置为 `split` 可显式选择原有分屏布局。`createSurfaceSplit()` 始终保留显式 pane 分屏语义。
+Herdr 默认保持向后兼容的广度优先分屏模式。设置 `PI_SUBAGENT_HERDR_MODE=tab` 后，每个 subagent 会创建独立后台 Tab；设置为 `split` 可显式选择原有分屏布局。`createSurfaceSplit()` 始终保留显式 pane 分屏语义。若受跟踪的分屏 pane 已关闭，下一次分屏会从 agent pane 安全地重建广度优先序列，不会复用失效 pane ID。
 
 ```bash
 export PI_SUBAGENT_HERDR_MODE=tab
