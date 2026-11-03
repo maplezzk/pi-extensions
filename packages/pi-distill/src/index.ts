@@ -934,7 +934,10 @@ async function summarizeOutputWithRetries(
       checkAttempt();
       const result = await Promise.race([
         summarizeOutput(prompt, output, config, context, attemptController.signal,
-          boundedCompletion, () => { jsonRepairStarted = true; }),
+          boundedCompletion, () => {
+            jsonRepairStarted = true;
+            checkAttempt();
+          }),
         interrupted,
       ]);
       checkAttempt();
@@ -947,15 +950,22 @@ async function summarizeOutputWithRetries(
       if (context.signal?.aborted) {
         throw new SummaryRetryError(i18n.t("summaryAborted"), attempts, totalUsage);
       }
+      // A rejection may run before a delayed timeout callback. Classify it
+      // using the monotonic deadline, not only the callback's flag.
+      if (performance.now() >= attemptDeadline) {
+        timedOut = true;
+        attemptController.abort();
+      }
+      const failure = timedOut ? new Error(i18n.t("summaryTimedOut")) : error;
       // A timeout during JSON-only repair must not resend the original output.
-      if (error instanceof SummaryJsonRepairError) throw error;
+      if (error instanceof SummaryJsonRepairError && !timedOut) throw error;
       if (jsonRepairStarted) {
-        throw new SummaryJsonRepairError(error instanceof Error ? error.message : String(error));
+        throw new SummaryJsonRepairError(failure instanceof Error ? failure.message : String(failure));
       }
       const retryLimit = timedOut ? config.timeoutRetryCount : config.errorRetryCount;
       const retriesUsed = timedOut ? timeoutRetries : errorRetries;
       if (attempts >= maxAttempts || performance.now() >= deadline || retriesUsed >= retryLimit) {
-        throw new SummaryRetryError(error instanceof Error ? error.message : String(error), attempts, totalUsage);
+        throw new SummaryRetryError(failure instanceof Error ? failure.message : String(failure), attempts, totalUsage);
       }
       if (timedOut) timeoutRetries += 1;
       else errorRetries += 1;
@@ -963,7 +973,7 @@ async function summarizeOutputWithRetries(
         kind: i18n.t(timedOut ? "retryKindTimeout" : "retryKindError"),
         retry: retriesUsed + 1,
         limit: retryLimit,
-        error: error instanceof Error ? error.message : String(error),
+        error: failure instanceof Error ? failure.message : String(failure),
       }) });
     } finally {
       clearTimeout(timeout);

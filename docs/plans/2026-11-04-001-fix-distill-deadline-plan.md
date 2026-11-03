@@ -25,7 +25,7 @@
 
 ## TASK-distill-deadline
 
-状态：implementation_verified；首次审查与Git交付待完成。独立任务worktree；主Agent负责全部写入和测试。修改范围：packages/pi-distill/src/index.ts、tests/bash-output-summary.test.ts、locales/index.json、README.md、README.zh-CN.md及本计划。
+状态：implementation_verified；首次审查反馈已由主Agent闭合，Git交付待完成。独立任务worktree；主Agent负责全部写入和测试。修改范围：packages/pi-distill/src/index.ts、tests/bash-output-summary.test.ts、locales/index.json、README.md、README.zh-CN.md及本计划。
 
 1. 在现有公开processToolResult测试中增加受控时钟的未响应取消、鉴权迟到、混合错误、父取消及JSON修复期限场景，先记录RED。断言原结果、尝试数、请求边界和迟到不再调用；不启动真实Agent、模型或网络。
 2. summarizeOutputWithRetries以单调时钟生成总deadline，重试共用上限；Promise竞争强制返回，取消真实子信号，finally清理timer/listener。通过现有请求器的completion边界检查到期/取消，防止迟到鉴权再发请求、迟到响应进入解析；显式保留JSON修复阶段语义。需求R-1～R-4。
@@ -49,3 +49,11 @@ E2E Required: not_applicable。Evidence publication: not_applicable。
 全文件首次回归55通过/1失败：原超时用例只接受替身的“provider aborted”，现在由本地期限先返回明确“Distillation model attempt timed out”。保留原用例、请求次数和原文断言，只将错误断言收紧为新精确诊断，不删除或放宽失败场景。包typecheck已通过。所有旧失败日志保留。
 
 仓库要求的 `npm run check` 已完整通过（类型、所有工作区测试、包与策略检查），没有失败。完整原始日志保留在本机执行记录，不提交个人路径或历史业务材料。
+
+## 首次审查反馈与主Agent处置
+
+完成唯一一次只读审查，3个reviewer承担6个单元（需求、架构、测试质量、测试成本、安全、代码规范）。R-3指出期限后rejection可能先于timer回调，误按普通异常额度重试；主Agent依据单调期限重新分类并补两种0禁用配置。测试反馈另促成JSON修复前的期限检查，并补较大非对称额度、JSON修复剩余时间及父取消后的迟到响应。新增定点RED为6通过/3失败，修正后9项全部通过。保留原审查和全部失败，未再次review，不冒称最终反馈修复已独立复审。
+
+审查中一名reviewer误执行一次只读git status（空输出），没有写入；偏离与原始返回均保存。包复用、认证来源、配置默认值、公开可移植边界未改变。
+
+反馈后再次完成必要的 `npm run check`，全部工作区和策略检查通过；代码与测试已验证，无再次审查。

@@ -1878,9 +1878,16 @@ test("提炼总预算：父请求取消不等待不协作模型，也不重试",
     const context = { ...fakeSummaryContext(), signal: parent.signal };
     const output = "ORIGINAL FACTS AFTER USER CANCEL";
     let calls = 0;
-    const completion: TestCompletion = async () => {
+    let releaseLate: () => Promise<void>;
+    const completion: TestCompletion = async (...args) => {
       calls += 1;
-      return new Promise(() => {});
+      return new Promise<TestCompletionResult>((resolve) => {
+        releaseLate = async () => {
+          const response = await fakeCompletion("late cancelled response")(...args);
+          response.content = [{ type: "text", text: "malformed after parent cancellation" }];
+          resolve(response);
+        };
+      });
     };
     let result: TestResult | undefined;
     const operation = processToolResult(context, fakeToolResult(output), 0, completion)
@@ -1894,6 +1901,10 @@ test("提炼总预算：父请求取消不等待不协作模型，也不重试",
     assert.equal(calls, 1);
     assert.equal(result.content[0]?.text, output);
     assert.match(String(result.details?.outputSummaryError), /abort/i);
+    await releaseLate!();
+    await deadlineEventLoopTurn();
+    assert.equal(calls, 1, "父取消后的迟到响应也不能启动JSON修复");
+    assert.equal(result.content[0]?.text, output);
   });
 });
 
@@ -1902,12 +1913,17 @@ test("提炼总预算：JSON修复挂起到期后保留原文，不重新总结"
     const advance = controlledDeadlineClock(t);
     const output = "ORIGINAL OUTPUT FOR JSON REPAIR TIMEOUT";
     let calls = 0;
+    let finishFirst: () => Promise<void>;
     const completion: TestCompletion = async (...args) => {
       calls += 1;
       if (calls === 1) {
-        const malformed = await fakeCompletion("fixture")(...args);
-        malformed.content = [{ type: "text", text: "not a JSON object" }];
-        return malformed;
+        return new Promise<TestCompletionResult>((resolve) => {
+          finishFirst = async () => {
+            const malformed = await fakeCompletion("fixture")(...args);
+            malformed.content = [{ type: "text", text: "not a JSON object" }];
+            resolve(malformed);
+          };
+        });
       }
       return new Promise(() => {});
     };
@@ -1915,13 +1931,109 @@ test("提炼总预算：JSON修复挂起到期后保留原文，不重新总结"
     const operation = processToolResult(fakeSummaryContext(), fakeToolResult(output), 0, completion)
       .then((value) => { result = value as TestResult; });
     await deadlineEventLoopTurn();
+    assert.equal(calls, 1);
+    await advance(400);
+    await finishFirst!();
+    await deadlineEventLoopTurn();
     assert.equal(calls, 2, "首次模型输出后只进行JSON修复");
-    await advance(1000);
+    await advance(599);
+    assert.equal(result, undefined, "仍有1ms剩余时不能提前回退");
+    await advance(1);
     assert.ok(result);
     await operation;
     assert.equal(calls, 2, "修复挂起不能重新发送完整工具输出");
     assert.equal(result.details?.summaryJsonRepairAttempted, true);
     assert.equal(result.details?.summaryJsonRepairSucceeded, false);
     assert.equal(result.content[0]?.text, output);
+  });
+});
+
+
+for (const sample of [
+  { timeoutRetryCount: 1, errorRetryCount: 0, expectedCalls: 2, expectedStatus: "summarized" },
+  { timeoutRetryCount: 0, errorRetryCount: 1, expectedCalls: 1, expectedStatus: "summary-failed" },
+]) {
+  test(`提炼总预算：定时器尚未运行的逾期拒绝仍按超时额度${sample.timeoutRetryCount}/${sample.errorRetryCount}`, async (t) => {
+    await withFakeSummaryConfig(async () => {
+      controlledDeadlineClock(t);
+      let calls = 0;
+      const completion: TestCompletion = async (...args) => {
+        calls += 1;
+        if (calls === 1) {
+          // 模拟事件循环阻塞后先处理rejection，超时回调尚未得到运行机会。
+          t.mock.method(performance, "now", () => 1001);
+          throw new Error("synthetic rejection after deadline");
+        }
+        return fakeCompletion("ERROR E42; next inspect")(...args);
+      };
+      const output = "ERROR E42; next inspect\n".repeat(20);
+      const result = await processToolResult(fakeSummaryContext(), fakeToolResult(output), 0, completion);
+      assert.equal(calls, sample.expectedCalls);
+      assert.equal(result.details?.outputSummaryStatus, sample.expectedStatus);
+      if (sample.expectedStatus === "summary-failed") {
+        assert.equal(result.content[0]?.text, output);
+        assert.equal(result.details?.outputSummaryError, "Distillation model attempt timed out");
+      }
+    }, 10000, sample);
+  });
+}
+
+test("提炼总预算：非对称重试取较大值而不是较小值或相加", async (t) => {
+  await withFakeSummaryConfig(async () => {
+    const advance = controlledDeadlineClock(t);
+    const output = "ORIGINAL ASYMMETRIC BUDGET FACTS";
+    let calls = 0;
+    const completion: TestCompletion = async (...args) => {
+      calls += 1;
+      if (calls === 1) throw new Error("synthetic first error");
+      if (calls > 3) return fakeCompletion("WRONG FOURTH REQUEST")(...args);
+      return new Promise((_, reject) => {
+        args[2]!.signal!.addEventListener("abort", () => reject(new Error("synthetic timeout")), { once: true });
+      });
+    };
+    let result: TestResult | undefined;
+    const operation = processToolResult(fakeSummaryContext(), fakeToolResult(output), 0, completion)
+      .then(value => { result = value as TestResult; });
+    await deadlineEventLoopTurn();
+    assert.equal(calls, 2);
+    await advance(1000);
+    assert.equal(calls, 3, "较大额度允许第二个超时尝试");
+    await advance(1000);
+    assert.ok(result);
+    await operation;
+    assert.equal(calls, 3, "不能把两类额度相加而发出第4次完整提炼");
+    assert.equal(result.details?.summaryAttempts, 3);
+    assert.equal(result.content[0]?.text, output);
+  }, 10000, { timeoutRetryCount: 2, errorRetryCount: 1 });
+});
+
+test("提炼总预算：解析用尽剩余期限后不再启动JSON修复鉴权", async (t) => {
+  await withFakeSummaryConfig(async () => {
+    controlledDeadlineClock(t);
+    const originalParse = JSON.parse;
+    t.mock.method(JSON, "parse", (...args: Parameters<typeof JSON.parse>) => {
+      if (args[0] === "MALFORMED_AFTER_RESPONSE") t.mock.method(performance, "now", () => 1000);
+      return originalParse(...args);
+    });
+    const context = fakeSummaryContext();
+    const originalAuth = context.ctx.modelRegistry.getApiKeyAndHeaders.bind(context.ctx.modelRegistry);
+    let authRequests = 0;
+    context.ctx.modelRegistry.getApiKeyAndHeaders = async model => {
+      authRequests += 1;
+      return originalAuth(model);
+    };
+    let calls = 0;
+    const completion: TestCompletion = async (...args) => {
+      calls += 1;
+      const response = await fakeCompletion("fixture")(...args);
+      response.content = [{ type: "text", text: "MALFORMED_AFTER_RESPONSE" }];
+      return response;
+    };
+    const output = "ORIGINAL FACTS BEFORE PARSER DEADLINE";
+    const result = await processToolResult(context, fakeToolResult(output), 0, completion);
+    assert.equal(authRequests, 1, "修复鉴权不能在已到期限后启动");
+    assert.equal(calls, 1);
+    assert.equal(result.content[0]?.text, output);
+    assert.equal(result.details?.outputSummaryStatus, "summary-failed");
   });
 });
