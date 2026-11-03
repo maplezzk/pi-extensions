@@ -116,24 +116,24 @@
     "en-US": "Model timeout (seconds)"
   },
   "panelDescTimeoutSeconds": {
-    "zh-CN": "单次提炼模型调用最长等待时间。",
-    "en-US": "Maximum wait for one summarizer call."
+    "zh-CN": "一次尝试的最长等待。总期限为本值×允许总尝试数，JSON修复也计入。",
+    "en-US": "Maximum wait per attempt. Total deadline is this value × allowed attempts, including JSON repair."
   },
   "panelLabelTimeoutRetryCount": {
     "zh-CN": "超时重试次数",
     "en-US": "Timeout retries"
   },
   "panelDescTimeoutRetryCount": {
-    "zh-CN": "提炼因超时失败后的额外重试次数，0 表示不重试。",
-    "en-US": "Extra retries after a timeout, 0 disables them."
+    "zh-CN": "超时后的额外重试上限；与异常重试共享两者较大值的总额度。0表示不重试超时。",
+    "en-US": "Extra timeout retries; both error kinds share the larger retry limit. 0 disables timeout retries."
   },
   "panelLabelErrorRetryCount": {
     "zh-CN": "异常重试次数",
     "en-US": "Error retries"
   },
   "panelDescErrorRetryCount": {
-    "zh-CN": "提炼因非超时异常失败后的额外重试次数，0 表示不重试。",
-    "en-US": "Extra retries after a non-timeout failure, 0 disables them."
+    "zh-CN": "非超时异常后的额外重试上限；与超时重试共享两者较大值的总额度。0表示不重试异常。",
+    "en-US": "Extra non-timeout retries; both error kinds share the larger retry limit. 0 disables error retries."
   },
   "panelLabelMissedCompressionRatio": {
     "zh-CN": "长输出提醒倍数",
@@ -204,8 +204,8 @@
     "en-US": "Print the current configuration instead of opening the panel."
   },
   "configStatusReport": {
-    "zh-CN": "Distill：{value}\n模型：{model}\n最小输出：{minChars} 字符\n摘要上限：{maxChars} 字符\n最终输出上限：{maxOutputChars} 字符\n超时：{timeoutSeconds}s（超时重试 {timeoutRetryCount} 次，异常重试 {errorRetryCount} 次）\n长输出阈值：{missedCompressionRatio}x\n提炼错误：{summarizeErrors}\n审计渲染器：{render}\n配置文件：{path}",
-    "en-US": "Distill: {value}\nModel: {model}\nMin output: {minChars} chars\nSummary limit: {maxChars} chars\nFinal output limit: {maxOutputChars} chars\nTimeout: {timeoutSeconds}s (timeout retries {timeoutRetryCount}, error retries {errorRetryCount})\nLong-output threshold: {missedCompressionRatio}x\nSummarize errors: {summarizeErrors}\nAudit renderer: {render}\nConfig file: {path}"
+    "zh-CN": "Distill：{value}\n模型：{model}\n最小输出：{minChars} 字符\n摘要上限：{maxChars} 字符\n最终输出上限：{maxOutputChars} 字符\n超时：{timeoutSeconds}s（超时重试 {timeoutRetryCount} 次，异常重试 {errorRetryCount} 次；共享总额取两者较大值）\n长输出阈值：{missedCompressionRatio}x\n提炼错误：{summarizeErrors}\n审计渲染器：{render}\n配置文件：{path}",
+    "en-US": "Distill: {value}\nModel: {model}\nMin output: {minChars} chars\nSummary limit: {maxChars} chars\nFinal output limit: {maxOutputChars} chars\nTimeout: {timeoutSeconds}s (timeout retries {timeoutRetryCount}, error retries {errorRetryCount}; shared total = larger retry limit)\nLong-output threshold: {missedCompressionRatio}x\nSummarize errors: {summarizeErrors}\nAudit renderer: {render}\nConfig file: {path}"
   },
   "configUnknownArgument": {
     "zh-CN": "未知参数 “{argument}”；可用参数：enable、disable、status。",
@@ -230,5 +230,21 @@
   "outputRequest": {
     "zh-CN": "outputRequest",
     "en-US": "outputRequest"
+  },
+  "summaryAborted": {
+    "zh-CN": "提炼已取消",
+    "en-US": "Summarization aborted"
+  },
+  "summaryTimedOut": {
+    "zh-CN": "本次提炼模型尝试已超时",
+    "en-US": "Distillation model attempt timed out"
+  },
+  "summaryDeadlineExceeded": {
+    "zh-CN": "本项提炼的总等待期限已用尽",
+    "en-US": "Distillation exceeded its total waiting deadline"
+  },
+  "summaryFailureAdvice": {
+    "zh-CN": "提炼失败，原始输出已保留。请检查模型配置、鉴权或上游响应。单次尝试最长等待{seconds}秒，本项提炼总等待上限{totalSeconds}秒；不会重执行原工具。",
+    "en-US": "Distillation failed; the original output was preserved. Check model configuration, authentication, or the provider response. Each attempt waits at most {seconds}s; this result has a total wait limit of {totalSeconds}s. The original tool is not rerun."
   }
 }
