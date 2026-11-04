@@ -18,7 +18,7 @@
     "SKILL.md"
   ],
   "scripts": {
-    "test": "tsx --test test/subagent-done-nudge.test.ts test/test.ts",
+    "test": "tsx --test test/subagent-done-nudge.test.ts test/squash-done-integration.test.ts test/test.ts",
     "test:integration": "tsx --test --test-concurrency=1 test/integration/*.test.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "build": "npm run typecheck",

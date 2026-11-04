@@ -27,6 +27,22 @@ const i18n = createTranslator(loadCatalog(new URL("../../locales/index.json", im
 const ASSISTANT_ROLE = "assistant";
 const NORMAL_STOP_REASON = "stop";
 const ABORTED_STOP_REASON = "aborted";
+const SQUASH_COMPLETED_EVENT = "pi-session-tools:squash-completed";
+
+type SquashCompletedEvent = {
+  sessionId: string;
+  leafId: string;
+  continuation: "auto" | "next-user";
+};
+
+/** 只接受 session-tools 公共事件的完整、可验证载荷。 */
+function isSquashCompletedEvent(value: unknown): value is SquashCompletedEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<SquashCompletedEvent>;
+  return typeof event.sessionId === "string"
+    && typeof event.leafId === "string"
+    && (event.continuation === "auto" || event.continuation === "next-user");
+}
 
 /** Treat input as manual takeover only after the first agent run has started. */
 export function shouldMarkUserTookOver(agentStarted: boolean): boolean {
@@ -87,6 +103,8 @@ export default function (pi: ExtensionAPI) {
   const deniedTools = new Set(parseDeniedTools(process.env.PI_DENY_TOOLS));
   const denied = [...deniedTools];
   const autoExit = process.env.PI_SUBAGENT_AUTO_EXIT === "1";
+  // 仅信任父端显式传入的实际模式；兼容旧父端时保守视为交互会话，不补偿提醒。
+  const isAutonomous = process.env.PI_SUBAGENT_INTERACTIVE === "0";
   const recorder = createSubagentActivityRecorder({
     runningChildId: process.env.PI_SUBAGENT_ID,
     activityFile: process.env.PI_SUBAGENT_ACTIVITY_FILE,
@@ -103,7 +121,12 @@ export default function (pi: ExtensionAPI) {
 
   let doneCalled = false;
   let userInputAfterAgentEnd = false;
+  let isAgentAborted = false;
+  let isAgentActive = false;
+  let activityGeneration = 0;
+  let activeSessionContext: ExtensionContext | null = null;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  const handledSquashEvents = new Set<string>();
 
   /** Cancel and forget the pending completion reminder, if any. */
   function clearNudgeTimer(): void {
@@ -113,29 +136,66 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
+  /** 新输入、运行或结束会使已排队的提醒候选失效。 */
+  function invalidateNudge(): void {
+    activityGeneration += 1;
+    clearNudgeTimer();
+  }
+
+  /** 压缩事件到达时重新确认仍是同一空闲 session 和 leaf。 */
+  function isCurrentSquashEvent(event: SquashCompletedEvent, generation: number): boolean {
+    const sessionManager = activeSessionContext?.sessionManager;
+    return generation === activityGeneration
+      && !doneCalled
+      && !userInputAfterAgentEnd
+      && !userTookOver
+      && !isAgentAborted
+      && !isAgentActive
+      && activeSessionContext?.isIdle() === true
+      && activeSessionContext.hasPendingMessages() === false
+      && sessionManager?.getSessionId() === event.sessionId
+      && sessionManager.getLeafId() === event.leafId;
+  }
+
   /**
-   * After a subagent stops normally, schedule a nudge reminding it to call
-   * subagent_done if it hasn't already. Error and aborted runs are excluded.
-   *
-   * Each call replaces any pending nudge, so repeated agent_end events
-   * automatically reset the timer. The nudge only fires if no new agent
-   * activity or user input arrives within NUDGE_DELAY_MS.
+   * 在当前 idle 状态保持到延迟结束时才发送提醒，避免旧 session 的队列泄漏到新活动。
+   * 每次调用替换旧 timer，保留正常 stop 的既有单次提醒语义。
    */
-  function scheduleAgentEndNudge(): void {
+  function scheduleAgentEndNudge(
+    messageKey: "agentEndNudge" | "squashCompletionNudge" = "agentEndNudge",
+    stillEligible: () => boolean = () => !doneCalled && !userInputAfterAgentEnd,
+  ): void {
     clearNudgeTimer();
     // 不论 autoExit 是否启用，都必须 nudge — autoExit 已被移除，
     // agent 正常结束 turn 后只能靠主动调用 subagent_done 才能真正退出。
-    if (NUDGE_DISABLED || doneCalled) return;
+    if (NUDGE_DISABLED || doneCalled || !stillEligible()) return;
 
     nudgeTimer = setTimeout(() => {
       nudgeTimer = null;
-      if (doneCalled || userInputAfterAgentEnd) return;
+      if (!stillEligible()) return;
 
       pi.sendUserMessage(
-        i18n.t("agentEndNudge"),
+        i18n.t(messageKey),
         { deliverAs: "followUp" },
       );
     }, NUDGE_DELAY_MS);
+  }
+
+  /** 仅自主子 Agent 的成功 next-user 压缩可补偿一次完成提醒。 */
+  function scheduleSquashCompletionNudge(event: SquashCompletedEvent): void {
+    if (event.continuation !== "next-user" || !isAutonomous || NUDGE_DISABLED) return;
+
+    const eventKey = `${event.sessionId}:${event.leafId}:${event.continuation}`;
+    if (handledSquashEvents.has(eventKey)) return;
+
+    const generation = activityGeneration;
+    if (!isCurrentSquashEvent(event, generation)) return;
+
+    handledSquashEvents.add(eventKey);
+    scheduleAgentEndNudge(
+      "squashCompletionNudge",
+      () => isCurrentSquashEvent(event, generation),
+    );
   }
 
   /** Render the subagent identity and tool availability widget. */
@@ -198,39 +258,52 @@ export default function (pi: ExtensionAPI) {
     recorder.sessionStart();
     doneCalled = false;
     userInputAfterAgentEnd = false;
-    clearNudgeTimer();
+    isAgentAborted = false;
+    isAgentActive = false;
+    userTookOver = false;
+    activeSessionContext = ctx;
+    handledSquashEvents.clear();
+    invalidateNudge();
     const tools = pi.getAllTools();
     toolNames = tools.map((t) => t.name).sort();
 
     renderWidget(ctx);
   });
 
-  pi.on("input", () => {
+  pi.on("input", (event): void => {
     recorder.input();
-    // User typed something — they are in control, cancel any pending nudge.
+    // 任意输入都是新活动，保留普通 stop 原有的取消提醒语义。
     userInputAfterAgentEnd = true;
-    clearNudgeTimer();
-    // Ignore the initial task message that starts an autonomous subagent.
-    // Only inputs after the first agent run has started count as user takeover.
-    if (!shouldMarkUserTookOver(agentStarted)) return;
+    invalidateNudge();
+    // extension 输入不是人工接管，不能把补偿提醒误判成用户已接手。
+    if (event.source === "extension" || !shouldMarkUserTookOver(agentStarted)) return;
     userTookOver = true;
   });
 
   pi.on("before_agent_start", () => {
     recorder.beforeAgentStart();
     // Agent is about to generate — clear any pending nudge; the AI is active.
-    clearNudgeTimer();
+    isAgentActive = true;
+    invalidateNudge();
   });
 
   pi.on("agent_start", () => {
     agentStarted = true;
     recorder.agentStart();
     // Agent has started a new generation cycle — clear any pending nudge.
+    isAgentActive = true;
+    isAgentAborted = false;
     userInputAfterAgentEnd = false;
-    clearNudgeTimer();
+    invalidateNudge();
   });
 
   pi.on("agent_end", (event, ctx) => {
+    isAgentActive = false;
+    isAgentAborted = !shouldScheduleAgentEndNudge(event.messages)
+      && event.messages?.some((message) =>
+        message.role === ASSISTANT_ROLE && message.stopReason === ABORTED_STOP_REASON
+      ) === true;
+    activeSessionContext = ctx;
     // auto-exit 已彻底移除：agent 必须主动调用 subagent_done 工具才能结束 session。
     // 之前的 autoExit 短路会在 agent 正常结束 turn 时直接写 { type: "done" } 到
     // .exit 文件，绕过 subagent_done 工具。这会让 workflow 系统（启用
@@ -247,6 +320,12 @@ export default function (pi: ExtensionAPI) {
     } else {
       clearNudgeTimer();
     }
+  });
+
+  pi.on("agent_settled", (event): void => {
+    if ((event as { aborted?: unknown }).aborted !== true) return;
+    isAgentAborted = true;
+    invalidateNudge();
   });
 
   pi.on("turn_start", (event) => {
@@ -290,8 +369,14 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (event) => {
-    clearNudgeTimer();
+    isAgentActive = false;
+    activeSessionContext = null;
+    invalidateNudge();
     recorder.sessionShutdown((event as any).reason);
+  });
+
+  pi.events.on(SQUASH_COMPLETED_EVENT, (data): void => {
+    if (isSquashCompletedEvent(data)) scheduleSquashCompletionNudge(data);
   });
 
   // Toggle expand/collapse with Ctrl+J
@@ -325,7 +410,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         doneCalled = true;
-        clearNudgeTimer();
+        invalidateNudge();
         recorder.callerPing();
         const exitData = {
           type: "ping" as const,
@@ -431,7 +516,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         doneCalled = true;
-        clearNudgeTimer();
+        invalidateNudge();
         recorder.subagentDone();
 
         if (sessionFile) {
