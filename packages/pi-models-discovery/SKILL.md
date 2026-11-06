@@ -21,6 +21,10 @@ description: "配置与排查 models.json 的动态模型发现、缓存刷新�
 
 `apiKey` 可用字面量、`$ENV_VAR` 或 `${ENV_VAR}`；`!command` 不用于发现请求，会被跳过并警告。不要把密钥写入 Skill、仓库或回复。
 
+## 逐模型协议
+
+`modelApis` 是模型 ID 到 Pi API 标识的精确映射，例如 `{"model-a":"openai-responses"}`。未匹配的条目沿用 provider 的 `api`，不自动探测协议能力，不创建模型或改写请求 model。首次发现、缓存启动和刷新都应用当前映射；目录缓存不保存覆盖值，因此映射变更无需重新联网发现。通过配置面板的「逐模型协议」行编辑即时生效；手编后用 `/reload`。发现失败时的手写 `models` 回退条目仍需自行填写相应 `api`。切换协议后开启新会话，不迁移 reasoning 或工具历史。
+
 ## 思考等级
 
 发现的模型默认隐藏 `xhigh` / `max`（映射为 `null`），标准档位沿用 Pi 默认映射。provider 的 `compat.thinkingLevelMap` 可显式开启支持的档位或将不支持的档位置 `null`；非推理服务用 `compat.reasoning: false` 关闭推理，必要时配合 `compat.supportsReasoningEffort: false`。这两个扩展配置字段会提取到模型顶层，其余 compat 正常转发。逐模型差异用 `modelOverrides` 按 model.id 覆盖。旧缓存启动时会应用当前 compat 配置，无需联网刷新。
