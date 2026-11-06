@@ -148,3 +148,7 @@ MIT
 受限子进程不能改 workspace。cmux surface、muxy/zellij pane、Herdr pane 或明确新建的 Herdr tab 可以授予。tmux/WezTerm/Otty/Orca 的分屏不能证明独占 window/tab，改名会跳过，不扩大到共享父目标。普通会话必须能确定自身目标 ID；缺失时不退回当前焦点或第一个 tab。明确目标解析直接使用后端能力，独立于旧改名开关。
 
 协议 JSON 损坏或版本未知会报错，不能退回无限制范围。只有旧子代理身份标志、没有归属协议时，终端改名受限，直到启动方提供归属。此协议用于可信本地进程协作，不是安全沙箱。WezTerm/Otty 创建分屏时不会重命名共享 tab。
+
+## Cmux 兼容性
+
+Cmux 关闭 surface 时使用 `--force`，避免仍在运行的 shell 阻塞清理。旧版 cmux 明确不支持该参数时会去掉参数重试；其他错误继续向调用方抛出。
