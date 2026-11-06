@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.10.1...pi-distill-v1.10.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* 修正提炼期限后的异常分类与修复边界 ([886525b](https://github.com/maplezzk/pi-extensions/commit/886525bed525f55e27b47ed2988ca40b4d75d815))
+* 限制提炼共享重试与总等待时间 ([f142b44](https://github.com/maplezzk/pi-extensions/commit/f142b443dff602ecff0079f67d5ffc48c9be8c9b))
+* 限制提炼共享重试与等待期限 ([66c1ed1](https://github.com/maplezzk/pi-extensions/commit/66c1ed16e3372880b4c6fc25136ca41080498176))
+* 限制提炼共享重试与等待期限 ([#247](https://github.com/maplezzk/pi-extensions/issues/247)) ([66c1ed1](https://github.com/maplezzk/pi-extensions/commit/66c1ed16e3372880b4c6fc25136ca41080498176))
+
 ## [1.10.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.10.0...pi-distill-v1.10.1) (2026-10-17)
 
 

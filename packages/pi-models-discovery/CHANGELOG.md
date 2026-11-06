@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-models-discovery-v1.7.0...pi-models-discovery-v1.8.0) (2026-11-06)
+
+
+### Features
+
+* **pi-models-discovery:** add generic per-model API overrides ([#243](https://github.com/maplezzk/pi-extensions/issues/243)) ([4058f39](https://github.com/maplezzk/pi-extensions/commit/4058f39b82852713e0092b2569a4e4e5b8a61197))
+
 ## [1.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-models-discovery-v1.6.1...pi-models-discovery-v1.7.0) (2026-10-24)
 
 
