@@ -43,11 +43,14 @@ import { getTextContent, hasNonTextContent, limitReturnedToolResult } from "./ou
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { NOTICE_TAG_COLOR, createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
+import { createModelRequester } from "pi-model-request";
 import {
   buildSummaryPrompt,
   buildSummarySystemPrompt,
   buildSummaryUserPrompt,
+  buildJsonRepairPrompt,
+  canAcceptOutputRequest,
   decideOutputSummary,
   getDistillConfigPath,
   isRawSummary,
@@ -62,6 +65,16 @@ import {
   type OutputSummaryDecision,
 } from "./summary-utils.ts";
 import { estimateHeuristicTokens } from "./token-estimator.ts";
+import {
+  PANEL_FIELD,
+  PANEL_FIELD_IDS,
+  TOOL_FIELD_PREFIX,
+  applyPanelChange,
+  defaultToolEnabled,
+  openConfigPanel,
+  toolFieldId,
+  type DistillPanelConfig,
+} from "./config-panel.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../locales/index.json", import.meta.url)));
 
@@ -109,6 +122,13 @@ type ToolResultEventPatch = {
 export const OUTPUT_REQUEST_DESCRIPTION = i18n.t("outputRequestDescription");
 const OUTPUT_REQUEST_SYSTEM_GUIDELINE = i18n.t("outputRequestSystemGuideline");
 
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "distill";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
 type SummaryDecisionMode = "RAW" | "SUMMARY";
 type SummaryReasonCode =
   | "VERBATIM_REQUEST"
@@ -149,6 +169,8 @@ type SummaryResult = {
   decision: SummaryDecision;
   usage?: SummaryUsage;
   attempts?: number;
+  jsonRepairAttempted?: boolean;
+  jsonRepairSucceeded?: boolean;
 };
 
 type SummaryCompletion = (...args: Parameters<typeof complete>) => ReturnType<typeof complete>;
@@ -208,6 +230,24 @@ class SummaryRetryError extends Error {
   }
 }
 
+/** 模型响应未通过 JSON 协议校验（可尝试 JSON-only 修复）。 */
+class SummaryResponseFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SummaryResponseFormatError";
+  }
+}
+
+/** JSON 修复失败：不再触发完整重试，避免重复总结改写事实。 */
+class SummaryJsonRepairError extends Error {
+  readonly jsonRepairAttempted = true;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "SummaryJsonRepairError";
+  }
+}
+
 type SummaryDiagnostics = {
   toolExecutionMs?: number;
   summaryDurationMs?: number;
@@ -235,6 +275,8 @@ type SummaryDiagnostics = {
   outputSummaryReasonCode?: SummaryReasonCode;
   outputSummaryReason?: string;
   summaryModel?: string;
+  summaryJsonRepairAttempted?: boolean;
+  summaryJsonRepairSucceeded?: boolean;
   originalOutputChars?: number;
   summaryChars?: number;
   compressionRatio?: number;
@@ -640,17 +682,19 @@ function parseSummaryResponse(text: string, summaryModel: string): SummaryResult
   try {
     payload = JSON.parse(normalizedText);
   } catch (error) {
-    throw new Error(`Summarizer returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new SummaryResponseFormatError(
+      `Summarizer returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   if (!payload || typeof payload !== "object") {
-    throw new Error("Summarizer response must be a JSON object");
+    throw new SummaryResponseFormatError("Summarizer response must be a JSON object");
   }
   const record = payload as Record<string, unknown>;
   const decision = record.decision;
   const summary = record.summary;
   if (!decision || typeof decision !== "object" || typeof summary !== "string") {
-    throw new Error("Summarizer response must contain decision and summary");
+    throw new SummaryResponseFormatError("Summarizer response must contain decision and summary");
   }
   const decisionRecord = decision as Record<string, unknown>;
   const mode = decisionRecord.mode;
@@ -665,19 +709,19 @@ function parseSummaryResponse(text: string, summaryModel: string): SummaryResult
     "OTHER",
   ];
   if (mode !== "RAW" && mode !== "SUMMARY") {
-    throw new Error("Summarizer decision.mode must be RAW or SUMMARY");
+    throw new SummaryResponseFormatError("Summarizer decision.mode must be RAW or SUMMARY");
   }
   if (!validReasonCodes.includes(reasonCode as SummaryReasonCode)) {
-    throw new Error("Summarizer decision.reasonCode is invalid");
+    throw new SummaryResponseFormatError("Summarizer decision.reasonCode is invalid");
   }
   if (typeof reason !== "string" || reason.trim().length === 0 || reason.length > 160) {
-    throw new Error("Summarizer decision.reason must be 1-160 characters");
+    throw new SummaryResponseFormatError("Summarizer decision.reason must be 1-160 characters");
   }
   if (mode === "RAW" && summary !== "") {
-    throw new Error("Summarizer RAW decision must have an empty summary");
+    throw new SummaryResponseFormatError("Summarizer RAW decision must have an empty summary");
   }
   if (mode === "SUMMARY" && summary.trim().length === 0) {
-    throw new Error("Summarizer SUMMARY decision must have a non-empty summary");
+    throw new SummaryResponseFormatError("Summarizer SUMMARY decision must have a non-empty summary");
   }
 
   const parsedDecision: SummaryDecision = {
@@ -700,6 +744,45 @@ function unwrapJsonCodeFence(text: string): string {
   return match?.[2]?.trim() ?? trimmed;
 }
 
+async function completeSummaryMessage(
+  completion: SummaryCompletion,
+  model: SummaryCompletionModel,
+  text: string,
+  options: SummaryCompletionOptions,
+): Promise<{ text: string; usage: SummaryUsage | undefined }> {
+  const response = await completion(
+    model,
+    {
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text }],
+          timestamp: Date.now(),
+        },
+      ],
+    },
+    options,
+  );
+
+  if (response.stopReason === "error" || response.stopReason === "aborted") {
+    throw new SummaryAttemptError(
+      response.errorMessage ?? `Summarizer stopped with reason: ${response.stopReason}`,
+      normalizeSummaryUsage(response.usage),
+    );
+  }
+
+  const rawResponse = response.content
+    .filter((content): content is { type: "text"; text: string } => content.type === "text")
+    .map((content) => content.text)
+    .join("\n")
+    .trim();
+
+  if (!rawResponse) {
+    throw new SummaryAttemptError("Summarizer returned no text", normalizeSummaryUsage(response.usage));
+  }
+  return { text: rawResponse, usage: normalizeSummaryUsage(response.usage) };
+}
+
 async function summarizeOutput(
   prompt: string,
   output: string,
@@ -707,6 +790,7 @@ async function summarizeOutput(
   context: DistillExecutionContext,
   signal: AbortSignal,
   completion: SummaryCompletion = complete,
+  onJsonRepair?: () => void,
 ): Promise<SummaryResult> {
   const model = config.modelProvider && config.modelId
     ? context.ctx.modelRegistry.find(config.modelProvider, config.modelId)
@@ -717,62 +801,67 @@ async function summarizeOutput(
     );
   }
 
-  const auth = await context.ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (auth.ok === false) throw new Error(`Summarizer authentication failed: ${auth.error}`);
+  // 摘要请求由扩展自己发出：鉴权与 provider 会话头交给共享请求器，与 Pi 核心行为一致。
+  const request = createModelRequester(context.ctx, {
+    base: completion,
+    authError: (error) => new Error(`Summarizer authentication failed: ${error}`),
+  });
 
   const completionOptions = {
-    apiKey: auth.apiKey,
-    headers: auth.headers,
-    env: auth.env,
     maxTokens: Math.max(256, Math.ceil(config.maxChars / 2)),
     onPayload: addSummaryJsonResponseFormat,
     signal,
   } satisfies SummaryCompletionOptions;
-  const response = await completion(
+  const { text: rawResponse, usage } = await completeSummaryMessage(
+    request,
     model,
-    {
-      messages: [
-        {
-          role: "user",
-          content: [{
-            type: "text",
-            text: [
-              buildSummarySystemPrompt(),
-              "",
-              buildSummaryUserPrompt(prompt, output, context.originalUserPrompt),
-            ].join("\n"),
-          }],
-          timestamp: Date.now(),
-        },
-      ],
-    },
+    [
+      buildSummarySystemPrompt(),
+      "",
+      buildSummaryUserPrompt(prompt, output, context.originalUserPrompt),
+    ].join("\n"),
     completionOptions,
   );
 
-  const usage = normalizeSummaryUsage(response.usage);
-  if (response.stopReason === "error" || response.stopReason === "aborted") {
-    throw new SummaryAttemptError(
-      response.errorMessage ?? `Summarizer stopped with reason: ${response.stopReason}`,
-      usage,
-    );
-  }
-
-  const rawResponse = response.content
-    .filter((content): content is { type: "text"; text: string } => content.type === "text")
-    .map((content) => content.text)
-    .join("\n")
-    .trim();
-
-  if (!rawResponse) throw new SummaryAttemptError("Summarizer returned no text", usage);
   const summaryModel = `${model.provider}/${model.id}`;
   let parsed: SummaryResult;
+  let totalUsage = usage;
   try {
     parsed = parseSummaryResponse(rawResponse, summaryModel);
   } catch (error) {
-    throw new SummaryAttemptError(error instanceof Error ? error.message : String(error), usage);
+    if (!(error instanceof SummaryResponseFormatError)) {
+      throw new SummaryAttemptError(error instanceof Error ? error.message : String(error), usage);
+    }
+
+    // 只修复模型已返回的 JSON：不重新发送工具输出，不重新总结，避免二次总结改写事实。
+    let repaired: { text: string; usage: SummaryUsage | undefined };
+    onJsonRepair?.();
+    try {
+      repaired = await completeSummaryMessage(
+        request,
+        model,
+        buildJsonRepairPrompt(rawResponse, error.message),
+        completionOptions,
+      );
+    } catch (repairError) {
+      throw new SummaryJsonRepairError(
+        `Summarizer JSON repair failed: ${repairError instanceof Error ? repairError.message : String(repairError)}`,
+      );
+    }
+
+    try {
+      parsed = parseSummaryResponse(repaired.text, summaryModel);
+    } catch (repairError) {
+      throw new SummaryJsonRepairError(
+        `Summarizer JSON repair returned an invalid response: ${repairError instanceof Error ? repairError.message : String(repairError)}`,
+      );
+    }
+    parsed.jsonRepairAttempted = true;
+    parsed.jsonRepairSucceeded = true;
+    totalUsage = mergeSummaryUsage(usage, repaired.usage);
   }
-  if (parsed.decision.mode === "RAW") return { ...parsed, usage };
-  if (parsed.summaryChars <= config.maxChars) return { ...parsed, usage };
+  if (parsed.decision.mode === "RAW") return { ...parsed, usage: totalUsage };
+  if (parsed.summaryChars <= config.maxChars) return { ...parsed, usage: totalUsage };
 
   const summaryFilePath = await writeSummaryFile(parsed.text);
   return {
@@ -794,68 +883,98 @@ async function summarizeOutputWithRetries(
   let errorRetries = 0;
   let attempts = 0;
   let totalUsage: SummaryUsage | undefined;
+  const maxAttempts = 1 + Math.max(config.timeoutRetryCount, config.errorRetryCount);
+  const deadline = performance.now() + config.timeoutSeconds * 1000 * maxAttempts;
 
   while (true) {
     if (context.signal?.aborted) {
-      throw new SummaryRetryError("Summarization aborted", attempts, totalUsage);
+      throw new SummaryRetryError(i18n.t("summaryAborted"), attempts, totalUsage);
+    }
+    const now = performance.now();
+    if (now >= deadline) {
+      throw new SummaryRetryError(i18n.t("summaryDeadlineExceeded"), attempts, totalUsage);
     }
 
     const attemptController = new AbortController();
-    const abortFromParent = () => attemptController.abort();
+    const attemptDeadline = Math.min(deadline, now + config.timeoutSeconds * 1000);
+    let interrupt: (error: Error) => void;
+    const interrupted = new Promise<never>((_, reject) => { interrupt = reject; });
+    const abortFromParent = () => {
+      interrupt(new Error(i18n.t("summaryAborted")));
+      attemptController.abort();
+    };
     context.signal?.addEventListener("abort", abortFromParent, { once: true });
-    if (context.signal?.aborted) attemptController.abort();
+    if (context.signal?.aborted) abortFromParent();
     let timedOut = false;
-    const timeout = setTimeout(
-      () => {
+    let jsonRepairStarted = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      interrupt(new Error(i18n.t("summaryTimedOut")));
+      attemptController.abort();
+    }, Math.max(0, attemptDeadline - performance.now()));
+    const checkAttempt = () => {
+      if (context.signal?.aborted) throw new Error(i18n.t("summaryAborted"));
+      if (timedOut || performance.now() >= attemptDeadline) {
         timedOut = true;
         attemptController.abort();
-      },
-      config.timeoutSeconds * 1000,
-    );
+        throw new Error(i18n.t("summaryTimedOut"));
+      }
+    };
+    // Authentication remains in the shared requester. Check its eventual
+    // completion boundary too, so late auth cannot launch an expired request.
+    const boundedCompletion: SummaryCompletion = async (...args) => {
+      checkAttempt();
+      const response = await completion(...args);
+      checkAttempt();
+      return response;
+    };
     attempts += 1;
 
     try {
-      const result = await summarizeOutput(
-        prompt,
-        output,
-        config,
-        context,
-        attemptController.signal,
-        completion,
-      );
+      checkAttempt();
+      const result = await Promise.race([
+        summarizeOutput(prompt, output, config, context, attemptController.signal,
+          boundedCompletion, () => {
+            jsonRepairStarted = true;
+            checkAttempt();
+          }),
+        interrupted,
+      ]);
+      checkAttempt();
       totalUsage = mergeSummaryUsage(totalUsage, result.usage);
-      return {
-        ...result,
-        usage: totalUsage,
-        attempts,
-      };
+      return { ...result, usage: totalUsage, attempts };
     } catch (error) {
-      totalUsage = mergeSummaryUsage(
-        totalUsage,
+      totalUsage = mergeSummaryUsage(totalUsage,
         error instanceof SummaryAttemptError || error instanceof SummaryRetryError
-          ? error.usage
-          : undefined,
-      );
+          ? error.usage : undefined);
       if (context.signal?.aborted) {
-        throw new SummaryRetryError("Summarization aborted", attempts, totalUsage);
+        throw new SummaryRetryError(i18n.t("summaryAborted"), attempts, totalUsage);
+      }
+      // A rejection may run before a delayed timeout callback. Classify it
+      // using the monotonic deadline, not only the callback's flag.
+      if (performance.now() >= attemptDeadline) {
+        timedOut = true;
+        attemptController.abort();
+      }
+      const failure = timedOut ? new Error(i18n.t("summaryTimedOut")) : error;
+      // A timeout during JSON-only repair must not resend the original output.
+      if (error instanceof SummaryJsonRepairError && !timedOut) throw error;
+      if (jsonRepairStarted) {
+        throw new SummaryJsonRepairError(failure instanceof Error ? failure.message : String(failure));
       }
       const retryLimit = timedOut ? config.timeoutRetryCount : config.errorRetryCount;
       const retriesUsed = timedOut ? timeoutRetries : errorRetries;
-      if (retriesUsed >= retryLimit) {
-        throw new SummaryRetryError(
-          error instanceof Error ? error.message : String(error),
-          attempts,
-          totalUsage,
-        );
+      if (attempts >= maxAttempts || performance.now() >= deadline || retriesUsed >= retryLimit) {
+        throw new SummaryRetryError(failure instanceof Error ? failure.message : String(failure), attempts, totalUsage);
       }
       if (timedOut) timeoutRetries += 1;
       else errorRetries += 1;
-      context.ctx.ui.notify(i18n.t("retryingSummary", {
+      notifyWithSource({ ctx: context.ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("retryingSummary", {
         kind: i18n.t(timedOut ? "retryKindTimeout" : "retryKindError"),
         retry: retriesUsed + 1,
         limit: retryLimit,
-        error: error instanceof Error ? error.message : String(error),
-      }), "warning");
+        error: failure instanceof Error ? failure.message : String(failure),
+      }) });
     } finally {
       clearTimeout(timeout);
       context.signal?.removeEventListener("abort", abortFromParent);
@@ -884,12 +1003,12 @@ export async function processToolResult(
   const maxReturnedChars = config?.maxOutputChars ?? 10_000;
   const finish = (candidate: ToolResult) => limitReturnedToolResult(candidate, maxReturnedChars);
   if (loaded.warnings.length > 0) {
-    context.ctx.ui.notify(i18n.t("configWarnings", {
+    notifyWithSource({ ctx: context.ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("configWarnings", {
       warnings: loaded.warnings.join(" "),
-    }), "warning");
+    }) });
   }
 
-  if (config && loaded.enabled && !isDistillToolEnabled(config, context.toolName)) return result;
+  if (config && loaded.enabled && (!canAcceptOutputRequest(context.toolName) || !isDistillToolEnabled(config, context.toolName))) return result;
 
   if (hasNonTextContent(result)) {
     return attachDiagnostics(result, {
@@ -1004,6 +1123,8 @@ export async function processToolResult(
           summaryResultMaxChars: config.maxChars,
           missedCompressionRatio: config.missedCompressionRatio,
           summaryModel: summarized.summaryModel,
+          summaryJsonRepairAttempted: summarized.jsonRepairAttempted,
+          summaryJsonRepairSucceeded: summarized.jsonRepairSucceeded,
           outputSummaryDecisionMode: summarized.decision.mode,
           outputSummaryReasonCode: summarized.decision.reasonCode,
           outputSummaryReason: summarized.decision.reason,
@@ -1042,6 +1163,8 @@ export async function processToolResult(
           summaryResultMaxChars: config.maxChars,
           missedCompressionRatio: config.missedCompressionRatio,
           summaryModel: summarized.summaryModel,
+          summaryJsonRepairAttempted: summarized.jsonRepairAttempted,
+          summaryJsonRepairSucceeded: summarized.jsonRepairSucceeded,
           outputSummaryDecisionMode: summarized.decision.mode,
           outputSummaryReasonCode: summarized.decision.reasonCode,
           outputSummaryReason: summarized.decision.reason,
@@ -1072,6 +1195,8 @@ export async function processToolResult(
         summaryResultMaxChars: config.maxChars,
         missedCompressionRatio: config.missedCompressionRatio,
         summaryModel: summarized.summaryModel,
+        summaryJsonRepairAttempted: summarized.jsonRepairAttempted,
+        summaryJsonRepairSucceeded: summarized.jsonRepairSucceeded,
         outputSummaryDecisionMode: summarized.decision.mode,
         outputSummaryReasonCode: summarized.decision.reasonCode,
         outputSummaryReason: summarized.decision.reason,
@@ -1099,9 +1224,14 @@ export async function processToolResult(
       summaryTriggerMaxChars: null,
       summaryResultMaxChars: config.maxChars,
       missedCompressionRatio: config.missedCompressionRatio,
+      summaryJsonRepairAttempted: error instanceof SummaryJsonRepairError ? true : undefined,
+      summaryJsonRepairSucceeded: error instanceof SummaryJsonRepairError ? false : undefined,
       ...getTokenCompressionDiagnostics(output, output),
       outputSummaryAnomalies: ["summary-failed"],
-      outputSummaryAdvice: `Summarization failed; the original output was preserved. Check model configuration or authentication. Requests still running after ${config.timeoutSeconds}s are treated as timed out.`,
+      outputSummaryAdvice: i18n.t("summaryFailureAdvice", {
+        seconds: config.timeoutSeconds,
+        totalSeconds: config.timeoutSeconds * (1 + Math.max(config.timeoutRetryCount, config.errorRetryCount)),
+      }),
       outputSummaryError: errorMessage,
     };
     const agentDiagnostic = buildAgentDiagnosticText(diagnostics);
@@ -1196,7 +1326,10 @@ export function extendDistillToolParameters(
 ): number {
   let extended = 0;
   for (const tool of pi.getAllTools()) {
-    const enabled = loaded.enabled && Boolean(loaded.config) && isDistillToolEnabled(loaded.config, tool.name);
+    const enabled = loaded.enabled
+      && Boolean(loaded.config)
+      && canAcceptOutputRequest(tool.name)
+      && isDistillToolEnabled(loaded.config, tool.name);
     if (extendOutputRequestParameter(tool, enabled, reportWarning) && enabled) extended += 1;
   }
   return extended;
@@ -1210,12 +1343,11 @@ function toToolResultEventResult(result: ToolResult): ToolResultEventPatch {
   };
 }
 
-type DistillUiConfig = Required<Pick<DistillConfigFile, "enabled" | "model" | "minChars" | "maxChars" | "maxOutputChars" | "timeoutSeconds" | "timeoutRetryCount" | "errorRetryCount" | "missedCompressionRatio" | "summarizeErrors">> & {
-  tools: DistillToolConfig;
-  render: DistillRenderConfig;
-};
-
-function getDistillUiConfig(): DistillUiConfig {
+/**
+ * 面板读取的配置快照：读的时候重新 load 一次，所以面板里改完马上就能被后续工具事件用上，
+ * 不需要 /reload。
+ */
+function getDistillPanelConfig(): DistillPanelConfig {
   const loaded = loadDistillConfig();
   const config = loaded.config;
   return {
@@ -1232,110 +1364,79 @@ function getDistillUiConfig(): DistillUiConfig {
     missedCompressionRatio: config?.missedCompressionRatio ?? 10,
     summarizeErrors: config?.summarizeErrors ?? true,
     tools: Object.fromEntries(
-      Object.entries(config?.tools ?? {}).map(([toolName, override]) => [toolName, { ...override }]),
+      Object.entries(config?.tools ?? {}).map(([toolName, override]) => [toolName, override.enabled]),
     ),
-    render: { ...loaded.render },
+    renderEnabled: loaded.render.enabled,
+    renderShowPrompt: loaded.render.showPrompt,
+    renderShowResult: loaded.render.showResult,
   };
 }
 
-async function editDistillNumber(
-  ctx: ExtensionCommandContext,
-  title: string,
-  current: number,
-): Promise<number | undefined> {
-  const value = await ctx.ui.input(title, String(current));
-  if (value === undefined) return undefined;
-  if (!/^\d+$/.test(value.trim()) || Number(value) <= 0) {
-    ctx.ui.notify(i18n.t("positiveInteger"), "error");
-    return undefined;
-  }
-  return Number(value);
-}
-
-async function editDistillNonNegativeInteger(
-  ctx: ExtensionCommandContext,
-  title: string,
-  current: number,
-): Promise<number | undefined> {
-  const value = await ctx.ui.input(title, String(current));
-  if (value === undefined) return undefined;
-  const normalized = value.trim();
-  const parsed = Number(normalized);
-  if (!/^\d+$/.test(normalized) || !Number.isSafeInteger(parsed)) {
-    ctx.ui.notify(i18n.t("nonNegativeInteger"), "error");
-    return undefined;
-  }
-  return parsed;
-}
-
-async function editDistillModel(
-  ctx: ExtensionCommandContext,
-  current: string,
-): Promise<string | undefined> {
-  const value = await ctx.ui.input(
-    i18n.t("modelInput"),
-    current || "llm-proxy/LOW",
-  );
-  if (value === undefined) return undefined;
-  const normalized = value.trim();
-  if (normalized && !/^[^/\s]+\/[^/\s]+$/.test(normalized)) {
-    ctx.ui.notify(i18n.t("modelInvalid"), "error");
-    return undefined;
-  }
-  return normalized;
-}
-
+/**
+ * 把面板快照写回配置文件，并让本次会话立即生效。
+ *
+ * 工具开关只在与默认值不同时才写进 tools，配置里不会堆上一大堆等于默认值的条目。
+ * 写盘后重新 loadDistillConfig 只为了把解析警告报给用户；保存失败必须报错，不能默默吞掉。
+ */
 async function saveDistillConfigFile(
   ctx: ExtensionCommandContext,
-  config: DistillUiConfig,
+  config: DistillPanelConfig,
   configPath: string,
   onSaved?: () => void,
 ): Promise<void> {
-  await mkdir(dirname(configPath), { recursive: true });
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const tools: DistillToolConfig = {};
+  for (const [toolName, enabled] of Object.entries(config.tools)) {
+    if (enabled !== defaultToolEnabled(toolName)) tools[toolName] = { enabled };
+  }
+  const file: DistillConfigFile = {
+    enabled: config.enabled,
+    model: config.model,
+    minChars: config.minChars,
+    maxChars: config.maxChars,
+    maxOutputChars: config.maxOutputChars,
+    timeoutSeconds: config.timeoutSeconds,
+    timeoutRetryCount: config.timeoutRetryCount,
+    errorRetryCount: config.errorRetryCount,
+    missedCompressionRatio: config.missedCompressionRatio,
+    summarizeErrors: config.summarizeErrors,
+    tools,
+    render: {
+      enabled: config.renderEnabled,
+      showPrompt: config.renderShowPrompt,
+      showResult: config.renderShowResult,
+    },
+  };
+  try {
+    await mkdir(dirname(configPath), { recursive: true });
+    await writeFile(configPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+  } catch (error) {
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: "error",
+      message: i18n.t("configSaveFailed", { error: error instanceof Error ? error.message : String(error) }),
+    });
+    return;
+  }
   const saved = loadDistillConfig();
   if (saved.warnings.length > 0) {
-    ctx.ui.notify(i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }), "warning");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("savedWarnings", { warnings: saved.warnings.join(" ") }) });
   }
+  // 写盘之后立刻重算工具 schema，本次会话不必重启或 /reload。
   onSaved?.();
 }
 
-function getConfigurableToolNames(pi: Pick<ExtensionAPI, "getAllTools">): string[] {
+/** 当前可配置的工具名，按名字排序去重；不能注入 outputRequest 的工具不出现在面板里。 */
+export function getConfigurableToolNames(pi: Pick<ExtensionAPI, "getAllTools">): string[] {
   return [...new Set(
     pi.getAllTools()
       .map((tool) => tool.name)
-      .filter((name): name is string => typeof name === "string" && name.trim().length > 0),
+      .filter((name): name is string => typeof name === "string" && name.trim().length > 0)
+      .filter((name) => canAcceptOutputRequest(name)),
   )].sort();
 }
 
-async function runDistillToolConfigUi(
-  ctx: ExtensionCommandContext,
-  pi: Pick<ExtensionAPI, "getAllTools">,
-  config: DistillUiConfig,
-  configPath: string,
-  onSaved: () => void,
-): Promise<void> {
-  const toolNames = getConfigurableToolNames(pi);
-  if (toolNames.length === 0) {
-    ctx.ui.notify(i18n.t("noConfigurableTools"), "warning");
-    return;
-  }
-
-  while (true) {
-    const choices = toolNames.map((toolName) => i18n.t("toolStatus", {
-      tool: toolName,
-      value: isDistillToolEnabled(config, toolName) ? i18n.t("on") : i18n.t("off"),
-    }));
-    const choice = await ctx.ui.select(i18n.t("toolSettingsTitle"), choices);
-    if (choice === undefined) return;
-    const index = choices.indexOf(choice);
-    if (index < 0) return;
-    const toolName = toolNames[index];
-    config.tools[toolName] = { enabled: !isDistillToolEnabled(config, toolName) };
-    await saveDistillConfigFile(ctx, config, configPath, onSaved);
-  }
-}
-
+/** 打开配置面板；改一项立即写盘并生效。 */
 async function runDistillConfigUi(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
@@ -1344,119 +1445,117 @@ async function runDistillConfigUi(
 ): Promise<void> {
   const loaded = loadDistillConfig();
   if (loaded.warnings.length > 0) {
-    ctx.ui.notify(i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }), "warning");
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("configWarnings", { warnings: loaded.warnings.join(" ") }) });
   }
-  const config = getDistillUiConfig();
-
-  while (true) {
-    const choices = [
-      i18n.t("status", { value: config.enabled ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("model", { value: config.model || i18n.t("currentModel") }),
-      i18n.t("minOutput", { value: config.minChars }),
-      i18n.t("summaryLimit", { value: config.maxChars }),
-      i18n.t("finalLimit", { value: config.maxOutputChars }),
-      i18n.t("timeout", { value: config.timeoutSeconds }),
-      i18n.t("timeoutRetryCount", { value: config.timeoutRetryCount }),
-      i18n.t("errorRetryCount", { value: config.errorRetryCount }),
-      i18n.t("threshold", { value: config.missedCompressionRatio }),
-      i18n.t("summarizeErrors", { value: config.summarizeErrors ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("auditRenderer", { value: config.render.enabled ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("showOutputRequest", { value: config.render.showPrompt ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("showSummary", { value: config.render.showResult ? i18n.t("on") : i18n.t("off") }),
-      i18n.t("toolOverrides"),
-    ];
-    const choice = await ctx.ui.select(i18n.t("settingsTitle"), choices);
-    if (choice === undefined) return;
-
-    if (choice === choices[0]) {
-      config.enabled = !config.enabled;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[1]) {
-      const value = await editDistillModel(ctx, config.model);
-      if (value !== undefined) {
-        config.model = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[2]) {
-      const value = await editDistillNumber(ctx, i18n.t("minOutputTitle"), config.minChars);
-      if (value !== undefined) {
-        config.minChars = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[3]) {
-      const value = await editDistillNumber(ctx, i18n.t("summaryLimitTitle"), config.maxChars);
-      if (value !== undefined) {
-        config.maxChars = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[4]) {
-      const value = await editDistillNumber(ctx, i18n.t("finalLimitTitle"), config.maxOutputChars);
-      if (value !== undefined) {
-        config.maxOutputChars = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[5]) {
-      const value = await editDistillNumber(ctx, i18n.t("timeoutTitle"), config.timeoutSeconds);
-      if (value !== undefined) {
-        config.timeoutSeconds = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[6]) {
-      const value = await editDistillNonNegativeInteger(
-        ctx,
-        i18n.t("timeoutRetryCountTitle"),
-        config.timeoutRetryCount,
-      );
-      if (value !== undefined) {
-        config.timeoutRetryCount = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[7]) {
-      const value = await editDistillNonNegativeInteger(
-        ctx,
-        i18n.t("errorRetryCountTitle"),
-        config.errorRetryCount,
-      );
-      if (value !== undefined) {
-        config.errorRetryCount = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[8]) {
-      const value = await editDistillNumber(ctx, i18n.t("thresholdTitle"), config.missedCompressionRatio);
-      if (value !== undefined) {
-        config.missedCompressionRatio = value;
-        await saveDistillConfigFile(ctx, config, configPath, onSaved);
-      }
-    } else if (choice === choices[9]) {
-      config.summarizeErrors = !config.summarizeErrors;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[10]) {
-      config.render.enabled = !config.render.enabled;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[11]) {
-      config.render.showPrompt = !config.render.showPrompt;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[12]) {
-      config.render.showResult = !config.render.showResult;
-      await saveDistillConfigFile(ctx, config, configPath, onSaved);
-    } else if (choice === choices[13]) {
-      await runDistillToolConfigUi(ctx, pi, config, configPath, onSaved);
-    }
+  const toolNames = getConfigurableToolNames(pi);
+  if (toolNames.length === 0) {
+    notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("noConfigurableTools") });
   }
+
+  // 面板开着的时候以内存里的这份配置为准：每改一项先更新它、再排队写盘。
+  // 如果每次都重新读盘，两次快速切换会读到前一次还没落盘的状态，后写的会把先写的盖掉。
+  // 排队写盘 + 读内存也修好了“切完立刻 Esc”丢改动的问题。
+  let current = getDistillPanelConfig();
+  let pendingSave: Promise<void> = Promise.resolve();
+  await openConfigPanel(ctx, {
+    getConfig: () => current,
+    // 没有模型注册表时只留「当前会话模型」一项，不因为拿不到列表就打不开面板。
+    getModels: () => ctx.modelRegistry?.getAvailable() ?? [],
+    getToolNames: () => toolNames,
+    onChange: (config) => {
+      current = config;
+      pendingSave = pendingSave.then(
+        () => saveDistillConfigFile(ctx, current, configPath, onSaved),
+        () => saveDistillConfigFile(ctx, current, configPath, onSaved),
+      );
+    },
+  });
+  await pendingSave;
 }
 
+/** 带参数时的状态输出：一条纯文本报告，不打开面板。 */
+function buildDistillStatusReport(config: DistillPanelConfig, configPath: string): string {
+  const onOff = (value: boolean): string => value ? i18n.t("on") : i18n.t("off");
+  return i18n.t("configStatusReport", {
+    value: onOff(config.enabled),
+    model: config.model || i18n.t("currentModel"),
+    minChars: config.minChars,
+    maxChars: config.maxChars,
+    maxOutputChars: config.maxOutputChars,
+    timeoutSeconds: config.timeoutSeconds,
+    timeoutRetryCount: config.timeoutRetryCount,
+    errorRetryCount: config.errorRetryCount,
+    missedCompressionRatio: config.missedCompressionRatio,
+    summarizeErrors: onOff(config.summarizeErrors),
+    render: onOff(config.renderEnabled),
+    path: configPath,
+  });
+}
+
+/** 处理 enable / disable / status 参数；返回 false 表示参数不认识。 */
+async function runDistillConfigArgument(
+  value: string,
+  ctx: ExtensionCommandContext,
+  configPath: string,
+  onSaved: () => void,
+): Promise<boolean> {
+  const argument = value.trim();
+  if (argument === "enable" || argument === "disable") {
+    const config = getDistillPanelConfig();
+    config.enabled = argument === "enable";
+    await saveDistillConfigFile(ctx, config, configPath, onSaved);
+    return true;
+  }
+  if (argument === "status") {
+    notifyWithSource({
+      ctx,
+      source: NOTICE_SOURCE,
+      level: "info",
+      message: buildDistillStatusReport(getDistillPanelConfig(), configPath),
+    });
+    return true;
+  }
+  return false;
+}
+
+/** 配置命令支持的参数。 */
+const DISTILL_CONFIG_ARGUMENTS: readonly string[] = ["enable", "disable", "status"];
+
+/** 注册 /config:distill 及其兼容别名 /pi-distill。 */
 function registerDistillConfigCommand(
   pi: ExtensionAPI,
   onSaved: (ctx: ExtensionCommandContext) => void,
 ): void {
   const command = {
     description: i18n.t("commandDescription"),
-    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+    /** 补全受支持的参数。 */
+    getArgumentCompletions: () => DISTILL_CONFIG_ARGUMENTS.map((value) => ({ value, label: value })),
+    /** 不带参数打开面板，带 enable/disable/status 时只做对应动作。 */
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("interactiveOnly"), "warning");
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("interactiveOnly") });
         return;
       }
-      await runDistillConfigUi(ctx, pi, getDistillConfigPath(), () => onSaved(ctx));
+      const configPath = getDistillConfigPath();
+      const argument = args.trim();
+      if (argument.length > 0) {
+        const handled = await runDistillConfigArgument(
+          argument,
+          ctx,
+          configPath,
+          () => onSaved(ctx),
+        );
+        if (!handled) {
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: "error",
+            message: i18n.t("configUnknownArgument", { argument }),
+          });
+        }
+        return;
+      }
+      await runDistillConfigUi(ctx, pi, configPath, () => onSaved(ctx));
     },
   };
   for (const name of ["config:distill", "pi-distill"] as const) {
@@ -1472,15 +1571,17 @@ function registerDistillStatsCommand(
     description: i18n.t("statsCommandDescription"),
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("interactiveOnly"), "warning");
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("interactiveOnly") });
         return;
       }
-      ctx.ui.notify(formatDistillSessionStats(getStats()), "info");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "info", message: formatDistillSessionStats(getStats()) });
     },
   });
 }
 
 export default function piDistillExtension(pi: ExtensionAPI) {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   const pendingCalls = new Map<string, PendingDistillCall>();
   const reportedWarnings = new Set<string>();
   let sessionStats = createDistillSessionStats();
@@ -1491,7 +1592,7 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     const reportWarning = (message: string) => {
       if (reportedWarnings.has(message)) return;
       reportedWarnings.add(message);
-      ctx.ui.notify(message, "warning");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message });
     };
     try {
       extendDistillToolParameters(pi, loadDistillConfig(), reportWarning);
@@ -1520,6 +1621,7 @@ export default function piDistillExtension(pi: ExtensionAPI) {
     const loaded = loadDistillConfig();
     const enabled = loaded.enabled
       && Boolean(loaded.config)
+      && canAcceptOutputRequest(event.toolName)
       && isDistillToolEnabled(loaded.config, event.toolName);
     pendingCalls.set(event.toolCallId, {
       enabled,
@@ -1549,6 +1651,7 @@ export default function piDistillExtension(pi: ExtensionAPI) {
         toolCallId: event.toolCallId,
         params: { ...event.input, outputRequest },
         originalUserPrompt: pending?.originalUserPrompt ?? originalUserPrompt,
+        signal: ctx.signal,
         ctx,
       },
       {

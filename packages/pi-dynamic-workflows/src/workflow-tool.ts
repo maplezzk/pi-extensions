@@ -62,6 +62,8 @@ export interface WorkflowToolOptions {
   cwd?: string;
   concurrency?: number;
   pi?: { sendMessage: (message: any, options?: any) => void };
+  /** 异步模式判定：每次调用时现取，配置改了立即生效；不传就每次重读配置文件。 */
+  isAsync?: () => boolean;
 }
 
 let runningWorkflow: { name: string; abortController: AbortController; cleanWidget?: () => void } | null = null;
@@ -92,7 +94,6 @@ export function createWorkflowTool(options: WorkflowToolOptions = {}): ToolDefin
     promptSnippet:
       "Run a deterministic JavaScript workflow. Required script header: export const meta = { name: 'short_snake_case', description: 'non-empty description', phases: [{ title: 'Phase 1' }, ...] }. Every agent() call requires opts.schema (JSON Schema). Use phase(title) at runtime to drive progress.",
     promptGuidelines: [
-      "Use workflow only when the user explicitly asks for a workflow, workflows, fan-out, or multi-agent orchestration.",
       "For workflow, always pass one raw JavaScript string in the required script parameter; do not include Markdown fences or prose around the script.",
       "For workflow, the script's first statement must be `export const meta = { name: 'short_snake_case', description: 'non-empty human description', phases: [{ title: 'Phase A' }, ...] }`. meta.name and meta.description must be non-empty strings; meta.phases must be a non-empty array of `{ title: string }` objects.",
       "For workflow, meta.whenToUse is an optional string that describes when this workflow should be invoked; include it whenever the workflow has a non-obvious trigger condition.",
@@ -131,7 +132,7 @@ export function createWorkflowTool(options: WorkflowToolOptions = {}): ToolDefin
       const parsed = parseWorkflowScript(script);
 
       // === 异步模式 ===
-      const isAsync = loadConfig().async && options.pi;
+      const isAsync = (options.isAsync ? options.isAsync() : loadConfig().async) && options.pi;
       if (isAsync) {
         if (runningWorkflow) {
           throw new Error(i18n.t("alreadyRunning", { name: runningWorkflow.name }));

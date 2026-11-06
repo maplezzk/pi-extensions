@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext as NodeTestContext } from "node:test";
+import { performance } from "node:perf_hooks";
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,13 +17,18 @@ import {
   registerDistillToolDisplayMiddleware,
 } from "../src/tool-display-bridge.ts";
 import { Text } from "@earendil-works/pi-tui";
+import { initTheme, createSyntheticSourceInfo, type ExtensionAPI, type ToolInfo } from "@earendil-works/pi-coding-agent";
+import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { createGrammarToolInputProperties } from "@earendil-works/pi-ai/api/constrained-sampling";
 import {
   extendDistillToolParameters,
   formatCompactCount,
   formatSessionDuration,
+  getConfigurableToolNames,
 } from "../src/index.ts";
 import {
   buildDecisionEvaluationPrompt,
+  buildJsonRepairPrompt,
   buildSummaryEvaluationPrompt,
   buildSummaryPrompt,
   isDistillToolEnabled,
@@ -36,6 +42,8 @@ import {
 import { processToolResult } from "../src/index.ts";
 
 process.env.PI_EXTENSIONS_LOCALE = "en-US";
+// 配置面板构造 SettingsList 时要取主题色，测试进程里必须先初始化一次。
+initTheme();
 
 type TestContext = Parameters<typeof processToolResult>[0];
 type TestResult = Parameters<typeof processToolResult>[1];
@@ -45,8 +53,8 @@ type TestCompletionResult = Awaited<ReturnType<TestCompletion>>;
 /** 构造真实摘要处理链所需的最小扩展上下文。 */
 function fakeSummaryContext(
   notify: (message: string, type?: "info" | "warning" | "error") => void = () => undefined,
+  model: Record<string, unknown> = { provider: "fake", id: "model" },
 ): TestContext {
-  const model = { provider: "fake", id: "model" };
   return {
     toolName: "fake-tool",
     toolCallId: "fake-call",
@@ -59,6 +67,7 @@ function fakeSummaryContext(
         find: () => model,
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: {}, env: {} }),
       },
+      sessionManager: { getSessionId: () => "session-test" },
     },
   } as unknown as TestContext;
 }
@@ -70,6 +79,17 @@ function fakeToolResult(output: string, isError = false): TestResult {
     details: {},
     isError,
   } as unknown as TestResult;
+}
+
+/** 构造 pi-distill 只用得到的部分 ToolInfo：name 和 parameters。 */
+function fakeToolInfo(name: string, parameters: Record<string, unknown> = {}): ToolInfo {
+  return {
+    name,
+    description: `${name} tool`,
+    parameters,
+    exposure: "model-only",
+    sourceInfo: createSyntheticSourceInfo(`<test:${name}>`, { source: "test" }),
+  };
 }
 
 /** 为摘要处理链创建隔离配置，避免测试读取用户配置。 */
@@ -151,6 +171,16 @@ function fakeCompletion(
     }],
     usage,
   } as unknown as TestCompletionResult);
+}
+
+function getCompletionPrompt(args: Parameters<TestCompletion>): string {
+  const request = args[1] as {
+    messages?: Array<{ content?: Array<{ text?: string }> }>;
+  };
+  return request.messages
+    ?.flatMap((message) => message.content ?? [])
+    .map((content) => content.text ?? "")
+    .join("\n") ?? "";
 }
 
 test("只配置总结模型时使用默认阈值", () => {
@@ -431,7 +461,7 @@ test("decision 与 summary 评测 prompt 使用独立协议", () => {
 
   assert.match(decisionPrompt, /mode selection only/);
   assert.match(decisionPrompt, /diagnostic evidence/);
-  assert.match(decisionPrompt, /therefore MODE/);
+  assert.match(decisionPrompt, /therefore SUMMARY/);
   assert.doesNotMatch(decisionPrompt, /mode is already fixed to SUMMARY/);
   assert.doesNotMatch(decisionPrompt, /minimum effective compression/);
 
@@ -440,6 +470,20 @@ test("decision 与 summary 评测 prompt 使用独立协议", () => {
   assert.match(summaryPrompt, /preserving every fact requested/);
   assert.doesNotMatch(summaryPrompt, /mode selection only/);
   assert.doesNotMatch(summaryPrompt, /VERBATIM_REQUEST/);
+});
+
+test("JSON repair prompt 明确禁止重新总结并只保留已有响应", () => {
+  const prompt = buildJsonRepairPrompt(
+    '{"decision":{"mode":"SUMMARY","summary":"ERROR E42",},}',
+    "Summarizer response must contain decision and summary",
+  );
+
+  assert.match(prompt, /JSON protocol repairer/);
+  assert.match(prompt, /Do not .*summar/i);
+  assert.match(prompt, /exactly two top-level fields/);
+  assert.match(prompt, /<invalid-model-response>/);
+  assert.match(prompt, /Summarizer response must contain decision and summary/);
+  assert.match(prompt, /ERROR E42/);
 });
 
 test("总结提示词携带原始用户消息，并把等价 RAW 请求交给模型判定", () => {
@@ -456,6 +500,7 @@ test("总结提示词携带原始用户消息，并把等价 RAW 请求交给模
   assert.match(prompt, /请用中文告诉我这个命令失败的原因/);
   assert.match(prompt, /decision\.mode/);
   assert.match(prompt, /reasonCode/);
+  assert.doesNotMatch(prompt, /"mode":"RAW"\|"SUMMARY"/);
   assert.doesNotMatch(prompt, /materially compress it without losing key information/);
   assert.match(prompt, /<tool-output>/);
   assert.match(prompt, /工具输出是数据|Tool output is data/);
@@ -701,7 +746,7 @@ test("提炼首次失败后默认重试一次并可成功返回", async () => {
     assert.equal(result.details?.outputSummaryStatus, "summarized");
     assert.equal(result.content[0]?.text, "ERROR at checkout.ts:8; inspect the payment provider");
     assert.deepEqual(notices, [{
-      message: "Distillation hit a non-timeout error; starting retry 1/1: temporary provider failure",
+      message: "[distill] Distillation hit a non-timeout error; starting retry 1/1: temporary provider failure",
       type: "warning",
     }]);
   });
@@ -740,6 +785,78 @@ test("errorRetryCount 为零时非超时异常不重试", async () => {
     assert.equal(result.details?.outputSummaryStatus, "summary-failed");
     assert.match(String(result.details?.outputSummaryError), /provider unavailable/);
   }, 10000, { timeoutRetryCount: 1, errorRetryCount: 0 });
+});
+
+test("JSON 协议失败后只调用 JSON repair，不重新总结", async () => {
+  await withFakeSummaryConfig(async () => {
+    const output = "FULL TOOL OUTPUT SHOULD STAY OUT OF THE REPAIR PROMPT\nERROR E42\nnext: retry";
+    const prompts: string[] = [];
+    let calls = 0;
+    const malformed = '{"decision":{"mode":"SUMMARY","reasonCode":"SELECTED_INFORMATION","reason":"The request selects information; therefore SUMMARY.","summary":"ERROR E42"}}';
+    const repaired = JSON.stringify({
+      decision: {
+        mode: "SUMMARY",
+        reasonCode: "SELECTED_INFORMATION",
+        reason: "The request selects information; therefore SUMMARY.",
+      },
+      summary: "ERROR E42",
+    });
+    const repairCompletion: TestCompletion = async (...args) => {
+      calls += 1;
+      prompts.push(getCompletionPrompt(args));
+      return {
+        content: [{ type: "text", text: calls === 1 ? malformed : repaired }],
+      } as unknown as TestCompletionResult;
+    };
+
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult(output),
+      0,
+      repairCompletion,
+    );
+
+    assert.equal(calls, 2);
+    assert.equal(result.content[0]?.text, "ERROR E42");
+    assert.equal(result.details?.outputSummaryStatus, "summarized");
+    assert.equal(result.details?.summaryJsonRepairAttempted, true);
+    assert.equal(result.details?.summaryJsonRepairSucceeded, true);
+    assert.match(prompts[1] ?? "", /JSON protocol repairer/);
+    assert.match(prompts[1] ?? "", /Do not .*summar/i);
+    assert.ok((prompts[1] ?? "").includes(malformed));
+    assert.doesNotMatch(prompts[1] ?? "", /<tool-output>/);
+    assert.doesNotMatch(prompts[1] ?? "", /FULL TOOL OUTPUT SHOULD STAY OUT/);
+  });
+});
+
+test("JSON repair 失败时不消耗 errorRetryCount 重新总结", async () => {
+  await withFakeSummaryConfig(async () => {
+    const output = "FAIL checkout\nERROR E42\nnext: retry";
+    let calls = 0;
+    const malformed = '{"decision":{"mode":"SUMMARY","reason":"broken"}}';
+    const repairFailure: TestCompletion = async (...args) => {
+      calls += 1;
+      if (calls === 1) {
+        return { content: [{ type: "text", text: malformed }] } as unknown as TestCompletionResult;
+      }
+      assert.match(getCompletionPrompt(args), /JSON protocol repairer/);
+      throw new Error("repair provider unavailable");
+    };
+
+    const result = await processToolResult(
+      fakeSummaryContext(),
+      fakeToolResult(output),
+      0,
+      repairFailure,
+    );
+
+    assert.equal(calls, 2);
+    assert.equal(result.content[0]?.text, output);
+    assert.equal(result.details?.outputSummaryStatus, "summary-failed");
+    assert.equal(result.details?.summaryJsonRepairAttempted, true);
+    assert.equal(result.details?.summaryJsonRepairSucceeded, false);
+    assert.match(String(result.details?.outputSummaryError), /JSON repair failed/);
+  });
 });
 
 test("超时使用独立重试次数并可在下一次尝试成功", async () => {
@@ -941,7 +1058,7 @@ test("fake provider 超时后保留原文并记录失败", async () => {
     assert.equal(attempts, 1);
     assert.equal(result.content[0]?.text, output);
     assert.equal(result.details?.outputSummaryStatus, "summary-failed");
-    assert.match(String(result.details?.outputSummaryError), /fake provider aborted/);
+    assert.equal(result.details?.outputSummaryError, "Distillation model attempt timed out");
   }, 10000, { timeoutRetryCount: 0, errorRetryCount: 1 });
 });
 
@@ -1110,6 +1227,119 @@ test("按工具开关动态注入和移除 outputRequest", () => {
   assert.deepEqual((tools[0].parameters as any).required, ["value"]);
 });
 
+test("codemode 的 schema 保持原样：grammar 约束采样只接受一个必填字符串属性", () => {
+  // pi 按“恰好一个必填字符串属性”识别 grammar 工具，多一个必填属性会让整轮模型请求在构建阶段失败。
+  const codemodeSchema = {
+    type: "object",
+    properties: { code: { type: "string" } },
+    required: ["code"],
+    additionalProperties: false,
+  };
+  const tools = [fakeToolInfo("codemode", structuredClone(codemodeSchema))];
+  const loaded = {
+    enabled: true,
+    config: {
+      minChars: 200,
+      maxChars: 100000,
+      maxOutputChars: 10000,
+      timeoutSeconds: 10,
+      timeoutRetryCount: 1,
+      errorRetryCount: 1,
+      missedCompressionRatio: 10,
+      summarizeErrors: true,
+      tools: {} as Record<string, { enabled: boolean }>,
+    },
+    render: { enabled: true, showPrompt: true, showResult: true },
+    configPath: "",
+    warnings: [],
+  };
+  const api: Pick<ExtensionAPI, "getAllTools"> = { getAllTools: () => tools };
+
+  assert.equal(extendDistillToolParameters(api, loaded), 0);
+  assert.deepEqual(tools[0].parameters, codemodeSchema);
+
+  // 配置里强行打开也不加：加了就会让整轮请求失败，所以这里必须无条件跳过。
+  loaded.config.tools = { codemode: { enabled: true } };
+  assert.equal(extendDistillToolParameters(api, loaded), 0);
+  assert.deepEqual(tools[0].parameters, codemodeSchema);
+});
+
+test("跳过注入后 pi 的 grammar 约束采样仍能识别 codemode 的 code 输入属性", () => {
+  const codemodeSchema = {
+    type: "object",
+    properties: { code: { type: "string" } },
+    required: ["code"],
+    additionalProperties: false,
+  };
+  const tools = [fakeToolInfo("codemode", structuredClone(codemodeSchema))];
+  const loaded = {
+    enabled: true,
+    config: {
+      minChars: 200,
+      maxChars: 100000,
+      maxOutputChars: 10000,
+      timeoutSeconds: 10,
+      timeoutRetryCount: 1,
+      errorRetryCount: 1,
+      missedCompressionRatio: 10,
+      summarizeErrors: true,
+      tools: {},
+    },
+    render: { enabled: true, showPrompt: true, showResult: true },
+    configPath: "",
+    warnings: [],
+  };
+  const api: Pick<ExtensionAPI, "getAllTools"> = { getAllTools: () => tools };
+  extendDistillToolParameters(api, loaded);
+
+  // 直接拿 pi-ai 的真实推断验：注入必须让 codemode 仍只有一个必填字符串属性。
+  const codemode = {
+    name: "codemode",
+    description: "Run JavaScript that calls other tools",
+    parameters: tools[0].parameters,
+    constrainedSampling: { type: "grammar" as const, variants: { openai_lark: "code: /[^]*/" } },
+  };
+  assert.equal(createGrammarToolInputProperties([codemode], true).get("codemode"), "code");
+
+  // 哨兵：多一个必填属性就是修复前那轮会话整轮报错的原因。
+  const injected = {
+    ...codemode,
+    parameters: {
+      ...structuredClone(codemodeSchema),
+      properties: { code: { type: "string" }, outputRequest: { type: "string" } },
+      required: ["code", "outputRequest"],
+    },
+  };
+  assert.throws(
+    () => createGrammarToolInputProperties([injected], true),
+    /grammar constrained sampling requires exactly one required string property/,
+  );
+});
+
+test("codemode 不出现在配置面板的工具开关里", () => {
+  const api: Pick<ExtensionAPI, "getAllTools"> = {
+    getAllTools: () => [fakeToolInfo("bash"), fakeToolInfo("codemode"), fakeToolInfo("read")],
+  };
+
+  assert.deepEqual(getConfigurableToolNames(api), ["bash", "read"]);
+});
+
+test("codemode 结果按原样返回，不进入提炼流程", async () => {
+  await withFakeSummaryConfig(async () => {
+    const original = fakeToolResult("a".repeat(500));
+    const result = await processToolResult(
+      { ...fakeSummaryContext(), toolName: "codemode" },
+      original,
+      0,
+      fakeCompletion("x".repeat(20)),
+    );
+
+    assert.equal(result, original);
+    assert.equal(result.content[0]?.text, "a".repeat(500));
+    assert.equal(result.details?.outputSummaryStatus, undefined);
+  });
+});
+
 test("pi-distill 可以追加 UI-only 保底审计", () => {
   const entries: Array<{ type: string; data: unknown }> = [];
   const builtinPi = {
@@ -1251,6 +1481,107 @@ test("pi-distill 通过通用 tool-display result middleware 渲染且不重复�
   }
 });
 
+test("用户中断会终止 Pi 事件中尚未完成的提炼请求", async () => {
+  await withFakeSummaryConfig(async () => {
+    const { default: piDistillExtension } = await import("../src/index.ts");
+    type ExtensionTestHandler = (...args: unknown[]) => unknown;
+    type ExtensionToolResult = {
+      content: Array<{ text?: string }>;
+      details: Record<string, unknown>;
+    };
+    const faux = registerFauxProvider({
+      provider: "fake",
+      models: [{ id: "model" }],
+    });
+    const handlers = new Map<string, ExtensionTestHandler>();
+    let providerSignal: AbortSignal | undefined;
+    let releaseResponse: (() => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const summaryResponse = fauxAssistantMessage(JSON.stringify({
+      decision: {
+        mode: "SUMMARY",
+        reasonCode: "SELECTED_INFORMATION",
+        reason: "Selected requested information.",
+      },
+      summary: "should not be returned",
+    }));
+    faux.setResponses([(_context, options) => new Promise((resolve) => {
+      providerSignal = options?.signal;
+      /** Settles the faux response when the provider request finishes or is cancelled. */
+      const finish = () => resolve(providerSignal?.aborted
+        ? fauxAssistantMessage("", { stopReason: "aborted", errorMessage: "fake provider aborted" })
+        : summaryResponse);
+      releaseResponse = finish;
+      providerSignal?.addEventListener("abort", finish, { once: true });
+      markStarted?.();
+    })]);
+
+    const pi = {
+      getAllTools: () => [{
+        name: "read",
+        description: "read tool",
+        parameters: { type: "object", properties: {} },
+        sourceInfo: { source: "pi-distill-abort-test" },
+      }],
+      registerTool: () => undefined,
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: () => undefined,
+      on: (event: string, handler: ExtensionTestHandler) => handlers.set(event, handler),
+    } as unknown as Parameters<typeof piDistillExtension>[0];
+    const controller = new AbortController();
+    const context = {
+      cwd: process.cwd(),
+      signal: controller.signal,
+      ui: { notify: () => undefined },
+      model: faux.getModel(),
+      modelRegistry: {
+        find: () => faux.getModel(),
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
+      },
+      sessionManager: { getSessionId: () => "session-test" },
+    };
+
+    try {
+      piDistillExtension(pi);
+      const input: Record<string, unknown> = { path: "large.txt", outputRequest: "提取错误" };
+      await handlers.get("tool_call")?.({
+        type: "tool_call",
+        toolName: "read",
+        toolCallId: "read-abort-1",
+        input,
+      }, context);
+      const resultPromise = handlers.get("tool_result")?.({
+        type: "tool_result",
+        toolName: "read",
+        toolCallId: "read-abort-1",
+        input,
+        content: [{ type: "text", text: "ERROR still running" }],
+        details: {},
+        isError: false,
+      }, context);
+
+      await started;
+      controller.abort();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const providerWasAborted = providerSignal?.aborted === true;
+      releaseResponse?.();
+      const result = await resultPromise as ExtensionToolResult;
+
+      assert.equal(providerWasAborted, true);
+      assert.equal(faux.state.callCount, 1);
+      assert.equal(result.content[0]?.text, "ERROR still running");
+      assert.equal(result.details.outputSummaryStatus, "summary-failed");
+      assert.match(String(result.details.outputSummaryError), /Summarization aborted/);
+    } finally {
+      releaseResponse?.();
+      await handlers.get("session_shutdown")?.();
+      faux.unregister();
+    }
+  }, 10000, { timeoutRetryCount: 1, errorRetryCount: 1 });
+});
+
 test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 outputRequest", async () => {
   const {
     default: piDistillExtension,
@@ -1347,19 +1678,42 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
       hasUI: true,
       ui: { notify: (message: string) => { statsMessage = message; } },
     });
+    assert.match(statsMessage, /^\[distill\] /);
     assert.match(statsMessage, /Tool results|工具结果/);
     assert.match(statsMessage, /Model total tokens|模型总 Token/);
+    // 非 TUI 模式下不带 ANSI 颜色。
+    assert.doesNotMatch(statsMessage, /\u001B\[/);
 
-    const selections: Array<string | undefined> = ["Tool outputRequest", "write", "custom-tool", undefined, undefined];
+    // 配置面板走 ctx.ui.custom：拿到面板组件后按方向键选中目标行，空格原地切换开关。
+    // 工具行列在 13 个固定字段之后，按名字排序：bash, custom-tool, edit, find, grep, ls, read, write。
+    const FIXED_PANEL_ROWS = 13;
+    const TOOL_ROWS = ["bash", "custom-tool", "edit", "find", "grep", "ls", "read", "write"];
+    const DOWN = "\u001B[B";
+    const UP = "\u001B[A";
+    const SPACE = " ";
+    /** 模拟按键：方向键平移选中项，空格切换开关。 */
+    const pressKeys = (component: { handleInput(data: string): void }, keys: string[]): void => {
+      for (const key of keys) component.handleInput(key);
+    };
+    /** 造一串同向按键。 */
+    const repeat = (key: string, count: number): string[] => Array.from({ length: count }, () => key);
+
     await commandHandler?.("", {
       hasUI: true,
       ui: {
-        select: async (_title: string, choices: string[]) => {
-          const target = selections.shift();
-          if (!target) return undefined;
-          return choices.find((choice) => choice.startsWith(target));
+        custom: async (factory: any) => {
+          const component = factory({ requestRender: () => undefined }, {
+            fg: (_color: string, text: string) => text,
+            bold: (text: string) => text,
+          }, undefined, () => undefined) as { handleInput(data: string): void };
+          // write 默认关闭、custom-tool 默认开启；空格会把各自的值换成相反的那个。
+          pressKeys(component, [
+            ...repeat(DOWN, FIXED_PANEL_ROWS + TOOL_ROWS.indexOf("write")),
+            SPACE,
+            ...repeat(UP, TOOL_ROWS.indexOf("write") - TOOL_ROWS.indexOf("custom-tool")),
+            SPACE,
+          ]);
         },
-        input: async () => undefined,
         notify: () => undefined,
       },
     });
@@ -1400,4 +1754,286 @@ test("pi-distill 独立扩展最终工具 schema，并通过 Pi 事件处理 out
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   }
+});
+
+test("opencode 系列提炼请求带上 Pi 的 provider 会话头", async () => {
+  await withFakeSummaryConfig(async () => {
+    let completionOptions: Parameters<TestCompletion>[2];
+    const completion: TestCompletion = async (...args) => {
+      completionOptions = args[2];
+      return fakeCompletion("ERROR E42")(...args);
+    };
+
+    await processToolResult(
+      fakeSummaryContext(
+        () => undefined,
+        { provider: "opencode-go", id: "model", baseUrl: "https://opencode.ai/zen/go/v1" },
+      ),
+      fakeToolResult("FAIL checkout\nERROR E42\nnext: retry\n".repeat(8)),
+      0,
+      completion,
+    );
+
+    assert.equal(completionOptions?.headers?.["x-opencode-session"], "session-test");
+    assert.equal(completionOptions?.headers?.["x-opencode-client"], "pi");
+  });
+});
+
+
+/** 等待当前事件循环中的真实Promise观察者；不推进未选择的业务定时器。 */
+async function deadlineEventLoopTurn(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+function controlledDeadlineClock(t: NodeTestContext): (ms: number) => Promise<void> {
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  return async (ms) => {
+    now += ms;
+    t.mock.timers.tick(ms);
+    await deadlineEventLoopTurn();
+  };
+}
+
+for (const stalledBoundary of ["model", "authentication"] as const) {
+  test(`提炼总预算：不响应取消的${stalledBoundary}有界返回，迟到结果不再请求或修复`, async (t) => {
+    await withFakeSummaryConfig(async () => {
+      const advance = controlledDeadlineClock(t);
+      const context = fakeSummaryContext();
+      const output = "ORIGINAL TOOL FACT: E42; no business replay";
+      const late: Array<() => Promise<void> | void> = [];
+      let modelCalls = 0;
+      if (stalledBoundary === "authentication") {
+        context.ctx.modelRegistry.getApiKeyAndHeaders = () => new Promise((resolve) => {
+          late.push(() => resolve({ ok: true, apiKey: "synthetic-key", headers: {}, env: {} }));
+        });
+      }
+      const completion: TestCompletion = async (...args) => {
+        modelCalls += 1;
+        if (stalledBoundary === "authentication") return fakeCompletion("UNEXPECTED LATE CALL")(...args);
+        return new Promise<TestCompletionResult>((resolve) => {
+          late.push(async () => {
+            const response = await fakeCompletion("LATE RESPONSE")(...args);
+            response.content = [{ type: "text", text: "malformed late JSON" }];
+            resolve(response);
+          });
+        });
+      };
+      let result: TestResult | undefined;
+      const operation = processToolResult(context, fakeToolResult(output), 0, completion)
+        .then((value) => { result = value as TestResult; });
+      await deadlineEventLoopTurn();
+      assert.equal(late.length, 1);
+      await advance(1000);
+      assert.equal(late.length, 2, "第一次不协作等待到期后应释放并进入最后一次允许尝试");
+      await advance(1000);
+      assert.ok(result, "总等待期限到期后必须返回，不得依赖provider响应AbortSignal");
+      await operation;
+      assert.equal(result.content[0]?.text, output);
+      assert.equal(result.details?.outputSummaryStatus, "summary-failed");
+      assert.equal(result.details?.summaryAttempts, 2);
+      const callsAtReturn = modelCalls;
+      for (const finish of late) await finish();
+      await deadlineEventLoopTurn();
+      assert.equal(modelCalls, callsAtReturn, "迟到鉴权/响应不得启动新合成或JSON修复");
+      assert.equal(result.content[0]?.text, output);
+      assert.equal(stalledBoundary === "authentication" ? modelCalls : late.length, stalledBoundary === "authentication" ? 0 : 2);
+    });
+  });
+}
+
+test("提炼总预算：异常与超时共用额度，不叠加第三次完整提炼", async (t) => {
+  await withFakeSummaryConfig(async () => {
+    const advance = controlledDeadlineClock(t);
+    const output = "ORIGINAL FACTS E42\n".repeat(20);
+    let calls = 0;
+    const completion: TestCompletion = async (...args) => {
+      calls += 1;
+      if (calls === 1) throw new Error("synthetic initial transport failure");
+      if (calls > 2) return fakeCompletion("WRONG THIRD ATTEMPT")(...args);
+      return new Promise((_, reject) => {
+        args[2]!.signal!.addEventListener("abort", () => reject(new Error("synthetic provider aborted")), { once: true });
+      });
+    };
+    let result: TestResult | undefined;
+    const operation = processToolResult(fakeSummaryContext(), fakeToolResult(output), 0, completion)
+      .then((value) => { result = value as TestResult; });
+    await deadlineEventLoopTurn();
+    assert.equal(calls, 2);
+    await advance(1000);
+    assert.ok(result);
+    await operation;
+    assert.equal(calls, 2, "默认1/1共享一次额外重试，不是各自再重试一次");
+    assert.equal(result.details?.summaryAttempts, 2);
+    assert.equal(result.details?.outputSummaryStatus, "summary-failed");
+    assert.equal(result.content[0]?.text, output);
+  });
+});
+
+test("提炼总预算：父请求取消不等待不协作模型，也不重试", async (t) => {
+  await withFakeSummaryConfig(async () => {
+    controlledDeadlineClock(t);
+    const parent = new AbortController();
+    const context = { ...fakeSummaryContext(), signal: parent.signal };
+    const output = "ORIGINAL FACTS AFTER USER CANCEL";
+    let calls = 0;
+    let releaseLate: () => Promise<void>;
+    const completion: TestCompletion = async (...args) => {
+      calls += 1;
+      return new Promise<TestCompletionResult>((resolve) => {
+        releaseLate = async () => {
+          const response = await fakeCompletion("late cancelled response")(...args);
+          response.content = [{ type: "text", text: "malformed after parent cancellation" }];
+          resolve(response);
+        };
+      });
+    };
+    let result: TestResult | undefined;
+    const operation = processToolResult(context, fakeToolResult(output), 0, completion)
+      .then((value) => { result = value as TestResult; });
+    await deadlineEventLoopTurn();
+    assert.equal(calls, 1);
+    parent.abort();
+    await deadlineEventLoopTurn();
+    assert.ok(result, "父取消必须在不推进任何超时的情况下结束提炼等待");
+    await operation;
+    assert.equal(calls, 1);
+    assert.equal(result.content[0]?.text, output);
+    assert.match(String(result.details?.outputSummaryError), /abort/i);
+    await releaseLate!();
+    await deadlineEventLoopTurn();
+    assert.equal(calls, 1, "父取消后的迟到响应也不能启动JSON修复");
+    assert.equal(result.content[0]?.text, output);
+  });
+});
+
+test("提炼总预算：JSON修复挂起到期后保留原文，不重新总结", async (t) => {
+  await withFakeSummaryConfig(async () => {
+    const advance = controlledDeadlineClock(t);
+    const output = "ORIGINAL OUTPUT FOR JSON REPAIR TIMEOUT";
+    let calls = 0;
+    let finishFirst: () => Promise<void>;
+    const completion: TestCompletion = async (...args) => {
+      calls += 1;
+      if (calls === 1) {
+        return new Promise<TestCompletionResult>((resolve) => {
+          finishFirst = async () => {
+            const malformed = await fakeCompletion("fixture")(...args);
+            malformed.content = [{ type: "text", text: "not a JSON object" }];
+            resolve(malformed);
+          };
+        });
+      }
+      return new Promise(() => {});
+    };
+    let result: TestResult | undefined;
+    const operation = processToolResult(fakeSummaryContext(), fakeToolResult(output), 0, completion)
+      .then((value) => { result = value as TestResult; });
+    await deadlineEventLoopTurn();
+    assert.equal(calls, 1);
+    await advance(400);
+    await finishFirst!();
+    await deadlineEventLoopTurn();
+    assert.equal(calls, 2, "首次模型输出后只进行JSON修复");
+    await advance(599);
+    assert.equal(result, undefined, "仍有1ms剩余时不能提前回退");
+    await advance(1);
+    assert.ok(result);
+    await operation;
+    assert.equal(calls, 2, "修复挂起不能重新发送完整工具输出");
+    assert.equal(result.details?.summaryJsonRepairAttempted, true);
+    assert.equal(result.details?.summaryJsonRepairSucceeded, false);
+    assert.equal(result.content[0]?.text, output);
+  });
+});
+
+
+for (const sample of [
+  { timeoutRetryCount: 1, errorRetryCount: 0, expectedCalls: 2, expectedStatus: "summarized" },
+  { timeoutRetryCount: 0, errorRetryCount: 1, expectedCalls: 1, expectedStatus: "summary-failed" },
+]) {
+  test(`提炼总预算：定时器尚未运行的逾期拒绝仍按超时额度${sample.timeoutRetryCount}/${sample.errorRetryCount}`, async (t) => {
+    await withFakeSummaryConfig(async () => {
+      controlledDeadlineClock(t);
+      let calls = 0;
+      const completion: TestCompletion = async (...args) => {
+        calls += 1;
+        if (calls === 1) {
+          // 模拟事件循环阻塞后先处理rejection，超时回调尚未得到运行机会。
+          t.mock.method(performance, "now", () => 1001);
+          throw new Error("synthetic rejection after deadline");
+        }
+        return fakeCompletion("ERROR E42; next inspect")(...args);
+      };
+      const output = "ERROR E42; next inspect\n".repeat(20);
+      const result = await processToolResult(fakeSummaryContext(), fakeToolResult(output), 0, completion);
+      assert.equal(calls, sample.expectedCalls);
+      assert.equal(result.details?.outputSummaryStatus, sample.expectedStatus);
+      if (sample.expectedStatus === "summary-failed") {
+        assert.equal(result.content[0]?.text, output);
+        assert.equal(result.details?.outputSummaryError, "Distillation model attempt timed out");
+      }
+    }, 10000, sample);
+  });
+}
+
+test("提炼总预算：非对称重试取较大值而不是较小值或相加", async (t) => {
+  await withFakeSummaryConfig(async () => {
+    const advance = controlledDeadlineClock(t);
+    const output = "ORIGINAL ASYMMETRIC BUDGET FACTS";
+    let calls = 0;
+    const completion: TestCompletion = async (...args) => {
+      calls += 1;
+      if (calls === 1) throw new Error("synthetic first error");
+      if (calls > 3) return fakeCompletion("WRONG FOURTH REQUEST")(...args);
+      return new Promise((_, reject) => {
+        args[2]!.signal!.addEventListener("abort", () => reject(new Error("synthetic timeout")), { once: true });
+      });
+    };
+    let result: TestResult | undefined;
+    const operation = processToolResult(fakeSummaryContext(), fakeToolResult(output), 0, completion)
+      .then(value => { result = value as TestResult; });
+    await deadlineEventLoopTurn();
+    assert.equal(calls, 2);
+    await advance(1000);
+    assert.equal(calls, 3, "较大额度允许第二个超时尝试");
+    await advance(1000);
+    assert.ok(result);
+    await operation;
+    assert.equal(calls, 3, "不能把两类额度相加而发出第4次完整提炼");
+    assert.equal(result.details?.summaryAttempts, 3);
+    assert.equal(result.content[0]?.text, output);
+  }, 10000, { timeoutRetryCount: 2, errorRetryCount: 1 });
+});
+
+test("提炼总预算：解析用尽剩余期限后不再启动JSON修复鉴权", async (t) => {
+  await withFakeSummaryConfig(async () => {
+    controlledDeadlineClock(t);
+    const originalParse = JSON.parse;
+    t.mock.method(JSON, "parse", (...args: Parameters<typeof JSON.parse>) => {
+      if (args[0] === "MALFORMED_AFTER_RESPONSE") t.mock.method(performance, "now", () => 1000);
+      return originalParse(...args);
+    });
+    const context = fakeSummaryContext();
+    const originalAuth = context.ctx.modelRegistry.getApiKeyAndHeaders.bind(context.ctx.modelRegistry);
+    let authRequests = 0;
+    context.ctx.modelRegistry.getApiKeyAndHeaders = async model => {
+      authRequests += 1;
+      return originalAuth(model);
+    };
+    let calls = 0;
+    const completion: TestCompletion = async (...args) => {
+      calls += 1;
+      const response = await fakeCompletion("fixture")(...args);
+      response.content = [{ type: "text", text: "MALFORMED_AFTER_RESPONSE" }];
+      return response;
+    };
+    const output = "ORIGINAL FACTS BEFORE PARSER DEADLINE";
+    const result = await processToolResult(context, fakeToolResult(output), 0, completion);
+    assert.equal(authRequests, 1, "修复鉴权不能在已到期限后启动");
+    assert.equal(calls, 1);
+    assert.equal(result.content[0]?.text, output);
+    assert.equal(result.details?.outputSummaryStatus, "summary-failed");
+  });
 });

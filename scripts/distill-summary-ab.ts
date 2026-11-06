@@ -470,7 +470,7 @@ async function callModel(options: CliOptions, messages: PromptMessage[]): Promis
       signal: controller.signal,
       body: JSON.stringify({
         model: options.model,
-        maxToken: options.maxTokens,
+        max_tokens: options.maxTokens,
         stream: false,
         messages,
       }),

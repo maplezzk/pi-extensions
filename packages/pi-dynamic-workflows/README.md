@@ -12,6 +12,11 @@ Claude-Code-style dynamic workflow orchestration for Pi.
 - Async background execution mode with live status widget
 - Configurable via `/config:workflow` slash command (persisted to JSON)
 
+Each `agent()` is shown in the Workflow panel only. With the `subagent` backend the
+workflow launches real `pi-interactive-subagents` sessions, but those agents are
+hidden from the Subagents widget so the same run is not listed twice; the agent
+still appears in its own terminal pane and can be interrupted normally.
+
 ## Installation
 
 ```bash
@@ -20,12 +25,12 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 ## Configuration
 
-Run `/config:workflow` to interactively configure:
+Run `/config:workflow` to open the settings panel (Enter opens a picker for the backend, Enter toggles async mode in place; every change is saved and applied immediately, so no `/reload` is needed):
 
 - **Execution backend**: `workflow` (built-in in-process agent) or `subagent` (requires `pi-interactive-subagents` to be installed and loaded; each agent gets a real tool session)
 - **Async mode**: run workflows in the background with a live status widget
 
-Config is persisted to `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`.
+Config is persisted to `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`. The on-disk key for async mode is still `async` (`{"backend": "workflow", "async": false}`); the value is validated on write.
 
 Environment variables are supported as fallback only:
 
@@ -61,6 +66,14 @@ The `subagent` backend can be activated by either of:
 3. If you enabled it via an environment variable, remove `export PI_WORKFLOW_BACKEND=subagent` from your shell config (e.g. `.zshrc` / `.zshenv`) and restart pi.
 
 `/workflow-config` and `/pi-workflow-config` remain available as compatibility aliases.
+
+### Error: Subagent finished without calling structured_output
+
+**Cause**: an `agent()` call with `schema` only reports a result when the subagent finishes through `subagent_done`. Any other exit — a help request, a crash, a cancel — leaves no structured result, so the workflow can only report this generic error and the reason stays in the child session file.
+
+Agents launched with `schema` run fire-and-forget: nothing can answer a help request while the workflow is running, so these agents deny `caller_ping` and a blocked subagent must report through its structured result instead (`ok: false` plus the reason in `error`/`notes`).
+
+**Fix**: inspect the child session file the workflow reported, or re-run the task once the blocking condition is removed. Do not retry blindly — a retry against the same blocker produces the same error.
 
 ## Usage
 

@@ -1871,7 +1871,7 @@ function renderDiffStatBar(stats: DiffStats, width: number, theme: DiffTheme): s
 
 function buildDiffSummaryBasePieces(stats: DiffStats, theme: DiffTheme): string[] {
 	return [
-		theme.fg("toolOutput", `↳ ${emphasis(theme, "diff")}`),
+		theme.fg("toolOutput", emphasis(theme, "diff")),
 		theme.fg("toolDiffAdded", `+${stats.added}`),
 		theme.fg("toolDiffRemoved", `-${stats.removed}`),
 	];
@@ -2074,7 +2074,7 @@ export function renderEditDiffResult(
 	const diffText = safeGetDiff(details);
 	if (!diffText.trim()) {
 		if (!fallbackText.trim()) {
-			return new Text(theme.fg("muted", "↳ edit completed (no diff payload)"), 0, 0);
+			return new Text(theme.fg("muted", "edit completed (no diff payload)"), 0, 0);
 		}
 		return new Text(theme.fg("toolOutput", fallbackText), 0, 0);
 	}
@@ -2084,11 +2084,11 @@ export function renderEditDiffResult(
 		parsed = parseDiff(diffText);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return new Text(theme.fg("warning", `↳ unable to render diff: ${message}`), 0, 0);
+		return new Text(theme.fg("warning", `unable to render diff: ${message}`), 0, 0);
 	}
 
 	if (parsed.entries.length === 0) {
-		return new Text(theme.fg("muted", "↳ no diff data"), 0, 0);
+		return new Text(theme.fg("muted", "no diff data"), 0, 0);
 	}
 
 	const splitRows = buildSplitRows(parsed.entries);
@@ -2164,7 +2164,7 @@ function renderWriteHeader(
 ): string {
 	const actionLabel = headerLabel?.trim() || (wasOverwrite ? "overwritten" : "created");
 	return stabilizeBackgroundResets(
-		truncateToWidth(theme.fg("toolOutput", `↳ ${emphasis(theme, actionLabel)}`), width),
+		truncateToWidth(theme.fg("toolOutput", emphasis(theme, actionLabel)), width),
 	);
 }
 
@@ -2368,9 +2368,9 @@ function buildWriteOverwriteGuardText(guard: WriteOverwriteGuard, width: number)
 	}
 
 	const candidates = [
-		`↳ overwrite diff omitted (${guard.previousLineCount} → ${guard.nextLineCount} lines)`,
-		`↳ overwrite diff omitted (${guard.previousLineCount}→${guard.nextLineCount})`,
-		"↳ overwrite diff omitted",
+		`overwrite diff omitted (${guard.previousLineCount} → ${guard.nextLineCount} lines)`,
+		`overwrite diff omitted (${guard.previousLineCount}→${guard.nextLineCount})`,
+		"overwrite diff omitted",
 		"diff omitted",
 		"…",
 	];
@@ -2399,7 +2399,7 @@ export function renderWriteDiffResult(
 ): Component {
 	if (typeof content !== "string") {
 		if (!fallbackText.trim()) {
-			return new Text(theme.fg("muted", "↳ write completed"), 0, 0);
+			return new Text(theme.fg("muted", "write completed"), 0, 0);
 		}
 		return new Text(theme.fg("toolOutput", fallbackText), 0, 0);
 	}

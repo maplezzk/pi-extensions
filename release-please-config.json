@@ -7,13 +7,23 @@
   ],
   "packages": {
     "packages/pi-extensions-i18n": {},
+    "packages/pi-model-request": {},
     "packages/pi-distill": {},
     "packages/pi-tool-supervisor": {},
     "packages/pi-extensions-tool-display": {},
     "packages/pi-terminal-mux": {},
     "packages/pi-metrics": {},
     "packages/pi-models-discovery": {},
+    "packages/pi-session-tools": {},
+    "packages/pi-session-resources": {},
     "packages/pi-dynamic-workflows": {},
-    "packages/pi-interactive-subagents": {}
+    "packages/pi-interactive-subagents": {},
+    "packages/pi-safety-guards": {},
+    "packages/pi-nested-skills": {},
+    "packages/pi-notifications": {},
+    "packages/pi-naming": {},
+    "packages/pi-auto-goal": {},
+    "packages/pi-clean-mode": {},
+    "packages/pi-gen-ui": {}
   }
 }

@@ -59,6 +59,34 @@
     "zh-CN": "文件匹配：{value}",
     "en-US": "File patterns: {value}"
   },
+  "tools": {
+    "zh-CN": "工具范围：{value}",
+    "en-US": "Tools: {value}"
+  },
+  "toolsInput": {
+    "zh-CN": "工具范围（逗号分隔，* 表示全部工具）",
+    "en-US": "Tools (comma-separated; * means every tool)"
+  },
+  "triggerConfig": {
+    "zh-CN": "触发阶段：{value}",
+    "en-US": "Trigger: {value}"
+  },
+  "triggerInput": {
+    "zh-CN": "触发阶段",
+    "en-US": "Trigger"
+  },
+  "conditionConfig": {
+    "zh-CN": "条件模块：{value}",
+    "en-US": "Condition module: {value}"
+  },
+  "conditionNone": {
+    "zh-CN": "始终匹配",
+    "en-US": "Always matches"
+  },
+  "conditionInput": {
+    "zh-CN": "条件模块路径（留空禁用）",
+    "en-US": "Condition module path (empty to disable)"
+  },
   "deleteReviewer": {
     "zh-CN": "删除此审查器",
     "en-US": "Delete this reviewer"
@@ -107,36 +135,372 @@
     "zh-CN": "审查超时时间（秒）",
     "en-US": "Review timeout (seconds)"
   },
-  "outputInput": {
-    "zh-CN": "最终返回最大字符数",
-    "en-US": "Maximum final output characters"
+  "fileContextInput": {
+    "zh-CN": "修改后文件上下文最大字符数",
+    "en-US": "Maximum post-edit file context characters"
   },
   "rulesInput": {
     "zh-CN": "规则文件最大行数",
     "en-US": "Maximum rule file lines"
   },
-  "outputConfig": {
-    "zh-CN": "最终返回上限：{value} 字符",
-    "en-US": "Final output limit: {value} chars"
+  "fileContextConfig": {
+    "zh-CN": "修改后文件上下文上限：{value} 字符",
+    "en-US": "Post-edit file context limit: {value} chars"
   },
   "rulesConfig": {
     "zh-CN": "规则最大行数：{value}",
     "en-US": "Maximum rule lines: {value}"
   },
   "commandDescription": {
-    "zh-CN": "通过交互式菜单配置 edit/write 文件评审",
-    "en-US": "Configure edit/write file review through an interactive menu"
+    "zh-CN": "通过交互式菜单配置工具生命周期审查",
+    "en-US": "Configure tool lifecycle review through an interactive menu"
   },
   "interactiveOnly": {
     "zh-CN": "当前模式不支持交互式配置，请使用有 UI 的 Pi 会话。",
     "en-US": "Interactive configuration is not supported in this mode; use a Pi session with a UI."
   },
-  "tempFileWriteFailed": {
-    "zh-CN": "超长工具结果写入临时文件失败，已截断返回：{message}",
-    "en-US": "Failed to write oversized tool result to temp file, truncated: {message}"
-  },
   "reviewAborted": {
-    "zh-CN": "上级请求已终止，未发起审查模型请求。",
-    "en-US": "The parent request was aborted; no review-model request was started."
+    "zh-CN": "上级请求已终止，审查模型请求已取消或未发起。",
+    "en-US": "The parent request was aborted; review-model requests were cancelled or not started."
+  },
+  "failedAfterReview": {
+    "zh-CN": "工具调用失败，跳过 after 审查。",
+    "en-US": "The tool call failed; after review was skipped."
+  },
+  "unchangedFileSkipped": {
+    "zh-CN": "文件内容没有变化，跳过审查。",
+    "en-US": "The file content did not change; review was skipped."
+  },
+  "noApplicableRules": {
+    "zh-CN": "没有适用规则。",
+    "en-US": "No applicable rules."
+  },
+  "noApplicableGenericRules": {
+    "zh-CN": "没有适用的通用工具规则。",
+    "en-US": "No applicable generic-tool rules."
+  },
+  "beforeReviewRejectedFallback": {
+    "zh-CN": "工具 {toolName} 未通过前置审查。",
+    "en-US": "Tool {toolName} did not pass the before review."
+  },
+  "conditionNotMatched": {
+    "zh-CN": "条件未匹配，跳过该审查器。",
+    "en-US": "The condition did not match; this reviewer was skipped."
+  },
+  "conditionFailed": {
+    "zh-CN": "条件模块 {path} 执行失败：{message}",
+    "en-US": "Condition module {path} failed: {message}"
+  },
+  "backendModel": {
+    "zh-CN": "对话模型",
+    "en-US": "Chat model"
+  },
+  "backendTypesafe": {
+    "zh-CN": "TypeSafe 判断",
+    "en-US": "TypeSafe judgment"
+  },
+  "backendConfig": {
+    "zh-CN": "审查引擎：{value}",
+    "en-US": "Review engine: {value}"
+  },
+  "backendInput": {
+    "zh-CN": "审查引擎",
+    "en-US": "Review engine"
+  },
+  "typesafeModel": {
+    "zh-CN": "TypeSafe 模型：{value}",
+    "en-US": "TypeSafe model: {value}"
+  },
+  "typesafeModelInput": {
+    "zh-CN": "TypeSafe 模型名（留空使用默认值）",
+    "en-US": "TypeSafe model name (empty uses the default)"
+  },
+  "modelMissing": {
+    "zh-CN": "这个 reviewer 没有可用的审查模型。",
+    "en-US": "This reviewer has no usable review model."
+  },
+  "noJudgments": {
+    "zh-CN": "没有可判断的规则：所有规则文件都缺少「## 判据」段落。",
+    "en-US": "No judgable rules: every rule file is missing its \"## Criteria\" section."
+  },
+  "passedSummary": {
+    "zh-CN": "全部规则判断未命中。",
+    "en-US": "No rule judgment was hit."
+  },
+  "rejectedSummary": {
+    "zh-CN": "{count} 条规则命中：{details}",
+    "en-US": "{count} rule judgments were hit: {details}"
+  },
+  "unansweredJudgments": {
+    "zh-CN": "TypeSafe 没有返回 {count} 条规则的答案（{ids}），它们无法判定，本次审查按失败处理，不视为通过。",
+    "en-US": "TypeSafe returned no answer for {count} rules ({ids}); they could not be judged, so this review is reported as failed rather than passed."
+  },
+  "localizationSkipped": {
+    "zh-CN": "新增行超过 {count} 行，已跳过行号定位，只报告规则级别的问题。",
+    "en-US": "More than {count} added lines, so line localization was skipped and issues are reported at rule level only."
+  },
+  "localizationFailed": {
+    "zh-CN": "行号定位请求失败，只报告规则级别的问题：{message}",
+    "en-US": "The line localization request failed, so issues are reported at rule level only: {message}"
+  },
+  "panelOn": {
+    "zh-CN": "开",
+    "en-US": "On"
+  },
+  "panelOff": {
+    "zh-CN": "关",
+    "en-US": "Off"
+  },
+  "panelInputPrompt": {
+    "zh-CN": "值",
+    "en-US": "Value"
+  },
+  "panelSearchPrompt": {
+    "zh-CN": "过滤",
+    "en-US": "Filter"
+  },
+  "panelActionHint": {
+    "zh-CN": "回车执行",
+    "en-US": "Press Enter to run"
+  },
+  "panelValueUnset": {
+    "zh-CN": "（未设置）",
+    "en-US": "(unset)"
+  },
+  "panelLabelEnabled": {
+    "zh-CN": "总开关",
+    "en-US": "Master switch"
+  },
+  "panelDescEnabled": {
+    "zh-CN": "关闭后工具审查完全不执行，编辑不再经过审查模型。",
+    "en-US": "When off, tool review never runs and edits are no longer checked by a review model."
+  },
+  "panelLabelTimeout": {
+    "zh-CN": "审查超时（秒）",
+    "en-US": "Review timeout (seconds)"
+  },
+  "panelDescTimeout": {
+    "zh-CN": "单个审查模型的请求超时；超时按审查失败处理，不打回编辑。",
+    "en-US": "Request timeout for one review model; a timeout is reported as a failed review and does not revert the edit."
+  },
+  "panelLabelFileContext": {
+    "zh-CN": "文件上下文上限（字符）",
+    "en-US": "File context limit (chars)"
+  },
+  "panelDescFileContext": {
+    "zh-CN": "发给审查模型的修改后文件内容上限，超出时只保留改动附近的片段。",
+    "en-US": "Maximum post-edit file content sent to the review model; beyond this only the area around the change is kept."
+  },
+  "panelLabelRuleLines": {
+    "zh-CN": "规则最大行数",
+    "en-US": "Maximum rule lines"
+  },
+  "panelDescRuleLines": {
+    "zh-CN": "规则文件超过该行数时发出拆分提醒，审查仍然执行。",
+    "en-US": "Rule files longer than this produce a split warning; the review still runs."
+  },
+  "panelLabelTypesafeApiKey": {
+    "zh-CN": "TypeSafe API Key",
+    "en-US": "TypeSafe API key"
+  },
+  "panelDescTypesafeApiKey": {
+    "zh-CN": "留空时回退到 TYPESAFE_API_KEY 环境变量。",
+    "en-US": "Empty falls back to the TYPESAFE_API_KEY environment variable."
+  },
+  "panelLabelTypesafeEndpoint": {
+    "zh-CN": "TypeSafe 端点",
+    "en-US": "TypeSafe endpoint"
+  },
+  "panelDescTypesafeEndpoint": {
+    "zh-CN": "留空时回退到 TYPESAFE_ENDPOINT 环境变量。",
+    "en-US": "Empty falls back to the TYPESAFE_ENDPOINT environment variable."
+  },
+  "panelLabelAddReviewer": {
+    "zh-CN": "添加审查器",
+    "en-US": "Add reviewer"
+  },
+  "panelDescAddReviewer": {
+    "zh-CN": "依次填写名称、引擎、模型与规则文件，保存后立刻生效。",
+    "en-US": "Asks for a name, engine, model and rule files in turn; takes effect as soon as it is saved."
+  },
+  "panelReviewerTitle": {
+    "zh-CN": "审查器：{name}",
+    "en-US": "Reviewer: {name}"
+  },
+  "panelLabelReviewerEnabled": {
+    "zh-CN": "启用",
+    "en-US": "Enabled"
+  },
+  "panelDescReviewerEnabled": {
+    "zh-CN": "关闭后该审查器不参与触发，其余审查器不受影响。",
+    "en-US": "When off, this reviewer never triggers; other reviewers are unaffected."
+  },
+  "panelLabelReviewerName": {
+    "zh-CN": "名称",
+    "en-US": "Name"
+  },
+  "panelDescReviewerName": {
+    "zh-CN": "审计卡片和未通过诊断里显示的名字。",
+    "en-US": "Name shown in the audit card and in rejection diagnostics."
+  },
+  "panelLabelBackend": {
+    "zh-CN": "审查引擎",
+    "en-US": "Review engine"
+  },
+  "panelDescBackend": {
+    "zh-CN": "选择对话模型、TypeSafe、Cloudflare Clef 或 OpenAI Decisions；切换立即生效。",
+    "en-US": "Choose a conversation model, TypeSafe, Cloudflare Clef, or OpenAI Decisions; changes take effect immediately."
+  },
+  "panelLabelModel": {
+    "zh-CN": "审查模型",
+    "en-US": "Review model"
+  },
+  "panelDescModel": {
+    "zh-CN": "回车打开可搜索的可用模型列表，输入任意片段都能过滤。",
+    "en-US": "Enter opens a searchable list of available models; typing any fragment filters it."
+  },
+  "panelLabelTypesafeModel": {
+    "zh-CN": "TypeSafe 模型",
+    "en-US": "TypeSafe model"
+  },
+  "panelDescTypesafeModel": {
+    "zh-CN": "留空使用默认值 jev-latest。",
+    "en-US": "Empty uses the default, jev-latest."
+  },
+  "panelLabelRulesFiles": {
+    "zh-CN": "规则文件",
+    "en-US": "Rule files"
+  },
+  "panelDescRulesFiles": {
+    "zh-CN": "逗号分隔；至少一个，留空不会被接受。",
+    "en-US": "Comma-separated; at least one is required and an empty value is rejected."
+  },
+  "panelLabelTools": {
+    "zh-CN": "工具范围",
+    "en-US": "Tools"
+  },
+  "panelDescTools": {
+    "zh-CN": "逗号分隔的工具名；填 * 表示全部工具。",
+    "en-US": "Comma-separated tool names; * means every tool."
+  },
+  "panelLabelTrigger": {
+    "zh-CN": "触发阶段",
+    "en-US": "Trigger"
+  },
+  "panelDescTrigger": {
+    "zh-CN": "before 在工具执行前审查，未通过会直接阻止该次调用；after 在执行后审查。",
+    "en-US": "Before reviews ahead of the tool and blocks the call when it fails; after reviews once the tool has run."
+  },
+  "panelTriggerBefore": {
+    "zh-CN": "执行前（可阻止）",
+    "en-US": "Before (can block)"
+  },
+  "panelTriggerAfter": {
+    "zh-CN": "执行后",
+    "en-US": "After"
+  },
+  "panelLabelCondition": {
+    "zh-CN": "条件模块",
+    "en-US": "Condition module"
+  },
+  "panelDescCondition": {
+    "zh-CN": "本地 JS 模块路径，返回是否应用本审查器；留空表示始终应用。",
+    "en-US": "Path to a local JS module that decides whether this reviewer applies; empty means always."
+  },
+  "panelLabelFilePatterns": {
+    "zh-CN": "文件匹配",
+    "en-US": "File patterns"
+  },
+  "panelDescFilePatterns": {
+    "zh-CN": "逗号分隔的 glob；留空匹配全部文件（仍受规则 front matter 约束）。",
+    "en-US": "Comma-separated globs; empty matches every file (rule front matter still applies)."
+  },
+  "panelLabelRemove": {
+    "zh-CN": "删除此审查器",
+    "en-US": "Remove this reviewer"
+  },
+  "panelDescRemove": {
+    "zh-CN": "从配置里移除该审查器，会先让你确认。",
+    "en-US": "Removes this reviewer from the configuration; you are asked to confirm first."
+  },
+  "backendCloudflare": {
+    "zh-CN": "Cloudflare Clef 判断模型",
+    "en-US": "Cloudflare Clef decision model"
+  },
+  "cloudflareModelInput": {
+    "zh-CN": "选择 Cloudflare 模型",
+    "en-US": "Choose a Cloudflare model"
+  },
+  "panelLabelCloudflareModel": {
+    "zh-CN": "Cloudflare 模型",
+    "en-US": "Cloudflare model"
+  },
+  "panelDescCloudflareModel": {
+    "zh-CN": "Clef Flash 较快；Clef 较大。规则判断与行定位均使用所选模型。",
+    "en-US": "Clef Flash is faster; Clef is larger. Rule judgments and line localization use the selected model."
+  },
+  "panelLabelCloudflareBaseUrl": {
+    "zh-CN": "Cloudflare API 地址",
+    "en-US": "Cloudflare API base URL"
+  },
+  "panelDescCloudflareBaseUrl": {
+    "zh-CN": "留空使用 https://api.cloudflare.com/client/v4；远程网关需要 HTTPS。",
+    "en-US": "Leave empty for https://api.cloudflare.com/client/v4; remote gateways require HTTPS."
+  },
+  "panelLabelCloudflareAccountId": {
+    "zh-CN": "Cloudflare 账号 ID",
+    "en-US": "Cloudflare account ID"
+  },
+  "panelDescCloudflareAccountId": {
+    "zh-CN": "可选的非密钥账号 ID；显式值优先于账号环境变量。",
+    "en-US": "Optional non-secret account ID; an explicit value takes precedence over the account environment variable."
+  },
+  "panelLabelCloudflareAccountIdEnv": {
+    "zh-CN": "Cloudflare 账号环境变量",
+    "en-US": "Cloudflare account variable"
+  },
+  "panelDescCloudflareAccountIdEnv": {
+    "zh-CN": "账号 ID 的环境变量名；留空默认 CLOUDFLARE_ACCOUNT_ID。",
+    "en-US": "Name of the account ID variable; empty defaults to CLOUDFLARE_ACCOUNT_ID."
+  },
+  "panelLabelCloudflareTokenEnv": {
+    "zh-CN": "Cloudflare token 环境变量",
+    "en-US": "Cloudflare token variable"
+  },
+  "panelDescCloudflareTokenEnv": {
+    "zh-CN": "仅填写环境变量名，不能填写 token。留空默认 CLOUDFLARE_API_TOKEN。",
+    "en-US": "Enter only the variable name, never the token. Empty defaults to CLOUDFLARE_API_TOKEN."
+  },
+  "backendOpenAiDecisions": {
+    "zh-CN": "OpenAI Decisions",
+    "en-US": "OpenAI Decisions"
+  },
+  "openaiDecisionsModelInput": {
+    "zh-CN": "Decisions 模型名称",
+    "en-US": "Decisions model name"
+  },
+  "panelLabelOpenAiDecisionsModel": {
+    "zh-CN": "Decisions 模型",
+    "en-US": "Decisions model"
+  },
+  "panelDescOpenAiDecisionsModel": {
+    "zh-CN": "原生 Decisions API 模型名称。",
+    "en-US": "Native Decisions API model name."
+  },
+  "panelLabelOpenAiDecisionsBaseUrl": {
+    "zh-CN": "Decisions 服务地址",
+    "en-US": "Decisions API URL"
+  },
+  "panelDescOpenAiDecisionsBaseUrl": {
+    "zh-CN": "API 版本前缀或完整 Decisions 地址；留空使用 OpenAI 公网服务。",
+    "en-US": "API version prefix or complete Decisions URL; unset uses the public OpenAI service."
+  },
+  "panelLabelOpenAiDecisionsApiKeyEnv": {
+    "zh-CN": "Decisions 密钥变量名",
+    "en-US": "Decisions key variable"
+  },
+  "panelDescOpenAiDecisionsApiKeyEnv": {
+    "zh-CN": "只填环境变量名，不填密钥内容；默认 OPENAI_API_KEY。",
+    "en-US": "Environment variable name only, never the key; default OPENAI_API_KEY."
   }
 }

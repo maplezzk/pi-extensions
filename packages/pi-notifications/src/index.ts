@@ -1,0 +1,333 @@
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import { basename } from "node:path";
+import {
+  createArgvNotificationAdapter,
+  type NotificationAdapter,
+  type NotificationFailure,
+  type NotificationPayload,
+} from "./adapter.ts";
+import { loadConfigWithDiagnostics, parseConfig, saveConfig, type NotificationConfig } from "./config.ts";
+import { openConfigPanel } from "./config-panel.ts";
+import { i18n } from "./i18n.ts";
+import { NOTICE_TAG_COLOR, installNoticeRenderer, notifyWithSource, type NoticeColor, type NoticeLevel, type NoticeSource } from "pi-extensions-i18n";
+
+export type { NotificationConfig } from "./config.ts";
+export type {
+  CommandAvailability,
+  NotificationAdapter,
+  NotificationAdapterConfig,
+  NotificationAdapterOptions,
+  NotificationFailure,
+  NotificationFailureKind,
+  NotificationPayload,
+  RunArgvCommand,
+} from "./adapter.ts";
+export {
+  createArgvNotificationAdapter,
+  isCommandAvailable,
+  renderNotificationArgs,
+  runArgvCommand,
+} from "./adapter.ts";
+export { configPath, loadConfig, loadConfigWithDiagnostics, parseConfig, saveConfig } from "./config.ts";
+
+interface Notice {
+  level: "warning";
+  message: string;
+}
+
+interface NotificationRuntime {
+  config: NotificationConfig;
+  adapter: NotificationAdapter | null;
+  failureReported: boolean;
+  context?: ExtensionContext;
+}
+
+const CONFIG_COMMAND_ALIASES = ["config:notifications", "notifications-config", "pi-notifications-config"] as const;
+const CONFIG_RESET_COMMAND = "reset";
+const NOTICE_WARNING = "warning" as const;
+const NOTICE_INFO = "info" as const;
+const NOTICE_ERROR = "error" as const;
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "notify";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
+const pendingNotices: Notice[] = [];
+let activeRuntime: NotificationRuntime | undefined;
+let noticeKeys = new Set<string>();
+
+/** 统一的带来源提示出口；所有用户可见提示都经此加上标签。 */
+function notifySource(ctx: ExtensionContext | ExtensionCommandContext, level: NoticeLevel, message: string): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
+
+/** 统一配置出口：面板与 reset 都走这里，保证运行期配置和磁盘配置同步。 */
+function applyConfigToRuntime(
+  runtime: NotificationRuntime,
+  config: NotificationConfig,
+  ctx: ExtensionCommandContext,
+): void {
+  runtime.config = config;
+  runtime.adapter = config.enabled
+    ? createArgvNotificationAdapter(config.adapter, config.timeoutMs)
+    : null;
+  runtime.failureReported = false;
+  try {
+    saveConfig(config);
+  } catch (error) {
+    notifySource(ctx, NOTICE_ERROR, i18n.t("configCommandInvalid", {
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
+}
+
+/** 打开 TUI 配置面板；每改一项立即写盘并同步运行期配置。 */
+async function openNotificationsPanel(ctx: ExtensionCommandContext): Promise<void> {
+  const runtime = activeRuntime ?? createRuntime();
+  activeRuntime = runtime;
+  await openConfigPanel(ctx, {
+    // 面板读运行期配置：它已被 applyConfigToRuntime 同步过，写盘失败时也不会回退到旧值。
+    getConfig: () => runtime.config,
+    onChange: (config) => applyConfigToRuntime(runtime, config, ctx),
+  });
+}
+
+/** 注册配置命令：无参数打开面板，`reset` 恢复默认值。 */
+function registerConfigCommand(pi: ExtensionAPI): void {
+  const command = {
+    description: i18n.t("configCommandDescription"),
+    getArgumentCompletions: () => [{ value: CONFIG_RESET_COMMAND, label: CONFIG_RESET_COMMAND }],
+    handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+      const argument = args.trim();
+      if (argument && argument !== CONFIG_RESET_COMMAND) {
+        notifySource(ctx, NOTICE_WARNING, i18n.t("configCommandUsage"));
+        return;
+      }
+      if (argument === CONFIG_RESET_COMMAND) {
+        try {
+          const config = parseConfig({});
+          const path = saveConfig(config);
+          if (activeRuntime) applyConfigToRuntime(activeRuntime, config, ctx);
+          notifySource(ctx, NOTICE_INFO, i18n.t("configCommandSaved", { path }));
+        } catch (error) {
+          notifySource(ctx, NOTICE_ERROR, i18n.t("configCommandInvalid", {
+            error: error instanceof Error ? error.message : String(error),
+          }));
+        }
+        return;
+      }
+      if (!ctx.hasUI) {
+        notifySource(ctx, NOTICE_WARNING, i18n.t("configCommandInteractiveOnly"));
+        return;
+      }
+      await openNotificationsPanel(ctx);
+    },
+  };
+  for (const name of CONFIG_COMMAND_ALIASES) pi.registerCommand(name, command);
+}
+
+/** 导出给其他扩展使用；通知发送在后台执行，不阻塞当前 Pi 事件。 */
+export function notify(title: string, subtitle: string, message: string): void {
+  const runtime = activeRuntime ?? createRuntime();
+  activeRuntime = runtime;
+  dispatchNotification(runtime, { title, subtitle, message });
+}
+
+export default function piNotifications(pi: ExtensionAPI): void {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
+  registerConfigCommand(pi);
+  const runtime = createRuntime();
+  let turnCount = 0;
+  let taskStartTime = 0;
+  activeRuntime = runtime;
+
+  pi.on("session_start", (_event, ctx) => {
+    runtime.context = ctx;
+    flushPendingNotices(ctx);
+  });
+
+  pi.on("session_shutdown", () => {
+    runtime.context = undefined;
+    if (activeRuntime === runtime) activeRuntime = undefined;
+  });
+
+  pi.on("tool_call", async (event, ctx) => {
+    runtime.context = ctx;
+    if (event.toolName !== "ask_user_question" && event.toolName !== "ask_user") return;
+
+    const project = basename(ctx.cwd);
+    const input = isRecord(event.input) ? event.input : {};
+    let prompt = i18n.t("inputNeeded");
+
+    if (event.toolName === "ask_user_question" && Array.isArray(input.questions)) {
+      const firstQuestion = isRecord(input.questions[0]) ? input.questions[0] : {};
+      const header = asString(firstQuestion.header);
+      const question = asString(firstQuestion.question);
+      const count = input.questions.length;
+      prompt = count > 1
+        ? i18n.t("multipleQuestions", {
+            prefix: header ? `[${header}] ` : "",
+            question,
+            count,
+          })
+        : `${header ? `[${header}] ` : ""}${question}`;
+    } else if (event.toolName === "ask_user") {
+      prompt = asString(input.question) || i18n.t("inputNeeded");
+    }
+
+    dispatchNotification(runtime, {
+      title: i18n.t("inputTitle", { project }),
+      subtitle: i18n.t("inputNeeded"),
+      message: prompt,
+    }, ctx);
+  });
+
+  pi.on("agent_start", async (_event, ctx) => {
+    runtime.context = ctx;
+    turnCount = 0;
+    taskStartTime = Date.now();
+  });
+
+  pi.on("turn_end", async (_event, ctx) => {
+    runtime.context = ctx;
+    turnCount++;
+  });
+
+  pi.on("agent_end", async (event, ctx) => {
+    runtime.context = ctx;
+    const elapsed = taskStartTime
+      ? ((Date.now() - taskStartTime) / 1000).toFixed(1)
+      : "?";
+    const hasError = event.messages?.some(
+      (message: any) => message.role === "tool" && message.isError,
+    );
+    const project = basename(ctx.cwd);
+    const message = turnCount > 0
+      ? i18n.t("stepCount", {
+          count: turnCount,
+          seconds: elapsed,
+        })
+      : i18n.t("elapsed", { seconds: elapsed });
+
+    dispatchNotification(runtime, {
+      title: i18n.t("taskTitle", { project }),
+      subtitle: hasError ? i18n.t("taskError") : i18n.t("taskDone"),
+      message,
+    }, ctx);
+  });
+}
+
+function createRuntime(): NotificationRuntime {
+  const loaded = loadConfigWithDiagnostics();
+  const runtime: NotificationRuntime = {
+    config: loaded.config,
+    adapter: loaded.config.enabled
+      ? createArgvNotificationAdapter(
+          loaded.config.adapter,
+          loaded.config.timeoutMs,
+        )
+      : null,
+    failureReported: false,
+  };
+
+  if (loaded.diagnostic) {
+    queueNotice(
+      "config",
+      i18n.t("configInvalid", {
+        path: loaded.diagnostic.path,
+        reason: loaded.diagnostic.reason,
+      }),
+    );
+  }
+  return runtime;
+}
+
+function dispatchNotification(
+  runtime: NotificationRuntime,
+  payload: NotificationPayload,
+  context?: ExtensionContext,
+): void {
+  if (!runtime.adapter) return;
+
+  void runtime.adapter.send(payload).catch((error: unknown) => {
+    reportAdapterFailure(runtime, error, context ?? runtime.context);
+  });
+}
+
+function reportAdapterFailure(
+  runtime: NotificationRuntime,
+  error: unknown,
+  context?: ExtensionContext,
+): void {
+  if (runtime.failureReported) return;
+  runtime.failureReported = true;
+
+  const failure = asNotificationFailure(error);
+  const message = failure?.kind === "missing"
+    ? i18n.t("adapterMissing", { command: failure.command })
+    : i18n.t("sendFailed", {
+        command: failure?.command ?? runtime.config.adapter.command,
+        reason: failure?.reason ?? errorMessage(error),
+      });
+  showNotice({ level: "warning", message }, context);
+}
+
+function asNotificationFailure(error: unknown): NotificationFailure | undefined {
+  if (!isRecord(error)) return undefined;
+  if (
+    (error.kind === "missing" || error.kind === "failed") &&
+    typeof error.command === "string" &&
+    typeof error.reason === "string"
+  ) {
+    return {
+      kind: error.kind,
+      command: error.command,
+      reason: error.reason,
+    };
+  }
+  return undefined;
+}
+
+function showNotice(notice: Notice, context?: ExtensionContext): void {
+  const key = `${notice.level}:${notice.message}`;
+  if (noticeKeys.has(key)) return;
+  noticeKeys.add(key);
+
+  if (context?.ui) {
+    notifySource(context, notice.level, notice.message);
+  } else {
+    pendingNotices.push(notice);
+  }
+}
+
+function queueNotice(key: string, message: string): void {
+  if (noticeKeys.has(key)) return;
+  noticeKeys.add(key);
+  pendingNotices.push({ level: "warning", message });
+}
+
+function flushPendingNotices(context: ExtensionContext): void {
+  for (const notice of pendingNotices.splice(0)) {
+    notifySource(context, notice.level, notice.message);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

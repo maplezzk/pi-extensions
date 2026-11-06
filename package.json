@@ -14,18 +14,26 @@
   ],
   "pi": {
     "extensions": [
-      "packages/*/index.ts"
+      "packages/*/index.ts",
+      "!packages/pi-terminal-mux/index.ts",
+      "!packages/pi-model-request/index.ts"
+    ],
+    "skills": [
+      "packages/*/SKILL.md"
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
-    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
-    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0"
+    "@earendil-works/pi-ai": ">=0.80.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
+    "@earendil-works/pi-tui": ">=0.80.0"
   },
   "scripts": {
     "test": "node scripts/run-workspaces.mjs test",
     "typecheck": "node scripts/run-workspaces.mjs typecheck",
-    "check": "npm run typecheck && npm test && node scripts/check-no-local-bindings.mjs && node scripts/check-package-config.mjs"
+    "check": "npm run typecheck && npm test && node scripts/check-no-local-bindings.mjs && node scripts/check-lockfile-registry.mjs && node scripts/check-package-config.mjs && node scripts/check-tool-supervisor-ui-output.mjs && node scripts/check-release-order.mjs && npm run test:release-publish-coverage",
+    "check:tool-supervisor-ui": "node scripts/check-tool-supervisor-ui-output.mjs",
+    "check:release-order": "node scripts/check-release-order.mjs",
+    "test:release-publish-coverage": "node --test scripts/release-publish-coverage.test.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -33,6 +41,7 @@
   "devDependencies": {
     "@types/node": "24.12.4",
     "tsx": "4.23.1",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "yaml": "^2.9.0"
   }
 }

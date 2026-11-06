@@ -8,7 +8,7 @@
  *   HERDR_TAB_ID（公开 id，如 "1:1"）
  *   HERDR_PANE_ID（公开 id，如 "1-1"）
  *
- * 所有 pane 操作通过 `herdr` CLI 完成，详见 SKILL.md。
+ * 所有 tab / pane 操作通过 `herdr` CLI 完成，详见 SKILL.md。
  * 日志、文件锁、BFS 分屏状态机、命令检测复用 backends/shared.ts。
  */
 
@@ -19,6 +19,36 @@ import { createBackendLogger, withFileLock, BfsSplitStateManager, hasCommand } f
 
 // ── 日志（统一格式，写入 /tmp/pi-mux-herdr.log） ──
 const herdrLog = createBackendLogger("herdr", "/tmp/pi-mux-herdr.log");
+const HERDR_TAB_CLOSE_COMMAND = ["tab", "close"] as const;
+const HERDR_TAB_LIST_COMMAND = ["tab", "list"] as const;
+const HERDR_TAB_RENAME_COMMAND = ["tab", "rename"] as const;
+const HERDR_WORKSPACE_RENAME_COMMAND = ["workspace", "rename"] as const;
+const HERDR_WORKSPACE_FLAG = "--workspace";
+const HERDR_PANE_SPLIT_COMMAND = ["pane", "split"] as const;
+const HERDR_PANE_CLOSE_COMMAND = ["pane", "close"] as const;
+const HERDR_SPLIT_DIRECTION_FLAG = "--direction";
+const HERDR_NO_FOCUS_FLAG = "--no-focus";
+const HERDR_SPLIT_RIGHT = "right";
+const HERDR_SPLIT_DOWN = "down";
+const HERDR_SPLIT_UP = "up";
+const HERDR_MARKER_PATH_PREFIX = "/tmp/herdr-subagent-pane-";
+const HERDR_MARKER_DEFAULT_ID = "default";
+const HERDR_LOCK_SUFFIX = ".lock";
+export const HERDR_SURFACE_MODE_SPLIT = "split";
+export const HERDR_SURFACE_MODE_TAB = "tab";
+const DEFAULT_HERDR_SURFACE_MODE = HERDR_SURFACE_MODE_SPLIT;
+
+export type HerdrSurfaceMode =
+  | typeof HERDR_SURFACE_MODE_SPLIT
+  | typeof HERDR_SURFACE_MODE_TAB;
+
+/** 解析 Herdr surface 放置模式；未配置时保持旧版 split，非法显式值直接报错。 */
+export function resolveHerdrSurfaceMode(value = process.env.PI_SUBAGENT_HERDR_MODE): HerdrSurfaceMode {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized || normalized === HERDR_SURFACE_MODE_SPLIT) return DEFAULT_HERDR_SURFACE_MODE;
+  if (normalized === HERDR_SURFACE_MODE_TAB) return HERDR_SURFACE_MODE_TAB;
+  throw new Error(i18n.t("error.invalidHerdrMode", { value }));
+}
 
 /**
  * 捕获于模块加载时的 agent pane id。
@@ -33,18 +63,20 @@ export const AGENT_HERDR_TAB_ID = process.env.HERDR_TAB_ID;
  * 检测 herdr backend 是否可用：
  *   1. `herdr` 命令在 PATH 中
  *   2. 当前进程在 herdr pane 内运行（HERDR_ENV=1）
- *   3. HERDR_PANE_ID 已注入
+ *   3. HERDR_PANE_ID 已注入；tab 模式还要求 HERDR_WORKSPACE_ID
  *
  * 注意：即使 socket 暂时不通，只要命令存在且 env 注入，就认为"runtime available"。
- * 子 agent 创建时会用 `herdr pane split` 触发 socket 调用，那时报错即可。
+ * 子 agent 创建时再通过对应的 pane split / tab create 命令触发 socket 调用。
  */
 export function isHerdrRuntimeAvailable(): boolean {
-  return (
-    !!process.env.HERDR_ENV &&
-    process.env.HERDR_ENV === "1" &&
-    !!process.env.HERDR_PANE_ID &&
-    hasCommand("herdr")
-  );
+  if (
+    process.env.HERDR_ENV !== "1" ||
+    !process.env.HERDR_PANE_ID ||
+    !hasCommand("herdr")
+  ) {
+    return false;
+  }
+  return resolveHerdrSurfaceMode() === HERDR_SURFACE_MODE_SPLIT || !!process.env.HERDR_WORKSPACE_ID;
 }
 
 // ── herdr CLI 调用的薄封装 ──
@@ -87,6 +119,10 @@ function parseHerdrJson(output: string): unknown {
  * 从 herdr JSON 响应中提取 pane 的公开 id。
  * pane split 响应格式：`{ "id": "...", "result": { "type": "pane_info", "pane": { "pane_id": "1-2", ... } } }`
  */
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function extractPaneId(json: unknown): string | null {
   if (!json || typeof json !== "object") return null;
   const obj = json as Record<string, unknown>;
@@ -95,7 +131,7 @@ function extractPaneId(json: unknown): string | null {
   const r = result as Record<string, unknown>;
   // 多种结果类型都包含 pane：pane_info、pane_created 等
   const pane = (r.pane ?? r.root_pane) as Record<string, unknown> | undefined;
-  if (pane && typeof pane.pane_id === "string") return pane.pane_id;
+  if (pane && isNonBlankString(pane.pane_id)) return pane.pane_id;
   return null;
 }
 
@@ -103,19 +139,39 @@ function extractPaneId(json: unknown): string | null {
 
 /** herdr BFS 分屏状态 marker 文件路径（按 agent pane id 区分） */
 function herdrMarkerPath(): string {
-  return `/tmp/herdr-subagent-pane-${(AGENT_HERDR_PANE_ID ?? "default").replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
+  const paneId = (AGENT_HERDR_PANE_ID ?? HERDR_MARKER_DEFAULT_ID).replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `${HERDR_MARKER_PATH_PREFIX}${paneId}.json`;
+}
+
+interface CreatedHerdrTab {
+  tabId: string;
+  paneId: string;
+}
+
+/** 从 `herdr tab create` 响应提取新 tab 与 root pane 的公开 id。 */
+function extractCreatedHerdrTab(json: unknown): CreatedHerdrTab | null {
+  if (!json || typeof json !== "object") return null;
+  const result = (json as Record<string, unknown>).result;
+  if (!result || typeof result !== "object") return null;
+  const record = result as Record<string, unknown>;
+  const tab = record.tab as Record<string, unknown> | undefined;
+  const rootPane = record.root_pane as Record<string, unknown> | undefined;
+  if (!isNonBlankString(tab?.tab_id) || !isNonBlankString(rootPane?.pane_id)) return null;
+  return { tabId: tab.tab_id, paneId: rootPane.pane_id };
+}
+
+/** 记录由本进程创建的 tab surface，使 rename / close 操作作用于整个 tab。 */
+const createdHerdrTabIds = new Map<string, string>();
+
+/** 仅返回本进程实际创建的独占 tab，供启动方声明改名归属。 */
+export function getCreatedHerdrTabId(surface: string): string | undefined {
+  return createdHerdrTabIds.get(surface);
 }
 
 // ── 对外 API：createSurface 系列 ──
 
-/**
- * 创建一个新的 subagent pane。
- *
- * 实现：split 当前 agent pane 右侧（--no-focus 保持 agent 焦点不变）。
- * 后续 subagent 按 breadth-first 模式轮转 right/down/right/down…（与 cmux/muxy 行为一致）。
- * 锁与 BFS 状态机复用 shared.ts。
- */
-export function createHerdrSurface(name: string): string {
+/** 使用原有 BFS 策略创建 subagent 分屏。 */
+function createHerdrSplitSurface(name: string): string {
   if (!AGENT_HERDR_PANE_ID) {
     throw new Error(
       "HERDR_PANE_ID not set; cannot determine parent pane for subagent split. " +
@@ -124,20 +180,18 @@ export function createHerdrSurface(name: string): string {
   }
 
   const markerFile = herdrMarkerPath();
-  const lockPath = `${markerFile}.lock`;
+  const lockPath = `${markerFile}${HERDR_LOCK_SUFFIX}`;
 
   return withFileLock(lockPath, {}, () => {
-    const state = new BfsSplitStateManager(markerFile);
+    let state = new BfsSplitStateManager(markerFile);
 
-    // 首次 split
     if (state.panes().length === 0) {
       const output = herdrExec([
-        "pane",
-        "split",
-        AGENT_HERDR_PANE_ID!,
-        "--direction",
-        "right",
-        "--no-focus",
+        ...HERDR_PANE_SPLIT_COMMAND,
+        AGENT_HERDR_PANE_ID,
+        HERDR_SPLIT_DIRECTION_FLAG,
+        HERDR_SPLIT_RIGHT,
+        HERDR_NO_FOCUS_FLAG,
       ]);
       const newPaneId = extractPaneId(parseHerdrJson(output));
       if (newPaneId) {
@@ -149,40 +203,99 @@ export function createHerdrSurface(name: string): string {
         return newPaneId;
       }
       herdrLog(`[split] first split returned no pane id, output=${JSON.stringify(output)}`);
-      return "";
+      throw new Error(i18n.t("error.herdrSplitFailed"));
     }
 
-    // 后续：BFS 分屏
     const next = state.next();
-    if (!next) return "";
+    if (!next) {
+      throw new Error(i18n.t("error.herdrSplitFailed"));
+    }
 
     let { source } = next;
-    const { direction } = next;
-
-    // 若 source 过期（pane 被关闭 / session 重启），重置状态从 agent pane 重新分屏
+    let direction = next.direction;
     let output: string;
+    let isRecovered = false;
     try {
-      output = herdrExec(["pane", "split", source, "--direction", direction, "--no-focus"]);
+      output = herdrExec([
+        ...HERDR_PANE_SPLIT_COMMAND,
+        source,
+        HERDR_SPLIT_DIRECTION_FLAG,
+        direction,
+        HERDR_NO_FOCUS_FLAG,
+      ]);
     } catch {
       try { rmSync(markerFile); } catch { /* ignore */ }
+      state = new BfsSplitStateManager(markerFile);
+      isRecovered = true;
       herdrLog(`[split] pane ${source} gone, resetting from agent pane ${AGENT_HERDR_PANE_ID}`);
-      source = AGENT_HERDR_PANE_ID!;
-      output = herdrExec(["pane", "split", source, "--direction", "right", "--no-focus"]);
+      source = AGENT_HERDR_PANE_ID;
+      direction = HERDR_SPLIT_RIGHT;
+      output = herdrExec([
+        ...HERDR_PANE_SPLIT_COMMAND,
+        source,
+        HERDR_SPLIT_DIRECTION_FLAG,
+        direction,
+        HERDR_NO_FOCUS_FLAG,
+      ]);
     }
 
     const newPaneId = extractPaneId(parseHerdrJson(output));
     if (newPaneId) {
-      state.advance();
-      state.add(newPaneId);
+      if (isRecovered) {
+        state.add(newPaneId);
+      } else {
+        state.advance();
+        state.add(newPaneId);
+      }
       renameHerdrPane(newPaneId, name);
       herdrLog(
-        `[split] mode=next dir=${direction} from=${source} new=${newPaneId} name=${JSON.stringify(name)}`,
+        `[split] mode=${isRecovered ? "recovered" : "next"} dir=${direction} from=${source} new=${newPaneId} name=${JSON.stringify(name)}`,
       );
       return newPaneId;
     }
     herdrLog(`[split] next split returned no pane id, output=${JSON.stringify(output)}`);
-    return "";
+    throw new Error(i18n.t("error.herdrSplitFailed"));
   });
+}
+
+/** 在当前 workspace 中创建独立后台 tab，并返回 root pane id。 */
+function createHerdrTabSurface(name: string): string {
+  if (!AGENT_HERDR_WORKSPACE_ID) {
+    throw new Error(
+      "HERDR_WORKSPACE_ID not set; cannot determine workspace for subagent tab. " +
+        "Start pi inside herdr so HERDR_WORKSPACE_ID is injected at launch.",
+    );
+  }
+
+  const tabLabel = herdrSurfaceLabel(name);
+  const output = herdrExec([
+    "tab",
+    "create",
+    "--workspace",
+    AGENT_HERDR_WORKSPACE_ID,
+    "--cwd",
+    process.cwd(),
+    "--label",
+    tabLabel,
+    "--no-focus",
+  ]);
+  const createdTab = extractCreatedHerdrTab(parseHerdrJson(output));
+  if (!createdTab) {
+    throw new Error(`Unexpected herdr tab create output: ${output.trim() || "(empty)"}`);
+  }
+
+  createdHerdrTabIds.set(createdTab.paneId, createdTab.tabId);
+  herdrLog(
+    `[tab create] workspace=${AGENT_HERDR_WORKSPACE_ID} tab=${createdTab.tabId} pane=${createdTab.paneId} name=${JSON.stringify(name)}`,
+  );
+  return createdTab.paneId;
+}
+
+/** 按 PI_SUBAGENT_HERDR_MODE 选择兼容分屏或独立 tab；默认保持 split。 */
+export function createHerdrSurface(name: string): string {
+  return resolveHerdrSurfaceMode() === HERDR_SURFACE_MODE_TAB
+    ? createHerdrTabSurface(name)
+    : createHerdrSplitSurface(name);
 }
 
 /**
@@ -195,8 +308,16 @@ export function splitHerdrPane(
   direction: "left" | "right" | "up" | "down",
   name?: string,
 ): string {
-  const dir = direction === "down" || direction === "up" ? "down" : "right";
-  const output = herdrExec(["pane", "split", fromPane, "--direction", dir, "--no-focus"]);
+  const dir = direction === HERDR_SPLIT_DOWN || direction === HERDR_SPLIT_UP
+    ? HERDR_SPLIT_DOWN
+    : HERDR_SPLIT_RIGHT;
+  const output = herdrExec([
+    ...HERDR_PANE_SPLIT_COMMAND,
+    fromPane,
+    HERDR_SPLIT_DIRECTION_FLAG,
+    dir,
+    HERDR_NO_FOCUS_FLAG,
+  ]);
   const newPaneId = extractPaneId(parseHerdrJson(output));
   if (!newPaneId) {
     throw new Error(`Unexpected herdr pane split output: ${output.trim() || "(empty)"}`);
@@ -250,29 +371,38 @@ function getWorkspaceLabel(): string | null {
   }
 }
 
+/** 生成 herdr pane / tab 的统一显示标签。 */
+function herdrSurfaceLabel(name: string): string {
+  const workspaceLabel = getWorkspaceLabel();
+  return workspaceLabel ? `${workspaceLabel}[${name}]` : name;
+}
+
 /**
  * 用 herdr CLI 重命名 pane 对应的 tab。
  * tab label 格式: workspace_label[name]
  */
-export function renameHerdrTab(paneId: string, name: string): void {
+export function renameHerdrTab(paneId: string, name: string): boolean {
   const ws = parseWorkspaceIdFromPaneId(paneId);
-  if (!ws) return;
+  if (!ws) return false;
   try {
-    const wsLabel = getWorkspaceLabel();
-    const tabLabel = wsLabel ? `${wsLabel}[${name}]` : name;
-    const tabsJson = herdrExec(["tab", "list", "--workspace", ws]);
+    const tabLabel = herdrSurfaceLabel(name);
+    if (paneId === AGENT_HERDR_PANE_ID && AGENT_HERDR_TAB_ID) {
+      herdrExecSilent([...HERDR_TAB_RENAME_COMMAND, AGENT_HERDR_TAB_ID, tabLabel]);
+      return true;
+    }
+
+    const tabsJson = herdrExec([...HERDR_TAB_LIST_COMMAND, HERDR_WORKSPACE_FLAG, ws]);
     const parsed = parseHerdrJson(tabsJson);
-    if (!parsed || typeof parsed !== "object") return;
+    if (!parsed || typeof parsed !== "object") return false;
     const result = (parsed as Record<string, unknown>).result as Record<string, unknown> | undefined;
     const tabs = (result?.tabs as Array<Record<string, unknown>>) ?? [];
-    if (tabs.length > 0) {
-      const firstTab = tabs[0];
-      if (firstTab && typeof firstTab.tab_id === "string") {
-        herdrExecSilent(["tab", "rename", firstTab.tab_id, tabLabel]);
-      }
-    }
+    const firstTab = tabs[0];
+    if (!firstTab || typeof firstTab.tab_id !== "string") return false;
+    herdrExecSilent([...HERDR_TAB_RENAME_COMMAND, firstTab.tab_id, tabLabel]);
+    return true;
   } catch (e) {
     herdrLog(`[rename tab] pane=${paneId} name=${JSON.stringify(name)} failed: ${(e as Error).message}`);
+    return false;
   }
 }
 
@@ -280,13 +410,15 @@ export function renameHerdrTab(paneId: string, name: string): void {
  * 重命名 workspace。herdr 中 workspace rename 命令是 `herdr workspace rename <id> <label>`。
  * 仅当环境变量 PI_SUBAGENT_RENAME_HERDR_WORKSPACE=1 时启用（保守策略，避免影响用户命名）。
  */
-export function renameHerdrWorkspace(title: string): void {
-  if (process.env.PI_SUBAGENT_RENAME_HERDR_WORKSPACE !== "1") return;
-  if (!AGENT_HERDR_WORKSPACE_ID) return;
+export function renameHerdrWorkspace(title: string): boolean {
+  if (process.env.PI_SUBAGENT_RENAME_HERDR_WORKSPACE !== "1") return false;
+  if (!AGENT_HERDR_WORKSPACE_ID) return false;
   try {
-    herdrExecSilent(["workspace", "rename", AGENT_HERDR_WORKSPACE_ID, title]);
+    herdrExecSilent([...HERDR_WORKSPACE_RENAME_COMMAND, AGENT_HERDR_WORKSPACE_ID, title]);
+    return true;
   } catch (e) {
     herdrLog(`[rename workspace] title=${JSON.stringify(title)} failed: ${(e as Error).message}`);
+    return false;
   }
 }
 
@@ -297,6 +429,9 @@ export function renameHerdrWorkspace(title: string): void {
  * 使用 `herdr pane run <id> <cmd>` 一条命令搞定（SKILL.md 保证会发真实 Enter）。
  */
 export function sendHerdrCommand(paneId: string, command: string): void {
+  if (!paneId.trim()) {
+    throw new Error(i18n.t("error.missingHerdrPaneId"));
+  }
   herdrExecSilent(["pane", "run", paneId, command]);
 }
 
@@ -306,6 +441,13 @@ export function sendHerdrCommand(paneId: string, command: string): void {
  */
 export function sendHerdrEscape(paneId: string): void {
   herdrExecSilent(["pane", "send-keys", paneId, "Escape"]);
+}
+
+/**
+ * 将 herdr source 归一化为 CLI 使用的标志值（recent_unwrapped -> recent-unwrapped，其余原样）。
+ */
+export function herdrSourceFlag(source: "visible" | "recent" | "recent_unwrapped"): string {
+  return source === "recent_unwrapped" ? "recent-unwrapped" : source;
 }
 
 /**
@@ -320,18 +462,23 @@ export function sendHerdrEscape(paneId: string): void {
  */
 export function readHerdrScreen(paneId: string, lines = 50, source: "visible" | "recent" | "recent_unwrapped" = "visible"): string {
   // SKILL.md 列出的 source 选项
-  const sourceFlag = source === "recent_unwrapped" ? "recent-unwrapped" : source;
-  return herdrExec(["pane", "read", paneId, "--source", sourceFlag, "--lines", String(lines)]);
+  return herdrExec(["pane", "read", paneId, "--source", herdrSourceFlag(source), "--lines", String(lines)]);
 }
 
 /**
- * 关闭 pane。
- * `herdr pane close <id>` 是 herdr CLI 子命令。
+ * 关闭 surface。本进程创建的 tab surface 关闭整个 tab；其他 pane id 仍按 pane 关闭。
  */
 export function closeHerdrSurface(paneId: string): void {
-  herdrExecSilent(["pane", "close", paneId]);
+  const tabId = createdHerdrTabIds.get(paneId);
+  if (tabId) {
+    herdrExecSilent([...HERDR_TAB_CLOSE_COMMAND, tabId]);
+    createdHerdrTabIds.delete(paneId);
+    herdrLog(`[close] tab=${tabId} pane=${paneId}`);
+    return;
+  }
 
-  // 从 BFS 状态移除已关闭的 subagent，避免僵尸 ID 累积
+  herdrExecSilent([...HERDR_PANE_CLOSE_COMMAND, paneId]);
+
   const state = new BfsSplitStateManager(herdrMarkerPath());
   const beforePanes = state.panes();
   state.remove(paneId);
@@ -402,6 +549,18 @@ export const ops: BackendOps = {
     closeHerdrSurface(surface);
   },
   rename(surface: string, name: string): void {
-    renameHerdrPane(surface, name);
+    const tabId = createdHerdrTabIds.get(surface);
+    if (!tabId) {
+      renameHerdrPane(surface, name);
+      return;
+    }
+    try {
+      const tabLabel = herdrSurfaceLabel(name);
+      herdrExecSilent(["tab", "rename", tabId, tabLabel]);
+    } catch (error) {
+      herdrLog(
+        `[rename tab] tab=${tabId} pane=${surface} name=${JSON.stringify(name)} failed: ${(error as Error).message}`,
+      );
+    }
   },
 };

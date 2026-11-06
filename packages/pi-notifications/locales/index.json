@@ -1,0 +1,118 @@
+{
+  "inputTitle": {
+    "zh-CN": "Pi · {project} 💬",
+    "en-US": "Pi · {project} 💬"
+  },
+  "inputNeeded": {
+    "zh-CN": "需要你的输入",
+    "en-US": "Input required"
+  },
+  "multipleQuestions": {
+    "zh-CN": "{prefix}{question} …等 {count} 个问题",
+    "en-US": "{prefix}{question} …and {count} more question(s)"
+  },
+  "taskTitle": {
+    "zh-CN": "Pi · {project}",
+    "en-US": "Pi · {project}"
+  },
+  "taskError": {
+    "zh-CN": "⚠️ 执行完成（有错误）",
+    "en-US": "⚠️ Finished with errors"
+  },
+  "taskDone": {
+    "zh-CN": "✅ 执行完成",
+    "en-US": "✅ Finished"
+  },
+  "stepCount": {
+    "zh-CN": "共 {count} 步，耗时 {seconds}s",
+    "en-US": "{count} steps, took {seconds}s"
+  },
+  "elapsed": {
+    "zh-CN": "耗时 {seconds}s",
+    "en-US": "Took {seconds}s"
+  },
+  "adapterMissing": {
+    "zh-CN": "通知 adapter 命令不可用：{command}。本次会话已停用系统通知。",
+    "en-US": "Notification adapter command is unavailable: {command}. System notifications are disabled for this session."
+  },
+  "sendFailed": {
+    "zh-CN": "通知 adapter 执行失败：{command}（{reason}）。本次会话已停用系统通知。",
+    "en-US": "Notification adapter failed: {command} ({reason}). System notifications are disabled for this session."
+  },
+  "configInvalid": {
+    "zh-CN": "通知配置读取失败：{path}（{reason}）。已使用默认配置。",
+    "en-US": "Failed to read notification config: {path} ({reason}). Default configuration is being used."
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置系统通知",
+    "en-US": "Configure system notifications"
+  },
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:notifications（打开配置菜单）或 /config:notifications reset（恢复默认值）",
+    "en-US": "Usage: /config:notifications (open settings) or /config:notifications reset (restore defaults)"
+  },
+  "configMenuTitle": {
+    "zh-CN": "通知配置",
+    "en-US": "Notification settings"
+  },
+  "configOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "通知配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Notification configuration requires the TUI; run this command in an interactive Pi session."
+  },
+  "configCommandSaved": {
+    "zh-CN": "通知配置已保存：{path}。",
+    "en-US": "Notification configuration saved to {path}."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "通知配置无效：{error}",
+    "en-US": "Invalid notification configuration: {error}"
+  },
+  "configLabelEnabled": {
+    "zh-CN": "启用通知",
+    "en-US": "Notifications enabled"
+  },
+  "configDescEnabled": {
+    "zh-CN": "关闭后不再发送任何系统通知。",
+    "en-US": "When off, no system notifications are sent."
+  },
+  "configLabelCommand": {
+    "zh-CN": "通知命令",
+    "en-US": "Notification command"
+  },
+  "configDescCommand": {
+    "zh-CN": "PATH 中可执行的通知命令，例如 terminal-notifier 或 notify-send。",
+    "en-US": "Notification command on PATH, such as terminal-notifier or notify-send."
+  },
+  "configLabelArgs": {
+    "zh-CN": "命令参数",
+    "en-US": "Command arguments"
+  },
+  "configDescArgs": {
+    "zh-CN": "逗号分隔的 argv 参数，可用 {title}、{subtitle}、{message} 占位。",
+    "en-US": "Comma-separated argv arguments; {title}, {subtitle} and {message} are substituted."
+  },
+  "configLabelTimeout": {
+    "zh-CN": "超时（毫秒）",
+    "en-US": "Timeout (ms)"
+  },
+  "configDescTimeout": {
+    "zh-CN": "单次通知命令的最长执行时间。",
+    "en-US": "Longest time a single notification command may run."
+  },
+  "configInputPrompt": {
+    "zh-CN": "输入",
+    "en-US": "Input"
+  },
+  "configValueUnset": {
+    "zh-CN": "未设置",
+    "en-US": "unset"
+  }
+}

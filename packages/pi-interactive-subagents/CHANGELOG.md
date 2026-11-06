@@ -1,5 +1,255 @@
 # Changelog
 
+## [3.16.7](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.6...pi-interactive-subagents-v3.16.7) (2026-11-06)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.6.8 to ^0.6.9
+
+## [3.16.6](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.5...pi-interactive-subagents-v3.16.6) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.6.7 to ^0.6.8
+
+## [3.16.5](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.4...pi-interactive-subagents-v3.16.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* **pi-interactive-subagents:** keep the UI session's ctx and agents when an in-process headless session ends ([94608dd](https://github.com/maplezzk/pi-extensions/commit/94608ddb924ecec3722fb15e5e284b21d81d99ec))
+* **pi-interactive-subagents:** only the current owner tears down shared state ([61f8514](https://github.com/maplezzk/pi-extensions/commit/61f8514783f5e3f5edc621da30ae1112edc940d1))
+
+## [3.16.4](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.3...pi-interactive-subagents-v3.16.4) (2026-10-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.8.0 to ^0.9.0
+    * pi-terminal-mux bumped from ^0.6.6 to ^0.6.7
+
+## [3.16.3](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.2...pi-interactive-subagents-v3.16.3) (2026-10-04)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.6.5 to ^0.6.6
+
+## [3.16.2](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.1...pi-interactive-subagents-v3.16.2) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+    * pi-terminal-mux bumped from ^0.6.4 to ^0.6.5
+
+## [3.16.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.0...pi-interactive-subagents-v3.16.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* workflow 子 agent 不再重复展示在 Subagents 面板 ([ad650e6](https://github.com/maplezzk/pi-extensions/commit/ad650e6f1787fb57bc13ffd8f228b1907302ef7c))
+* workflow 子 agent 不再重复展示在 Subagents 面板 ([137b800](https://github.com/maplezzk/pi-extensions/commit/137b800d26e14dcded719c8067cedf8ae5d66456))
+* workflow 子 agent 禁用 caller_ping ([33e29e7](https://github.com/maplezzk/pi-extensions/commit/33e29e7c834b7d94ce3765cd949ce1c6ef03e833))
+* workflow 子 agent 禁用 caller_ping ([b478968](https://github.com/maplezzk/pi-extensions/commit/b478968c894e49fa60c2b415da287c4039662d7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+    * pi-terminal-mux bumped from ^0.6.3 to ^0.6.4
+
+## [3.16.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.15.0...pi-interactive-subagents-v3.16.0) (2026-09-14)
+
+
+### Features
+
+* show notices as filled transcript blocks under the message ([eb00293](https://github.com/maplezzk/pi-extensions/commit/eb002934f273df12cb109e54817dd16fdb09d52a))
+* 提示改成会话区的带底色消息块，判定结论落在消息下方 ([f42992d](https://github.com/maplezzk/pi-extensions/commit/f42992d39af35e3fda33f681f833d89408cb4a3a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.5.0 to ^0.6.0
+    * pi-terminal-mux bumped from ^0.6.2 to ^0.6.3
+
+## [3.15.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.14.1...pi-interactive-subagents-v3.15.0) (2026-09-13)
+
+
+### Features
+
+* 所有扩展提示统一加来源标签与颜色 ([21ad9d9](https://github.com/maplezzk/pi-extensions/commit/21ad9d97347118a9817ae445bc03544b7c1c66da))
+* 所有扩展提示统一加来源标签与颜色 ([a06c6f8](https://github.com/maplezzk/pi-extensions/commit/a06c6f86367fc7b43f14b34f754bddc4b6dd340a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.1 to ^0.5.0
+    * pi-terminal-mux bumped from ^0.6.1 to ^0.6.2
+
+## [3.14.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.14.0...pi-interactive-subagents-v3.14.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* pi peer 范围只保留下限 &gt;=0.80.0 ([fdc012c](https://github.com/maplezzk/pi-extensions/commit/fdc012c7a0a968712cea4430afd7780eab53420b))
+* 去掉 pi peer 上界并升级依赖到 0.85.1 ([28e897e](https://github.com/maplezzk/pi-extensions/commit/28e897eb45d76e91ca8ac6ac2a508a36c76c5682))
+* 放宽 pi peer 范围并升级依赖到 0.85.1 ([3444c0c](https://github.com/maplezzk/pi-extensions/commit/3444c0cb4836006348fc6a9fbd30fe36bdc98ced))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.0 to ^0.4.1
+    * pi-terminal-mux bumped from ^0.6.0 to ^0.6.1
+
+## [3.14.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.13.1...pi-interactive-subagents-v3.14.0) (2026-09-09)
+
+
+### Features
+
+* 增加 subagent 扩展候选配置 ([1742b64](https://github.com/maplezzk/pi-extensions/commit/1742b64eac6c214d5e96407c6c0c2b2d4fe8ad7e))
+* 支持斜杠命令配置 subagent 扩展 ([52905ae](https://github.com/maplezzk/pi-extensions/commit/52905ae0267c0ad653f39914ea2e91c4b685e438))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.5.1 to ^0.6.0
+
+## [3.13.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.13.0...pi-interactive-subagents-v3.13.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.5.0 to ^0.5.1
+
+## [3.13.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.12.0...pi-interactive-subagents-v3.13.0) (2026-09-07)
+
+
+### Features
+
+* 提供终端改名结果与目标归属协议 ([f44cf8a](https://github.com/maplezzk/pi-extensions/commit/f44cf8a23faf2fa165dd389cfadcac5ec3efed0f))
+
+
+### Bug Fixes
+
+* terminate interrupted subagent process ([6d3fc80](https://github.com/maplezzk/pi-extensions/commit/6d3fc80613d1b7d2c2c2f00a485caef5ef95e2b2))
+* 子代理传递终端归属并停止覆盖会话标题 ([288ea9d](https://github.com/maplezzk/pi-extensions/commit/288ea9d3d6b97cb612e114d9cbadf607d811367c))
+* 子代理传递终端归属并避免覆盖共享标题 ([73d5ecc](https://github.com/maplezzk/pi-extensions/commit/73d5ecc01568dc566f9a40a8168ccaaac8f58409))
+* 终止被中断的 subagent 进程 ([a93d718](https://github.com/maplezzk/pi-extensions/commit/a93d7181acbfb51b77e192b850904e9dc5bd825f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.4.1 to ^0.5.0
+
+## [3.12.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.11.1...pi-interactive-subagents-v3.12.0) (2026-09-04)
+
+
+### Features
+
+* 配置子 agent 扩展并移除 fork 模式 ([9e9f6f0](https://github.com/maplezzk/pi-extensions/commit/9e9f6f02bcb3ebe499cd4639569bae6868472f75))
+* 配置子 agent 扩展并移除 fork 模式 ([7a51434](https://github.com/maplezzk/pi-extensions/commit/7a514341753873056c7507bec8cdeb884889b276))
+
+## [3.11.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.11.0...pi-interactive-subagents-v3.11.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* 修复 subagent 中断并移除 claude-code ([50aff58](https://github.com/maplezzk/pi-extensions/commit/50aff587287a3aa9b2efb70bfc32e0dc5730554a))
+* 修复 subagent 中断并移除 claude-code ([47fdd2a](https://github.com/maplezzk/pi-extensions/commit/47fdd2aa3a63f053f895e10246aae82c19cb344a))
+
+## [3.11.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.10.1...pi-interactive-subagents-v3.11.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.3.1 to ^0.4.0
+    * pi-terminal-mux bumped from ^0.4.0 to ^0.4.1
+
+## [3.10.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.10.0...pi-interactive-subagents-v3.10.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* suppress reminders after aborted or failed runs ([a23d950](https://github.com/maplezzk/pi-extensions/commit/a23d950c716909a5e563f19d616e150a529fd54e))
+* 忽略异常终止的自动提醒 ([743ac5a](https://github.com/maplezzk/pi-extensions/commit/743ac5a7886165fcc4f98150f648e70202b4f4fe))
+
+## [3.10.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.9.1...pi-interactive-subagents-v3.10.0) (2026-08-17)
+
+
+### Features
+
+* add configurable Herdr subagent layouts ([aa85f53](https://github.com/maplezzk/pi-extensions/commit/aa85f537a36ec71c06d157b7628f7d842afeba65))
+* add configurable Herdr subagent layouts ([94319eb](https://github.com/maplezzk/pi-extensions/commit/94319eb907b4af0a9b8912b9ac5ec53e69d91326))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.3.2 to ^0.4.0
+
+## [3.9.1](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.9.0...pi-interactive-subagents-v3.9.1) (2026-08-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-terminal-mux bumped from ^0.3.1 to ^0.3.2
+
+## [3.9.0](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.8.4...pi-interactive-subagents-v3.9.0) (2026-08-08)
+
+
+### Features
+
+* **pi-interactive-subagents:** /config:subagent 支持 orca 后端 ([863ce79](https://github.com/maplezzk/pi-extensions/commit/863ce79e35640644e9ecec9c1092c01531697e4a))
+* **pi-interactive-subagents:** /config:subagent 支持 orca 后端 ([561658e](https://github.com/maplezzk/pi-extensions/commit/561658ed0ee3f5a80736727d6e295260e082dcf4))
+
 ## [3.8.4](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.8.3...pi-interactive-subagents-v3.8.4) (2026-08-06)
 
 

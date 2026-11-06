@@ -1,0 +1,4 @@
+{
+  "squashContextThresholds": ["150k", "200k", "250k", "300k"],
+  "forceSquashContextThreshold": null
+}

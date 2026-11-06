@@ -27,6 +27,7 @@ import { resolvePiAgentDir } from "./agent-dir.js";
 import { renderBashCall } from "./bash-display.js";
 import { logToolDisplayDebug } from "./debug-logger.js";
 import { registerCleanup } from "./disposable.js";
+import { renderGenericResultPreview } from "./result-middleware-coverage.js";
 import {
   compactOutputLines,
   countNonEmptyLines,
@@ -66,6 +67,15 @@ import {
   getWriteContentSizeBytes,
   shouldRenderWriteCallSummary,
 } from "./write-display-utils.js";
+
+/**
+ * 结果摘要行（`loaded 42 lines`、`3 matches returned`、`(no output)`）不加前缀符号。
+ *
+ * `↳` 在会话里归活动区独占，表示「这条命令正在流出的输出尾巴」
+ * （见 pi-clean-mode 的 `activity.ts`）。两边都写 `↳` 时，同一个符号会在同一屏里
+ * 指两件事：一边是还没跑完的实时尾巴，一边是已经落定的结果计数。
+ * 摘要本身靠弱化色与「紧接在调用行下面」就能认出身份，不需要额外符号。
+ */
 
 interface BuiltInTools {
   read: ReturnType<typeof createReadTool>;
@@ -183,6 +193,8 @@ export interface ToolDisplayApi {
   registerResultRenderMiddleware(registration: ToolResultRenderMiddlewareRegistration): string;
   unregisterResultRenderMiddleware(id: string): boolean;
   hasResultRenderMiddleware(id: string): boolean;
+  /** 已注册中间件命中过的工具名，含通配符 `*`。 */
+  listResultRenderMiddlewareToolNames(): string[];
   activateResultRenderPipeline(toolName: string): void;
   isResultRenderPipelineActive(toolName: string): boolean;
   renderResultWithMiddleware(
@@ -237,6 +249,15 @@ type PiWithRegisterToolInterception = ExtensionAPI & {
 
 const decoratedToolDescriptors = new WeakMap<RuntimeToolDefinition, ToolPropertyDescriptorSnapshot>();
 const decoratedTools = new Set<RuntimeToolDefinition>();
+
+/**
+ * 中间件注册之后的回调。
+ *
+ * 给工具补接线需要 pi 与当前工具列表，只有宿主拿得到，因此宿主在
+ * registerToolDisplayOverrides 里把自己那份实现挂上来；中间件在宿主安装之后才注册时
+ * （扩展加载顺序不固定），靠它立刻补上接线。
+ */
+let resultRenderMiddlewareRegistrationListener: (() => void) | undefined;
 
 function registerRuntimeTool(pi: ExtensionAPI, tool: RuntimeToolDefinition): void {
   pi.registerTool(tool as unknown as ToolDefinition);
@@ -435,7 +456,7 @@ function buildPreviewText(
   expanded: boolean,
 ): string {
   if (lines.length === 0) {
-    return theme.fg("muted", "↳ (no output)");
+    return theme.fg("muted", "(no output)");
   }
 
   const { shown, remaining } = previewLines(lines, maxLines);
@@ -461,9 +482,9 @@ function formatBashNoOutputLine(
   theme: RenderTheme,
 ): string {
   if (isLikelyQuietCommand(command)) {
-    return theme.fg("muted", "↳ command completed (no output)");
+    return theme.fg("muted", "command completed (no output)");
   }
-  return theme.fg("muted", "↳ (no output)");
+  return theme.fg("muted", "(no output)");
 }
 
 function truncationHint(
@@ -946,7 +967,7 @@ function formatReadSummary(
   const lineCount = lines.length;
   let summary = theme.fg(
     "muted",
-    `↳ loaded ${lineCount} ${pluralize(lineCount, "line")}`,
+    `loaded ${lineCount} ${pluralize(lineCount, "line")}`,
   );
   summary += theme.fg(
     "warning",
@@ -966,7 +987,7 @@ function formatSearchSummary(
   const count = countNonEmptyLines(lines);
   let summary = theme.fg(
     "muted",
-    `↳ ${count} ${pluralize(count, unitLabel, pluralLabel)} returned`,
+    `${count} ${pluralize(count, unitLabel, pluralLabel)} returned`,
   );
   summary += theme.fg(
     "warning",
@@ -984,7 +1005,7 @@ function formatBashSummary(
   const lineCount = lines.length;
   const summary = theme.fg(
     "muted",
-    `↳ ${lineCount} ${pluralize(lineCount, "line")} returned`,
+    `${lineCount} ${pluralize(lineCount, "line")} returned`,
   );
   return summary;
 }
@@ -1093,7 +1114,7 @@ function renderBashErrorResult(
   details: BashToolDetails | undefined,
 ): Text {
   const lines = prepareOutputLines(rawOutput, options);
-  let text = theme.fg("error", "↳ command failed");
+  let text = theme.fg("error", "command failed");
 
   if (lines.length > 0) {
     const maxLines = getBashPreviewLineLimit(lines, options, config);
@@ -1258,7 +1279,7 @@ function renderMcpResult(
     const lineCount = countNonEmptyLines(lines);
     let summary = theme.fg(
       "muted",
-      `↳ ${lineCount} ${pluralize(lineCount, "line")} returned`,
+      `${lineCount} ${pluralize(lineCount, "line")} returned`,
     );
     summary += formatExpandHint(theme);
     if (config.showTruncationHints && truncation.truncated) {
@@ -1613,6 +1634,7 @@ function installToolDisplayApi(getConfig: ConfigGetter): ToolDisplayApi {
     registerResultRenderMiddleware(registration: ToolResultRenderMiddlewareRegistration): string {
       const id = registration.id || `result-middleware-${++nextResultMiddlewareId}`;
       resultRenderMiddlewares.set(id, { ...registration, id });
+      resultRenderMiddlewareRegistrationListener?.();
       return id;
     },
     unregisterResultRenderMiddleware(id: string): boolean {
@@ -1620,6 +1642,9 @@ function installToolDisplayApi(getConfig: ConfigGetter): ToolDisplayApi {
     },
     hasResultRenderMiddleware(id: string): boolean {
       return resultRenderMiddlewares.has(id);
+    },
+    listResultRenderMiddlewareToolNames(): string[] {
+      return [...new Set([...resultRenderMiddlewares.values()].map((registration) => registration.toolName))];
     },
     activateResultRenderPipeline(toolName: string): void {
       activeResultRenderPipelines.add(toolName);
@@ -1668,9 +1693,20 @@ function tryGetAllTools(pi: ExtensionAPI, debugMessage: string): unknown[] | und
   }
 }
 
+// Return undefined until Pi binds the extension action methods.
+function tryGetActiveToolNames(pi: ExtensionAPI, debugMessage: string): string[] | undefined {
+  try {
+    return pi.getActiveTools();
+  } catch (error) {
+    logToolDisplayDebug(debugMessage, error);
+    return undefined;
+  }
+}
+
 export function registerToolDisplayOverrides(
   pi: ExtensionAPI,
   getConfig: ConfigGetter,
+  activeToolNamesDuringLoad?: readonly string[],
 ): void {
   clearBuiltInToolCache();
   const toolDisplayApi = installToolDisplayApi(getConfig);
@@ -1688,7 +1724,7 @@ export function registerToolDisplayOverrides(
   const registeredBuiltInToolOverrides = new Set<BuiltInToolOverrideName>();
 
   const isExternallyOwnedBuiltInTool = (toolName: BuiltInToolOverrideName): boolean => {
-    const allTools = tryGetAllTools(pi, "Built-in tool override ownership discovery unavailable during extension load; registering renderer for pre-bind history rendering.");
+    const allTools = tryGetAllTools(pi, "Built-in tool override ownership discovery unavailable; skipping conflicting owners.");
     if (!allTools) {
       return false;
     }
@@ -1780,7 +1816,37 @@ export function registerToolDisplayOverrides(
     return { scope: getSearchScope(args), limitSuffix: args.limit !== undefined ? ` (limit ${args.limit})` : "" };
   };
 
-  registerIfOwned("read", () => {
+  const builtInToolRegistrations = new Map<BuiltInToolOverrideName, () => void>();
+
+  // Record each built-in replacement until Pi exposes its active tool selection.
+  const recordBuiltInToolRegistration = (
+    toolName: BuiltInToolOverrideName,
+    register: () => void,
+  ): void => {
+    builtInToolRegistrations.set(toolName, register);
+  };
+
+  // Retry deferred replacements against Pi's current active tool selection.
+  const registerActiveBuiltInToolOverrides = (
+    knownActiveToolNames?: readonly string[],
+  ): void => {
+    const activeToolNames = knownActiveToolNames ?? tryGetActiveToolNames(
+      pi,
+      "Built-in tool activation discovery unavailable; skipping display overrides.",
+    );
+    if (!activeToolNames) {
+      return;
+    }
+
+    const activeTools = new Set(activeToolNames);
+    for (const [toolName, register] of builtInToolRegistrations) {
+      if (activeTools.has(toolName)) {
+        registerIfOwned(toolName, register);
+      }
+    }
+  };
+
+  recordBuiltInToolRegistration("read", () => {
     registerRuntimeTool(pi, {
       name: "read",
       label: "read",
@@ -1795,7 +1861,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("grep", () => {
+  recordBuiltInToolRegistration("grep", () => {
     registerRuntimeTool(pi, {
       name: "grep",
     label: "grep",
@@ -1816,7 +1882,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("find", () => {
+  recordBuiltInToolRegistration("find", () => {
     registerRuntimeTool(pi, {
       name: "find",
     label: "find",
@@ -1834,7 +1900,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("ls", () => {
+  recordBuiltInToolRegistration("ls", () => {
     registerRuntimeTool(pi, {
       name: "ls",
     label: "ls",
@@ -1850,7 +1916,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("edit", () => {
+  recordBuiltInToolRegistration("edit", () => {
     registerRuntimeTool(pi, {
       name: "edit",
     label: "edit",
@@ -1872,7 +1938,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("write", () => {
+  recordBuiltInToolRegistration("write", () => {
     registerRuntimeTool(pi, {
       name: "write",
     label: "write",
@@ -1945,7 +2011,7 @@ export function registerToolDisplayOverrides(
     });
   });
 
-  registerIfOwned("bash", () => {
+  recordBuiltInToolRegistration("bash", () => {
     registerRuntimeTool(pi, {
       name: "bash",
     label: "bash",
@@ -2004,7 +2070,7 @@ export function registerToolDisplayOverrides(
       }
 
       if (!options.expanded && config.bashCollapsedLines === 0) {
-        let hidden = theme.fg("muted", "↳ output hidden");
+        let hidden = theme.fg("muted", "output hidden");
         if (config.showTruncationHints) {
           hidden += formatBashTruncationHints(details, theme);
         }
@@ -2023,6 +2089,8 @@ export function registerToolDisplayOverrides(
     },
     });
   });
+
+  registerActiveBuiltInToolOverrides(activeToolNamesDuringLoad);
 
   const wrappedCustomToolNames = new Set<string>();
   registerCleanup(() => wrappedCustomToolNames.clear());
@@ -2153,6 +2221,118 @@ export function registerToolDisplayOverrides(
     wrappedMcpToolNames.add(toolName);
   };
 
+  /**
+   * 工具结果渲染函数的签名；包装与基线都用它。
+   */
+  type ResultRenderer = (
+    result: unknown,
+    options: ToolRenderResultOptions,
+    theme: RenderTheme,
+    context?: ToolRenderContextLike,
+  ) => unknown;
+
+  /** 已经补过接线的工具名，避免重复包装。 */
+  const resultMiddlewareCoveredToolNames = new Set<string>();
+  /**
+   * 补接线之前的 renderResult（包一层对象，用来区分「本来就没有」和「还没记录」）。
+   *
+   * 宿主被替换而旧宿主没跑清理时，工具上留的是上一轮的包装函数；只记最初那一份，
+   * 重复接线才不会把中间件套成多层。
+   */
+  const originalResultRenderers = new WeakMap<RuntimeToolDefinition, { renderResult?: ResultRenderer }>();
+
+  /** 取工具最初的 renderResult；同一个工具只取一次。 */
+  const getOriginalResultRenderer = (tool: RuntimeToolDefinition): ResultRenderer | undefined => {
+    const cached = originalResultRenderers.get(tool);
+    if (cached) {
+      return cached.renderResult;
+    }
+    const renderResult = typeof tool.renderResult === "function"
+      ? tool.renderResult as ResultRenderer
+      : undefined;
+    originalResultRenderers.set(tool, { renderResult });
+    return renderResult;
+  };
+
+  /** 已注册的中间件是否要求接管这个工具的结果渲染；通配符 `*` 要求所有工具。 */
+  const isResultMiddlewareTarget = (toolName: string): boolean => {
+    const registered = toolDisplayApi.listResultRenderMiddlewareToolNames();
+    return registered.includes("*") || registered.includes(toolName);
+  };
+
+  /**
+   * 是否是 Pi 自己的内建工具。
+   *
+   * 内建工具不在本次覆盖范围：它们的展示由 registerToolOverrides 的开关决定，只在
+   * 这里改渲染函数未必能作用到 Pi 已经建好的工具定义上。
+   */
+  const isPiBuiltInTool = (tool: RuntimeToolDefinition): boolean => {
+    return getTextField(toRecord(tool.sourceInfo), "source") === "builtin";
+  };
+
+  /**
+   * 给单个工具补接线：把它的结果渲染串进中间件链路。
+   *
+   * 只处理我们没接管的工具——内建工具与配置里的自定义工具，各自的渲染函数已经调用过
+   * 中间件。基线优先用工具自带的 renderResult，没有则复刻 Pi 的默认结果块，接线前后
+   * 观感一致，中间件只是多挂一个面板。
+   */
+  const coverToolForResultMiddlewares = (candidate: unknown): boolean => {
+    const tool = candidate as RuntimeToolDefinition;
+    const toolName = getTextField(tool, "name");
+    if (!toolName || isBuiltInToolName(toolName) || isPiBuiltInTool(tool)) {
+      return false;
+    }
+    if (resultMiddlewareCoveredToolNames.has(toolName) || !isResultMiddlewareTarget(toolName)) {
+      return false;
+    }
+
+    const originalRenderResult = getOriginalResultRenderer(tool);
+    const decorated = applyToolDisplayDecorationInPlace(tool, toolDisplayApi, {
+      kind: "generic",
+      overrideExistingRenderers: true,
+      renderResult: (result, options, theme, context) => toolDisplayApi.renderResultWithMiddleware(
+        { toolName, result, options, theme, renderContext: context },
+        () => originalRenderResult
+          ? originalRenderResult(result, options, theme, context)
+          : renderGenericResultPreview(result, options, theme),
+      ),
+    });
+    if (!decorated) {
+      return false;
+    }
+
+    resultMiddlewareCoveredToolNames.add(toolName);
+    toolDisplayApi.activateResultRenderPipeline(toolName);
+    return true;
+  };
+
+  /** 扫描当前全部工具，把被中间件命中的工具接上线。 */
+  const coverToolsForResultMiddlewares = (): void => {
+    const allTools = tryGetAllTools(pi, "Result middleware tool coverage discovery failed.");
+    if (!allTools) {
+      return;
+    }
+    for (const candidate of allTools) {
+      coverToolForResultMiddlewares(candidate);
+    }
+  };
+
+  /** 中间件注册后的回调：注册表变了就重扫一次，把新命中的工具接上线。 */
+  const resultMiddlewareListener = (): void => {
+    coverToolsForResultMiddlewares();
+  };
+  resultRenderMiddlewareRegistrationListener = resultMiddlewareListener;
+  registerCleanup(() => {
+    if (resultRenderMiddlewareRegistrationListener === resultMiddlewareListener) {
+      resultRenderMiddlewareRegistrationListener = undefined;
+    }
+    resultMiddlewareCoveredToolNames.clear();
+  });
+  // 中间件可能早于宿主注册（只进了等待队列），装完立即补一次；工具列表还拿不到时
+  // 交给 session_start / before_agent_start 那次扫描。
+  coverToolsForResultMiddlewares();
+
   const installMcpRegistrationInterceptor = (): void => {
     const piWithInterception = pi as PiWithRegisterToolInterception;
     const existingInterception = piWithInterception[TOOL_DISPLAY_REGISTER_TOOL_INTERCEPTOR_KEY];
@@ -2171,6 +2351,7 @@ export function registerToolDisplayOverrides(
         if (!decorateCustomToolOverrideCandidate(tool)) {
           decorateMcpToolCandidate(tool);
         }
+        coverToolForResultMiddlewares(tool);
       } catch (error) {
         logToolDisplayDebug("Tool display registration decoration failed.", error);
       }
@@ -2205,6 +2386,8 @@ export function registerToolDisplayOverrides(
       if (!decorateCustomToolOverrideCandidate(candidate)) {
         decorateMcpToolCandidate(candidate);
       }
+      // 自定义/MCP 覆盖会整体替换 renderResult，所以补接线必须排在它们之后。
+      coverToolForResultMiddlewares(candidate);
     }
   };
 
@@ -2229,11 +2412,13 @@ export function registerToolDisplayOverrides(
 
   pi.on("session_start", async () => {
     clearWriteExecutionMeta(writeExecutionMetaByToolCallId);
+    registerActiveBuiltInToolOverrides();
     registerMcpToolOverrides();
     scheduleMcpToolOverrideDiscovery();
   });
   pi.on("before_agent_start", async () => {
     clearWriteExecutionMeta(writeExecutionMetaByToolCallId);
+    registerActiveBuiltInToolOverrides();
     registerMcpToolOverrides();
     scheduleMcpToolOverrideDiscovery();
   });

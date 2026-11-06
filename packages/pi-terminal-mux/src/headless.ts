@@ -24,6 +24,21 @@ import { isMuxAvailable } from "./detection.ts";
 
 const HEADLESS_SURFACE_PREFIX = "headless:";
 
+/**
+ * PowerShell 启动器常量。
+ * headless 模式用 powershell.exe 直接 -Command 执行命令（配合 -ExecutionPolicy Bypass 允许运行脚本）。
+ */
+const POWERSHELL_EXECUTABLE = "powershell.exe";
+const POWERSHELL_SPAWN_FLAGS = [
+  "-NoLogo",
+  "-NoProfile",
+  "-ExecutionPolicy",
+  "Bypass",
+  "-Command",
+] as const;
+/** 显式选择 PowerShell 解释器的标识 */
+const INTERPRETER_POWERSHELL = "powershell";
+
 /** headless surface 关闭时 SIGTERM 到 SIGKILL 的等待间隔（毫秒） */
 const HEADLESS_KILL_TIMEOUT_MS = 3000;
 
@@ -56,17 +71,22 @@ export function createHeadlessSurface(name: string): string {
 // ── 后台子进程管理 ──
 
 /**
- * 在 headless surface 上启动一个 bash 子进程，stdout/stderr 写入日志文件。
+ * 在 headless surface 上启动一个子进程，stdout/stderr 写入日志文件。
  * 返回日志文件路径，调用方通过 readHeadlessScreen 读取输出。
  *
  * 注意：spawnHeadlessProcess 签名与原 mux.ts 完全一致（公开 API，不可改签名），
  * 第 4 个参数 options 为可选对象，不计入函数参数数量规则的违规。
+ * interpreter 缺省为 bash；显式选择 "powershell" 时用 powershell.exe -Command 直接执行命令。
  */
 export function spawnHeadlessProcess(
   surface: string,
   name: string,
   command: string,
-  options?: { cwd?: string; env?: Record<string, string> },
+  options?: {
+    cwd?: string;
+    env?: Record<string, string>;
+    interpreter?: "bash" | "powershell";
+  },
 ): { logFile: string } {
   const safeId = surface.replace(/[^a-zA-Z0-9_-]/g, "_");
   const logFile = join(tmpdir(), `pi-subagent-${safeId}.log`);
@@ -78,11 +98,22 @@ export function spawnHeadlessProcess(
   }
   env.PI_SUBAGENT_HEADLESS = "1";
 
-  const child = spawn("bash", ["-c", command], {
-    cwd: options?.cwd || process.cwd(),
-    stdio: ["ignore", "pipe", "pipe"],
-    env,
-  });
+  const isPowerShell = options?.interpreter === INTERPRETER_POWERSHELL;
+  const child = isPowerShell
+    ? spawn(
+        POWERSHELL_EXECUTABLE,
+        [...POWERSHELL_SPAWN_FLAGS, command],
+        {
+          cwd: options?.cwd || process.cwd(),
+          stdio: ["ignore", "pipe", "pipe"],
+          env,
+        },
+      )
+    : spawn("bash", ["-c", command], {
+        cwd: options?.cwd || process.cwd(),
+        stdio: ["ignore", "pipe", "pipe"],
+        env,
+      });
 
   child.stdout.pipe(logStream);
   child.stderr.pipe(logStream);

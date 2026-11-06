@@ -1,5 +1,125 @@
 # Changelog
 
+## [1.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.4.2...pi-dynamic-workflows-v1.5.0) (2026-10-05)
+
+
+### Features
+
+* **pi-metrics,pi-dynamic-workflows:** 配置命令改用 SettingsList 面板 ([07de307](https://github.com/maplezzk/pi-extensions/commit/07de3077e6558881c7b050908624176b0327eac1))
+* 统一全仓库配置 UI 为 SettingsList 面板 + 新增 pi-gen-ui ([c67a8c3](https://github.com/maplezzk/pi-extensions/commit/c67a8c3356f249ef5a49699d05ad2824b2ac008a))
+
+
+### Bug Fixes
+
+* **pi-dynamic-workflows:** 配置字段名保持 async，不引入破坏性改名 ([be6f2ac](https://github.com/maplezzk/pi-extensions/commit/be6f2aca882ed4e0a69af4605b00cc138a14fd41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.8.0 to ^0.9.0
+
+## [1.4.2](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.4.1...pi-dynamic-workflows-v1.4.2) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
+## [1.4.1](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.4.0...pi-dynamic-workflows-v1.4.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* workflow 子 agent 不再重复展示在 Subagents 面板 ([ad650e6](https://github.com/maplezzk/pi-extensions/commit/ad650e6f1787fb57bc13ffd8f228b1907302ef7c))
+* workflow 子 agent 不再重复展示在 Subagents 面板 ([137b800](https://github.com/maplezzk/pi-extensions/commit/137b800d26e14dcded719c8067cedf8ae5d66456))
+* workflow 子 agent 禁用 caller_ping ([33e29e7](https://github.com/maplezzk/pi-extensions/commit/33e29e7c834b7d94ce3765cd949ce1c6ef03e833))
+* workflow 子 agent 禁用 caller_ping ([b478968](https://github.com/maplezzk/pi-extensions/commit/b478968c894e49fa60c2b415da287c4039662d7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
+## [1.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.3.0...pi-dynamic-workflows-v1.4.0) (2026-09-14)
+
+
+### Features
+
+* show notices as filled transcript blocks under the message ([eb00293](https://github.com/maplezzk/pi-extensions/commit/eb002934f273df12cb109e54817dd16fdb09d52a))
+* 提示改成会话区的带底色消息块，判定结论落在消息下方 ([f42992d](https://github.com/maplezzk/pi-extensions/commit/f42992d39af35e3fda33f681f833d89408cb4a3a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.5.0 to ^0.6.0
+
+## [1.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.2.2...pi-dynamic-workflows-v1.3.0) (2026-09-13)
+
+
+### Features
+
+* 所有扩展提示统一加来源标签与颜色 ([21ad9d9](https://github.com/maplezzk/pi-extensions/commit/21ad9d97347118a9817ae445bc03544b7c1c66da))
+* 所有扩展提示统一加来源标签与颜色 ([a06c6f8](https://github.com/maplezzk/pi-extensions/commit/a06c6f86367fc7b43f14b34f754bddc4b6dd340a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.1 to ^0.5.0
+
+## [1.2.2](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.2.1...pi-dynamic-workflows-v1.2.2) (2026-09-13)
+
+
+### Bug Fixes
+
+* pi peer 范围只保留下限 &gt;=0.80.0 ([fdc012c](https://github.com/maplezzk/pi-extensions/commit/fdc012c7a0a968712cea4430afd7780eab53420b))
+* 去掉 pi peer 上界并升级依赖到 0.85.1 ([28e897e](https://github.com/maplezzk/pi-extensions/commit/28e897eb45d76e91ca8ac6ac2a508a36c76c5682))
+* 放宽 pi peer 范围并升级依赖到 0.85.1 ([3444c0c](https://github.com/maplezzk/pi-extensions/commit/3444c0cb4836006348fc6a9fbd30fe36bdc98ced))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.0 to ^0.4.1
+
+## [1.2.1](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.2.0...pi-dynamic-workflows-v1.2.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* 允许 Skill 直接触发 workflow ([71645db](https://github.com/maplezzk/pi-extensions/commit/71645db87537821aa58e861aff2c512d77f19fe7))
+* 允许 Skill 直接触发 workflow ([b18997e](https://github.com/maplezzk/pi-extensions/commit/b18997e1d9baebba7c7cff2ae92f41c40eb34010))
+
+## [1.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.1.3...pi-dynamic-workflows-v1.2.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.3.1 to ^0.4.0
+
 ## [1.1.3](https://github.com/maplezzk/pi-extensions/compare/pi-dynamic-workflows-v1.1.2...pi-dynamic-workflows-v1.1.3) (2026-07-31)
 
 

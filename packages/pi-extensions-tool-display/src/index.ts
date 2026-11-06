@@ -13,6 +13,7 @@ import {
   type ToolDisplayCapabilities,
 } from "./capabilities.js";
 import { registerToolDisplayOverrides } from "./tool-overrides.js";
+import { logToolDisplayDebug } from "./debug-logger.js";
 import { disposeAll, resetDisposed } from "./disposable.js";
 import { registerThinkingLabeling } from "./thinking-label.js";
 import registerNativeUserMessageBox from "./user-message-box-native.js";
@@ -21,8 +22,28 @@ import {
   type ConfigLoadResult,
   type ToolDisplayConfig,
 } from "./types.js";
+import {
+  NOTICE_TAG_COLOR,
+  installNoticeRenderer,
+  notifyWithSource,
+  type NoticeColor,
+  type NoticeSource,
+} from "pi-extensions-i18n";
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "display";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 export * from "./result-render-middleware.js";
+
+const TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY = Symbol.for("pi-tool-display.reloadActiveTools.v1");
+const BUILT_IN_TOOL_OVERRIDE_NAME_SET = new Set<string>(BUILT_IN_TOOL_OVERRIDE_NAMES);
+type GlobalWithToolDisplayReloadState = typeof globalThis & {
+  [TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY]?: string[];
+};
 
 function ownershipChanged(
   previous: ToolDisplayConfig,
@@ -65,10 +86,21 @@ export function ensureToolDisplayHost(
   if (initializedHosts.has(pi)) return;
   initializedHosts.add(pi);
 
+  const globalReloadState = globalThis as GlobalWithToolDisplayReloadState;
+  const activeBuiltInToolNamesBeforeReload = globalReloadState[TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY];
+  delete globalReloadState[TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY];
+
   resetDisposed();
 
   pi.on("session_shutdown", (event: { reason: string }) => {
     if (event.reason === "reload") {
+      try {
+        globalReloadState[TOOL_DISPLAY_RELOAD_ACTIVE_TOOLS_KEY] = pi
+          .getActiveTools()
+          .filter((toolName) => BUILT_IN_TOOL_OVERRIDE_NAME_SET.has(toolName));
+      } catch (error) {
+        logToolDisplayDebug("Failed to preserve active built-in tools for reload.", error);
+      }
       disposeAll();
       initializedHosts.delete(pi);
     }
@@ -100,19 +132,21 @@ export function ensureToolDisplayHost(
 
     const saved = saveToolDisplayConfig(normalized);
     if (!saved.success && saved.error) {
-      ctx.ui.notify(saved.error, "error");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "error", message: saved.error });
     }
 
     if (requiresReload) {
-      ctx.ui.notify(
-        "Global switch or tool ownership updates apply after /reload.",
-        "warning",
-      );
+      notifyWithSource({
+        ctx,
+        source: NOTICE_SOURCE,
+        level: "warning",
+        message: "Global switch or tool ownership updates apply after /reload.",
+      });
     }
   };
 
   if (initial.config.enabled) {
-    registerToolDisplayOverrides(pi, getEffectiveConfig);
+    registerToolDisplayOverrides(pi, getEffectiveConfig, activeBuiltInToolNamesBeforeReload);
     registerNativeUserMessageBox(pi, getConfig);
     registerThinkingLabeling(pi);
   }
@@ -134,7 +168,7 @@ export function ensureToolDisplayHost(
   pi.on("session_start", async (_event, ctx) => {
     refreshCapabilities();
     if (pendingLoadError) {
-      ctx.ui.notify(pendingLoadError, "warning");
+      notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: pendingLoadError });
       pendingLoadError = undefined;
     }
   });
@@ -148,5 +182,7 @@ export default function toolDisplayExtension(
   pi: ExtensionAPI,
   initial: ConfigLoadResult = loadToolDisplayConfig(),
 ): void {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   ensureToolDisplayHost(pi, initial);
 }

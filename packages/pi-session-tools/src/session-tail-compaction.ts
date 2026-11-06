@@ -1,0 +1,1038 @@
+/**
+ * Session Squash — 在同一个 session tree 中非破坏性压缩当前会话后缀
+ *
+ * 提供两个 agent 工具：
+ * - session_log：列出当前 active branch 的 user turn 和索引
+ * - session_squash：接收摘要，从指定 user turn 索引压缩到当前 active leaf
+ *
+ * 摘要由主 agent 在调用 session_squash 时直接提交，不发起独立 LLM 请求。
+ * 工具登记折叠后，当前 agent 结束时完成分支切换，并按 continuation 接续。
+ *
+ * 折叠不是覆盖当前历史，而是复用 Pi 的 SessionManager.branch：
+ * - 原始后缀保留为旧 branch；
+ * - 当前 leaf 回到折叠起点，保持 user turn 索引稳定；
+ * - summary custom message 成为新的 active branch，并在下一轮模型上下文中呈现为原生 compaction summary；
+ * - /tree 可以回到原始后缀。
+ */
+
+import {
+  sessionEntryToContextMessages,
+  type ContextEvent,
+  type ExtensionAPI,
+  type SessionEntry,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  type SessionManager,
+} from "@earendil-works/pi-coding-agent";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { homedir } from "os";
+import { dirname, join } from "path";
+import { Type } from "typebox";
+import {
+  computeFileLists,
+  didAgentStopNormally,
+  ensureHandoffTimeline,
+  extractFileOps,
+  formatContextPercentage,
+  formatFileOperations,
+  formatPercentage,
+  formatThreshold,
+  formatTokens,
+  getTailCompactions,
+  listSquashCandidates,
+  listUserInputs,
+  parseSquashThresholds,
+  resolveThresholdTokens,
+  SESSION_SQUASH_FORCE_TYPE,
+  SESSION_SQUASH_HINT_TYPE,
+  SESSION_SQUASH_TYPE,
+  TAIL_START_ERROR,
+  thresholdKey,
+  validateTailStart,
+  type SquashThreshold,
+  type TailCompactionData,
+  type TailStartErrorCode,
+} from "./session-tail-compaction-utils.ts";
+import { NOTICE_SOURCE } from "./source-tag.ts";
+import { i18n } from "./i18n.ts";
+import { openConfigPanel, type ConfigPanelHandlers, type SessionToolsPanelConfig } from "./config-panel.ts";
+import { registerSquashMessageRenderer } from "./squash-message-renderer.ts";
+import {
+  notifyWithSource,
+  type NoticeColor,
+  type NoticeLevel,
+} from "pi-extensions-i18n";
+
+/**
+ * 统一的用户可见提示出口：加来源标签后交给 Pi 的 notify。
+ * 所有提示都必须经过这里，避免个别调用点漏掉来源标签。
+ */
+function notifySession(
+  ctx: { mode?: string; ui: NoticeContextUi },
+  message: string,
+  level: NoticeLevel,
+): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
+
+/** notifySession 需要的最小 UI 上下文；由 Pi 的 ctx 结构满足。 */
+type NoticeContextUi = {
+  notify(message: string, type?: NoticeLevel): void;
+  theme?: { fg(color: NoticeColor, text: string): string };
+};
+
+/** 运行时的单条上下文消息；system 分支不在 AgentMessage 联合类型里，按结构识别。 */
+type RuntimeMessage = ContextEvent["messages"][number];
+
+/** 是否为运行时下发的 system 消息（承载系统提示与工具声明）。 */
+function isRuntimeSystemMessage(message: RuntimeMessage): boolean {
+  return (message as { role?: string }).role === "system";
+}
+
+/** 读取消息时间戳，用于判断分支里是否已声明同一条 system 消息。 */
+function messageTimestamp(message: RuntimeMessage): number {
+  return (message as { timestamp?: number }).timestamp ?? 0;
+}
+
+/** 压缩前捕获的 system 消息（承载系统提示与工具声明），按 session 隔离。 */
+type CapturedSystemMessages = {
+  sessionId: string;
+  messages: RuntimeMessage[];
+};
+
+/**
+ * Pi ≥0.87 的 `context_with_system`：full transcript（含 system 消息），返回值原样生效。
+ * 0.85/0.86 的类型里没有这个事件，所以只在运行时按名字注册，旧版本不会触发。
+ */
+type SystemAwareContextEvent = {
+  type: "context_with_system";
+  messages: RuntimeMessage[];
+};
+
+type SystemAwareContextResult = { messages: RuntimeMessage[] };
+
+type SystemAwareContextHandler = (
+  event: SystemAwareContextEvent,
+  ctx: ExtensionContext,
+) => SystemAwareContextResult | undefined;
+
+/** 注册 full transcript 钩子；Pi 0.85/0.86 不认识该事件名，注册后不会收到回调。 */
+function registerSystemAwareContext(
+  pi: ExtensionAPI,
+  handler: SystemAwareContextHandler,
+): void {
+  const on = pi.on as unknown as (
+    event: "context_with_system",
+    handler: SystemAwareContextHandler,
+  ) => void;
+  on("context_with_system", handler);
+}
+
+/**
+ * 从当前 session 投影中抓取 system 消息。
+ * Pi 0.85/0.86 的只读 SessionManager 类型没有暴露 buildSessionContext，因此按运行时能力探测。
+ */
+function captureSystemMessages(
+  ctx: ExtensionContext,
+  sessionId: string,
+): CapturedSystemMessages | null {
+  const sessionManager = ctx.sessionManager as unknown as {
+    buildSessionContext?: () => { messages: RuntimeMessage[] };
+  };
+  const messages = sessionManager.buildSessionContext?.().messages ?? [];
+  const systemMessages = messages.filter(isRuntimeSystemMessage);
+  return systemMessages.length > 0 ? { sessionId, messages: systemMessages } : null;
+}
+
+/** validateTailStart 失败码 → i18n key 的映射，集中维护。 */
+const TAIL_START_ERROR_I18N_KEY: Record<TailStartErrorCode, string> = {
+  [TAIL_START_ERROR.inputNotFound]: "validateInputNotFound",
+  [TAIL_START_ERROR.inputIncomplete]: "validateInputIncomplete",
+};
+
+const CONTINUATION_AUTO = "auto";
+const CONTINUATION_NEXT_USER = "next-user";
+
+type SquashContinuation =
+  | typeof CONTINUATION_AUTO
+  | typeof CONTINUATION_NEXT_USER;
+
+/** 交接摘要中使用的 i18n key。 */
+const HANDOFF_I18N_KEYS = {
+  imagePlaceholder: "imagePlaceholder",
+} as const;
+
+const TailCompactionParams = Type.Object({
+  from: Type.Integer({
+    minimum: 0,
+    description: i18n.t("squashFromDescription"),
+  }),
+  summary: Type.String({
+    minLength: 1,
+    description: i18n.t("squashSummaryDescription"),
+  }),
+  continuation: Type.Union([
+    Type.Literal(CONTINUATION_AUTO),
+    Type.Literal(CONTINUATION_NEXT_USER),
+  ], {
+    description: i18n.t("squashContinuationDescription"),
+  }),
+});
+
+/** contextWindow 缺失时的回退值（与 Pi 内置摘要逻辑一致）。 */
+const FALLBACK_CONTEXT_WINDOW = 128000;
+
+/** 默认上下文阈值（k 单位，跨平台配置友好）。 */
+const DEFAULT_SQUASH_THRESHOLDS: SquashThreshold[] = parseSquashThresholds([
+  "150k", "200k", "250k", "300k",
+]);
+
+/** 扩展配置文件名（位于 ~/.pi/agent/extensions/<包名>/ 下）。 */
+const CONFIG_FILE_NAME = "config.json";
+
+/** 配置中的提醒阈值字段名。 */
+const CONFIG_THRESHOLDS_KEY = "squashContextThresholds";
+
+/** 配置中的强制压缩比例字段名；缺失或 null 表示关闭。 */
+const CONFIG_FORCE_THRESHOLD_KEY = "forceSquashContextThreshold";
+
+/** 强制压缩比例最小值；0 表示首次获得有效上下文用量后立即触发。 */
+const FORCE_SQUASH_RATIO_MIN = 0;
+
+/** 强制压缩比例最大值；1 表示达到完整上下文窗口时触发。 */
+const FORCE_SQUASH_RATIO_MAX = 1;
+
+/** 强制压缩期间唯一允许调用的工具。 */
+const FORCE_ALLOWED_TOOLS = ["session_log", "session_squash"] as const;
+
+/** 强制压缩工具名集合，供 tool_call 门禁快速判断。 */
+const FORCE_ALLOWED_TOOL_SET = new Set<string>(FORCE_ALLOWED_TOOLS);
+
+/** 阈值环境变量（逗号分隔，支持 "150000" 与 "75%"）。 */
+const THRESHOLDS_ENV_VAR = "PI_SESSION_TOOLS_SQUASH_THRESHOLDS";
+
+/** 加载期产生的待发送通知（无 ctx，推迟到 session_start flush）。 */
+const pendingNotices: Array<{
+  text: string;
+  level: NoticeLevel;
+}> = [];
+
+/** 已提示过的阈值 key（按 session 隔离，上下文跌回阈值以下自动恢复）。 */
+const notifiedThresholds = new Set<string>();
+
+/** 阈值提示状态绑定的 sessionId。 */
+let hintSessionId: string | null = null;
+
+/** Pi agent 目录环境变量名（支持重定向 ~/.pi/agent）。 */
+const AGENT_DIR_ENV_VAR = "PI_CODING_AGENT_DIR";
+
+/** agent 目录配置中的纯家目录标记。 */
+const HOME_DIR_TOKEN = "~";
+
+/** agent 目录配置中的家目录前缀。 */
+const HOME_DIR_PREFIX = "~/";
+
+/** 解析 Pi agent 目录：优先 AGENT_DIR_ENV_VAR（支持 HOME_DIR_TOKEN/HOME_DIR_PREFIX 前缀），否则 ~/.pi/agent。 */
+function resolveAgentDir(): string {
+  const configured = process.env[AGENT_DIR_ENV_VAR];
+  if (!configured) return join(homedir(), ".pi", "agent");
+  if (configured === HOME_DIR_TOKEN) return homedir();
+  return configured.startsWith(HOME_DIR_PREFIX)
+    ? join(homedir(), configured.slice(HOME_DIR_PREFIX.length))
+    : configured;
+}
+
+/**
+ * 加载上下文阈值配置，优先级：配置文件 > 环境变量 > 默认值。
+ * 配置存在但解析失败时降级到下一级并记录待发送通知（不静默降级）。
+ */
+function loadSquashThresholds(): SquashThreshold[] {
+  // 优先级：配置文件 > 环境变量 > 默认值
+  const configPath = join(
+    resolveAgentDir(),
+    "extensions",
+    "pi-session-tools",
+    CONFIG_FILE_NAME,
+  );
+  try {
+    if (existsSync(configPath)) {
+      const raw = JSON.parse(readFileSync(configPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      const parsed = parseSquashThresholds(raw[CONFIG_THRESHOLDS_KEY]);
+      if (parsed.length > 0) return parsed;
+      if (raw[CONFIG_THRESHOLDS_KEY] !== undefined) {
+        pendingNotices.push({
+          text: i18n.t("configInvalid", { path: configPath }),
+          level: "warning",
+        });
+      }
+    }
+  } catch {
+    pendingNotices.push({
+      text: i18n.t("configInvalid", { path: configPath }),
+      level: "warning",
+    });
+  }
+
+  const envValue = process.env[THRESHOLDS_ENV_VAR];
+  if (envValue) {
+    const parsed = parseSquashThresholds(envValue.split(","));
+    if (parsed.length > 0) return parsed;
+    pendingNotices.push({
+      text: i18n.t("configInvalidEnv", { env: THRESHOLDS_ENV_VAR }),
+      level: "warning",
+    });
+  }
+
+  return DEFAULT_SQUASH_THRESHOLDS;
+}
+
+/** 阈值配置文件路径（与 loadSquashThresholds 一致）。 */
+function squashConfigPath(): string {
+  return join(
+    resolveAgentDir(),
+    "extensions",
+    "pi-session-tools",
+    CONFIG_FILE_NAME,
+  );
+}
+
+/** 判断配置值是否为 0 到 1 的有限数字比例。 */
+function isForceSquashRatio(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= FORCE_SQUASH_RATIO_MIN &&
+    value <= FORCE_SQUASH_RATIO_MAX
+  );
+}
+
+/** 加载可选强制压缩比例；缺失或 null 时保持关闭。 */
+function loadForceSquashRatio(): number | null {
+  const configPath = squashConfigPath();
+  try {
+    if (!existsSync(configPath)) return null;
+    const raw = JSON.parse(readFileSync(configPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const configured = raw[CONFIG_FORCE_THRESHOLD_KEY];
+    if (configured === undefined || configured === null) return null;
+    if (isForceSquashRatio(configured)) return configured;
+    pendingNotices.push({
+      text: i18n.t("forceConfigInvalid", { path: configPath }),
+      level: "warning",
+    });
+  } catch {
+    // loadSquashThresholds 已为同一个无效配置文件登记通知，避免重复提示。
+  }
+  return null;
+}
+
+/** 把阈值数组序列化回配置值（k/百分比），供命令展示与写入。 */
+function serializeThresholds(thresholds: SquashThreshold[]): string[] {
+  return thresholds.map(formatThreshold);
+}
+
+/** 读取配置供命令合并写回；损坏文件会在启动通知后由显式保存覆盖。 */
+function readSquashConfigForWrite(configPath: string): Record<string, unknown> {
+  try {
+    if (!existsSync(configPath)) return {};
+    const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    return parsed && typeof parsed === "object"
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 合并写入配置，避免修改一个阈值时丢失另一个阈值。 */
+function writeSquashConfig(values: Record<string, unknown>): string {
+  const configPath = squashConfigPath();
+  const config = {
+    ...readSquashConfigForWrite(configPath),
+    ...values,
+  };
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(
+    configPath,
+    `${JSON.stringify(config, null, 2)}\n`,
+    "utf8",
+  );
+  return configPath;
+}
+
+/** 写入提醒阈值配置并刷新运行时状态。 */
+function saveSquashThresholds(thresholds: SquashThreshold[]): string {
+  const configPath = writeSquashConfig({
+    [CONFIG_THRESHOLDS_KEY]: serializeThresholds(thresholds),
+  });
+  squashThresholds = thresholds;
+  return configPath;
+}
+
+/** 写入强制压缩比例配置并刷新运行时状态。 */
+function saveForceSquashRatio(ratio: number | null): string {
+  const configPath = writeSquashConfig({
+    [CONFIG_FORCE_THRESHOLD_KEY]: ratio,
+  });
+  forceSquashRatio = ratio;
+  return configPath;
+}
+
+/** 当前生效的提醒阈值配置（命令修改后重新加载）。 */
+let squashThresholds: SquashThreshold[] = loadSquashThresholds();
+
+/** 当前生效的强制压缩比例；默认关闭。 */
+let forceSquashRatio: number | null = loadForceSquashRatio();
+
+type PendingTailCompaction = {
+  sessionId: string;
+  startEntryId: string;
+  fromUserInputIndex: number;
+  summary: string;
+  continuation: SquashContinuation;
+};
+
+type ForceSquashState = {
+  sessionId: string;
+  previousActiveTools: string[];
+  tokens: number;
+  threshold: number;
+  attempt: number;
+};
+
+let pending: PendingTailCompaction | null = null;
+
+/** 构造 Pi 工具的纯文本结果，并按需标记业务错误。 */
+function textResult(text: string, isError = false) {
+  return {
+    content: [{ type: "text" as const, text }],
+    isError,
+    details: {},
+  };
+}
+
+/** 注册会话日志、尾部压缩工具及其生命周期处理器。 */
+export default function contextFoldExtension(pi: ExtensionAPI) {
+  let latestAgentRunStoppedNormally = false;
+  let forceState: ForceSquashState | null = null;
+  /** 压缩前抓到的 system 消息；压缩刚完成的那一轮请求已经看不到它们。 */
+  let capturedSystemMessages: CapturedSystemMessages | null = null;
+
+  // 摘要消息默认收起为一行，Ctrl+O 展开；否则长快照会把压缩前的最后一条回答顶出屏幕。
+  registerSquashMessageRenderer(pi);
+
+  /** 退出强制模式并恢复进入前的活动工具集合。 */
+  function restoreToolsAfterForce(): void {
+    if (!forceState) return;
+    pi.setActiveTools(forceState.previousActiveTools);
+    forceState = null;
+  }
+
+  /** 在 agent 已停止后投递强制压缩任务；未压缩时会再次调用。 */
+  function triggerForcedSquashTurn(): void {
+    if (!forceState) return;
+    forceState.attempt += 1;
+    pi.sendMessage(
+      {
+        customType: SESSION_SQUASH_FORCE_TYPE,
+        content: [
+          {
+            type: "text",
+            text: i18n.t("forceTaskPrompt", {
+              tokens: formatTokens(forceState.tokens),
+              threshold: formatTokens(forceState.threshold),
+              attempt: forceState.attempt,
+            }),
+          },
+        ],
+        display: false,
+        details: {
+          tokens: forceState.tokens,
+          threshold: forceState.threshold,
+          attempt: forceState.attempt,
+        },
+      },
+      { triggerTurn: true },
+    );
+  }
+
+  /** 达到强制阈值时限制工具，并在当前工具批结束处中止 agent。 */
+  function enterForceMode(
+    ctx: ExtensionContext,
+    tokens: number,
+    threshold: number,
+  ): void {
+    forceState = {
+      sessionId: ctx.sessionManager.getSessionId(),
+      previousActiveTools: pi.getActiveTools(),
+      tokens,
+      threshold,
+      attempt: 0,
+    };
+    pi.setActiveTools([...FORCE_ALLOWED_TOOLS]);
+    notifySession(
+      ctx,
+      i18n.t("forceInterruptNotice", {
+        tokens: formatTokens(tokens),
+        threshold: formatTokens(threshold),
+      }),
+      "warning",
+    );
+    ctx.abort();
+  }
+
+  pi.registerTool({
+    name: "session_log",
+    label: i18n.t("logLabel"),
+    description: i18n.t("logDescription"),
+    promptSnippet: i18n.t("logSnippet"),
+    parameters: Type.Object({}),
+    /** 返回当前 active branch 上可作为压缩起点的 user turn。 */
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      const branch = ctx.sessionManager.getBranch();
+      const inputs = listSquashCandidates(
+        branch,
+        i18n.t("imagePlaceholder"),
+      );
+
+      return textResult(
+        JSON.stringify(
+          {
+            sessionId: ctx.sessionManager.getSessionId(),
+            leafId: ctx.sessionManager.getLeafId(),
+            inputs: inputs.map((input) => ({
+              index: input.index,
+              content: input.content,
+              complete: input.complete,
+              canStartFold: input.complete,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+    },
+  });
+
+  pi.registerTool({
+    name: "session_squash",
+    label: i18n.t("squashLabel"),
+    description: i18n.t("squashDescription"),
+    promptGuidelines: [
+      i18n.t("guidelineBoundary"),
+      i18n.t("guidelineIndex"),
+      i18n.t("guidelineSummary"),
+      i18n.t("guidelineSummaryIntegrity"),
+      i18n.t("guidelineLeaf"),
+      i18n.t("guidelineContinue"),
+    ],
+    parameters: TailCompactionParams,
+    /** 校验并登记压缩请求；实际分支切换在 agent_settled 后执行。 */
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const branch = ctx.sessionManager.getBranch();
+      const inputs = listUserInputs(branch, i18n.t("imagePlaceholder"));
+      const validation = validateTailStart(inputs, params.from);
+
+      if (validation.ok === false) {
+        return textResult(
+          i18n.t(TAIL_START_ERROR_I18N_KEY[validation.code], {
+            from: validation.from,
+          }),
+          true,
+        );
+      }
+      if (pending) {
+        return textResult(
+          i18n.t("pending"),
+          true,
+        );
+      }
+
+      const summary = params.summary.trim();
+      if (!summary) {
+        return textResult(i18n.t("squashSummaryEmpty"), true);
+      }
+
+      const startIndex = branch.findIndex(
+        (entry) => entry.id === validation.input.entryId,
+      );
+      const summaryWithTimeline = ensureHandoffTimeline(
+        summary,
+        startIndex >= 0 ? branch.slice(startIndex) : [],
+        i18n.t(HANDOFF_I18N_KEYS.imagePlaceholder),
+      );
+
+      pending = {
+        sessionId: ctx.sessionManager.getSessionId(),
+        startEntryId: validation.input.entryId,
+        fromUserInputIndex: params.from,
+        summary: summaryWithTimeline,
+        continuation: params.continuation,
+      };
+
+      return {
+        ...textResult(i18n.t("registered", { from: params.from })),
+        // 先结束旧分支上的 agent run，agent_settled 才能立即切分支并注入摘要。
+        terminate: true,
+      };
+    },
+  });
+
+  pi.on("tool_call", (event) => {
+    if (!forceState || FORCE_ALLOWED_TOOL_SET.has(event.toolName)) return;
+    return {
+      block: true,
+      terminate: true,
+      reason: i18n.t("forceToolBlocked", { tool: event.toolName }),
+    };
+  });
+
+  pi.on("turn_end", (_event, ctx) => {
+    if (forceSquashRatio === null || forceState || pending) return;
+    const tokens = ctx.getContextUsage()?.tokens ?? 0;
+    if (tokens <= 0) return;
+    const contextWindow = ctx.model?.contextWindow || FALLBACK_CONTEXT_WINDOW;
+    const threshold = Math.floor(contextWindow * forceSquashRatio);
+    if (tokens < threshold) return;
+    enterForceMode(ctx, tokens, threshold);
+  });
+
+  pi.on("agent_end", (event) => {
+    latestAgentRunStoppedNormally = didAgentStopNormally(event.messages);
+  });
+
+  pi.on("agent_settled", async (_event, ctx) => {
+    const shouldCheckContextThreshold = latestAgentRunStoppedNormally;
+    latestAgentRunStoppedNormally = false;
+
+    if (!pending) {
+      if (forceState) {
+        if (forceState.sessionId !== ctx.sessionManager.getSessionId()) {
+          restoreToolsAfterForce();
+          notifySession(ctx, i18n.t("forceSwitched"), "warning");
+          return;
+        }
+        triggerForcedSquashTurn();
+        return;
+      }
+      if (shouldCheckContextThreshold) checkContextThreshold(pi, ctx);
+      return;
+    }
+
+    if (pending.sessionId !== ctx.sessionManager.getSessionId()) {
+      pending = null;
+      restoreToolsAfterForce();
+      notifySession(ctx, i18n.t("switched"), "warning");
+      return;
+    }
+
+    const branch = ctx.sessionManager.getBranch();
+    const inputs = listUserInputs(branch, i18n.t("imagePlaceholder"));
+    const input = inputs.find((item) => item.entryId === pending.startEntryId);
+    if (!input || !input.complete) {
+      pending = null;
+      throw new Error(i18n.t("noInput"));
+    }
+
+    const sourceLeafId = ctx.sessionManager.getLeafId();
+    if (!sourceLeafId) {
+      pending = null;
+      throw new Error(i18n.t("noLeaf"));
+    }
+
+    const request = pending;
+    const startIdx = branch.findIndex(
+      (entry) => entry.id === request.startEntryId,
+    );
+    const startEntry = branch[startIdx];
+    if (!startEntry) {
+      pending = null;
+      throw new Error(i18n.t("noInput"));
+    }
+    const suffix = branch.slice(startIdx);
+    const { modifiedFiles } = computeFileLists(extractFileOps(suffix));
+    // 只附加修改过的文件；读取过的路径由摘要按需选择，避免清单淹没当前状态。
+    const taskState =
+      request.summary + formatFileOperations([], modifiedFiles);
+    const summary = `${i18n.t("continuationInstruction")}\n\n${taskState}`;
+    const data: TailCompactionData = {
+      startEntryId: request.startEntryId,
+      sourceLeafId,
+      fromUserInputIndex: request.fromUserInputIndex,
+      summary,
+      tokensBefore: ctx.getContextUsage()?.tokens ?? 0,
+    };
+
+    try {
+      // 起始 user turn 作为新分支锚点保留，确保后续 session_log 索引稳定；
+      // continuation=next-user 会阻止已完成任务立即重答这条旧 prompt。
+      const sessionManager =
+        ctx.sessionManager as unknown as SessionManager;
+      // branch() 之后新分支里没有任何 system 条目，先把当前的 system 消息（系统提示与
+      // 工具声明）抓下来，交给 context_with_system 放回请求的最前面。
+      capturedSystemMessages = captureSystemMessages(ctx, request.sessionId);
+      sessionManager.branch(request.startEntryId);
+
+      // sendMessage 同时把 summary 追加到 AgentSession 内存和当前新 leaf。
+      // 已完成且等待用户的新阶段只保存快照，不额外触发一轮旧任务回复。
+      restoreToolsAfterForce();
+      pi.sendMessage(
+        {
+          customType: SESSION_SQUASH_TYPE,
+          content: summary,
+          display: true,
+          details: data,
+        },
+        { triggerTurn: request.continuation === CONTINUATION_AUTO },
+      );
+      pending = null;
+    } catch (error) {
+      pending = null;
+      throw new Error(i18n.t("branchFailed", { error: String(error) }));
+    }
+
+    notifySession(
+      ctx,
+      i18n.t("done", {
+        from: request.fromUserInputIndex,
+      }),
+      "info",
+    );
+  });
+
+  pi.on("session_shutdown", () => {
+    restoreToolsAfterForce();
+    capturedSystemMessages = null;
+  });
+
+  /**
+   * Keep the persisted/UI custom message, but present it to the LLM as a native
+   * compaction summary so the next agent understands its handoff semantics.
+   */
+  function toSessionContextMessages(entry: SessionEntry) {
+    if (entry.type !== "custom_message" || entry.customType !== SESSION_SQUASH_TYPE) {
+      return sessionEntryToContextMessages(entry);
+    }
+
+    const summary = typeof entry.content === "string"
+      ? entry.content
+      : entry.content
+        .map((block) => block.type === "text" ? block.text : "")
+        .join("\n");
+    const details = entry.details;
+    const tokensBefore = details && typeof details === "object" && !Array.isArray(details)
+      && "tokensBefore" in details && typeof details.tokensBefore === "number"
+      ? details.tokensBefore
+      : 0;
+    return [{
+      role: "compactionSummary" as const,
+      summary,
+      tokensBefore,
+      timestamp: new Date(entry.timestamp).getTime(),
+    }];
+  }
+
+  // branch() 发生在 agent_settled 事件中，Pi 的 AgentSession 内存消息仍可能
+  // 保留旧分支。下一次 provider 请求前，以当前 active branch 重建 context，
+  // 确保模型和 /tree 看到同一条新分支。
+  //
+  // Pi 0.85/0.86：`context` 事件仍把运行时的 system 消息交给扩展，这里把分支里没有的
+  // 携带回请求头部。Pi 0.87 起该事件只给对话消息（system 消息由 Pi 自己恢复），
+  // 这段过滤自然为空，真正的修复在下面的 `context_with_system`。
+  pi.on("context", async (event, ctx) => {
+    const branch = ctx.sessionManager.getBranch();
+    if (getTailCompactions(branch).length === 0) return;
+
+    const rebuilt = ctx.sessionManager
+      .buildContextEntries()
+      .flatMap(toSessionContextMessages);
+    const declaredSystemTimestamps = new Set(
+      rebuilt.filter(isRuntimeSystemMessage).map(messageTimestamp),
+    );
+    return {
+      messages: [
+        ...(event.messages ?? []).filter(
+          (message) =>
+            isRuntimeSystemMessage(message) &&
+            !declaredSystemTimestamps.has(messageTimestamp(message)),
+        ),
+        ...rebuilt,
+      ],
+    };
+  });
+
+  // Pi ≥0.87：`context` 处理器看不到 system 消息，Pi 只在运行时消息里仍有 system 头时
+  // 才把它放回请求最前面。压缩用 branch() 换分支后分支里没有 system 条目，
+  // provider 只能从 leading system 消息推导 instructions 与 tools，请求因此丢提示和工具，
+  // 模型会回答「当前会话没有文件编辑或命令执行工具」。这里在 full transcript 钩子里把
+  // system 消息搬回 index 0；被折叠掉的那份用压缩前抓到的快照补回。
+  registerSystemAwareContext(pi, (event, ctx) => {
+    const sessionId = ctx.sessionManager.getSessionId();
+    const currentSystemMessages = (event.messages ?? []).filter(isRuntimeSystemMessage);
+    // 只在拿到真实 system 消息时刷新快照，避免压缩后第一轮用空列表覆盖掉压缩前的头。
+    if (currentSystemMessages.length > 0) {
+      capturedSystemMessages = { sessionId, messages: currentSystemMessages };
+    }
+
+    const branch = ctx.sessionManager.getBranch();
+    if (getTailCompactions(branch).length === 0) return undefined;
+
+    const rebuilt = ctx.sessionManager
+      .buildContextEntries()
+      .flatMap(toSessionContextMessages);
+    const carried = currentSystemMessages.length > 0
+      ? currentSystemMessages
+      : capturedSystemMessages?.sessionId === sessionId
+        ? capturedSystemMessages.messages
+        : [];
+    return {
+      messages: [
+        ...carried,
+        ...rebuilt.filter((message) => !isRuntimeSystemMessage(message)),
+      ],
+    };
+  });
+
+  // 加载期通知（如配置解析失败）延迟到首个 session 开始时统一发送。
+  pi.on("session_start", async (_event, ctx) => {
+    for (const notice of pendingNotices.splice(0)) {
+      notifySession(ctx, notice.text, notice.level);
+    }
+  });
+
+  for (const name of CONFIG_COMMAND_NAMES) {
+    pi.registerCommand(name, {
+      description: i18n.t("configCommandDescription"),
+      handler: (args, ctx) =>
+        handleConfigCommand(args, ctx, restoreToolsAfterForce),
+    });
+  }
+}
+
+/** 配置命令的注册名（双命名，对齐其他公开插件）。 */
+const CONFIG_COMMAND_NAMES = [
+  "config:session-tools",
+  "pi-session-tools",
+] as const;
+
+/** 强制阈值配置子命令。 */
+const FORCE_CONFIG_COMMAND = "force";
+
+/** 关闭强制阈值时接受的值。 */
+const FORCE_CONFIG_DISABLED_VALUES = new Set(["off", "none", "disabled"]);
+
+/** 配置命令：不带参数打开配置面板；带参数直接保存并返回。 */
+async function handleConfigCommand(
+  args: string,
+  ctx: ExtensionCommandContext,
+  onForceDisabled: () => void,
+): Promise<void> {
+  if (!ctx.hasUI) {
+    notifySession(ctx, i18n.t("configNoUi"), "warning");
+    return;
+  }
+  const requested = args.trim();
+  if (!requested) {
+    await openSessionToolsPanel(ctx, onForceDisabled);
+    return;
+  }
+  {
+    const [command, ...commandArgs] = requested.split(/\s+/);
+    if (command.toLowerCase() === FORCE_CONFIG_COMMAND) {
+      const forceValue = commandArgs.join(" ").trim().toLowerCase();
+      if (!forceValue) {
+        notifySession(ctx, i18n.t("configForceUsage"), "error");
+        return;
+      }
+      if (FORCE_CONFIG_DISABLED_VALUES.has(forceValue)) {
+        const configPath = saveForceSquashRatio(null);
+        onForceDisabled();
+        notifySession(
+          ctx,
+          i18n.t("configForceDisabled", { path: configPath }),
+          "info",
+        );
+        return;
+      }
+      const forceRatio = Number(forceValue);
+      if (!isForceSquashRatio(forceRatio)) {
+        notifySession(
+          ctx,
+          i18n.t("configForceParseError", { value: forceValue }),
+          "error",
+        );
+        return;
+      }
+      const configPath = saveForceSquashRatio(forceRatio);
+      notifySession(
+        ctx,
+        i18n.t("configForceSaved", {
+          ratio: forceRatio,
+          path: configPath,
+        }),
+        "info",
+      );
+      return;
+    }
+
+    const parsed = parseSquashThresholds(requested.split(","));
+    if (parsed.length === 0) {
+      notifySession(ctx, i18n.t("configParseError", { value: requested }), "error");
+      return;
+    }
+    const configPath = saveSquashThresholds(parsed);
+    notifySession(
+      ctx,
+      i18n.t("configSaved", {
+        thresholds: serializeThresholds(parsed).join(", "),
+        path: configPath,
+      }),
+      "info",
+    );
+  }
+}
+
+/**
+ * 把面板改动落到配置文件与运行期状态。
+ *
+ * 强制压缩关闭时必须复用原有的 `onForceDisabled`（退出强制模式并恢复工具集合），
+ * 否则写盘成功但当前会话仍卡在强制状态。
+ */
+function applyPanelConfig(
+  ctx: ExtensionCommandContext,
+  onForceDisabled: () => void,
+  next: SessionToolsPanelConfig,
+): void {
+  const previousForce = forceSquashRatio;
+  try {
+    saveSquashThresholds(next.squashContextThresholds);
+    saveForceSquashRatio(next.forceSquashContextThreshold);
+  } catch (error) {
+    notifySession(
+      ctx,
+      i18n.t("configSaveFailed", {
+        path: squashConfigPath(),
+        error: error instanceof Error ? error.message : String(error),
+      }),
+      "error",
+    );
+    return;
+  }
+  if (previousForce !== null && next.forceSquashContextThreshold === null) {
+    onForceDisabled();
+  }
+}
+
+/** 打开配置面板，把面板接口接到当前配置与运行期状态上。 */
+async function openSessionToolsPanel(
+  ctx: ExtensionCommandContext,
+  onForceDisabled: () => void,
+): Promise<void> {
+  await openConfigPanel(ctx, createSessionToolsPanelHandlers(ctx, onForceDisabled));
+}
+
+/**
+ * 构造面板接口：读取当前配置，改动后写盘并同步运行期状态。
+ *
+ * 单独导出便于测试直接验证「关闭强制必须退出强制模式」这条连线；
+ * 面板本身只依赖这个接口，不碰模块内部可变状态。
+ */
+export function createSessionToolsPanelHandlers(
+  ctx: ExtensionCommandContext,
+  onForceDisabled: () => void,
+): ConfigPanelHandlers {
+  return {
+    getConfig: () => ({
+      squashContextThresholds: squashThresholds,
+      forceSquashContextThreshold: forceSquashRatio,
+    }),
+    onChange: (next) => applyPanelConfig(ctx, onForceDisabled, next),
+  };
+}
+
+/** 阈值提示消息的投递模式：agent 停止后立即投递（followUp）并触发下一轮（triggerTurn）。 */
+const HINT_DELIVER_MODE = "followUp" as const;
+
+/**
+ * 上下文阈值提示：agent 主动正常停止且无压缩任务时，若上下文跨过未提示过的阈值，
+ * 注入一条 followUp 消息建议主 agent 考虑 session_squash（停止后立即触发）。
+ * 上下文跌回阈值以下（如压缩后）自动恢复该档位的可提示状态。
+ */
+function checkContextThreshold(
+  pi: ExtensionAPI,
+  ctx: Parameters<Parameters<ExtensionAPI["on"]>[1]>[1],
+): void {
+  const usage = ctx.getContextUsage();
+  const tokens = usage?.tokens ?? 0;
+  if (tokens <= 0) return;
+
+  const sessionId = ctx.sessionManager.getSessionId();
+  if (sessionId !== hintSessionId) {
+    notifiedThresholds.clear();
+    hintSessionId = sessionId;
+  }
+
+  const contextWindow = usage?.contextWindow ||
+    ctx.model?.contextWindow ||
+    FALLBACK_CONTEXT_WINDOW;
+  let candidate: { key: string; resolved: number } | null = null;
+  for (const threshold of squashThresholds) {
+    const resolved = resolveThresholdTokens(threshold, contextWindow);
+    const key = thresholdKey(threshold);
+    if (tokens < resolved) {
+      // 上下文跌回该档位以下：恢复可提示状态
+      notifiedThresholds.delete(key);
+      continue;
+    }
+    if (notifiedThresholds.has(key)) continue;
+    if (!candidate || resolved > candidate.resolved) {
+      candidate = { key, resolved };
+    }
+  }
+  if (!candidate) return;
+  notifiedThresholds.add(candidate.key);
+
+  const tokensText = formatTokens(tokens);
+  const contextWindowText = formatTokens(contextWindow);
+  const measuredPercentage = usage?.percent;
+  const contextPercentage =
+    measuredPercentage === null || measuredPercentage === undefined
+      ? formatContextPercentage(tokens, contextWindow)
+      : formatPercentage(measuredPercentage);
+  const thresholdText = formatTokens(candidate.resolved);
+  notifySession(
+    ctx,
+    i18n.t("contextHintNotice", {
+      tokens: tokensText,
+      contextWindow: contextWindowText,
+      contextPercentage,
+      threshold: thresholdText,
+    }),
+    "info",
+  );
+  // 停止后立即投递并触发下一轮，让主 agent 立即评估是否压缩（不排队等下次用户输入）。
+  pi.sendMessage(
+    {
+      customType: SESSION_SQUASH_HINT_TYPE,
+      content: [
+        {
+          type: "text",
+          text: i18n.t("contextHint", {
+            tokens: tokensText,
+            contextWindow: contextWindowText,
+            contextPercentage,
+            threshold: thresholdText,
+          }),
+        },
+      ],
+      display: false,
+      details: { tokens, threshold: candidate.resolved },
+    },
+    { deliverAs: HINT_DELIVER_MODE, triggerTurn: true },
+  );
+}

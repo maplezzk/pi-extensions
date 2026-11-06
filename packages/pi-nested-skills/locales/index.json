@@ -1,0 +1,74 @@
+{
+  "commandDescription": {
+    "zh-CN": "列出所有可用的嵌套技能及其命令",
+    "en-US": "List all available nested skills and their commands"
+  },
+  "title": {
+    "zh-CN": "## 可用嵌套技能命令\n",
+    "en-US": "## Available nested skill commands\n"
+  },
+  "footer": {
+    "zh-CN": "在聊天中输入上述命令即可手动调用对应技能。",
+    "en-US": "Enter one of the commands above in chat to invoke the corresponding skill."
+  },
+  "noSkills": {
+    "zh-CN": "技能根目录中没有发现可用技能：{roots}",
+    "en-US": "No usable skills were found in the configured roots: {roots}"
+  },
+  "noRoots": {
+    "zh-CN": "未配置根目录",
+    "en-US": "no configured roots"
+  },
+  "configWarning": {
+    "zh-CN": "嵌套技能配置警告：{reason}",
+    "en-US": "Nested skills configuration warning: {reason}"
+  },
+  "scanWarning": {
+    "zh-CN": "扫描技能目录失败：{path}（{reason}）",
+    "en-US": "Failed to scan skill path: {path} ({reason})"
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置嵌套技能根目录",
+    "en-US": "Configure nested skill roots"
+  },
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:nested-skills（打开配置面板）或 /config:nested-skills reset（恢复默认值）",
+    "en-US": "Usage: /config:nested-skills (open settings) or /config:nested-skills reset (restore defaults)"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "嵌套技能配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Nested skill configuration requires the TUI; run this command in an interactive Pi session."
+  },
+  "configCommandSaved": {
+    "zh-CN": "嵌套技能配置已保存：{path}。",
+    "en-US": "Nested skill configuration saved to {path}."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "嵌套技能配置无效：{error}",
+    "en-US": "Invalid nested skill configuration: {error}"
+  },
+  "configSaveFailed": {
+    "zh-CN": "嵌套技能配置保存失败：{error}",
+    "en-US": "Failed to save nested skill configuration: {error}"
+  },
+  "configMenuTitle": {
+    "zh-CN": "嵌套技能配置",
+    "en-US": "Nested skill settings"
+  },
+  "configLabelSkillRoots": {
+    "zh-CN": "技能根目录",
+    "en-US": "Skill roots"
+  },
+  "configDescSkillRoots": {
+    "zh-CN": "逗号分隔的目录列表，递归扫描其中的 SKILL.md。",
+    "en-US": "Comma-separated directories scanned recursively for SKILL.md files."
+  },
+  "configInputPrompt": {
+    "zh-CN": "输入",
+    "en-US": "Input"
+  },
+  "configValueUnset": {
+    "zh-CN": "未设置",
+    "en-US": "unset"
+  }
+}

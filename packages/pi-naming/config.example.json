@@ -1,0 +1,19 @@
+{
+  "automaticNaming": true,
+  "manualNaming": true,
+  "targets": {
+    "session": true,
+    "workspace": true,
+    "tab": true
+  },
+  "title": {
+    "usePromptAsTitle": false,
+    "maxLength": 15,
+    "preferredLength": 10,
+    "language": "auto",
+    "instructions": "",
+    "timeoutMs": 10000,
+    "maxTokens": 2048,
+    "effort": "low"
+  }
+}

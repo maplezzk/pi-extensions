@@ -7,8 +7,7 @@ import {
 import { buildSupervisorAuditLines, createSupervisorAuditComponent } from "./fallback-renderer.ts";
 
 const SUPERVISOR_MIDDLEWARE_ID = "pi-tool-supervisor.result-renderer.v1";
-const SUPPORTED_TOOLS = new Set(["edit", "write"]);
-
+/** Reads the compatibility audit from any tool result details object. */
 function getAudit(result: unknown): Record<string, unknown> | undefined {
   if (!result || typeof result !== "object" || Array.isArray(result)) return undefined;
   const details = (result as Record<string, unknown>).details;
@@ -19,8 +18,15 @@ function getAudit(result: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+const DIAGNOSTIC_AUDIT_STATUSES = new Set(["rejected", "failed"]);
+
+/** Returns whether the audit should replace raw diagnostic tool output in the TUI. */
+function isDiagnosticAudit(audit: Record<string, unknown>): boolean {
+  return typeof audit.status === "string" && DIAGNOSTIC_AUDIT_STATUSES.has(audit.status);
+}
+
+/** Renders supervisor panels for every tool carrying a valid audit. */
 const supervisorMiddleware: ResultMiddleware = (context, next) => {
-  if (!SUPPORTED_TOOLS.has(context.toolName)) return next();
   const audit = getAudit(context.result);
   if (!audit) return next();
   const rendered = buildSupervisorAuditLines(
@@ -31,7 +37,10 @@ const supervisorMiddleware: ResultMiddleware = (context, next) => {
   if (!rendered) return next();
 
   const panel = createSupervisorAuditComponent(rendered, context.theme);
-  return appendResultRenderPanel(next(), panel);
+  // The full diagnostic remains in result.content for the model, while the
+  // TUI shows the audit panel and the notify toast instead of printing it as
+  // ordinary tool output in the editor area.
+  return isDiagnosticAudit(audit) ? panel : appendResultRenderPanel(next(), panel);
 };
 
 export function registerSupervisorToolDisplayMiddleware(): () => void {

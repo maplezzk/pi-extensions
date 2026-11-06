@@ -389,7 +389,7 @@ test("pi-mcp-adapter tools with existing renderers are overridden by MCP display
 	const resultText = renderToText(mcpTool.renderResult!({ content: [{ type: "text", text: "line 1\nline 2" }] }, { expanded: false }, createTheme()));
 
 	assert.equal(callText, "MCP call filesystem:read_file (2 args)");
-	assert.equal(resultText, "↳ 2 lines returned • Ctrl+O to expand");
+	assert.equal(resultText, "2 lines returned • Ctrl+O to expand");
 });
 
 // ─── Prompt Metadata ─────────────────────────────────────────────────────────

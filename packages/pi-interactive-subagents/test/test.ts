@@ -4,6 +4,8 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, rmSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { TERMINAL_RENAME_CONTEXT_ENV, readSurfaceRenameContext } from "pi-terminal-mux";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as subagentsModule from "../pi-extension/subagents/index.ts";
 
@@ -54,8 +56,14 @@ import {
   shouldAutoExitOnAgentEnd,
 } from "../pi-extension/subagents/subagent-done.ts";
 import {
+  applyPersistedMuxPreference,
+  loadHerdrModeConfig,
   loadMuxConfig,
+  loadSubagentExtensionsConfig,
+  loadSubagentSpawningConfig,
+  saveHerdrMode,
   saveMuxPreference,
+  saveSubagentExtensions,
 } from "../pi-extension/subagents/mux-config.ts";
 
 // --- Helpers ---
@@ -71,10 +79,15 @@ function createSessionFile(dir: string, entries: object[]): string {
   return file;
 }
 
-function withTempDir(run: (dir: string) => void) {
+/**
+ * Run a test body in a fresh temp directory and clean up afterwards.
+ * Awaits the body, so async bodies finish (and their cleanup runs) before the
+ * caller continues — an unawaited async body leaked env restore into the next test.
+ */
+async function withTempDir(run: (dir: string) => void | Promise<void>) {
   const dir = createTestDir();
   try {
-    run(dir);
+    await run(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -358,7 +371,6 @@ describe("session.ts", () => {
       const childFile = join(dir, "lineage-child.jsonl");
 
       seedSubagentSessionFile({
-        mode: "lineage-only",
         parentSessionFile: parentFile,
         childSessionFile: childFile,
         childCwd: "/tmp/child-cwd",
@@ -371,30 +383,6 @@ describe("session.ts", () => {
       assert.equal(header.type, "session");
       assert.equal(header.parentSession, parentFile);
       assert.equal(header.cwd, "/tmp/child-cwd");
-    });
-
-    it("creates a forked child session with copied context before the triggering user turn", () => {
-      const parentFile = createSessionFile(dir, [SESSION_HEADER, MODEL_CHANGE, USER_MSG, ASSISTANT_MSG]);
-      const childFile = join(dir, "fork-child.jsonl");
-
-      seedSubagentSessionFile({
-        mode: "fork",
-        parentSessionFile: parentFile,
-        childSessionFile: childFile,
-        childCwd: "/tmp/fork-child-cwd",
-      });
-
-      const entries = readFileSync(childFile, "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line));
-      assert.equal(entries.length, 2);
-      assert.equal(entries[0].type, "session");
-      assert.equal(entries[0].parentSession, parentFile);
-      assert.equal(entries[0].cwd, "/tmp/fork-child-cwd");
-      assert.equal(entries[1].type, "model_change");
-      assert.equal(entries.some((entry) => entry.type === "session" && entry.parentSession !== parentFile), false);
-      assert.equal(entries.some((entry) => entry.type === "message"), false);
     });
   });
 
@@ -833,6 +821,58 @@ describe("subagent mux config", () => {
     });
   });
 
+  it("loads the global subagent spawning switch and disables it by default", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+
+      assert.deepEqual(loadSubagentSpawningConfig(configPath), {
+        allowSubagentSpawning: false,
+        source: "default",
+      });
+
+      writeFileSync(configPath, JSON.stringify({ allowSubagentSpawning: true }));
+      assert.deepEqual(loadSubagentSpawningConfig(configPath), {
+        allowSubagentSpawning: true,
+        source: "file",
+      });
+    });
+  });
+
+  it("loads explicit child extensions and defaults to an empty list", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+
+      assert.deepEqual(loadSubagentExtensionsConfig(configPath), {
+        extensions: [],
+        source: "default",
+      });
+
+      writeFileSync(
+        configPath,
+        JSON.stringify({ subagentExtensions: ["~/extensions/example.ts", "relative.ts"] }),
+      );
+      assert.deepEqual(loadSubagentExtensionsConfig(configPath), {
+        extensions: ["~/extensions/example.ts", "relative.ts"],
+        source: "file",
+      });
+    });
+  });
+
+  it("saves and normalizes explicit child extensions", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      const saved = saveSubagentExtensions([" ~/one.ts ", "two.ts", "~/one.ts"], configPath);
+
+      assert.deepEqual(saved, {
+        extensions: ["~/one.ts", "two.ts"],
+        source: "file",
+      });
+      assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+        subagentExtensions: ["~/one.ts", "two.ts"],
+      });
+    });
+  });
+
   it("saves a preference and makes it effective immediately", () => {
     withTempDir((dir) => {
       const configPath = join(dir, "config.json");
@@ -856,10 +896,134 @@ describe("subagent mux config", () => {
       }
     });
   });
+
+  it("persists Herdr mode and lets the environment override it", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      const previousHerdrMode = process.env.PI_SUBAGENT_HERDR_MODE;
+      delete process.env.PI_SUBAGENT_HERDR_MODE;
+      try {
+        writeFileSync(configPath, JSON.stringify({ mux: "herdr", herdrMode: "tab" }));
+        assert.deepEqual(loadHerdrModeConfig(configPath), { herdrMode: "tab", source: "file" });
+
+        process.env.PI_SUBAGENT_HERDR_MODE = "split";
+        assert.deepEqual(loadHerdrModeConfig(configPath), { herdrMode: "split", source: "environment" });
+      } finally {
+        if (previousHerdrMode === undefined) delete process.env.PI_SUBAGENT_HERDR_MODE;
+        else process.env.PI_SUBAGENT_HERDR_MODE = previousHerdrMode;
+      }
+    });
+  });
+
+  it("applies and saves the persisted Herdr mode immediately", () => {
+    withTempDir((dir) => {
+      const configPath = join(dir, "config.json");
+      const previousHerdrMode = process.env.PI_SUBAGENT_HERDR_MODE;
+      delete process.env.PI_SUBAGENT_HERDR_MODE;
+      try {
+        writeFileSync(configPath, JSON.stringify({ herdrMode: "tab", status: { enabled: true } }));
+        applyPersistedMuxPreference(configPath);
+        assert.equal(process.env.PI_SUBAGENT_HERDR_MODE, "tab");
+
+        const saved = saveHerdrMode("split", configPath);
+        assert.deepEqual(saved, { herdrMode: "split", source: "file" });
+        assert.equal(process.env.PI_SUBAGENT_HERDR_MODE, "split");
+        assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+          herdrMode: "split",
+          status: { enabled: true },
+        });
+
+        process.env.PI_SUBAGENT_HERDR_MODE = "tiles";
+        applyPersistedMuxPreference(configPath);
+        assert.equal(process.env.PI_SUBAGENT_HERDR_MODE, "tiles");
+      } finally {
+        if (previousHerdrMode === undefined) delete process.env.PI_SUBAGENT_HERDR_MODE;
+        else process.env.PI_SUBAGENT_HERDR_MODE = previousHerdrMode;
+      }
+    });
+  });
+});
+
+describe("subagent mux command parsing", () => {
+  const testApi = (subagentsModule as unknown as {
+    __test__: {
+      parseMuxConfigRequest: (value: string) => {
+        preference: string;
+        herdrMode?: string;
+      } | null;
+      parseSubagentExtensionPaths: (value: string) => string[] | null;
+    };
+  }).__test__;
+
+  it("accepts Herdr split/tab and rejects modes for other backends", () => {
+    assert.deepEqual(testApi.parseMuxConfigRequest("herdr split"), {
+      preference: "herdr",
+      herdrMode: "split",
+    });
+    assert.deepEqual(testApi.parseMuxConfigRequest("herdr TAB"), {
+      preference: "herdr",
+      herdrMode: "tab",
+    });
+    assert.deepEqual(testApi.parseMuxConfigRequest("herdr"), { preference: "herdr" });
+    assert.equal(testApi.parseMuxConfigRequest("tmux tab"), null);
+    assert.equal(testApi.parseMuxConfigRequest("herdr tiles"), null);
+  });
+
+  it("parses comma-separated extension paths and rejects empty entries", () => {
+    assert.deepEqual(testApi.parseSubagentExtensionPaths("~/one.ts, relative.ts,~/one.ts"), [
+      "~/one.ts",
+      "relative.ts",
+    ]);
+    assert.equal(testApi.parseSubagentExtensionPaths("~/one.ts,,relative.ts"), null);
+  });
 });
 
 describe("subagent discovery", () => {
-  const testApi = (subagentsModule as any).__test__;
+  const testApi = subagentsModule.__test__;
+
+  it("discovers project and global extension entrypoints and keeps missing configured paths visible", () => {
+    withTempDir((dir) => {
+      const projectDir = join(dir, "project");
+      const agentDir = join(dir, "agent");
+      const projectExtensionDir = join(projectDir, ".pi", "extensions", "project-extension");
+      const globalExtensionDir = join(agentDir, "extensions", "global-extension");
+      mkdirSync(projectExtensionDir, { recursive: true });
+      mkdirSync(globalExtensionDir, { recursive: true });
+      writeFileSync(
+        join(projectExtensionDir, "package.json"),
+        JSON.stringify({ name: "project-extension", pi: { extensions: ["./entry.ts"] } }),
+      );
+      writeFileSync(join(projectExtensionDir, "entry.ts"), "export default () => {};\n");
+      writeFileSync(join(globalExtensionDir, "index.ts"), "export default () => {};\n");
+
+      const candidates = testApi.discoverSubagentExtensionCandidates({
+        cwd: projectDir,
+        agentDir,
+        configured: ["extensions/missing-extension/index.ts"],
+      });
+
+      assert.ok(candidates.some((candidate) => candidate.path.endsWith("project-extension/entry.ts")));
+      assert.ok(candidates.some((candidate) => candidate.path.endsWith("global-extension/index.ts")));
+      assert.deepEqual(
+        candidates.find((candidate) => candidate.missing)?.path,
+        join(agentDir, "extensions/missing-extension/index.ts"),
+      );
+    });
+  });
+
+  it("skips configured extension paths that were uninstalled", async () => {
+    await withIsolatedAgentEnv(async ({ globalDir }) => {
+      const installedPath = join(globalDir, "extensions", "installed.ts");
+      const missingPath = join(globalDir, "extensions", "removed.ts");
+      mkdirSync(join(globalDir, "extensions"), { recursive: true });
+      writeFileSync(installedPath, "export default () => {};\n");
+      const configPath = join(globalDir, "extensions", "pi-interactive-subagents", "config.json");
+      mkdirSync(join(globalDir, "extensions", "pi-interactive-subagents"), { recursive: true });
+      writeFileSync(configPath, JSON.stringify({ subagentExtensions: [installedPath, missingPath] }));
+
+      assert.deepEqual(testApi.getConfiguredSubagentExtensions(), [installedPath]);
+    });
+  });
 
   it("loads session-mode from frontmatter", async () => {
     await withIsolatedAgentEnv(async ({ projectAgentsDir }) => {
@@ -939,7 +1103,7 @@ describe("subagent discovery", () => {
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, {}),
       true,
     );
-    // Bare spawn with no agent defs (e.g. /iterate fork) is interactive by default.
+    // Bare spawns with no agent defs are interactive by default.
     assert.equal(
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, null),
       true,
@@ -1002,7 +1166,7 @@ describe("subagent discovery", () => {
     );
   });
 
-  it("ignores invalid session-mode values", async () => {
+  it("ignores fork as an unsupported session-mode value", async () => {
     await withIsolatedAgentEnv(async ({ projectAgentsDir }) => {
       writeAgentFile(
         projectAgentsDir,
@@ -1010,7 +1174,7 @@ describe("subagent discovery", () => {
         [
           "name: invalid-mode-test-agent",
           "model: anthropic/test-invalid",
-          "session-mode: sideways",
+          "session-mode: fork",
         ].join("\n"),
       );
 
@@ -1020,58 +1184,23 @@ describe("subagent discovery", () => {
     });
   });
 
-  it("resolves session mode with fork override precedence", () => {
-    assert.equal(testApi.resolveEffectiveSessionMode({ name: "A", task: "T" }, null), "standalone");
+  it("resolves session mode from agent configuration", () => {
+    assert.equal(testApi.resolveEffectiveSessionMode(null), "standalone");
     assert.equal(
-      testApi.resolveEffectiveSessionMode({ name: "A", task: "T" }, { sessionMode: "lineage-only" }),
+      testApi.resolveEffectiveSessionMode({ sessionMode: "lineage-only" }),
       "lineage-only",
-    );
-    assert.equal(
-      testApi.resolveEffectiveSessionMode(
-        { name: "A", task: "T", fork: true },
-        { sessionMode: "lineage-only" },
-      ),
-      "fork",
     );
   });
 
-  it("resolves launch behavior for standalone, lineage-only, and fork modes", () => {
-    assert.deepEqual(testApi.resolveLaunchBehavior({ name: "A", task: "T" }, null), {
+  it("resolves launch behavior for standalone and lineage-only modes", () => {
+    assert.deepEqual(testApi.resolveLaunchBehavior(null), {
       sessionMode: "standalone",
       seededSessionMode: null,
-      inheritsConversationContext: false,
-      taskDelivery: "artifact",
     });
-    assert.deepEqual(
-      testApi.resolveLaunchBehavior({ name: "A", task: "T" }, { sessionMode: "lineage-only" }),
-      {
-        sessionMode: "lineage-only",
-        seededSessionMode: "lineage-only",
-        inheritsConversationContext: false,
-        taskDelivery: "artifact",
-      },
-    );
-    assert.deepEqual(
-      testApi.resolveLaunchBehavior({ name: "A", task: "T" }, { sessionMode: "fork" }),
-      {
-        sessionMode: "fork",
-        seededSessionMode: "fork",
-        inheritsConversationContext: true,
-        taskDelivery: "direct",
-      },
-    );
-    assert.deepEqual(
-      testApi.resolveLaunchBehavior(
-        { name: "A", task: "T", fork: true },
-        { sessionMode: "lineage-only" },
-      ),
-      {
-        sessionMode: "fork",
-        seededSessionMode: "fork",
-        inheritsConversationContext: true,
-        taskDelivery: "direct",
-      },
-    );
+    assert.deepEqual(testApi.resolveLaunchBehavior({ sessionMode: "lineage-only" }), {
+      sessionMode: "lineage-only",
+      seededSessionMode: "lineage-only",
+    });
   });
 
   it("buildSubagentToolAllowlist preserves requested tools and adds child control tools", () => {
@@ -1086,24 +1215,26 @@ describe("subagent discovery", () => {
     assert.equal(testApi.buildSubagentToolAllowlist(""), null);
   });
 
-  it("buildPiPromptArgs inserts separator for artifact-backed launches with skills", () => {
+  it("buildChildExtensionArgs disables discovery and keeps explicit extensions", () => {
+    const args = testApi.buildChildExtensionArgs(["/tmp/custom-extension.ts"]);
+
+    assert.equal(args[0], "--no-extensions");
+    assert.equal(args[1], "--extension");
+    assert.match(args[2], /subagent-done\.ts/);
+    assert.deepEqual(args.slice(3), ["--extension", "'/tmp/custom-extension.ts'"]);
+  });
+
+  it("buildPiPromptArgs inserts separator for launches with skills", () => {
     assert.deepEqual(
-      testApi.buildPiPromptArgs({ effectiveSkills: "review,lint", taskDelivery: "artifact", taskArg: "@artifact.md" }),
+      testApi.buildPiPromptArgs({ effectiveSkills: "review,lint", taskArg: "@artifact.md" }),
       ["", "/skill:review", "/skill:lint", "@artifact.md"],
     );
   });
 
-  it("buildPiPromptArgs omits separator for artifact-backed launches without skills", () => {
+  it("buildPiPromptArgs omits separator for launches without skills", () => {
     assert.deepEqual(
-      testApi.buildPiPromptArgs({ effectiveSkills: undefined, taskDelivery: "artifact", taskArg: "@artifact.md" }),
+      testApi.buildPiPromptArgs({ effectiveSkills: undefined, taskArg: "@artifact.md" }),
       ["@artifact.md"],
-    );
-  });
-
-  it("buildPiPromptArgs omits separator for direct launches with skills", () => {
-    assert.deepEqual(
-      testApi.buildPiPromptArgs({ effectiveSkills: "review", taskDelivery: "direct", taskArg: "do the task" }),
-      ["/skill:review", "do the task"],
     );
   });
 
@@ -1433,16 +1564,61 @@ describe("subagent-done.ts", () => {
         }
       });
     });
+
+    it("does not register caller_ping when PI_DENY_TOOLS denies it", async () => {
+      const { mod, restore } = await loadSubagentDoneDefaultWithEnv({
+        PI_DENY_TOOLS: "caller_ping",
+        PI_SUBAGENT_NUDGE_DISABLE: "1",
+      });
+
+      try {
+        const mock = createHandlerCapturingMockApi();
+        mod.default(mock.api);
+        const registeredNames = mock.registeredTools.map((tool) => tool.name);
+
+        assert.equal(
+          registeredNames.includes("caller_ping"),
+          false,
+          "a denied caller_ping must not be registered, otherwise the child exits " +
+            "through a ping instead of reporting its result. " +
+            `Registered tools: ${registeredNames.join(", ")}`,
+        );
+        assert.equal(
+          registeredNames.includes("subagent_done"),
+          true,
+          "subagent_done is the completion channel and must never be denied",
+        );
+      } finally {
+        restore();
+      }
+    });
+
+    it("keeps caller_ping registered when PI_DENY_TOOLS does not deny it", async () => {
+      const { mod, restore } = await loadSubagentDoneDefaultWithEnv({
+        PI_SUBAGENT_NUDGE_DISABLE: "1",
+      });
+
+      try {
+        const mock = createHandlerCapturingMockApi();
+        mod.default(mock.api);
+
+        assert.equal(
+          mock.registeredTools.some((tool) => tool.name === "caller_ping"),
+          true,
+          "caller_ping stays available when the parent does not deny it",
+        );
+      } finally {
+        restore();
+      }
+    });
   });
 });
 describe("commands", () => {
-  it("/iterate always emits a full-context fork tool call", () => {
-    const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
+  it("registers subagent configuration commands", () => {
+    const { api, registeredCommands } = createMockExtensionApi();
 
     (subagentsModule as any).default(api);
 
-    const iterate = registeredCommands.find((command) => command.name === "iterate");
-    assert.ok(iterate, "expected /iterate to be registered");
     assert.ok(
       registeredCommands.find((command) => command.name === "config:subagent"),
       "expected /config:subagent to be registered",
@@ -1451,16 +1627,28 @@ describe("commands", () => {
       registeredCommands.find((command) => command.name === "subagent-config"),
       "expected /subagent-config to be registered",
     );
-
-    iterate.handler("Fix the bug", {});
-
-    assert.equal(sentUserMessages.length, 1);
-    assert.match(sentUserMessages[0], /fork: true/);
-    assert.match(sentUserMessages[0], /name: "Iterate"/);
+    assert.equal(
+      registeredCommands.some((command) => command.name === "iterate"),
+      false,
+      "the removed /iterate command should not be registered",
+    );
   });
 });
 
 describe("tool registration", () => {
+  type ToolRegistrationTestApi = {
+    /** Resolve child subagent lifecycle-tool restrictions. */
+    resolveDenyTools(
+      agentDefs: { denyTools?: string; spawning?: boolean } | null,
+      allowSubagentSpawning?: boolean,
+    ): Set<string>;
+  };
+
+  /** Return the narrow test API used by tool-registration assertions. */
+  function getToolRegistrationTestApi(): ToolRegistrationTestApi {
+    return (subagentsModule as unknown as { __test__: ToolRegistrationTestApi }).__test__;
+  }
+
   it("defaults resumed subagents to auto-exit and non-interactive tracking", () => {
     const testApi = (subagentsModule as any).__test__;
 
@@ -1474,13 +1662,65 @@ describe("tool registration", () => {
     });
   });
 
-  it("expands spawning false to deny subagent interruption", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const denied = testApi.resolveDenyTools({ spawning: false });
+  it("uses the global switch to gate all subagent lifecycle tools", () => {
+    const testApi = getToolRegistrationTestApi();
+    const denied = testApi.resolveDenyTools(null, false);
+
+    for (const tool of ["subagent", "subagent_interrupt", "subagents_list", "subagent_resume"]) {
+      assert.equal(denied.has(tool), true, `${tool} should be denied when spawning is disabled`);
+    }
+
+    const allowed = testApi.resolveDenyTools(null, true);
+    for (const tool of ["subagent", "subagent_interrupt", "subagents_list", "subagent_resume"]) {
+      assert.equal(allowed.has(tool), false, `${tool} should be allowed when spawning is enabled`);
+    }
+  });
+
+  it("merges launch-level denyTools with agent definition restrictions", () => {
+    const testApi = getToolRegistrationTestApi();
+
+    const denied = testApi.resolveLaunchDenyTools(null, true, "caller_ping");
+    assert.equal(denied.has("caller_ping"), true, "launch-level caller_ping should be denied");
+
+    const merged = testApi.resolveLaunchDenyTools({ denyTools: "subagent" }, true, "caller_ping");
+    assert.equal(merged.has("subagent"), true, "agent definition restriction should survive");
+    assert.equal(merged.has("caller_ping"), true, "launch-level restriction should be added");
+
+    const untouched = testApi.resolveLaunchDenyTools(null, true, undefined);
+    assert.equal(untouched.has("caller_ping"), false, "no launch-level deny keeps caller_ping");
+  });
+
+  it("hides lifecycle tools from a child session when spawning is disabled", () => {
+    const previousDeniedTools = process.env.PI_DENY_TOOLS;
+    process.env.PI_DENY_TOOLS = [
+      "subagent",
+      "subagent_interrupt",
+      "subagents_list",
+      "subagent_resume",
+    ].join(",");
+
+    try {
+      const { api, registeredTools } = createMockExtensionApi();
+      subagentsModule.default(api);
+
+      for (const tool of ["subagent", "subagent_interrupt", "subagents_list", "subagent_resume"]) {
+        assert.equal(
+          registeredTools.some((registered) => registered.name === tool),
+          false,
+          `${tool} should not be registered in a restricted child session`,
+        );
+      }
+    } finally {
+      restoreEnvVar("PI_DENY_TOOLS", previousDeniedTools);
+    }
+  });
+
+  it("keeps explicit deny-tools restrictions when global spawning is enabled", () => {
+    const testApi = getToolRegistrationTestApi();
+    const denied = testApi.resolveDenyTools({ denyTools: "subagent" }, true);
 
     assert.equal(denied.has("subagent"), true);
-    assert.equal(denied.has("subagent_interrupt"), true);
-    assert.equal(denied.has("subagent_resume"), true);
+    assert.equal(denied.has("subagent_resume"), false);
   });
 
   it("renders partial subagent tool-call args without throwing", () => {
@@ -1899,6 +2139,40 @@ describe("subagent interruption", () => {
     }
   });
 
+  it("signals session completion when interrupting a turn", () => {
+    type InterruptTestApi = {
+      runningSubagents: Map<string, ReturnType<typeof makeRunning>>;
+      /** Invoke the interrupt path with an injectable Escape sender. */
+      handleSubagentInterrupt(
+        params: { id?: string; name?: string },
+        sendEscapeKey?: (surface: string) => void,
+      ): { details: { status?: string } };
+    };
+    const testApi = (subagentsModule as unknown as { __test__: InterruptTestApi }).__test__;
+    const runningMap = testApi.runningSubagents;
+    runningMap.clear();
+
+    withTempDir((dir) => {
+      const sessionFile = join(dir, "worker.jsonl");
+      writeFileSync(sessionFile, `${JSON.stringify(SESSION_HEADER)}\n`);
+
+      try {
+        runningMap.set("a1", makeRunning({ sessionFile }));
+
+        const result = testApi.handleSubagentInterrupt(
+          { name: "Worker" },
+          () => {},
+        );
+
+        assert.equal(result.details.status, "interrupt_requested");
+        assert.deepEqual(JSON.parse(readFileSync(`${sessionFile}.exit`, "utf8")), { type: "done" });
+        assert.equal(runningMap.has("a1"), true);
+      } finally {
+        runningMap.clear();
+      }
+    });
+  });
+
   it("sends Escape again for repeated interrupt requests", () => {
     const testApi = (subagentsModule as any).__test__;
     const runningMap = testApi.runningSubagents as Map<string, any>;
@@ -2073,6 +2347,28 @@ describe("subagent startup delay", () => {
     }
   });
 });
+/** Widget filter fixtures: one user-spawned agent, one workflow-launched agent. */
+const VISIBLE_AGENT_ID = "visible-agent-id";
+const VISIBLE_AGENT_NAME = "Scout: widget filter";
+const HIDDEN_AGENT_ID = "hidden-agent-id";
+const HIDDEN_AGENT_NAME = "workflow-agent";
+const SUBAGENT_WIDGET_KEY = "subagent-status";
+
+/** Minimal RunningSubagent fixture; id/name/hiddenFromWidget are what the filter reads. */
+function createWidgetAgentFixture(overrides: Record<string, unknown>) {
+  const startTime = Date.now();
+  return {
+    id: "agent-id",
+    name: "agent",
+    task: "",
+    surface: "surface-1",
+    startTime,
+    sessionFile: "session-1.jsonl",
+    statusState: createStatusState({ source: "pi", startTimeMs: startTime }),
+    ...overrides,
+  };
+}
+
 describe("subagents widget rendering", () => {
   it("keeps every rendered line within a very narrow width", () => {
     const testApi = (subagentsModule as any).__test__;
@@ -2156,6 +2452,150 @@ describe("subagents widget rendering", () => {
           `expected line width <= ${width}, got ${visibleWidth(line)} for ${JSON.stringify(line)}`,
         );
       }
+    }
+  });
+
+  it("excludes agents hidden from the widget while keeping them running", () => {
+    const testApi = (subagentsModule as any).__test__;
+    assert.ok(testApi, "expected subagents test helpers to be exported");
+    assert.equal(typeof testApi.widgetSubagents, "function");
+
+    const visible = createWidgetAgentFixture({ id: VISIBLE_AGENT_ID, name: VISIBLE_AGENT_NAME });
+    const hidden = createWidgetAgentFixture({
+      id: HIDDEN_AGENT_ID,
+      name: HIDDEN_AGENT_NAME,
+      hiddenFromWidget: true,
+    });
+
+    testApi.runningSubagents.set(visible.id, visible);
+    testApi.runningSubagents.set(hidden.id, hidden);
+    try {
+      assert.deepEqual(
+        testApi.widgetSubagents().map((agent: { id: string }) => agent.id),
+        [VISIBLE_AGENT_ID],
+        "workflow-launched agents must stay out of the Subagents widget",
+      );
+
+      testApi.runningSubagents.delete(visible.id);
+      assert.deepEqual(
+        testApi.widgetSubagents(),
+        [],
+        "a workflow-only run leaves nothing for the Subagents widget to render",
+      );
+      assert.ok(
+        testApi.runningSubagents.has(hidden.id),
+        "hiding is display-only; the agent must stay watched and interruptible",
+      );
+    } finally {
+      testApi.runningSubagents.delete(visible.id);
+      testApi.runningSubagents.delete(hidden.id);
+    }
+  });
+
+  it("hides the whole panel when every running agent is hidden", () => {
+    const testApi = (subagentsModule as any).__test__;
+    assert.equal(typeof testApi.updateWidget, "function");
+
+    const calls: Array<{ key: string; value: unknown }> = [];
+    testApi.setLatestCtxForTest({
+      hasUI: true,
+      ui: {
+        setWidget(key: string, value: unknown) {
+          calls.push({ key, value });
+        },
+      },
+    });
+
+    const hidden = createWidgetAgentFixture({
+      id: HIDDEN_AGENT_ID,
+      name: HIDDEN_AGENT_NAME,
+      hiddenFromWidget: true,
+    });
+    const visible = createWidgetAgentFixture({ id: VISIBLE_AGENT_ID, name: VISIBLE_AGENT_NAME });
+
+    try {
+      testApi.runningSubagents.set(hidden.id, hidden);
+      testApi.updateWidget();
+      assert.deepEqual(
+        calls,
+        [{ key: SUBAGENT_WIDGET_KEY, value: undefined }],
+        "a workflow-only run must remove the Subagents widget above the editor",
+      );
+
+      calls.length = 0;
+      testApi.runningSubagents.set(visible.id, visible);
+      testApi.updateWidget();
+      assert.equal(calls.length, 1, "a normal subagent still renders the widget");
+      assert.equal(calls[0].key, SUBAGENT_WIDGET_KEY);
+      assert.equal(typeof calls[0].value, "function", "the widget stays a lazy renderer");
+    } finally {
+      testApi.runningSubagents.delete(hidden.id);
+      testApi.runningSubagents.delete(visible.id);
+      testApi.setLatestCtxForTest(null);
+    }
+  });
+});
+
+describe("in-process sessions sharing this module", () => {
+  // Pi caches an extension's module per cwd, so an SDK session another extension starts
+  // in-process (no UI) runs this factory again over the same module state.
+  function session(hasUI: boolean) {
+    const handlers: Record<string, Array<(event: unknown, ctx: unknown) => void>> = {};
+    const widgets: unknown[] = [];
+    let disposed = false;
+    const guard = () => {
+      if (disposed) throw new Error("This extension ctx is stale after session replacement or reload.");
+    };
+    const ctx = {
+      get hasUI() { guard(); return hasUI; },
+      get ui() { guard(); return { setWidget: (_key: string, value: unknown) => widgets.push(value) }; },
+    };
+    const { api } = createMockExtensionApi();
+    api.on = (event: string, handler: (event: unknown, ctx: unknown) => void) => { (handlers[event] ??= []).push(handler); };
+    subagentsModule.default(api);
+    const emit = (event: string) => { for (const handler of handlers[event] ?? []) handler({}, ctx); };
+    return { widgets, emit, dispose: () => { disposed = true; } };
+  }
+
+  it("keeps the UI session's ctx and running agents when a headless session ends", () => {
+    const testApi = (subagentsModule as any).__test__;
+    const agent = createWidgetAgentFixture({ id: VISIBLE_AGENT_ID, name: VISIBLE_AGENT_NAME });
+    const main = session(true);
+    const child = session(false);
+    try {
+      main.emit("session_start");
+      testApi.runningSubagents.set(agent.id, agent);
+      child.emit("session_start");
+      child.emit("session_shutdown");
+      child.dispose();
+
+      assert.ok(testApi.runningSubagents.has(agent.id), "the main session's agent must stay watched");
+      testApi.updateWidget();
+      assert.equal(main.widgets.length, 1, "the widget still renders through the main session's ctx");
+    } finally {
+      main.emit("session_shutdown");
+      testApi.runningSubagents.delete(agent.id);
+    }
+  });
+
+  it("leaves a newer UI session's state alone when the session it replaced shuts down", () => {
+    const testApi = (subagentsModule as any).__test__;
+    const agent = createWidgetAgentFixture({ id: VISIBLE_AGENT_ID, name: VISIBLE_AGENT_NAME });
+    const old = session(true);
+    const next = session(true);
+    try {
+      old.emit("session_start");
+      next.emit("session_start");
+      testApi.runningSubagents.set(agent.id, agent);
+      old.emit("session_shutdown");
+      old.dispose();
+
+      assert.ok(testApi.runningSubagents.has(agent.id), "the newer session's agent must stay watched");
+      testApi.updateWidget();
+      assert.equal(next.widgets.length, 1, "the widget renders through the newer session's ctx");
+    } finally {
+      next.emit("session_shutdown");
+      testApi.runningSubagents.delete(agent.id);
     }
   });
 });
@@ -2449,5 +2889,74 @@ describe("cmux.ts", () => {
       const result = isWezTermAvailable();
       assert.equal(typeof result, "boolean");
     });
+  });
+});
+
+
+describe("terminal rename ownership", () => {
+  it("launch and resume environment replaces inherited ownership with the new surface", () => {
+    const inherited = { version: 1, backend: "cmux", surface: "parent", ownedTarget: { target: "tab", id: "parent" } };
+    for (const surface of ["child-launch", "child-resume", "child-'quoted"]) {
+      const assignment = subagentsModule.__test__.buildTerminalRenameEnvironment(surface, "cmux");
+      const script = `${assignment} ${shellEscape(process.execPath)} -e ${shellEscape(`process.stdout.write(process.env.${TERMINAL_RENAME_CONTEXT_ENV})`)}`;
+      const output = execFileSync("sh", ["-c", script], {
+        encoding: "utf8", env: { ...process.env, [TERMINAL_RENAME_CONTEXT_ENV]: JSON.stringify(inherited) },
+      });
+      const context = readSurfaceRenameContext({ [TERMINAL_RENAME_CONTEXT_ENV]: output });
+      assert.equal(context?.surface, surface);
+      assert.deepEqual(context?.ownedTarget, { target: "tab", id: surface });
+    }
+  });
+
+  it("shared or headless surfaces never grant a workspace or shared tab", () => {
+    for (const backend of ["tmux", "wezterm", "otty", "orca", null] as const) {
+      const assignment = subagentsModule.__test__.buildTerminalRenameEnvironment("child", backend);
+      assert.ok(assignment.includes('"ownedTarget":null'));
+      assert.ok(!assignment.includes('"target":"workspace"'));
+    }
+  });
+});
+
+describe("subagent notice source", () => {
+  /** 收集 notify 输出的最小 UI 上下文。 */
+  function createNoticeContext(mode: string | undefined, theme?: { fg(color: string, text: string): string }) {
+    const notified: Array<{ message: string; level: string | undefined }> = [];
+    const ctx = {
+      mode,
+      ui: {
+        notify(message: string, type?: string) {
+          notified.push({ message, level: type });
+        },
+        theme,
+      },
+    };
+    return { ctx, notified };
+  }
+
+  it("prefixes every notice with the subagents tag", () => {
+    const { ctx, notified } = createNoticeContext(undefined);
+    subagentsModule.__test__.notify(ctx as any, "hello", "info");
+    assert.deepEqual(notified, [{ message: "[subagents] hello", level: "info" }]);
+  });
+
+  it("keeps the notice level so warning and error keep Pi's own prefix", () => {
+    const { ctx, notified } = createNoticeContext(undefined);
+    subagentsModule.__test__.notify(ctx as any, "careful", "warning");
+    subagentsModule.__test__.notify(ctx as any, "boom", "error");
+    assert.deepEqual(notified, [
+      { message: "[subagents] careful", level: "warning" },
+      { message: "[subagents] boom", level: "error" },
+    ]);
+  });
+
+  it("colors only the tag and only in tui mode, never the message body", () => {
+    const theme = { fg: (color: string, text: string) => `<${color}>${text}</>` };
+    const tui = createNoticeContext("tui", theme);
+    subagentsModule.__test__.notify(tui.ctx as any, "colored", "info");
+    assert.deepEqual(tui.notified, [{ message: "<toolTitle>[subagents]</> colored", level: "info" }]);
+
+    const nonTui = createNoticeContext("rpc", theme);
+    subagentsModule.__test__.notify(nonTui.ctx as any, "plain", "info");
+    assert.deepEqual(nonTui.notified, [{ message: "[subagents] plain", level: "info" }]);
   });
 });

@@ -10,7 +10,7 @@
  *   - sendCommand / sendLongCommand / sendEscape
  *   - readScreen / readScreenAsync
  *   - closeSurface
- *   - renameCurrentTab / renameAgent / renameWorkspace
+ *   - renameCurrentTab / renameAgent / renameWorkspace / getRenameCapability
  *   - pollForExit                      等待 surface 内进程退出（.exit sidecar / sentinel）
  *
  * 后端探测：
@@ -75,10 +75,12 @@ export {
   sendOrcaCommand,
   sendOrcaEscape,
   readOrcaScreen,
+  parseOrcaTerminalTabInfo,
+  decideOrcaCloseStep,
   closeOrcaSurface,
   renameOrcaTerminal,
 } from "./orca.ts";
-export type { OrcaEnvelope } from "./orca.ts";
+export type { OrcaEnvelope, OrcaTerminalState, OrcaCloseDecision } from "./orca.ts";
 
 // ── 便捷函数 ──
 import {

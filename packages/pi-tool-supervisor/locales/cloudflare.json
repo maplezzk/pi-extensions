@@ -1,0 +1,82 @@
+{
+  "invalidBaseUrl": {
+    "zh-CN": "Cloudflare baseUrl 必须是无凭证、查询参数或片段的 HTTPS URL；仅本机测试允许 HTTP。",
+    "en-US": "Cloudflare baseUrl must be an HTTPS URL without credentials, query, or fragment; HTTP is allowed only for loopback tests."
+  },
+  "invalidModel": {
+    "zh-CN": "Cloudflare 模型必须为 clef-flash 或 clef。",
+    "en-US": "Cloudflare model must be clef-flash or clef."
+  },
+  "invalidEnvName": {
+    "zh-CN": "Cloudflare 环境变量名格式不正确。",
+    "en-US": "Invalid Cloudflare environment variable name."
+  },
+  "missingAccountId": {
+    "zh-CN": "没有找到 Cloudflare accountId；请配置 accountId 或由运行层注入 accountIdEnv 指定的环境变量（默认 CLOUDFLARE_ACCOUNT_ID）。",
+    "en-US": "No Cloudflare account ID found; configure accountId or supply the variable named by accountIdEnv (default CLOUDFLARE_ACCOUNT_ID)."
+  },
+  "invalidAccountId": {
+    "zh-CN": "Cloudflare accountId 必须是 32 位十六进制标识。",
+    "en-US": "Cloudflare accountId must be a 32-character hexadecimal ID."
+  },
+  "missingToken": {
+    "zh-CN": "没有找到 Cloudflare API token；请由可信运行层注入 tokenEnv 指定的环境变量（默认 CLOUDFLARE_API_TOKEN）。",
+    "en-US": "No Cloudflare API token found; have the trusted launcher supply the variable named by tokenEnv (default CLOUDFLARE_API_TOKEN)."
+  },
+  "timeout": {
+    "zh-CN": "Cloudflare 审查超时（所有批次与重试共用预算）。",
+    "en-US": "Cloudflare review timed out (all batches and retries share one budget)."
+  },
+  "aborted": {
+    "zh-CN": "上级请求已终止，Cloudflare 请求已取消。",
+    "en-US": "The parent request was aborted, so the Cloudflare request was cancelled."
+  },
+  "networkFailed": {
+    "zh-CN": "Cloudflare 请求无法建立连接，重试次数已用尽。",
+    "en-US": "The Cloudflare request could not reach the service; retries were exhausted."
+  },
+  "invalidQuestions": {
+    "zh-CN": "Cloudflare 审查需要至少一个 Noul 或 Choice 问题。",
+    "en-US": "Cloudflare review requires at least one Noul or Choice question."
+  },
+  "responseTooLarge": {
+    "zh-CN": "Cloudflare 响应超过 1 MiB 上限。",
+    "en-US": "The Cloudflare response exceeds the 1 MiB limit."
+  },
+  "invalidResponse": {
+    "zh-CN": "Cloudflare 响应不是有效 JSON 或缺少预期的 result/answers/model。",
+    "en-US": "The Cloudflare response is invalid JSON or has unexpected result/answers/model fields."
+  },
+  "invalidAnswer": {
+    "zh-CN": "Cloudflare 响应缺少答案，或答案 ID、类型、概率或 Choice 候选不合法。",
+    "en-US": "Cloudflare answers are missing or have invalid IDs, types, probabilities, or Choice candidates."
+  },
+  "requestFailed": {
+    "zh-CN": "Cloudflare 请求失败（HTTP {status}）{codes}：{reason}",
+    "en-US": "Cloudflare request failed (HTTP {status}){codes}: {reason}"
+  },
+  "authenticationRejected": {
+    "zh-CN": "鉴权或账号权限被拒绝。",
+    "en-US": "Authentication or account permission was denied."
+  },
+  "regionRejected": {
+    "zh-CN": "服务拒绝该地区的请求。",
+    "en-US": "The service denied the request from this region."
+  },
+  "rateLimited": {
+    "zh-CN": "请求受到限流。",
+    "en-US": "The request was rate limited."
+  },
+  "inputRejected": {
+    "zh-CN": "服务拒绝请求参数或模型输入。",
+    "en-US": "The service rejected the request parameters or model input."
+  },
+  "redirectRejected": {
+    "zh-CN": "已拒绝重定向，未向目标发送凭证。",
+    "en-US": "The redirect was rejected; credentials were not sent to its target."
+  },
+  "serviceRejected": {
+    "zh-CN": "服务返回失败结果。",
+    "en-US": "The service returned a failure result."
+  }
+}

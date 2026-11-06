@@ -133,10 +133,40 @@ export class BfsSplitStateManager {
     this.state = this.readState();
   }
 
-  /** 从 marker 文件读取状态，文件不存在或损坏时返回初始状态 */
+  /** 从 marker 文件读取状态，文件不存在、损坏或字段无效时返回初始状态 */
   private readState(): BfsSplitState {
     try {
-      return JSON.parse(readFileSync(this.markerPath, "utf8")) as BfsSplitState;
+      const parsed = JSON.parse(readFileSync(this.markerPath, "utf8")) as Partial<BfsSplitState>;
+      if (
+        !Array.isArray(parsed.panes) ||
+        !parsed.panes.every((pane) => typeof pane === "string" && pane.trim().length > 0) ||
+        (parsed.dir !== "right" && parsed.dir !== "down") ||
+        typeof parsed.pos !== "number" ||
+        typeof parsed.base !== "number" ||
+        !Number.isInteger(parsed.pos) ||
+        !Number.isInteger(parsed.base)
+      ) {
+        return { panes: [], pos: 0, base: 0, dir: "right" };
+      }
+
+      if (parsed.panes.length === 0) {
+        return { panes: [], pos: 0, base: 0, dir: "right" };
+      }
+
+      const base = Math.min(Math.max(parsed.base, 0), parsed.panes.length);
+      const pos = Math.min(Math.max(parsed.pos, 0), base);
+
+      // 兼容早期 remove() 写入的过期轮次；仅已消费完修正后轮次时才翻转方向。
+      if (parsed.base > parsed.panes.length && pos >= base) {
+        return {
+          panes: parsed.panes,
+          pos: 0,
+          base: parsed.panes.length,
+          dir: parsed.dir === "right" ? "down" : "right",
+        };
+      }
+
+      return { panes: parsed.panes, pos, base, dir: parsed.dir };
     } catch {
       return { panes: [], pos: 0, base: 0, dir: "right" };
     }
@@ -147,13 +177,18 @@ export class BfsSplitStateManager {
     writeFileSync(this.markerPath, JSON.stringify(this.state));
   }
 
+  /** 当前轮次是否已消费完所有源 pane */
+  private hasCompletedCurrentRound(): boolean {
+    return this.state.pos >= this.state.base;
+  }
+
   /** 窥视下一个 split 源和方向，不消费。无 pane 时返回 null */
   next(): BfsNext | null {
     if (this.state.panes.length === 0) return null;
 
     let { pos, base, dir } = this.state;
     // 本轮结束？翻转方向（窥视，不写入）
-    if (pos >= base) {
+    if (this.hasCompletedCurrentRound()) {
       pos = 0;
       base = this.state.panes.length;
       dir = dir === "right" ? "down" : "right";
@@ -175,7 +210,7 @@ export class BfsSplitStateManager {
     this.state.panes.push(pane);
 
     // 本轮结束？翻转方向
-    if (this.state.pos >= this.state.base) {
+    if (this.hasCompletedCurrentRound()) {
       this.state.pos = 0;
       this.state.base = this.state.panes.length;
       this.state.dir = this.state.dir === "right" ? "down" : "right";
@@ -184,14 +219,23 @@ export class BfsSplitStateManager {
     this.writeState();
   }
 
-  /** 移除已关闭的 pane，修正 pos；全空时删除 marker 文件 */
+  /** 移除已关闭的 pane，修正当前轮次游标；全空时删除 marker 文件 */
   remove(pane: string): void {
     const idx = this.state.panes.indexOf(pane);
     if (idx < 0) return;
 
+    const isCurrentRoundSource = idx < this.state.base;
     this.state.panes.splice(idx, 1);
     if (idx < this.state.pos) {
-      this.state.pos = Math.max(0, this.state.pos - 1);
+      this.state.pos--;
+    }
+    if (isCurrentRoundSource) {
+      this.state.base--;
+    }
+    if (this.hasCompletedCurrentRound()) {
+      this.state.pos = 0;
+      this.state.base = this.state.panes.length;
+      this.state.dir = this.state.dir === "right" ? "down" : "right";
     }
 
     if (this.state.panes.length === 0) {

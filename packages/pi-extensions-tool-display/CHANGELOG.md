@@ -1,5 +1,98 @@
 # Changelog
 
+## [1.3.3](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.3.2...pi-extensions-tool-display-v1.3.3) (2026-10-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.8.0 to ^0.9.0
+
+## [1.3.2](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.3.1...pi-extensions-tool-display-v1.3.2) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+
+## [1.3.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.3.0...pi-extensions-tool-display-v1.3.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **tool-display:** 结果渲染中间件覆盖所有扩展注册的工具 ([abfcfbf](https://github.com/maplezzk/pi-extensions/commit/abfcfbf1565895e60e0cbece12fb252eb08f152c))
+* **tool-display:** 结果渲染中间件覆盖所有扩展注册的工具 ([8a4e112](https://github.com/maplezzk/pi-extensions/commit/8a4e112308ddcd8ede8f4907e3ab8e8bd3672ac8)), closes [#187](https://github.com/maplezzk/pi-extensions/issues/187)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+
+## [1.3.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.2.0...pi-extensions-tool-display-v1.3.0) (2026-09-14)
+
+
+### Features
+
+* show notices as filled transcript blocks under the message ([eb00293](https://github.com/maplezzk/pi-extensions/commit/eb002934f273df12cb109e54817dd16fdb09d52a))
+* 提示改成会话区的带底色消息块，判定结论落在消息下方 ([f42992d](https://github.com/maplezzk/pi-extensions/commit/f42992d39af35e3fda33f681f833d89408cb4a3a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.5.0 to ^0.6.0
+
+## [1.2.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.1.2...pi-extensions-tool-display-v1.2.0) (2026-09-13)
+
+
+### Features
+
+* 所有扩展提示统一加来源标签与颜色 ([21ad9d9](https://github.com/maplezzk/pi-extensions/commit/21ad9d97347118a9817ae445bc03544b7c1c66da))
+* 所有扩展提示统一加来源标签与颜色 ([a06c6f8](https://github.com/maplezzk/pi-extensions/commit/a06c6f86367fc7b43f14b34f754bddc4b6dd340a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.0 to ^0.5.0
+
+## [1.1.2](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.1.1...pi-extensions-tool-display-v1.1.2) (2026-09-13)
+
+
+### Bug Fixes
+
+* pi peer 范围只保留下限 &gt;=0.80.0 ([fdc012c](https://github.com/maplezzk/pi-extensions/commit/fdc012c7a0a968712cea4430afd7780eab53420b))
+* 去掉 pi peer 上界并升级依赖到 0.85.1 ([28e897e](https://github.com/maplezzk/pi-extensions/commit/28e897eb45d76e91ca8ac6ac2a508a36c76c5682))
+* 放宽 pi peer 范围并升级依赖到 0.85.1 ([3444c0c](https://github.com/maplezzk/pi-extensions/commit/3444c0cb4836006348fc6a9fbd30fe36bdc98ced))
+
+## [1.1.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.1.0...pi-extensions-tool-display-v1.1.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **tool-display:** preserve active tool selection ([47a84b9](https://github.com/maplezzk/pi-extensions/commit/47a84b97cf2f4de244279e4ac71e190aa4de16a3))
+* 保持工具展示覆盖的激活状态 ([c734a7b](https://github.com/maplezzk/pi-extensions/commit/c734a7b7d2db53c1d3001ff6559998d6bff3b448))
+
+## [1.1.0](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.0.1...pi-extensions-tool-display-v1.1.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
 ## [1.0.1](https://github.com/maplezzk/pi-extensions/compare/pi-extensions-tool-display-v1.0.0...pi-extensions-tool-display-v1.0.1) (2026-07-23)
 
 

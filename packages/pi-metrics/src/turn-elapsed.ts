@@ -3,9 +3,12 @@
  *
  * - working 期间：实时更新 spinner 文字，显示从用户发出消息起的全程耗时（如 "⏱ 47s"），
  *   跨轮不归零 —— 用户等待时最关心的是"一共等了多久"
- * - turn 结束时：在 chat 流插入一条 dim 灰文本，提示本轮耗时（如 "✓ 本轮耗时 12.3s"）
- * - agent 完全停止时（agent_settled）：再插入一条总耗时，覆盖从用户发出消息到 AI 停止
- *   的整段过程（跨越多轮工具调用、自动重试和 compaction 续跑）
+ * - agent 完全停止时（agent_settled）：`display: "live"` 下补一条总耗时；`display: "on-stop"`
+ *   下不再单独发，总耗时由 tps 的整段汇总行带上，避免同一段运行冒两条提示
+ *
+ * 关于「本轮耗时」：它已经包含在 tps 的那条指标提示里（TPS/TTFT/耗时/tokens 一行），
+ * 所以这里不再单独发一条，避免同一轮冒两条指标提示。
+ * 只有整段运行超过一轮时才发总耗时：单轮运行的总耗时只比本轮多一点收尾开销，是噪声。
  *
  * 设计取舍：
  * - 用 setWorkingMessage 改 spinner 文字会覆盖 pi 默认的 "Working... (Esc to interrupt)"。
@@ -18,15 +21,123 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { notifyWithSource } from "pi-extensions-i18n";
+import { DEFAULT_METRICS_CONFIG, type MetricsDisplay } from "./config.ts";
 import { formatDone, formatTick } from "./format-utils.ts";
 import { i18n } from "./i18n.ts";
+import { NOTICE_SOURCE } from "./notice.ts";
 
 const TICK_MS = 1000;
 
-export default function (pi: ExtensionAPI) {
-  let turnStartTime = 0;
+/** 至少跑满两轮才值得单独报一次总耗时；单轮的总耗时是噪声。 */
+const MIN_TURNS_FOR_TOTAL = 2;
+
+/** 一次运行停下时结算出来的原始数据。 */
+export interface RunSettlement {
+  /** 从用户发出消息到 AI 停下的整段耗时（毫秒）。 */
+  elapsedMs: number;
+  /** 本段运行真正跑完的轮数。 */
+  turns: number;
+}
+
+/** 计时状态：与 Pi 事件解耦，便于直接测试判定规则。 */
+export interface ElapsedTracker {
+  /** 用户发出消息（或没有 input 事件时的兜底）开始记一段运行；运行中重复调用不改起点。 */
+  startRun(): void;
+  /** 本段运行的已耗时（毫秒）；没有进行中的运行时返回 0。 */
+  runElapsed(): number;
+  /** 标记本轮已开始（只用计轮数，不再单独算本轮耗时）。 */
+  startTurn(): void;
+  /** 一轮结束：累计轮次并清掉本轮状态。 */
+  endTurn(): void;
+  /** 本段运行的结算视图（只读，不复位）；没有进行中的运行返回 undefined。 */
+  currentRun(): RunSettlement | undefined;
+  /** 复位运行状态（一段运行结算完毕后由结算方调用）。 */
+  resetRun(): void;
+  /** 清掉本轮起点（agent_end 用）。 */
+  clearTurn(): void;
+}
+
+/** 造一个计时状态；now 可注入，便于测试确定性地推进时间。 */
+export function createElapsedTracker(now: () => number = () => Date.now()): ElapsedTracker {
+  /** 是否已开始一段运行；不用时间戳做哨兵，时钟可以从 0 开始。 */
+  let running = false;
+  /** 本段运行起点（毫秒）。 */
   let runStartTime = 0;
+  /** 当前轮是否已开始。 */
+  let inTurn = false;
+  /** 本段运行已跑完的轮数。 */
+  let turnCount = 0;
+  return {
+    /** 开始记一段运行；运行中重复调用不改起点。 */
+    startRun(): void {
+      if (running) return;
+      running = true;
+      runStartTime = now();
+      turnCount = 0;
+    },
+    /** 本段运行的已耗时（毫秒）；没有进行中的运行时返回 0。 */
+    runElapsed(): number {
+      return running ? now() - runStartTime : 0;
+    },
+    /** 标记本轮已开始（只用计轮数）。 */
+    startTurn(): void {
+      inTurn = true;
+    },
+    /** 一轮结束：累计轮次并清掉本轮状态。 */
+    endTurn(): void {
+      if (inTurn) turnCount += 1;
+      inTurn = false;
+    },
+    /** 本段运行的结算视图（只读）；没有进行中的运行返回 undefined。 */
+    currentRun(): RunSettlement | undefined {
+      if (!running) return undefined;
+      return { elapsedMs: now() - runStartTime, turns: turnCount };
+    },
+    /** 复位运行状态（一段运行结算完毕后由结算方调用）。 */
+    resetRun(): void {
+      running = false;
+      inTurn = false;
+      runStartTime = 0;
+      turnCount = 0;
+    },
+    /** 清掉本轮状态（agent_end 用）。 */
+    clearTurn(): void {
+      inTurn = false;
+    },
+  };
+}
+
+/** `live` 模式下是否值得单独报总耗时：跑满两轮且有实际耗时。 */
+export function shouldReportTotalRun(settlement: RunSettlement): boolean {
+  return settlement.elapsedMs > 0 && settlement.turns >= MIN_TURNS_FOR_TOTAL;
+}
+
+/** 耗时模块的可注入依赖：与 tps 共用同一个运行时钟，保证两处耗时一致。 */
+export interface TurnElapsedOptions {
+  /** 共享的计时状态；不传就自己造一个（便于单独使用和测试）。 */
+  tracker?: ElapsedTracker;
+  /** 显示时机；只有 `live` 才在这里补总耗时提示。 */
+  display?: MetricsDisplay;
+}
+
+/**
+ * 注册耗时事件：working 期间刷新 spinner，并（live 模式下）在停下时补总耗时提示。
+ *
+ * 运行时钟可以由外部注入：`on-stop` 模式下由 tps 结算同一个 tracker，保证汇总行的
+ * 总耗时与 spinner 显示的是同一段运行。
+ */
+export default function (pi: ExtensionAPI, options: TurnElapsedOptions = {}) {
+  const tracker = options.tracker ?? createElapsedTracker();
+  const display = options.display ?? DEFAULT_METRICS_CONFIG.display;
   let tickHandle: ReturnType<typeof setInterval> | null = null;
+
+  /** live 模式的结算入口：读运行数据后复位，只在本模块负责结算时调用。 */
+  const settleRun = (): RunSettlement | undefined => {
+    const settlement = tracker.currentRun();
+    tracker.resetRun();
+    return settlement;
+  };
 
   const stopTick = () => {
     if (tickHandle !== null) {
@@ -37,28 +148,24 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("input", async (event) => {
     // 只在空闲时收到用户消息才记总耗时起点；运行中的 steer/followUp 保留原起点
-    if (runStartTime === 0 && (event.source === "interactive" || event.source === "rpc")) {
-      runStartTime = Date.now();
-    }
+    if (event.source === "interactive" || event.source === "rpc") tracker.startRun();
   });
 
   pi.on("agent_start", async () => {
     // 兜底：extension 注入消息触发的运行没有用户 input 事件
-    if (runStartTime === 0) runStartTime = Date.now();
+    tracker.startRun();
   });
 
-  pi.on("turn_start", async (event, ctx) => {
+  pi.on("turn_start", async (_event, ctx) => {
     stopTick();
-    // 优先用事件自带的时间戳，避免 handler 调度延迟
-    turnStartTime = event.timestamp || Date.now();
+    tracker.startTurn();
     if (!ctx.hasUI) return;
 
     const tick = () => {
-      // spinner 显示全程总耗时（从用户发出消息起），跨轮不归零；
-      // runStartTime 尚未记录时（理论上不会）退化为本轮起点
-      const base = runStartTime || turnStartTime;
-      if (!base) return;
-      ctx.ui.setWorkingMessage(i18n.t("elapsedWorking", { value: formatTick(Date.now() - base) }));
+      // spinner 显示全程总耗时（从用户发出消息起），跨轮不归零
+      const elapsed = tracker.runElapsed();
+      if (elapsed <= 0) return;
+      ctx.ui.setWorkingMessage(i18n.t("elapsedWorking", { value: formatTick(elapsed) }));
     };
     tick();
     tickHandle = setInterval(tick, TICK_MS);
@@ -66,34 +173,35 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("turn_end", async (_event, ctx) => {
     stopTick();
-    if (!turnStartTime) return;
-    const elapsed = Date.now() - turnStartTime;
-    turnStartTime = 0;
+    tracker.endTurn();
     if (!ctx.hasUI) return;
 
-    // 恢复 pi 默认 working 文字（下次 streaming 由 pi 内部重置）
+    // 恢复 pi 默认 working 文字（下次 streaming 由 pi 内部重置）；
+    // 本轮耗时由 tps 那条指标提示带上，不在这里重复发。
     ctx.ui.setWorkingMessage(undefined);
-    // 在 chat 流末尾插入一条 dim 灰文本
-    ctx.ui.notify(i18n.t("elapsedDone", { value: formatDone(elapsed) }), "info");
   });
 
   pi.on("agent_end", async (_event, ctx) => {
     stopTick();
-    turnStartTime = 0;
+    tracker.clearTurn();
     if (!ctx.hasUI) return;
     ctx.ui.setWorkingMessage(undefined);
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
     stopTick();
-    const runElapsed = runStartTime ? Date.now() - runStartTime : 0;
-    runStartTime = 0;
-    turnStartTime = 0;
+    // 运行时钟只有一个结算者：live 模式在这里结算，on-stop 模式由 tps 结算（汇总行要同时带上耗时）。
+    const settlement = display === "live" ? settleRun() : undefined;
     if (!ctx.hasUI) return;
 
     ctx.ui.setWorkingMessage(undefined);
-    if (runElapsed > 0) {
-      ctx.ui.notify(i18n.t("elapsedTotal", { value: formatDone(runElapsed) }), "info");
+    if (settlement !== undefined && shouldReportTotalRun(settlement)) {
+      notifyWithSource({
+        ctx,
+        source: NOTICE_SOURCE,
+        level: "info",
+        message: i18n.t("elapsedTotal", { value: formatDone(settlement.elapsedMs) }),
+      });
     }
   });
 }

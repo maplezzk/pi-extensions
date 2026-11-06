@@ -1,5 +1,180 @@
 # Changelog
 
+## [1.10.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.10.1...pi-distill-v1.10.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* 修正提炼期限后的异常分类与修复边界 ([886525b](https://github.com/maplezzk/pi-extensions/commit/886525bed525f55e27b47ed2988ca40b4d75d815))
+* 限制提炼共享重试与总等待时间 ([f142b44](https://github.com/maplezzk/pi-extensions/commit/f142b443dff602ecff0079f67d5ffc48c9be8c9b))
+* 限制提炼共享重试与等待期限 ([66c1ed1](https://github.com/maplezzk/pi-extensions/commit/66c1ed16e3372880b4c6fc25136ca41080498176))
+* 限制提炼共享重试与等待期限 ([#247](https://github.com/maplezzk/pi-extensions/issues/247)) ([66c1ed1](https://github.com/maplezzk/pi-extensions/commit/66c1ed16e3372880b4c6fc25136ca41080498176))
+
+## [1.10.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.10.0...pi-distill-v1.10.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **pi-distill:** 跳过 codemode，避免 grammar 约束采样下整轮请求失败 ([5b096a8](https://github.com/maplezzk/pi-extensions/commit/5b096a87c6331d43457a234be61925949d80f804))
+* **pi-distill:** 跳过 codemode，避免 grammar 约束采样下整轮请求失败 ([3cd5266](https://github.com/maplezzk/pi-extensions/commit/3cd5266d9a5e14689ff5b4378466370d6e1eb316))
+
+## [1.10.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.9.3...pi-distill-v1.10.0) (2026-10-05)
+
+
+### Features
+
+* 统一全仓库配置 UI 为 SettingsList 面板 + 新增 pi-gen-ui ([c67a8c3](https://github.com/maplezzk/pi-extensions/commit/c67a8c3356f249ef5a49699d05ad2824b2ac008a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.8.0 to ^0.9.0
+    * pi-extensions-tool-display bumped from ^1.3.2 to ^1.3.3
+
+## [1.9.3](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.9.2...pi-distill-v1.9.3) (2026-10-04)
+
+
+### Bug Fixes
+
+* 扩展自建模型请求改用共享的 Pi 模型请求抽象 ([d6e817c](https://github.com/maplezzk/pi-extensions/commit/d6e817c33c68330d2a95486c8a7aade80f370123))
+* 扩展自建模型请求改用共享的 Pi 模型请求抽象 ([961f354](https://github.com/maplezzk/pi-extensions/commit/961f354a2c5200edb9417e90c443ede65d305225))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-model-request bumped from ^0.1.0 to ^0.1.1
+  * devDependencies
+    * pi-model-request bumped from ^0.1.0 to ^0.1.1
+
+## [1.9.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.9.1...pi-distill-v1.9.2) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+    * pi-extensions-tool-display bumped from ^1.3.1 to ^1.3.2
+
+## [1.9.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.9.0...pi-distill-v1.9.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **tool-display:** 结果渲染中间件覆盖所有扩展注册的工具 ([abfcfbf](https://github.com/maplezzk/pi-extensions/commit/abfcfbf1565895e60e0cbece12fb252eb08f152c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+    * pi-extensions-tool-display bumped from ^1.3.0 to ^1.3.1
+
+## [1.9.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.8.0...pi-distill-v1.9.0) (2026-09-14)
+
+
+### Features
+
+* show notices as filled transcript blocks under the message ([eb00293](https://github.com/maplezzk/pi-extensions/commit/eb002934f273df12cb109e54817dd16fdb09d52a))
+* 提示改成会话区的带底色消息块，判定结论落在消息下方 ([f42992d](https://github.com/maplezzk/pi-extensions/commit/f42992d39af35e3fda33f681f833d89408cb4a3a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.5.0 to ^0.6.0
+    * pi-extensions-tool-display bumped from ^1.2.0 to ^1.3.0
+
+## [1.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.7.3...pi-distill-v1.8.0) (2026-09-13)
+
+
+### Features
+
+* 所有扩展提示统一加来源标签与颜色 ([21ad9d9](https://github.com/maplezzk/pi-extensions/commit/21ad9d97347118a9817ae445bc03544b7c1c66da))
+* 所有扩展提示统一加来源标签与颜色 ([a06c6f8](https://github.com/maplezzk/pi-extensions/commit/a06c6f86367fc7b43f14b34f754bddc4b6dd340a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.1 to ^0.5.0
+    * pi-extensions-tool-display bumped from ^1.1.2 to ^1.2.0
+
+## [1.7.3](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.7.2...pi-distill-v1.7.3) (2026-09-13)
+
+
+### Bug Fixes
+
+* pi peer 范围只保留下限 &gt;=0.80.0 ([fdc012c](https://github.com/maplezzk/pi-extensions/commit/fdc012c7a0a968712cea4430afd7780eab53420b))
+* 去掉 pi peer 上界并升级依赖到 0.85.1 ([28e897e](https://github.com/maplezzk/pi-extensions/commit/28e897eb45d76e91ca8ac6ac2a508a36c76c5682))
+* 放宽 pi peer 范围并升级依赖到 0.85.1 ([3444c0c](https://github.com/maplezzk/pi-extensions/commit/3444c0cb4836006348fc6a9fbd30fe36bdc98ced))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.0 to ^0.4.1
+    * pi-extensions-tool-display bumped from ^1.1.1 to ^1.1.2
+
+## [1.7.2](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.7.1...pi-distill-v1.7.2) (2026-08-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^1.1.0 to ^1.1.1
+
+## [1.7.1](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.7.0...pi-distill-v1.7.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* propagate interrupts to extension model calls ([41147db](https://github.com/maplezzk/pi-extensions/commit/41147db155b6d52c261dea1bc70190983272f803))
+* propagate interrupts to extension model calls ([5c2f040](https://github.com/maplezzk/pi-extensions/commit/5c2f040a38bb644a0153d5b3e0d24d7307e40936))
+
+## [1.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.6.0...pi-distill-v1.7.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.3.1 to ^0.4.0
+    * pi-extensions-tool-display bumped from ^1.0.1 to ^1.1.0
+
+## [1.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.5.0...pi-distill-v1.6.0) (2026-08-14)
+
+
+### Features
+
+* **distill:** 提炼响应 JSON 修复机制（JSON-only repair） ([6665a86](https://github.com/maplezzk/pi-extensions/commit/6665a867c413b5e6aeadbf213738b189a4c09309))
+* 提炼响应 JSON 修复机制，修复无效 JSON 时只做一次 JSON-only 修复 ([3927d27](https://github.com/maplezzk/pi-extensions/commit/3927d27f19b567455ec4e131047b6ec42cf00715))
+
+
+### Bug Fixes
+
+* 恢复 README 中 /distill:stats 的 Session statistics 文档段落 ([63d0017](https://github.com/maplezzk/pi-extensions/commit/63d0017024cfb9ad732244ef40017d5e30b02553))
+
 ## [1.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-distill-v1.4.0...pi-distill-v1.5.0) (2026-08-05)
 
 

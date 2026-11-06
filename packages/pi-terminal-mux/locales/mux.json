@@ -46,5 +46,29 @@
   "setupHint.ottySendKeys": {
     "zh-CN": "Otty 的 `ipc-allow-send-keys` 未启用。如需让 pi 驱动子 agent 分屏，请在 ~/.config/otty/config.toml 中添加 `ipc-allow-send-keys = true` 并重新加载 Otty。",
     "en-US": "Otty's `ipc-allow-send-keys` is disabled. To let pi drive subagent panes, add `ipc-allow-send-keys = true` to ~/.config/otty/config.toml and reload Otty."
+  },
+  "error.invalidHerdrMode": {
+    "zh-CN": "不支持的 Herdr surface 模式：{value}。可选值：split、tab。",
+    "en-US": "Unsupported Herdr surface mode: {value}. Choose split or tab."
+  },
+  "error.herdrSplitFailed": {
+    "zh-CN": "Herdr 创建 subagent pane 时未返回有效的 pane ID。",
+    "en-US": "Herdr did not return a valid pane ID while creating a subagent pane."
+  },
+  "error.missingHerdrPaneId": {
+    "zh-CN": "无法发送命令：Herdr pane ID 为空。",
+    "en-US": "Cannot send a command because the Herdr pane ID is empty."
+  },
+  "error.renameIncomplete": {
+    "zh-CN": "{backend} 未完成终端改名。",
+    "en-US": "{backend} did not complete terminal renaming."
+  },
+  "rename.invalidContext": {
+    "zh-CN": "终端改名归属信息无效；未修改终端名称。",
+    "en-US": "Invalid terminal rename ownership context; terminal names were not changed."
+  },
+  "rename.missingId": {
+    "zh-CN": "无法确定终端改名目标 ID。",
+    "en-US": "Cannot determine the terminal rename target ID."
   }
 }

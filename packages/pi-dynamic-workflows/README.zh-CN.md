@@ -12,6 +12,10 @@
 - 异步后台执行模式，带实时状态 widget
 - 通过 `/config:workflow` 斜杠命令配置（持久化到 JSON）
 
+每个 `agent()` 只在 Workflow 面板中展示。使用 `subagent` 后端时，workflow 会启动真实的
+`pi-interactive-subagents` 子会话，但这些 agent 会从 Subagents widget 中隐藏，避免同一批
+agent 被列两次；它们在各自的终端分屏中照常运行，也可以正常中断。
+
 ## 安装
 
 ```bash
@@ -20,12 +24,12 @@ pi install npm:@maplezzk/pi-dynamic-workflows
 
 ## 配置
 
-运行 `/config:workflow` 进行交互式配置：
+运行 `/config:workflow` 打开配置面板（执行后端回车开二级列表，异步模式回车原地切换；每改一项立即写盘并生效，不需要 `/reload`）：
 
 - **执行后端**：`workflow`（内置进程内 agent）或 `subagent`（需安装并加载 `pi-interactive-subagents`，每个 agent 拥有真实工具会话）
 - **异步模式**：后台运行 workflow，带实时状态 widget
 
-配置持久化到 `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`。
+配置持久化到 `~/.pi/agent/extensions/pi-dynamic-workflows/config.json`。异步模式在文件里的字段名仍是 `async`（`{"backend": "workflow", "async": false}`），写盘前会做校验。
 
 环境变量仅作兜底支持：
 
@@ -61,6 +65,14 @@ JSON 配置优先级高于环境变量。
 3. 若是通过环境变量启用，移除 shell 配置（如 `.zshrc` / `.zshenv`）中的 `export PI_WORKFLOW_BACKEND=subagent` 后重启 pi。
 
 `/workflow-config` 和 `/pi-workflow-config` 仍作为兼容别名保留。
+
+### 报错：Subagent finished without calling structured_output
+
+**原因**：带 `schema` 的 `agent()` 只有在子 agent 通过 `subagent_done` 结束时才能拿到结果。其他任何退出方式（求助、崩溃、被取消）都不会留下结构化结果，workflow 只能报这一句通用错误，真实原因留在子 session 文件里。
+
+带 `schema` 启动的 agent 是 fire-and-forget：workflow 运行期间没有任何角色能回应求助，因此这些 agent 禁用 `caller_ping`，被阻塞的子 agent 必须把阻塞写进结构化结果（`ok: false`，原因放在 `error`/`notes`）。
+
+**处理方式**：翻 workflow 提示的子 session 文件找原因，或先解除阻塞条件再重跑。不要盲目重试——同一个阻塞会得到同一个错误。
 
 ## 用法
 

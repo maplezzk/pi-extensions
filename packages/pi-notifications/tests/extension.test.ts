@@ -1,0 +1,229 @@
+import assert from "node:assert/strict";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import piNotifications from "../src/index.ts";
+
+// 配置面板构造 SettingsList 时要取主题色，测试进程里必须先初始化一次。
+initTheme();
+
+interface StubContext {
+  cwd: string;
+  hasUI: boolean;
+  ui: { notify(message: string, level: string): void };
+}
+
+interface RegisteredHandler {
+  event: string;
+  handler: (event: any, context: StubContext) => unknown;
+}
+
+test("formats input and completion notifications through the lifecycle handlers", async () => {
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-notifications-extension-"));
+  const outputPath = join(agentDir, "notifications.jsonl");
+  const captureScript = join(agentDir, "capture.cjs");
+  const configDir = join(agentDir, "extensions", "pi-notifications");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(
+    captureScript,
+    "const fs = require('node:fs');\n" +
+      "const [, , output, title, subtitle, message] = process.argv;\n" +
+      "fs.appendFileSync(output, JSON.stringify({ title, subtitle, message }) + '\\n');\n",
+    "utf8",
+  );
+  writeFileSync(
+    join(configDir, "config.json"),
+    JSON.stringify({
+      adapter: {
+        command: process.execPath,
+        args: [captureScript, outputPath, "{title}", "{subtitle}", "{message}"],
+      },
+    }),
+    "utf8",
+  );
+
+  try {
+    const handlers: RegisteredHandler[] = [];
+    const pi = {
+      on(event: string, handler: RegisteredHandler["handler"]) {
+        handlers.push({ event, handler });
+      },
+      // 配置命令仅需在真实宿主中注册，生命周期测试使用空实现。
+      registerCommand() {},
+    } as unknown as ExtensionAPI;
+    piNotifications(pi);
+
+    const context: StubContext = {
+      cwd: "/tmp/example-project",
+      hasUI: true,
+      ui: { notify: () => undefined },
+    };
+    const handler = (event: string) => handlers.find((entry) => entry.event === event)?.handler;
+
+    await handler("agent_start")?.({}, context);
+    await handler("turn_end")?.({}, context);
+    await handler("tool_call")?.({
+      toolName: "ask_user_question",
+      input: {
+        questions: [
+          { header: "Mode", question: "Choose one" },
+          { header: "Other", question: "Another" },
+        ],
+      },
+    }, context);
+    await handler("agent_end")?.({
+      messages: [{ role: "tool", isError: true }],
+    }, context);
+
+    // 两个通知进程独立完成，文件出现不代表两条记录都已写入。
+    const notificationWaitTimeoutMs = 5_000;
+    const notificationPollIntervalMs = 10;
+    const expectedNotificationCount = 2;
+    let lines: string[] = [];
+    const deadline = Date.now() + notificationWaitTimeoutMs;
+    while (Date.now() < deadline) {
+      if (existsSync(outputPath)) {
+        lines = readFileSync(outputPath, "utf8").split("\n").slice(0, -1);
+        if (lines.length >= expectedNotificationCount) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, notificationPollIntervalMs));
+    }
+    assert.equal(lines.length, expectedNotificationCount, "Timed out waiting for both notification records");
+    const records = lines.map((line) => JSON.parse(line) as Record<string, string>);
+    const inputRecord = records.find((record) => record.title?.endsWith("💬"));
+    const completionRecord = records.find((record) => !record.title?.endsWith("💬"));
+    assert.ok(inputRecord);
+    assert.ok(completionRecord);
+    assert.equal(inputRecord.title, "Pi · example-project 💬");
+    assert.match(inputRecord.message ?? "", /Choose one/);
+    assert.match(inputRecord.message ?? "", /2/);
+    assert.match(completionRecord.subtitle ?? "", /Finished with errors|执行完成（有错误）/);
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("prefixes config command notices with the notify source tag", async () => {
+  const notices: Array<{ message: string; level: string }> = [];
+  let registered:
+    | { handler: (args: string, context: unknown) => Promise<unknown> }
+    | undefined;
+  const pi = {
+    on() {},
+    registerCommand(_name: string, command: { handler: (args: string, context: unknown) => Promise<unknown> }) {
+      registered = command;
+    },
+  } as unknown as ExtensionAPI;
+  piNotifications(pi);
+
+  const context = {
+    cwd: "/tmp/example-project",
+    hasUI: true,
+    ui: {
+      notify(message: string, level: string) {
+        notices.push({ message, level });
+      },
+    },
+  };
+  assert.ok(registered);
+  await registered.handler("unexpected-argument", context);
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].level, "warning");
+  assert.ok(
+    notices[0].message.startsWith("[notify] "),
+    `expected a notify source tag, got: ${notices[0].message}`,
+  );
+});
+
+test("the config panel writes the change and the runtime stops notifying immediately", async () => {
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-notifications-panel-"));
+  const outputPath = join(agentDir, "notifications.jsonl");
+  const captureScript = join(agentDir, "capture.cjs");
+  const configDir = join(agentDir, "extensions", "pi-notifications");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(
+    captureScript,
+    "const fs = require('node:fs');\n" +
+      "const [, , output, title, subtitle, message] = process.argv;\n" +
+      "fs.appendFileSync(output, JSON.stringify({ title, subtitle, message }) + '\\n');\n",
+    "utf8",
+  );
+  writeFileSync(
+    join(configDir, "config.json"),
+    JSON.stringify({
+      adapter: {
+        command: process.execPath,
+        args: [captureScript, outputPath, "{title}", "{subtitle}", "{message}"],
+      },
+    }),
+    "utf8",
+  );
+
+  try {
+    const handlers: RegisteredHandler[] = [];
+    const commands = new Map<string, { handler: (args: string, context: unknown) => Promise<void> }>();
+    const pi = {
+      on(event: string, handler: RegisteredHandler["handler"]) {
+        handlers.push({ event, handler });
+      },
+      registerCommand(name: string, command: { handler: (args: string, context: unknown) => Promise<void> }) {
+        commands.set(name, command);
+      },
+    } as unknown as ExtensionAPI;
+    piNotifications(pi);
+    const handler = (event: string) => handlers.find((entry) => entry.event === event)?.handler;
+
+    // 面板第一行就是「启用通知」开关，空格原地切换成关闭。
+    const panelContext = {
+      cwd: "/tmp/example-project",
+      hasUI: true,
+      ui: {
+        notify: () => undefined,
+        custom: async (factory: (tui: unknown, theme: unknown, keybindings: unknown, done: unknown) => { handleInput(data: string): void }) => {
+          // 传入最简 tui/theme 桩，拿到组件后按空格切换当前选中行。
+          const component = factory(
+            { requestRender: () => undefined },
+            { fg: (_color: string, text: string) => text, bold: (text: string) => text },
+            undefined,
+            () => undefined,
+          );
+          component.handleInput(" ");
+        },
+      },
+    };
+    const command = commands.get("config:notifications");
+    assert.ok(command);
+    await command.handler("", panelContext);
+
+    const saved = JSON.parse(readFileSync(join(configDir, "config.json"), "utf8")) as { enabled: boolean };
+    assert.equal(saved.enabled, false, "面板改动应立即写入配置文件");
+
+    // 改动立即生效：关闭后即使触发 agent_end 也不应再发送通知。
+    await handler("agent_end")?.({ messages: [] }, panelContext);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(existsSync(outputPath), false, "关闭通知后不应再调用 adapter");
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+});

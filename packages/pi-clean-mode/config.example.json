@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "autoExpandWhileRunning": true,
+  "showRunHeader": true,
+  "enableActionGroups": true,
+  "showActivityArea": true,
+  "activityRows": 4,
+  "animateActivity": true,
+  "hideThinking": true,
+  "hideExtensionEntries": true
+}

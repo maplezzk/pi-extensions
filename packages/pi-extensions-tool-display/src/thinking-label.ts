@@ -1,6 +1,19 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isRecord } from "./tool-metadata.js";
 import { onReloadShutdown } from "./extension-lifecycle.js";
+import {
+  NOTICE_TAG_COLOR,
+  notifyWithSource,
+  type NoticeColor,
+  type NoticeSource,
+} from "pi-extensions-i18n";
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "display";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
 
 interface ThemeLike {
   fg(color: string, text: string): string;
@@ -286,7 +299,7 @@ function processThinkingEvent(
     prefixThinkingBlocksForDisplay(message, ctx?.ui?.theme);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    ctx?.ui?.notify(`${notifyPrefix}: ${errorMessage}`, "warning");
+    if (ctx) notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: `${notifyPrefix}: ${errorMessage}` });
   }
 }
 
@@ -315,7 +328,7 @@ function handleThinkingContextEvent(event: unknown, ctx: ExtensionContext | unde
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    ctx?.ui?.notify(`Thinking context sanitization failed: ${message}`, "warning");
+    if (ctx) notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: `Thinking context sanitization failed: ${message}` });
   }
 }
 

@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "model": "",
+  "maxAutoContinues": 2,
+  "confidenceThreshold": 0.6,
+  "timeoutSeconds": 30,
+  "includeToolTrace": false,
+  "maxUserRequestChars": 2000,
+  "maxFinalOutputChars": 4000,
+  "maxToolTraceEntries": 20,
+  "maxUserAnswerChars": 2000,
+  "notifyOnStopDecision": false,
+  "showVerdictNotice": true,
+  "judgeMaxTokens": 2000,
+  "continueMessageTemplate": "",
+  "forcedDecision": "auto"
+}

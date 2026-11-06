@@ -6,6 +6,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import {
+  NOTICE_TAG_COLOR,
+  installNoticeRenderer,
+  notifyWithSource,
+  type NoticeColor,
+  type NoticeSource,
+} from "./notice.ts";
+import { openLanguagePanel } from "./language-panel.ts";
 
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
@@ -190,61 +198,70 @@ const commandMessages = loadCatalog(
   new URL("../locales/command.json", import.meta.url),
 );
 
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "language";
+/** 提示标签颜色：所有扩展统一用弱化色，来源靠 tag 文本区分，不靠颜色。 */
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
 function registerLocaleCommand(pi: ExtensionAPI): void {
   const i18n = createTranslator(commandMessages);
   const command = {
     description: i18n.t("description"),
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("noUi"), "warning");
+        notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("noUi") });
         return;
       }
 
       const requested = args.trim();
       const directPreference = requested ? parseLocalePreference(requested) : undefined;
       if (requested && !directPreference) {
-        ctx.ui.notify(i18n.t("invalid", { value: requested }), "error");
+        notifyWithSource({
+          ctx,
+          source: NOTICE_SOURCE,
+          level: "error",
+          message: i18n.t("invalid", { value: requested }),
+        });
         return;
       }
 
-      let preference = directPreference;
-      if (!preference) {
-        const options = [
-          i18n.t("zh"),
-          i18n.t("en"),
-          i18n.t("auto"),
-        ];
-        const current = getLocalePreference();
-        const currentOption = current === "zh-CN"
-          ? options[0]
-          : current === "en-US"
-            ? options[1]
-            : options[2];
-        const selected = await ctx.ui.select(
-          `${i18n.t("title")} [${currentOption}]`,
-          options,
-        );
-        if (selected === undefined) return;
-        preference = selected === options[0]
-          ? "zh-CN"
-          : selected === options[1]
-            ? "en-US"
-            : "auto";
+      // 保存并提示结果；直接参数与面板选定走同一条路径。
+      const apply = (preference: LocalePreference): void => {
+        try {
+          const configPath = saveLocalePreference(preference);
+          const envOverride = process.env[LOCALE_ENV];
+          const overrideNotice = envOverride
+            ? `\n${i18n.t("envOverride", { env: LOCALE_ENV })}`
+            : "";
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: "info",
+            message: `${i18n.t("saved", { locale: preference })}${overrideNotice}\n${configPath}`,
+          });
+        } catch (error) {
+          notifyWithSource({
+            ctx,
+            source: NOTICE_SOURCE,
+            level: "error",
+            message: i18n.t("failed", { error: String(error) }),
+          });
+        }
+      };
+
+      if (directPreference) {
+        apply(directPreference);
+        return;
       }
 
-      try {
-        const configPath = saveLocalePreference(preference);
-        const envOverride = process.env[LOCALE_ENV];
-        const overrideNotice = envOverride
-          ? `\n${i18n.t("envOverride", { env: LOCALE_ENV })}`
-          : "";
-        ctx.ui.notify(
-          `${i18n.t("saved", { locale: preference })}${overrideNotice}\n${configPath}`,
-          "info",
-        );
-      } catch (error) {
-        ctx.ui.notify(i18n.t("failed", { error: String(error) }), "error");
-      }
+      // 无参数：打开 SettingsList 面板，选中一项立即写盘生效。
+      await openLanguagePanel(ctx, {
+        translator: i18n,
+        getPreference: () => getLocalePreference(),
+        onChange: apply,
+      });
     },
   };
   for (const name of ["config:language", "pi-language"] as const) {
@@ -253,5 +270,30 @@ function registerLocaleCommand(pi: ExtensionAPI): void {
 }
 
 export default function piI18n(pi: ExtensionAPI): void {
+  // 提示改走会话区的自定义条目（带底色消息块），渲染器在这里一次性注册。
+  installNoticeRenderer(pi);
   registerLocaleCommand(pi);
 }
+
+export {
+  formatNotice,
+  notifyWithSource,
+  NOTICE_TAG_COLOR,
+  installNoticeRenderer,
+  hasNoticeRenderer,
+  resetNoticeRenderer,
+  renderNoticeEntry,
+  noticeBodyColor,
+  NOTICE_BACKGROUND_COLOR,
+  NOTICE_COLOR_MODE,
+  NOTICE_ENTRY_TYPE,
+  type NoticeApi,
+  type NoticeColor,
+  type NoticeContext,
+  type NoticeEntryData,
+  type NoticeEntryTheme,
+  type NoticeLevel,
+  type NoticeRenderOptions,
+  type NoticeSendOptions,
+  type NoticeSource,
+} from "./notice.ts";

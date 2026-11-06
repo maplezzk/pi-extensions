@@ -1,6 +1,6 @@
 {
   "name": "pi-metrics",
-  "version": "0.2.3",
+  "version": "0.8.0",
   "description": "Pi metrics extension: elapsed-time HUD and resilient TPS telemetry",
   "type": "module",
   "main": "./index.ts",
@@ -12,7 +12,8 @@
     "src",
     "locales",
     "README.md",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "SKILL.md"
   ],
   "scripts": {
     "test": "tsx --test tests/*.test.ts",
@@ -24,6 +25,9 @@
     "extensions": [
       "./index.ts",
       "../pi-extensions-i18n/index.ts"
+    ],
+    "skills": [
+      "./SKILL.md"
     ]
   },
   "engines": {
@@ -53,17 +57,17 @@
     "telemetry"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.80.0 <0.81.0",
-    "@earendil-works/pi-coding-agent": ">=0.80.0 <0.81.0",
-    "@earendil-works/pi-tui": ">=0.80.0 <0.81.0"
+    "@earendil-works/pi-ai": ">=0.80.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
+    "@earendil-works/pi-tui": ">=0.80.0"
   },
   "dependencies": {
-    "pi-extensions-i18n": "^0.3.1"
+    "pi-extensions-i18n": "^0.9.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.80.10",
-    "@earendil-works/pi-coding-agent": "0.80.10",
-    "@earendil-works/pi-tui": "0.80.10",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "@types/node": "24.12.4",
     "tsx": "4.23.1",
     "typescript": "5.9.3"

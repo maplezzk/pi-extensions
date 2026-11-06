@@ -1,5 +1,224 @@
 # Changelog
 
+## [0.11.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.10.0...pi-tool-supervisor-v0.11.0) (2026-10-17)
+
+
+### Features
+
+* **pi-tool-supervisor:** add Cloudflare Clef review backend ([9e1675f](https://github.com/maplezzk/pi-extensions/commit/9e1675f014f5c206ef31a0198ec400dbeff529a4))
+* **pi-tool-supervisor:** support Cloudflare Clef and Clef Flash ([04caabf](https://github.com/maplezzk/pi-extensions/commit/04caabf1002a8ec868a0e280b70001bd221f12fa))
+* **supervisor:** support native OpenAI Decisions reviews ([6ffbde6](https://github.com/maplezzk/pi-extensions/commit/6ffbde66700b5a5289928eff3b696b94825ad98f))
+* 支持 OpenAI Decisions 审查后端 ([d1186a2](https://github.com/maplezzk/pi-extensions/commit/d1186a2b9b86dce25cc144305e9df13714a3f811))
+
+## [0.10.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.9.1...pi-tool-supervisor-v0.10.0) (2026-10-05)
+
+
+### Features
+
+* 统一全仓库配置 UI 为 SettingsList 面板 + 新增 pi-gen-ui ([c67a8c3](https://github.com/maplezzk/pi-extensions/commit/c67a8c3356f249ef5a49699d05ad2824b2ac008a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.8.0 to ^0.9.0
+    * pi-extensions-tool-display bumped from ^1.3.2 to ^1.3.3
+
+## [0.9.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.9.0...pi-tool-supervisor-v0.9.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* 扩展自建模型请求改用共享的 Pi 模型请求抽象 ([d6e817c](https://github.com/maplezzk/pi-extensions/commit/d6e817c33c68330d2a95486c8a7aade80f370123))
+* 扩展自建模型请求改用共享的 Pi 模型请求抽象 ([961f354](https://github.com/maplezzk/pi-extensions/commit/961f354a2c5200edb9417e90c443ede65d305225))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-model-request bumped from ^0.1.0 to ^0.1.1
+  * devDependencies
+    * pi-model-request bumped from ^0.1.0 to ^0.1.1
+
+## [0.9.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.8.1...pi-tool-supervisor-v0.9.0) (2026-09-21)
+
+
+### Features
+
+* **tool-supervisor:** TypeSafe judgment review backend ([ac44951](https://github.com/maplezzk/pi-extensions/commit/ac449518843d49e98914b8967fba110782fcb44e))
+* **tool-supervisor:** 支持在 config.json 里配置 TypeSafe API Key ([131f98d](https://github.com/maplezzk/pi-extensions/commit/131f98d5919904563a24ce7c4bfb8fd3ad466adc))
+
+
+### Bug Fixes
+
+* **tool-supervisor:** 合并多个规则文件时判断 id 不再跨文件重号 ([9c145b4](https://github.com/maplezzk/pi-extensions/commit/9c145b403133aaf37facfa2d59397c270c1c471b))
+* **tool-supervisor:** 合并多个规则文件时判断 id 不再跨文件重号 ([85b7bdb](https://github.com/maplezzk/pi-extensions/commit/85b7bdb2fcb675fc86bd82d9918e9cfa54a62c98))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.7.0 to ^0.8.0
+    * pi-extensions-tool-display bumped from ^1.3.1 to ^1.3.2
+
+## [0.8.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.8.0...pi-tool-supervisor-v0.8.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* 审查结论与 findings 冲突时不再误阻断编辑 ([3eefb2b](https://github.com/maplezzk/pi-extensions/commit/3eefb2b9e78b46856afd79e4f0e9abf6babdb9fd))
+* 审查结论与 findings 冲突时不再误阻断编辑 ([214089b](https://github.com/maplezzk/pi-extensions/commit/214089be3dbf60aa8ef0c5aeaf95f192bb55e687))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.6.0 to ^0.7.0
+    * pi-extensions-tool-display bumped from ^1.3.0 to ^1.3.1
+
+## [0.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.7.0...pi-tool-supervisor-v0.8.0) (2026-09-14)
+
+
+### Features
+
+* show notices as filled transcript blocks under the message ([eb00293](https://github.com/maplezzk/pi-extensions/commit/eb002934f273df12cb109e54817dd16fdb09d52a))
+* 提示改成会话区的带底色消息块，判定结论落在消息下方 ([f42992d](https://github.com/maplezzk/pi-extensions/commit/f42992d39af35e3fda33f681f833d89408cb4a3a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.5.0 to ^0.6.0
+    * pi-extensions-tool-display bumped from ^1.2.0 to ^1.3.0
+
+## [0.7.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.4...pi-tool-supervisor-v0.7.0) (2026-09-13)
+
+
+### Features
+
+* 所有扩展提示统一加来源标签与颜色 ([21ad9d9](https://github.com/maplezzk/pi-extensions/commit/21ad9d97347118a9817ae445bc03544b7c1c66da))
+* 所有扩展提示统一加来源标签与颜色 ([a06c6f8](https://github.com/maplezzk/pi-extensions/commit/a06c6f86367fc7b43f14b34f754bddc4b6dd340a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.1 to ^0.5.0
+    * pi-extensions-tool-display bumped from ^1.1.2 to ^1.2.0
+
+## [0.6.4](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.3...pi-tool-supervisor-v0.6.4) (2026-09-13)
+
+
+### Bug Fixes
+
+* pi peer 范围只保留下限 &gt;=0.80.0 ([fdc012c](https://github.com/maplezzk/pi-extensions/commit/fdc012c7a0a968712cea4430afd7780eab53420b))
+* 去掉 pi peer 上界并升级依赖到 0.85.1 ([28e897e](https://github.com/maplezzk/pi-extensions/commit/28e897eb45d76e91ca8ac6ac2a508a36c76c5682))
+* 放宽 pi peer 范围并升级依赖到 0.85.1 ([3444c0c](https://github.com/maplezzk/pi-extensions/commit/3444c0cb4836006348fc6a9fbd30fe36bdc98ced))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.4.0 to ^0.4.1
+    * pi-extensions-tool-display bumped from ^1.1.1 to ^1.1.2
+
+## [0.6.3](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.2...pi-tool-supervisor-v0.6.3) (2026-09-09)
+
+
+### Bug Fixes
+
+* hide supervisor reviewer failures from Agent ([3c0c25d](https://github.com/maplezzk/pi-extensions/commit/3c0c25da2fd3a263de7d07c94dba81c6f7607cd9))
+* 隐藏审查失败给 Agent 的错误 ([d29af84](https://github.com/maplezzk/pi-extensions/commit/d29af8469f071569ff1056d408fbd34882a10a41))
+
+## [0.6.2](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.1...pi-tool-supervisor-v0.6.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* hide supervisor diagnostics from TUI output ([6a13b3d](https://github.com/maplezzk/pi-extensions/commit/6a13b3d42357e6de9f57d2df98d9c94891ba8943))
+* **safety-guards:** explain blocked external paths ([6c0e923](https://github.com/maplezzk/pi-extensions/commit/6c0e9233b2edb1e522eecf68d54b146e41a92bfe))
+* 隐藏 supervisor 审查错误的原始 TUI 输出 ([ece051b](https://github.com/maplezzk/pi-extensions/commit/ece051bba08167932639ef29a101850b42c36d01))
+
+## [0.6.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.6.0...pi-tool-supervisor-v0.6.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* 将 supervisor 错误改为 UI 通知 ([2c6270f](https://github.com/maplezzk/pi-extensions/commit/2c6270f49f720e831edd95a7307c5a01f47f9190))
+* 将 supervisor 错误改为 UI 通知 ([c2e463d](https://github.com/maplezzk/pi-extensions/commit/c2e463d9e224a9ed31ac8b14b8ca78c224426ff3))
+
+## [0.6.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.5.1...pi-tool-supervisor-v0.6.0) (2026-08-31)
+
+
+### Features
+
+* **tool-supervisor:** 支持条件模块审查 ([7f5a4d4](https://github.com/maplezzk/pi-extensions/commit/7f5a4d4588854ff5bb9d8e56c45af102b9505998))
+* **tool-supervisor:** 支持条件模块审查 ([074f1dc](https://github.com/maplezzk/pi-extensions/commit/074f1dc1acd88f4727faff53cff2fb49920b2064))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-tool-display bumped from ^1.1.0 to ^1.1.1
+
+## [0.5.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.5.0...pi-tool-supervisor-v0.5.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* propagate interrupts to extension model calls ([41147db](https://github.com/maplezzk/pi-extensions/commit/41147db155b6d52c261dea1bc70190983272f803))
+* propagate interrupts to extension model calls ([5c2f040](https://github.com/maplezzk/pi-extensions/commit/5c2f040a38bb644a0153d5b3e0d24d7307e40936))
+* remove supervisor output truncation ([8942759](https://github.com/maplezzk/pi-extensions/commit/8942759e0f14b392a84d77019f47aca0ac101a91))
+* remove supervisor output truncation ([425b417](https://github.com/maplezzk/pi-extensions/commit/425b417f5c852d74a72980e1e47dcdd6f545a7af))
+* **tool-supervisor:** include numbered file context ([d15629d](https://github.com/maplezzk/pi-extensions/commit/d15629db2bd07f0c7174bc401cc8566f81bb457b))
+* **tool-supervisor:** include numbered file context ([f0e3cb1](https://github.com/maplezzk/pi-extensions/commit/f0e3cb187bebbddf8aeee493288fc82c976dd0f1))
+
+## [0.5.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.4.0...pi-tool-supervisor-v0.5.0) (2026-08-20)
+
+
+### Features
+
+* 为每个扩展提供配置 Skill ([626a731](https://github.com/maplezzk/pi-extensions/commit/626a73155279e44e89ca10f59b91cea6d174e63d))
+* 为每个扩展提供配置 Skill ([9bb7374](https://github.com/maplezzk/pi-extensions/commit/9bb737457af0ece197894b4b9488373ab5f8e38f))
+
+
+### Bug Fixes
+
+* **pi-tool-supervisor:** support recursive globstars ([167acc0](https://github.com/maplezzk/pi-extensions/commit/167acc0aa53d3764b650b835f098eb9a00ab9d6f))
+* **pi-tool-supervisor:** support recursive globstars ([2bf7be2](https://github.com/maplezzk/pi-extensions/commit/2bf7be2b864bf5cd5eab127ef4f0e114686c4a5f))
+* 将配置 Skill 放入各扩展根目录 ([57a9863](https://github.com/maplezzk/pi-extensions/commit/57a98635e63856df6631f3cfe724c325b28f15cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * pi-extensions-i18n bumped from ^0.3.1 to ^0.4.0
+    * pi-extensions-tool-display bumped from ^1.0.1 to ^1.1.0
+
+## [0.4.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.8...pi-tool-supervisor-v0.4.0) (2026-08-19)
+
+
+### Features
+
+* **pi-tool-supervisor:** generalize tool review lifecycle ([6b062ee](https://github.com/maplezzk/pi-extensions/commit/6b062ee72c24181e7cb4faf61c2ea5c7c40cc89c))
+* **pi-tool-supervisor:** support configurable tool review lifecycle ([077b3cf](https://github.com/maplezzk/pi-extensions/commit/077b3cfcffc440140eefff5a42d60ed6e273a093))
+
+
+### Bug Fixes
+
+* correct generic tool review lifecycle ([33d7390](https://github.com/maplezzk/pi-extensions/commit/33d7390633af9cc0f97862b1305eb58d01b6fba4))
+* **pi-tool-supervisor:** complete lifecycle review coverage ([54a1fec](https://github.com/maplezzk/pi-extensions/commit/54a1fec1d84394a38c9608e2699fa6dc5ca6d802))
+* 保留工具审查生命周期审计 ([2bbc69d](https://github.com/maplezzk/pi-extensions/commit/2bbc69d1f903b209ce41edcc845e415fd1ab37ca))
+
 ## [0.3.8](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.3.7...pi-tool-supervisor-v0.3.8) (2026-07-28)
 
 

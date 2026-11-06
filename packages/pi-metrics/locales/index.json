@@ -3,13 +3,9 @@
     "zh-CN": "⏱ {value}",
     "en-US": "⏱ {value}"
   },
-  "elapsedDone": {
-    "zh-CN": "⏱ 本轮耗时 {value}",
-    "en-US": "⏱ Turn elapsed {value}"
-  },
   "elapsedTotal": {
-    "zh-CN": "⏱ 总耗时 {value}",
-    "en-US": "⏱ Total elapsed {value}"
+    "zh-CN": "⏱ {value}",
+    "en-US": "⏱ {value}"
   },
   "tpsValue": {
     "zh-CN": "TPS {value} tok/s",
@@ -38,5 +34,65 @@
   "tpsRate": {
     "zh-CN": "${value}/M",
     "en-US": "${value}/M"
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置指标显示",
+    "en-US": "Configure metrics display"
+  },
+  "configCommandUsage": {
+    "zh-CN": "用法：/config:metrics（打开配置菜单）、enable、disable、live、on-stop 或 reset",
+    "en-US": "Usage: /config:metrics (open settings), enable, disable, live, on-stop, or reset"
+  },
+  "configMenuTitle": {
+    "zh-CN": "指标配置",
+    "en-US": "Metrics settings"
+  },
+  "configLabelEnabled": {
+    "zh-CN": "启用指标",
+    "en-US": "Enable metrics"
+  },
+  "configLabelDisplay": {
+    "zh-CN": "显示时机",
+    "en-US": "Display timing"
+  },
+  "configDescEnabled": {
+    "zh-CN": "关闭后不注册任何指标处理器",
+    "en-US": "Turn off to register no metric handlers"
+  },
+  "configDescDisplay": {
+    "zh-CN": "每轮实时一行，或停下后只汇总一行",
+    "en-US": "One line per turn, or a single summary line when stopped"
+  },
+  "configDisplayLive": {
+    "zh-CN": "每轮实时一行",
+    "en-US": "one line per turn"
+  },
+  "configDisplayOnStop": {
+    "zh-CN": "停下后汇总一行",
+    "en-US": "one summary line when stopped"
+  },
+  "configOn": {
+    "zh-CN": "开",
+    "en-US": "on"
+  },
+  "configOff": {
+    "zh-CN": "关",
+    "en-US": "off"
+  },
+  "configCommandInteractiveOnly": {
+    "zh-CN": "指标配置需要在 TUI 中修改；请在交互式 Pi 会话中执行命令。",
+    "en-US": "Metrics configuration requires the TUI; run this command in an interactive Pi session."
+  },
+  "configCommandSaved": {
+    "zh-CN": "指标配置已保存：{path}。",
+    "en-US": "Metrics configuration saved to {path}."
+  },
+  "configCommandInvalid": {
+    "zh-CN": "指标配置无效：{error}",
+    "en-US": "Invalid metrics configuration: {error}"
+  },
+  "configLoadFailed": {
+    "zh-CN": "指标配置读取失败：{path}（{error}）。当前继续启用指标。",
+    "en-US": "Failed to read metrics configuration: {path} ({error}). Metrics remain enabled."
   }
 }

@@ -3,6 +3,8 @@
  * - Shows agent identity + available tools as a styled widget above the editor (toggle with Ctrl+J)
  * - Provides a `subagent_done` tool for autonomous agents to self-terminate
  * - Nudges any agent that forgets to call subagent_done after generating
+ * - Respects PI_DENY_TOOLS for its own tools: a denied tool is not registered,
+ *   `caller_ping` included; `subagent_done` is never denied.
  *
  * auto-exit 历史背景：
  *   早期设计中 PI_SUBAGENT_AUTO_EXIT=1 会让 agent_end 短路退出 — agent 正常结束
@@ -13,7 +15,7 @@
  *   现在不论 autoExit env 如何，agent 都必须主动调用 subagent_done 或 caller_ping
  *   才能结束。如果 agent 不调，会被 nudge 提醒。
  */
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { writeFileSync } from "node:fs";
@@ -22,23 +24,41 @@ import { createTranslator, loadCatalog } from "pi-extensions-i18n";
 import { createSubagentActivityRecorder } from "./activity.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../../locales/index.json", import.meta.url)));
+const ASSISTANT_ROLE = "assistant";
+const NORMAL_STOP_REASON = "stop";
+const ABORTED_STOP_REASON = "aborted";
 
+/** Treat input as manual takeover only after the first agent run has started. */
 export function shouldMarkUserTookOver(agentStarted: boolean): boolean {
   return agentStarted;
 }
 
+/** Return true only when the latest assistant message ended by the model stopping normally. */
+export function shouldScheduleAgentEndNudge(
+  messages: readonly { role?: string; stopReason?: string }[] | undefined,
+): boolean {
+  if (!messages) return false;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === ASSISTANT_ROLE) {
+      return message.stopReason === NORMAL_STOP_REASON;
+    }
+  }
+
+  return false;
+}
+
+/** Preserve the former auto-exit decision for callers that still use this helper. */
 export function shouldAutoExitOnAgentEnd(
   _userTookOver: boolean,
-  messages: any[] | undefined,
+  messages: readonly { role?: string; stopReason?: string }[] | undefined,
 ): boolean {
-  // Manual input should not strand an auto-exit subagent. If the latest agent
-  // turn completed normally, close the session. Escape/abort still leaves it
-  // open for inspection or another prompt.
   if (messages) {
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg?.role === "assistant") {
-        return msg.stopReason !== "aborted";
+      const message = messages[i];
+      if (message?.role === ASSISTANT_ROLE) {
+        return message.stopReason !== ABORTED_STOP_REASON;
       }
     }
   }
@@ -46,6 +66,7 @@ export function shouldAutoExitOnAgentEnd(
   return true;
 }
 
+/** Parse the comma-separated denied-tool setting and discard blank entries. */
 export function parseDeniedTools(rawValue: string | undefined): string[] {
   return (rawValue ?? "")
     .split(",")
@@ -55,13 +76,16 @@ export function parseDeniedTools(rawValue: string | undefined): string[] {
 
 export default function (pi: ExtensionAPI) {
   let toolNames: string[] = [];
-  let denied: string[] = [];
   let expanded = false;
 
   // Read subagent identity from env vars (set by parent orchestrator)
   const subagentName = process.env.PI_SUBAGENT_NAME ?? "";
   const subagentAgent = process.env.PI_SUBAGENT_AGENT ?? "";
-  const deniedToolsValue = process.env.PI_DENY_TOOLS;
+  // 父 session 通过 PI_DENY_TOOLS 指定的禁用工具。必须在模块加载时读一次：注册
+  // 工具发生在加载期，之后设置 env 不会影响已注册的工具。
+  // subagent_done 是完成上报的唯一出口，永不禁用。
+  const deniedTools = new Set(parseDeniedTools(process.env.PI_DENY_TOOLS));
+  const denied = [...deniedTools];
   const autoExit = process.env.PI_SUBAGENT_AUTO_EXIT === "1";
   const recorder = createSubagentActivityRecorder({
     runningChildId: process.env.PI_SUBAGENT_ID,
@@ -81,6 +105,7 @@ export default function (pi: ExtensionAPI) {
   let userInputAfterAgentEnd = false;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Cancel and forget the pending completion reminder, if any. */
   function clearNudgeTimer(): void {
     if (nudgeTimer !== null) {
       clearTimeout(nudgeTimer);
@@ -89,18 +114,17 @@ export default function (pi: ExtensionAPI) {
   }
 
   /**
-   * After a non-auto-exit subagent finishes generating, schedule a nudge
-   * reminding it to call subagent_done if it hasn't already.
+   * After a subagent stops normally, schedule a nudge reminding it to call
+   * subagent_done if it hasn't already. Error and aborted runs are excluded.
    *
    * Each call replaces any pending nudge, so repeated agent_end events
-   * (e.g. during multi-turn tool use) automatically reset the timer.
-   * The nudge only fires if no new agent activity or user input arrives
-   * within NUDGE_DELAY_MS.
+   * automatically reset the timer. The nudge only fires if no new agent
+   * activity or user input arrives within NUDGE_DELAY_MS.
    */
   function scheduleAgentEndNudge(): void {
     clearNudgeTimer();
     // 不论 autoExit 是否启用，都必须 nudge — autoExit 已被移除，
-    // agent 结束 turn 后只能靠主动调用 subagent_done 才能真正退出。
+    // agent 正常结束 turn 后只能靠主动调用 subagent_done 才能真正退出。
     if (NUDGE_DISABLED || doneCalled) return;
 
     nudgeTimer = setTimeout(() => {
@@ -114,10 +138,11 @@ export default function (pi: ExtensionAPI) {
     }, NUDGE_DELAY_MS);
   }
 
-  function renderWidget(ctx: { ui: { setWidget: Function } }, _theme: any) {
+  /** Render the subagent identity and tool availability widget. */
+  function renderWidget(ctx: Pick<ExtensionContext, "ui">): void {
     ctx.ui.setWidget(
       "subagent-tools",
-      (_tui: any, theme: any) => {
+      (_tui, theme) => {
         const box = new Box(1, 0, (text: string) => theme.bg("toolSuccessBg", text));
 
         const label = subagentAgent || subagentName;
@@ -176,9 +201,8 @@ export default function (pi: ExtensionAPI) {
     clearNudgeTimer();
     const tools = pi.getAllTools();
     toolNames = tools.map((t) => t.name).sort();
-    denied = parseDeniedTools(deniedToolsValue);
 
-    renderWidget(ctx, null);
+    renderWidget(ctx);
   });
 
   pi.on("input", () => {
@@ -216,10 +240,13 @@ export default function (pi: ExtensionAPI) {
     // subagent_done（或 caller_ping）。如果 agent 不调，下面会有 nudge 提醒。
     recorder.agentEndWaiting();
 
-    // For non-auto-exit agents: schedule a nudge in case the AI forgot to call
-    // subagent_done. This is automatically cleared/reset on any subsequent
-    // agent activity or user input.
-    scheduleAgentEndNudge();
+    // Only a normal model stop means the agent itself chose to finish.
+    // Provider errors and user aborts must stay quiet.
+    if (shouldScheduleAgentEndNudge(event.messages)) {
+      scheduleAgentEndNudge();
+    } else {
+      clearNudgeTimer();
+    }
   });
 
   pi.on("turn_start", (event) => {
@@ -272,52 +299,54 @@ export default function (pi: ExtensionAPI) {
     description: "Toggle subagent tools widget",
     handler: (ctx) => {
       expanded = !expanded;
-      renderWidget(ctx, null);
+      renderWidget(ctx);
     },
   });
 
-  pi.registerTool({
-    name: "caller_ping",
-    label: "Caller Ping",
+  // caller_ping 被禁用时不注册：它只会退出 session，被禁用时应留给 subagent_done。
+  if (!deniedTools.has("caller_ping"))
+    pi.registerTool({
+      name: "caller_ping",
+      label: "Caller Ping",
     description:
       "Send a help request to the parent agent and exit this session. " +
       "The parent will be notified with your message and can resume this session with a response. " +
       "Use when you're stuck, need clarification, or need the parent to take action.",
-    parameters: Type.Object({
-      message: Type.String({ description: "What you need help with" }),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const sessionFile = process.env.PI_SUBAGENT_SESSION;
-      if (!sessionFile) {
-        throw new Error(
-          "caller_ping is only available in subagent contexts. " +
-            "PI_SUBAGENT_SESSION environment variable is not set.",
-        );
-      }
+      parameters: Type.Object({
+        message: Type.String({ description: "What you need help with" }),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const sessionFile = process.env.PI_SUBAGENT_SESSION;
+        if (!sessionFile) {
+          throw new Error(
+            "caller_ping is only available in subagent contexts. " +
+              "PI_SUBAGENT_SESSION environment variable is not set.",
+          );
+        }
 
-      doneCalled = true;
-      clearNudgeTimer();
-      recorder.callerPing();
-      const exitData = {
-        type: "ping" as const,
-        name: process.env.PI_SUBAGENT_NAME ?? "subagent",
-        message: params.message,
-      };
-      try {
-        writeFileSync(`${sessionFile}.exit`, JSON.stringify(exitData));
-      } catch (writeErr: any) {
-        process.stderr.write(
-          `[subagent-done] caller_ping: .exit 写入失败 file=${sessionFile}.exit err=${writeErr?.message ?? String(writeErr)}\n`,
-        );
-      }
+        doneCalled = true;
+        clearNudgeTimer();
+        recorder.callerPing();
+        const exitData = {
+          type: "ping" as const,
+          name: process.env.PI_SUBAGENT_NAME ?? "subagent",
+          message: params.message,
+        };
+        try {
+          writeFileSync(`${sessionFile}.exit`, JSON.stringify(exitData));
+        } catch (writeErr: any) {
+          process.stderr.write(
+            `[subagent-done] caller_ping: .exit 写入失败 file=${sessionFile}.exit err=${writeErr?.message ?? String(writeErr)}\n`,
+          );
+        }
 
-      ctx.shutdown();
-      return {
-        content: [{ type: "text", text: "Ping sent. Session will exit and parent will be notified." }],
-        details: {},
-      };
-    },
-  });
+        ctx.shutdown();
+        return {
+          content: [{ type: "text", text: "Ping sent. Session will exit and parent will be notified." }],
+          details: {},
+        };
+      },
+    });
 
   // ── subagent_done ──
   // When PI_SUBAGENT_STRUCTURED_OUTPUT_SCHEMA is set, the `result` parameter

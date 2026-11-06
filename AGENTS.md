@@ -9,11 +9,15 @@ pi-extensions/
 ├── packages/
 │   ├── pi-extensions-i18n/      # Shared locale and catalog runtime
 │   ├── pi-extensions-tool-display/ # Tool-display host and shared rendering protocol
+│   ├── pi-model-request/ # Extension-side model requests (auth + provider session headers)
+│   ├── pi-gen-ui/               # Render json-render specs as Pi terminal panels
 │   ├── pi-distill/              # Tool-output distillation
 │   ├── pi-tool-supervisor/      # Post-edit file review
 │   ├── pi-terminal-mux/         # Terminal multiplexer abstraction (muxy/cmux/tmux/zellij/wezterm/herdr/otty/orca + headless fallback)
 │   ├── pi-metrics/               # Session metrics (live elapsed spinner, per-turn and total run summaries)
-│   └── pi-models-discovery/     # Dynamic model discovery for providers marked with discoverModels
+│   ├── pi-models-discovery/     # Dynamic model discovery for providers marked with discoverModels
+│   ├── pi-session-tools/        # Bash pipe output cache and session_log/session_squash conversation squashing
+│   ├── pi-session-resources/    # Clickable tabbed # picker for session files, browser URLs, and PR/MR links
 ├── scripts/                     # Repository checks and workspace helpers
 ├── .github/workflows/           # CI and release automation
 ├── README.md                    # English project documentation
@@ -26,13 +30,23 @@ Each package owns its entrypoint, tests, configuration example, localization res
 
 ## Package boundaries
 
+- `pi-safety-guards` is independently installable; see `packages/pi-safety-guards/README.md` for its configuration, behavior, and tests.
+- `pi-nested-skills` is independently installable; see `packages/pi-nested-skills/README.md` for its configuration, behavior, and tests.
+- `pi-notifications` is independently installable; see `packages/pi-notifications/README.md` for its configuration, behavior, and tests.
+- `pi-naming` owns automatic Pi session titles and manual terminal naming; it uses pi-ai and terminal-mux, not session-tools. Automatic and manual naming share configurable session/workspace/tab targets.
+
+- `pi-gen-ui` renders json-render specs as Pi terminal panels. It embeds only `@json-render/core` as the engine and ships its own Pi TUI renderer — it does not embed `@json-render/ink`, whose Ink/React runtime would fight Pi for stdin/stdout. `render_ui` takes a hand-written spec and never touches the network; `compose_ui` builds a spec from candidate elements and only registers when a composition provider key is available.
+
 - `pi-distill` discovers active tools with object parameter schemas and observes their results through Pi's native `tool_call` and `tool_result` events. It does not register duplicate tools.
 - `pi-tool-supervisor` reviews the actual before/after diff of `edit` and `write` against configured rule files. It reports findings but is not an operating-system sandbox or an edit rollback mechanism.
 - `pi-extensions-tool-display` owns the actual Pi tool-display host, built-in tool renderer overrides, and the shared result-rendering middleware protocol. Feature packages register domain-specific panels through it.
 - `pi-extensions-i18n` owns locale selection, catalog validation, interpolation, and the `/pi-language` command. Feature packages use it instead of implementing separate locale runtimes.
+- `pi-model-request` owns how an extension issues its own model request: resolve auth from the model registry, add the provider session headers (`x-opencode-session`, `x-opencode-client`) that Pi's core adds to its own requests, apply a resolved `baseUrl`, and call the completion. Any package that calls `completeSimple`/`complete` itself must go through it instead of re-deriving those rules.
 - `pi-terminal-mux` owns terminal multiplexer detection and pane/surface operations. Extensions that need terminal interaction depend on it instead of re-implementing backend detection.
 - `pi-metrics` owns session metrics: the live elapsed spinner and per-turn/total summaries listen to Pi's native `input`, `agent_start`, `turn_start`, `turn_end`, `agent_end`, and `agent_settled` events without registering tools.
 - `pi-models-discovery` owns dynamic model discovery: it reads `discoverModels` providers from models.json, fetches `{baseUrl}/models`, persists a startup cache, and exposes `/model-discovery` plus `/model-discovery-refresh` commands.
+- `pi-session-tools` owns the bash pipe output cache (`tool_call` rewrites `grep`/`tail`/`head` pipelines with `tee`) and `session_log`/`session_squash` for non-destructive conversation squashing; the main agent writes the handoff summary directly into the `session_squash` call.
+- `pi-session-resources` observes successful tool results, rebuilds resources from the active session branch, and exposes file, browser, and PR/MR targets through a clickable, tabbed `#` picker above the editor without adding model-context messages.
 
 Keep packages composable and independently installable. Avoid coupling one extension to another extension's private implementation details or display state.
 
@@ -48,7 +62,45 @@ Keep packages composable and independently installable. Avoid coupling one exten
 
 User-visible messages, command descriptions, tool descriptions, and agent-facing prompts must be backed by a catalog containing both `zh-CN` and `en-US` entries. Use `pi-extensions-i18n`'s `createTranslator` and `loadCatalog` helpers.
 
+User-visible notices must go through `pi-extensions-i18n`'s `notifyWithSource`, not `ctx.ui.notify` directly. Pi renders `info` notices as one line of dim, unprefixed text, so every package carries a short source tag and the notice is drawn as a filled background block in the transcript (the same `customMessageBg` block Pi uses for extension messages):
+
+```ts
+const NOTICE_TAG = "distill";
+const NOTICE_COLOR: NoticeColor = NOTICE_TAG_COLOR;
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
+notifyWithSource({ ctx, source: NOTICE_SOURCE, level: "warning", message: i18n.t("failed") });
+```
+
+Keep the tag short and unique per package, keep the level accurate, and do not add colors outside TUI mode — the helper already handles that. The tag color (`NOTICE_TAG_COLOR`) is deliberately the same muted color for every package: nine theme color slots cannot distinguish sixteen packages, so the tag text identifies the source and the color never does. Level colors (warning/error body text) remain semantic and unchanged. The transcript block is registered once by `pi-extensions-i18n`'s own extension entry, so a package that uses the helper must load `../pi-extensions-i18n/index.ts` in its `pi.extensions` list. Verdict-style notices with their own semantic color pass `textColor` instead of building a footer status line.
+
 Keep developer comments and implementation notes concise. Keep the English and Chinese README files separate so each language has a complete, readable entrypoint.
+
+## Configuration UI
+
+Every package that has configuration exposes a `/config:<package>` command. Running it with no arguments opens a settings panel; arguments stay available for scripting and quick toggles. A bare command must never print a wall of text instead of opening the panel.
+
+The panel is `ctx.ui.custom` around Pi's built-in `SettingsList`: field name on the left, current value on the right, one description line under the selection. Enter/Space flips a boolean in place, Enter opens a submenu for anything else, Esc closes. Each package implements its own panel — packages stay independently installable and are not coupled to a shared UI module.
+
+Row behaviour follows the field type:
+
+| Field | Row |
+| --- | --- |
+| Boolean | `values: [on, off]`, cycles in place |
+| Enumeration, number | `submenu` opening a `SelectList` |
+| Free text | `submenu` opening an `Input` prefilled with the current value |
+| Long candidate list (models) | `submenu` with a filter `Input` above the list |
+
+Two rules keep the panel honest:
+
+- **A submenu returns the label it displayed, never the raw stored value.** `SettingsList` renders the returned value in the row, so returning `"3"` would make that row fall out of the localized `"3 rows"` style the rest of the panel uses. Map label back to value when applying the change.
+- **Filter long lists with `fuzzyFilter` from `@earendil-works/pi-tui`, not `SelectList.setFilter`.** `setFilter` only matches a prefix, so typing `low` never reaches `llm-proxy/LOW`.
+
+A change made in the panel takes effect immediately. Do not ask the user to `/reload`, and do not cache configuration at load time when the panel can change it — read it where it is used. The same applies to the command's arguments.
+
+The subtle version of that rule is **conditional registration**. Registering a hook or command only when a flag was on at load time looks like a harmless optimisation, but it makes the flag unreachable from the panel: the hook does not exist, so turning the flag on does nothing until `/reload`. Register the entrypoint unconditionally and check the flag inside the handler. If the feature is off, report why instead of staying silent — a command that vanishes looks like a broken package. A test asserting `events.has("x") === someFlag` is testing the defect, not the behaviour; assert what the entrypoint does instead.
+
+Every configuration field needs a panel row. Cover that with a test asserting the panel's field set equals the configuration's field set, so a field added later cannot silently miss the panel. Also test that picking each row's own displayed value round-trips the configuration unchanged.
 
 ## Development
 

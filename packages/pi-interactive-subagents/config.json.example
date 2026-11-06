@@ -1,4 +1,7 @@
 {
+  "herdrMode": "split",
+  "allowSubagentSpawning": false,
+  "subagentExtensions": [],
   "status": {
     "enabled": true
   }

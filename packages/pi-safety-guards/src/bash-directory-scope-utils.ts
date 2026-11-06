@@ -1,0 +1,617 @@
+import { lstatSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  analyzeShellCommand,
+  isShellAssignment,
+  splitRecognizedShellOption,
+  type ShellCommandInvocation,
+  type ShellWord as Word,
+  type ShellWrapperInvocation,
+} from "./shell-command-utils";
+
+const SINGLE_OPTION_VALUE_COUNT = 1;
+const NAME_AND_VALUE_OPTION_COUNT = 2;
+/** 单个文件名分量的字节上限；比它更长的名字在主流文件系统上不可能存在。 */
+const MAX_NAME_BYTES = 255;
+const CHANGE_DIRECTORY_COMMAND_NAME = "cd";
+const JQ_COMMAND_NAME = "jq";
+const DATA_ONLY_COMMANDS = new Set(["echo", "printf"]);
+const GREP_COMMANDS = new Set(["egrep", "fgrep", "grep", "rg", "ripgrep"]);
+const SED_COMMANDS = new Set(["gsed", "sed"]);
+const AWK_COMMANDS = new Set(["awk", "gawk", "mawk", "nawk"]);
+const FILE_TEST_OPERATORS = new Set([
+  "-a", "-b", "-c", "-d", "-e", "-f", "-g", "-h", "-k", "-L", "-N", "-O",
+  "-p", "-r", "-s", "-S", "-t", "-u", "-w", "-x",
+]);
+const FILE_COMPARISON_OPERATORS = new Set(["-ef", "-nt", "-ot"]);
+const INLINE_PATH_OPTIONS = new Set([
+  "--cache-dir",
+  "--chdir",
+  "--config",
+  "--cwd",
+  "--directory",
+  "--file",
+  "--git-dir",
+  "--ignore-file",
+  "--input",
+  "--output",
+  "--prefix",
+  "--project",
+  "--root",
+  "--source",
+  "--target",
+  "--temp-dir",
+  "--tmpdir",
+  "--work-tree",
+]);
+
+interface PatternPathOptions {
+  args: readonly Word[];
+  auxiliaryPathOptions: ReadonlySet<string>;
+  explicitPatternOptions: ReadonlySet<string>;
+  patternPathOptions: ReadonlySet<string>;
+  valueOptionWidths: Readonly<Record<string, number>>;
+}
+
+interface AddedDirectoryState {
+  dirs?: Array<{ absolutePath?: unknown }>;
+}
+
+const ADD_DIRECTORY_STATE_TYPE = "add-dir:state";
+const SESSION_SQUASH_TYPE = "session-squash";
+
+export interface BashPathViolation {
+  inputPath: string;
+  resolvedPath: string;
+}
+
+/** 返回目录规则实际使用的规范化允许根，供阻断反馈准确说明授权范围。 */
+export function resolveBashDirectoryRoots(
+  cwd: string,
+  roots: readonly string[],
+): string[] {
+  return canonicalRoots(roots.map((root) => {
+    const expanded = expandKnownPathPrefix(root, cwd);
+    return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
+  }));
+}
+
+const EMPTY_OPTIONS = new Set<string>();
+const WRAPPER_PATH_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+  sudo: new Set(["-D", "--chdir", "-R", "--chroot"]),
+  env: new Set(["-C", "--chdir"]),
+};
+
+const GREP_PATTERN_PATH_OPTIONS = new Set(["-f", "--file"]);
+const GREP_AUXILIARY_PATH_OPTIONS = new Set(["--ignore-file"]);
+const GREP_EXPLICIT_PATTERN_OPTIONS = new Set(["-e", "--regexp"]);
+const GREP_VALUE_OPTION_WIDTHS: Readonly<Record<string, number>> = {
+  "-A": SINGLE_OPTION_VALUE_COUNT,
+  "--after-context": SINGLE_OPTION_VALUE_COUNT,
+  "-B": SINGLE_OPTION_VALUE_COUNT,
+  "--before-context": SINGLE_OPTION_VALUE_COUNT,
+  "-C": SINGLE_OPTION_VALUE_COUNT,
+  "--context": SINGLE_OPTION_VALUE_COUNT,
+  "--colors": SINGLE_OPTION_VALUE_COUNT,
+  "--context-separator": SINGLE_OPTION_VALUE_COUNT,
+  "--encoding": SINGLE_OPTION_VALUE_COUNT,
+  "--engine": SINGLE_OPTION_VALUE_COUNT,
+  "-e": SINGLE_OPTION_VALUE_COUNT,
+  "--exclude": SINGLE_OPTION_VALUE_COUNT,
+  "--exclude-dir": SINGLE_OPTION_VALUE_COUNT,
+  "--field-context-separator": SINGLE_OPTION_VALUE_COUNT,
+  "--field-match-separator": SINGLE_OPTION_VALUE_COUNT,
+  "-g": SINGLE_OPTION_VALUE_COUNT,
+  "--glob": SINGLE_OPTION_VALUE_COUNT,
+  "--hostname-bin": SINGLE_OPTION_VALUE_COUNT,
+  "--hyperlink-format": SINGLE_OPTION_VALUE_COUNT,
+  "--iglob": SINGLE_OPTION_VALUE_COUNT,
+  "--include": SINGLE_OPTION_VALUE_COUNT,
+  "--label": SINGLE_OPTION_VALUE_COUNT,
+  "-m": SINGLE_OPTION_VALUE_COUNT,
+  "--max-count": SINGLE_OPTION_VALUE_COUNT,
+  "--path-separator": SINGLE_OPTION_VALUE_COUNT,
+  "--pre": SINGLE_OPTION_VALUE_COUNT,
+  "--pre-glob": SINGLE_OPTION_VALUE_COUNT,
+  "--regexp": SINGLE_OPTION_VALUE_COUNT,
+  "--replace": SINGLE_OPTION_VALUE_COUNT,
+  "--sort": SINGLE_OPTION_VALUE_COUNT,
+  "--sortr": SINGLE_OPTION_VALUE_COUNT,
+  "-t": SINGLE_OPTION_VALUE_COUNT,
+  "--type": SINGLE_OPTION_VALUE_COUNT,
+  "--type-add": SINGLE_OPTION_VALUE_COUNT,
+  "--type-clear": SINGLE_OPTION_VALUE_COUNT,
+};
+const SED_PATTERN_PATH_OPTIONS = new Set(["-f", "--file"]);
+const SED_EXPLICIT_PATTERN_OPTIONS = new Set(["-e", "--expression"]);
+const SED_VALUE_OPTION_WIDTHS: Readonly<Record<string, number>> = {
+  "-e": SINGLE_OPTION_VALUE_COUNT,
+  "--expression": SINGLE_OPTION_VALUE_COUNT,
+};
+const AWK_PATTERN_PATH_OPTIONS = new Set(["-f", "--file"]);
+const AWK_VALUE_OPTION_WIDTHS: Readonly<Record<string, number>> = {
+  "-F": SINGLE_OPTION_VALUE_COUNT,
+  "--field-separator": SINGLE_OPTION_VALUE_COUNT,
+  "-v": SINGLE_OPTION_VALUE_COUNT,
+  "--assign": SINGLE_OPTION_VALUE_COUNT,
+};
+const JQ_FILTER_FILE_OPTIONS = new Set(["-f", "--from-file"]);
+const JQ_LIBRARY_PATH_OPTIONS = new Set(["-L"]);
+const JQ_FILE_BINDING_OPTIONS = new Set(["--rawfile", "--slurpfile"]);
+const JQ_VALUE_OPTION_WIDTHS: Readonly<Record<string, number>> = {
+  "--arg": NAME_AND_VALUE_OPTION_COUNT,
+  "--argjson": NAME_AND_VALUE_OPTION_COUNT,
+};
+
+/**
+ * 从当前会话恢复 add_directory 白名单。
+ *
+ * session_squash 会把当前分支切到较早的 user entry，再追加新的摘要消息；
+ * 因此压缩前的 add-dir:state 不再位于 active branch，但仍保留在 session entries
+ * 中。沿 summary details.sourceLeafId 回溯，才能得到压缩时实际生效的目录状态。
+ */
+export function addedDirectoryPathsFromSession(
+  entries: readonly unknown[],
+  activeBranch: readonly unknown[],
+): string[] {
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const entry of entries) {
+    if (isRecord(entry) && typeof entry.id === "string") byId.set(entry.id, entry);
+  }
+
+  return replayDirectoryState(activeBranch, byId, new Map(), new Set()).paths;
+}
+
+/** 找出 Bash 命令中显式引用、但不在允许目录内的本地路径。 */
+export function findOutOfScopeBashPaths(
+  command: string,
+  cwd: string,
+  roots: readonly string[],
+): BashPathViolation[] {
+  const allowedRoots = resolveBashDirectoryRoots(cwd, roots);
+  const referencedPaths = collectReferencedPaths(command);
+  const violations: BashPathViolation[] = [];
+  const seen = new Set<string>();
+
+  for (const inputPath of referencedPaths) {
+    const resolvedPath = resolveReferencedPath(inputPath, cwd);
+    if (!resolvedPath) continue;
+    if (allowedRoots.some((root) => isWithinRoot(resolvedPath, root))) continue;
+
+    const key = `${inputPath}\0${resolvedPath}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    violations.push({ inputPath, resolvedPath });
+  }
+
+  return violations;
+}
+
+interface DirectoryState {
+  known: boolean;
+  paths: string[];
+}
+
+/** 按分支时序回放目录状态；squash checkpoint 会覆盖此前状态。 */
+function replayDirectoryState(
+  branch: readonly unknown[],
+  byId: ReadonlyMap<string, Record<string, unknown>>,
+  memo: Map<string, DirectoryState | undefined>,
+  resolving: Set<string>,
+): DirectoryState {
+  let state: DirectoryState = { known: false, paths: [] };
+  for (const entry of branch) {
+    if (isAddDirectoryState(entry)) {
+      state = parseAddedDirectoryState(entry);
+      continue;
+    }
+    if (!isSessionSquashEntry(entry)) continue;
+
+    const source = sourceLeafId(entry);
+    const sourceState = source === undefined
+      ? undefined
+      : resolveDirectoryStateAtLeaf(source, byId, memo, resolving);
+    state = sourceState?.known ? sourceState : { known: true, paths: [] };
+  }
+  return state;
+}
+
+function resolveDirectoryStateAtLeaf(
+  leafId: string,
+  byId: ReadonlyMap<string, Record<string, unknown>>,
+  memo: Map<string, DirectoryState | undefined>,
+  resolving: Set<string>,
+): DirectoryState | undefined {
+  if (memo.has(leafId)) return memo.get(leafId);
+  if (resolving.has(leafId)) return undefined;
+  const branch = ancestorEntries(leafId, byId);
+  if (branch.length === 0) return undefined;
+
+  resolving.add(leafId);
+  const state = replayDirectoryState(branch, byId, memo, resolving);
+  resolving.delete(leafId);
+  memo.set(leafId, state);
+  return state;
+}
+
+function parseAddedDirectoryState(entry: Record<string, unknown>): DirectoryState {
+  const data = isRecord(entry.data) ? entry.data as AddedDirectoryState : undefined;
+  const dirs = Array.isArray(data?.dirs) ? data.dirs : [];
+  return {
+    known: true,
+    paths: [...new Set(dirs
+      .map((dir) => isRecord(dir) ? dir.absolutePath : undefined)
+      .filter((value): value is string => typeof value === "string" && isAbsolute(value)))]
+  };
+}
+
+function isAddDirectoryState(entry: unknown): entry is Record<string, unknown> {
+  return isRecord(entry) && entry.type === "custom" && entry.customType === ADD_DIRECTORY_STATE_TYPE;
+}
+
+function isSessionSquashEntry(entry: unknown): entry is Record<string, unknown> {
+  return isRecord(entry) && entry.type === "custom_message" && entry.customType === SESSION_SQUASH_TYPE;
+}
+
+function sourceLeafId(entry: Record<string, unknown>): string | undefined {
+  const details = isRecord(entry.details) ? entry.details : undefined;
+  return typeof details?.sourceLeafId === "string" ? details.sourceLeafId : undefined;
+}
+
+function ancestorEntries(
+  leafId: string,
+  byId: ReadonlyMap<string, Record<string, unknown>>,
+): Record<string, unknown>[] {
+  const ancestors: Record<string, unknown>[] = [];
+  const visited = new Set<string>();
+  let currentId: string | null = leafId;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const entry = byId.get(currentId);
+    if (!entry) break;
+    ancestors.push(entry);
+    currentId = typeof entry.parentId === "string" ? entry.parentId : null;
+  }
+  return ancestors.reverse();
+}
+
+/** 从共享 Shell 分析结果收集命令参数、wrapper、重定向和文件测试中的路径。 */
+function collectReferencedPaths(command: string): string[] {
+  const analysis = analyzeShellCommand(command);
+  const references = [
+    ...analysis.wrappers.flatMap((wrapper) => wrapperPaths(wrapper)),
+    ...analysis.commands.flatMap((invocation) => commandPaths(invocation)),
+  ];
+
+  for (const node of analysis.nodes) {
+    if ((node.type === "For" || node.type === "Select") && Array.isArray(node.wordlist)) {
+      references.push(...node.wordlist.flatMap((word) => wordValueCandidates(word)));
+    }
+    if (node.type === "TestUnary" && FILE_TEST_OPERATORS.has(String(node.operator))) {
+      references.push(...wordValueCandidates(node.operand));
+    }
+    if (node.type === "TestBinary" && FILE_COMPARISON_OPERATORS.has(String(node.operator))) {
+      references.push(...wordValueCandidates(node.left), ...wordValueCandidates(node.right));
+    }
+    if (isFileRedirect(node)) references.push(...wordValueCandidates(node.target, true));
+  }
+
+  return references;
+}
+
+/** 按实际命令语义提取可执行文件和参数中的路径。 */
+function commandPaths(invocation: ShellCommandInvocation): string[] {
+  const paths = executablePathCandidates(invocation.executable.value);
+  if (invocation.nestedSource !== undefined) return paths;
+  if (invocation.name === CHANGE_DIRECTORY_COMMAND_NAME) return [...paths, ...cdPaths(invocation.args)];
+  if (DATA_ONLY_COMMANDS.has(invocation.name)) return paths;
+  if (GREP_COMMANDS.has(invocation.name)) {
+    return [...paths, ...patternCommandPaths({
+      args: invocation.args,
+      auxiliaryPathOptions: GREP_AUXILIARY_PATH_OPTIONS,
+      explicitPatternOptions: GREP_EXPLICIT_PATTERN_OPTIONS,
+      patternPathOptions: GREP_PATTERN_PATH_OPTIONS,
+      valueOptionWidths: GREP_VALUE_OPTION_WIDTHS,
+    })];
+  }
+  if (SED_COMMANDS.has(invocation.name)) {
+    return [...paths, ...patternCommandPaths({
+      args: invocation.args,
+      auxiliaryPathOptions: EMPTY_OPTIONS,
+      explicitPatternOptions: SED_EXPLICIT_PATTERN_OPTIONS,
+      patternPathOptions: SED_PATTERN_PATH_OPTIONS,
+      valueOptionWidths: SED_VALUE_OPTION_WIDTHS,
+    })];
+  }
+  if (AWK_COMMANDS.has(invocation.name)) {
+    return [...paths, ...patternCommandPaths({
+      args: invocation.args,
+      auxiliaryPathOptions: EMPTY_OPTIONS,
+      explicitPatternOptions: EMPTY_OPTIONS,
+      patternPathOptions: AWK_PATTERN_PATH_OPTIONS,
+      valueOptionWidths: AWK_VALUE_OPTION_WIDTHS,
+    })];
+  }
+  if (invocation.name === JQ_COMMAND_NAME) return [...paths, ...jqPaths(invocation.args)];
+
+  return [...paths, ...invocation.args.flatMap((word) => pathCandidates(word.value))];
+}
+
+/** wrapper 的目录型选项和路径形式可执行文件同样受目录范围约束。 */
+function wrapperPaths(wrapper: ShellWrapperInvocation): string[] {
+  const paths = executablePathCandidates(wrapper.executable.value);
+  const pathOptions = WRAPPER_PATH_OPTIONS[wrapper.name];
+  if (!pathOptions) return paths;
+
+  for (const option of wrapper.options) {
+    if (option.value !== undefined && pathOptions.has(option.name)) {
+      paths.push(...pathCandidates(option.value));
+    }
+  }
+  return paths;
+}
+
+/** 路径形式的可执行文件也接受同一目录策略，不隐式信任 PATH 或 skills。 */
+function executablePathCandidates(value: string): string[] {
+  return value.includes("/") || value.includes("\\") ? [value] : [];
+}
+
+/** 解析 cd 的默认 HOME、cd - 和普通目录参数。 */
+function cdPaths(args: readonly Word[]): string[] {
+  let optionsEnded = false;
+
+  for (const arg of args) {
+    const value = arg.value;
+    if (!optionsEnded && value === "--") {
+      optionsEnded = true;
+      continue;
+    }
+    if (!optionsEnded && value.startsWith("-") && value !== "-") continue;
+    if (value === "-") return process.env.OLDPWD ? [process.env.OLDPWD] : [];
+    return pathCandidates(value);
+  }
+
+  return [homedir()];
+}
+
+/** 对 grep/sed/awk 一类“首个位置参数是模式”的命令，仅保留真实文件参数。 */
+function patternCommandPaths(options: PatternPathOptions): string[] {
+  const paths: string[] = [];
+  const recognizedOptions = new Set([
+    ...options.auxiliaryPathOptions,
+    ...options.explicitPatternOptions,
+    ...options.patternPathOptions,
+    ...Object.keys(options.valueOptionWidths),
+  ]);
+  let firstPositionalConsumed = false;
+  let optionsEnded = false;
+
+  for (let index = 0; index < options.args.length; index++) {
+    const value = options.args[index].value;
+    if (!optionsEnded && value === "--") {
+      optionsEnded = true;
+      continue;
+    }
+
+    if (!optionsEnded && value.startsWith("-") && value !== "-") {
+      const [optionName, inlineValue] = splitRecognizedShellOption(value, recognizedOptions);
+      const isPatternPath = options.patternPathOptions.has(optionName);
+      const isAuxiliaryPath = options.auxiliaryPathOptions.has(optionName);
+      if (isPatternPath || isAuxiliaryPath) {
+        const pathValue = inlineValue ?? options.args[++index]?.value;
+        if (pathValue) paths.push(...pathCandidates(pathValue));
+        if (isPatternPath) firstPositionalConsumed = true;
+        continue;
+      }
+
+      const valueWidth = options.valueOptionWidths[optionName] ?? 0;
+      if (!inlineValue) index += valueWidth;
+      if (options.explicitPatternOptions.has(optionName)) firstPositionalConsumed = true;
+      continue;
+    }
+
+    if (!firstPositionalConsumed) {
+      firstPositionalConsumed = true;
+      continue;
+    }
+    paths.push(...pathCandidates(value));
+  }
+
+  return paths;
+}
+
+/** 按 jq 参数语义区分 filter、模块目录、绑定文件和输入文件。 */
+function jqPaths(args: readonly Word[]): string[] {
+  const paths: string[] = [];
+  const recognizedOptions = new Set([
+    ...JQ_FILTER_FILE_OPTIONS,
+    ...JQ_LIBRARY_PATH_OPTIONS,
+    ...JQ_FILE_BINDING_OPTIONS,
+    ...Object.keys(JQ_VALUE_OPTION_WIDTHS),
+  ]);
+  let filterProvided = false;
+  let optionsEnded = false;
+
+  for (let index = 0; index < args.length; index++) {
+    const value = args[index].value;
+    if (!optionsEnded && value === "--") {
+      optionsEnded = true;
+      continue;
+    }
+
+    if (!optionsEnded && value.startsWith("-") && value !== "-") {
+      const [optionName, inlineValue] = splitRecognizedShellOption(value, recognizedOptions);
+      if (JQ_FILTER_FILE_OPTIONS.has(optionName)) {
+        const pathValue = inlineValue ?? args[++index]?.value;
+        if (pathValue) paths.push(...pathCandidates(pathValue));
+        filterProvided = true;
+        continue;
+      }
+      if (JQ_LIBRARY_PATH_OPTIONS.has(optionName)) {
+        const pathValue = inlineValue ?? args[++index]?.value;
+        if (pathValue) paths.push(...pathCandidates(pathValue));
+        continue;
+      }
+      if (JQ_FILE_BINDING_OPTIONS.has(optionName)) {
+        const pathValue = inlineValue ?? args[index + NAME_AND_VALUE_OPTION_COUNT]?.value;
+        if (pathValue) paths.push(...pathCandidates(pathValue));
+        if (!inlineValue) index += NAME_AND_VALUE_OPTION_COUNT;
+        continue;
+      }
+
+      const valueWidth = JQ_VALUE_OPTION_WIDTHS[optionName] ?? 0;
+      if (!inlineValue) index += valueWidth;
+      continue;
+    }
+
+    if (!filterProvided) {
+      filterProvided = true;
+      continue;
+    }
+    paths.push(...pathCandidates(value));
+  }
+
+  return paths;
+}
+
+/** 将参数词转换为路径候选；普通非选项词也保留，以识别无斜杠的符号链接。 */
+function pathCandidates(value: string): string[] {
+  if (!value || isShellAssignment(value)) return [];
+  if (looksLikeUrl(value) && !value.startsWith("file://")) return [];
+
+  if (!value.startsWith("-") || value === "-") return [value];
+
+  const [optionName, inlineValue] = splitOption(value);
+  if (inlineValue && INLINE_PATH_OPTIONS.has(optionName)) return [inlineValue];
+
+  const shortMatch = value.match(/^-[CIL](.+)$/);
+  return shortMatch ? [shortMatch[1]] : [];
+}
+
+/** 从未知 AST 值中读取 Word.value，并按需强制把重定向目标视为路径。 */
+function wordValueCandidates(value: unknown, force = false): string[] {
+  if (!isRecord(value) || typeof value.value !== "string") return [];
+  return force ? [value.value] : pathCandidates(value.value);
+}
+
+/** 展开已知目录前缀并通过最近存在祖先解析符号链接。 */
+function resolveReferencedPath(input: string, cwd: string): string | null {
+  let value = input;
+  if (value.startsWith("file://")) {
+    value = decodeURIComponent(new URL(value).pathname);
+  }
+
+  value = expandKnownPathPrefix(value, cwd);
+  if (!value || startsWithUnknownExpansion(value)) return null;
+
+  const absolutePath = isAbsolute(value) ? resolve(value) : resolve(cwd, value);
+  if (!isRepresentablePath(absolutePath)) return null;
+  return canonicalizePotentialPath(absolutePath);
+}
+
+/**
+ * 名字长到文件系统无法表示时，该字符串不可能是命令真正访问的路径。
+ *
+ * 解释器的 `-c` / `-e` 程序正文会被当作位置参数收集成候选，例如
+ * `python3 -c 'import sys\n...'`；它没有 `/`，整段就是一个文件名分量，
+ * 超过 NAME_MAX 后 lstat 会抛 ENAMETOOLONG。这种候选直接丢弃，
+ * 既不参与范围判定，也不会让整条规则失败。
+ */
+function isRepresentablePath(absolutePath: string): boolean {
+  if (absolutePath.includes("\0")) return false;
+  return absolutePath.split(sep).every((segment) => Buffer.byteLength(segment) <= MAX_NAME_BYTES);
+}
+
+/** 规范化允许根目录并去重，避免符号链接别名绕过范围判断。 */
+function canonicalRoots(paths: readonly string[]): string[] {
+  const roots = paths
+    .filter((value) => typeof value === "string" && value.length > 0)
+    .map((value) => canonicalizePotentialPath(resolve(value)));
+  return [...new Set(roots)];
+}
+
+/** 对不存在的目标向上寻找最近存在祖先，再 realpath 以阻断 symlink 越界。 */
+function canonicalizePotentialPath(input: string): string {
+  let current = resolve(input);
+  const missingSegments: string[] = [];
+
+  while (!lstatExists(current)) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    missingSegments.unshift(basename(current));
+    current = parent;
+  }
+
+  const realBase = realpathSync(current);
+  return missingSegments.length > 0 ? join(realBase, ...missingSegments) : realBase;
+}
+
+/** 判断候选路径是否等于允许根目录或位于其后代中。 */
+function isWithinRoot(candidate: string, root: string): boolean {
+  const rel = relative(root, candidate);
+  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+/** 将 --option=value 拆为选项名和值。 */
+function splitOption(value: string): [string, string | undefined] {
+  const equalsIndex = value.indexOf("=");
+  if (equalsIndex === -1) return [value, undefined];
+  return [value.slice(0, equalsIndex), value.slice(equalsIndex + 1)];
+}
+
+/** 只展开可确定的 HOME/PWD/OLDPWD/TMPDIR 与波浪号前缀。 */
+function expandKnownPathPrefix(value: string, cwd: string): string {
+  if (value === "~") return homedir();
+  if (value.startsWith("~/")) return join(homedir(), value.slice("~/".length));
+
+  const replacements: Array<[RegExp, string | undefined]> = [
+    [/^\$\{?HOME\}?/, homedir()],
+    [/^\$\{?PWD\}?/, cwd],
+    [/^\$\{?OLDPWD\}?/, process.env.OLDPWD],
+    [/^\$\{?TMPDIR\}?/, process.env.TMPDIR],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    if (replacement && pattern.test(value)) return value.replace(pattern, replacement);
+  }
+  return value;
+}
+
+/** 未知变量或命令替换位于路径开头时无法静态确定，交由 shell 自身处理。 */
+function startsWithUnknownExpansion(value: string): boolean {
+  return value.startsWith("$") || value.startsWith("`");
+}
+
+/** 排除 http/ssh 等远程 URL，file:// 由本地路径逻辑单独处理。 */
+function looksLikeUrl(value: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value);
+}
+
+/** lstat 同时识别普通路径和指向不存在目标的符号链接。 */
+function lstatExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // ENOENT 表示目标不存在；ENAMETOOLONG 表示整条路径长到文件系统无法表示，
+    // 两者都没有可解析的目标，统一按“不存在”继续向上寻找最近存在祖先，
+    // 而不是让整条规则以异常收场。
+    if (code === "ENOENT" || code === "ENAMETOOLONG") return false;
+    throw error;
+  }
+}
+
+/** 将 unknown 安全收窄为普通对象。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** 识别会打开文件的重定向节点，排除 heredoc、herestring 和 fd 复制。 */
+function isFileRedirect(value: Record<string, unknown>): boolean {
+  const operator = value.operator;
+  const isFileOperator = operator === ">" || operator === ">>" || operator === "<" ||
+    operator === "<>" || operator === ">|" || operator === "&>" || operator === "&>>";
+  return isFileOperator && "target" in value && "fileDescriptor" in value;
+}

@@ -9,16 +9,26 @@
 
 ## 包清单
 
-每个包都可以独立安装；具体行为、配置、示例和测试请查看对应包内的 README。
+每个包都可以独立安装；具体行为、配置、示例和测试请查看对应包内的 README。每个扩展包也会发布一个 `SKILL.md`，由 Pi 加载后引导 Agent 完成配置与验证。
 
 | 包 | 说明 | 文档 |
 | --- | --- | --- |
+| [`pi-safety-guards`](./packages/pi-safety-guards) | 可配置的 Bash 安全规则、规则动作与自定义匹配器。 | [English](./packages/pi-safety-guards/README.md) · [中文](./packages/pi-safety-guards/README.zh-CN.md) |
+| [`pi-nested-skills`](./packages/pi-nested-skills) | 从配置目录发现嵌套技能，提供别名调用和补全。 | [English](./packages/pi-nested-skills/README.md) · [中文](./packages/pi-nested-skills/README.zh-CN.md) |
+| [`pi-notifications`](./packages/pi-notifications) | 可配置的 Agent 活动桌面通知。 | [English](./packages/pi-notifications/README.md) · [中文](./packages/pi-notifications/README.zh-CN.md) |
+| [`pi-naming`](./packages/pi-naming) | 统一自动和手动命名会话及允许修改的终端目标。 | [English](./packages/pi-naming/README.md) · [中文](./packages/pi-naming/README.zh-CN.md) |
+| [`pi-auto-goal`](./packages/pi-auto-goal) | 每次完全停止后用第二个模型判定是否属于擅自早停，是则以用户语气要求 agent 继续。 | [English](./packages/pi-auto-goal/README.md) · [中文](./packages/pi-auto-goal/README.zh-CN.md) |
+| [`pi-clean-mode`](./packages/pi-clean-mode) | 把一轮 agent 运行折叠成一行耗时头，展开前只显示最终答案。 | [English](./packages/pi-clean-mode/README.md) · [中文](./packages/pi-clean-mode/README.zh-CN.md) |
+| [`pi-gen-ui`](./packages/pi-gen-ui) | 通过 `render_ui` 工具把 json-render JSON spec 渲染成 Pi 终端原生面板（表格、图表、提示块、输入控件），并可选接入 Jev 组合。 | [English](./packages/pi-gen-ui/README.md) · [中文](./packages/pi-gen-ui/README.zh-CN.md) |
 | [`pi-distill`](./packages/pi-distill) | 在所有已启用 object-schema 工具的超长输出占满上下文前进行提炼。 | [English](./packages/pi-distill/README.md) · [中文](./packages/pi-distill/README.zh-CN.md) |
-| [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配的项目规则审查 `edit` 和 `write` 变更，并返回结构化结果。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
-| [`pi-metrics`](./packages/pi-metrics) | 在 working spinner 实时显示会话全程耗时，并给出每轮耗时与总耗时小结。 | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |
+| [`pi-tool-supervisor`](./packages/pi-tool-supervisor) | 根据匹配规则在工具执行前后进行审查，并对 `edit`、`write` 使用真实 diff。 | [English](./packages/pi-tool-supervisor/README.md) · [中文](./packages/pi-tool-supervisor/README.zh-CN.md) |
+| [`pi-metrics`](./packages/pi-metrics) | 在 working spinner 实时显示会话全程耗时，并在 agent 停下后给一行汇总（`on-stop`，默认），或按 `live` 模式每轮一行。 | [English](./packages/pi-metrics/README.md) · [中文](./packages/pi-metrics/README.zh-CN.md) |
 | [`pi-models-discovery`](./packages/pi-models-discovery) | 自动发现 models.json 中标记 `discoverModels` 的 provider 的模型列表，启动走持久化缓存，并提供手动刷新命令。 | [English](./packages/pi-models-discovery/README.md) · [中文](./packages/pi-models-discovery/README.zh-CN.md) |
+| [`pi-session-tools`](./packages/pi-session-tools) | 缓存 bash `grep`/`tail`/`head` 管道过滤前的完整输出，并提供 `session_log` / `session_squash` 对话压缩（主 agent 生成交接摘要）。 | [English](./packages/pi-session-tools/README.md) · [中文](./packages/pi-session-tools/README.zh-CN.md) |
+| [`pi-session-resources`](./packages/pi-session-resources) | 从成功工具活动中收集文件、浏览器 URL 和 PR/MR 链接，并通过编辑器上方可点击、可切换类型的 `#` 资源选择器进行引用。 | [English](./packages/pi-session-resources/README.md) · [中文](./packages/pi-session-resources/README.zh-CN.md) |
 | [`pi-extensions-i18n`](./packages/pi-extensions-i18n) | 提供共享的语言选择、catalog 加载、插值和 `/config:language` 命令。 | [English](./packages/pi-extensions-i18n/README.md) · [中文](./packages/pi-extensions-i18n/README.zh-CN.md) |
 | [`pi-extensions-tool-display`](./packages/pi-extensions-tool-display) | 提供实际的 Pi 工具展示宿主，以及共享的结果渲染协议和组件工具。 | [English](./packages/pi-extensions-tool-display/README.md) · [中文](./packages/pi-extensions-tool-display/README.zh-CN.md) |
+| [`pi-model-request`](./packages/pi-model-request) | 让扩展按 Pi 核心的方式单独发一次模型请求：解析鉴权、补齐 provider 会话头、调用 completion。 | [English](./packages/pi-model-request/README.md) · [中文](./packages/pi-model-request/README.zh-CN.md) |
 | [`@maplezzk/pi-dynamic-workflows`](./packages/pi-dynamic-workflows) | Claude-Code 风格的动态 workflow 编排，支持 `meta`/`phase()`/`agent()`/`parallel()`/`pipeline()` 原语，通过 `/config:workflow` 配置。Fork 自 michaelliv/pi-dynamic-workflows。 | [English](./packages/pi-dynamic-workflows/README.md) · [中文](./packages/pi-dynamic-workflows/README.zh-CN.md) |
 | [`@maplezzk/pi-interactive-subagents`](./packages/pi-interactive-subagents) | 终端复用器分屏中的非阻塞交互式子 agent，带实时状态 widget、`/plan` 与 `/iterate` 工作流。Fork 自 HazAT/pi-interactive-subagents。 | [English](./packages/pi-interactive-subagents/README.md) · [中文](./packages/pi-interactive-subagents/README.zh-CN.md) |
 
@@ -32,7 +42,7 @@
 pi install git:github.com/maplezzk/pi-extensions
 ```
 
-仓库根目录本身也是一个 Pi package。它通过 manifest 自动加载所有 `packages/*/index.ts`，因此上面的命令会安装当前全部扩展；以后新增包也会自动包含，不需要再修改根 README 或安装命令。
+仓库根目录本身也是一个 Pi package。它通过 manifest 加载 `packages/*/index.ts` 下的扩展入口，并排除 `pi-terminal-mux`、`pi-model-request` 等纯库包，因此上面的命令会安装当前全部扩展，但不会误把共享库作为扩展加载。
 
 安装后重新加载 Pi：
 
@@ -48,13 +58,9 @@ pi install npm:<package-name>
 
 ## 配置
 
-扩展使用 Pi 标准 Agent 目录保存配置：
+多数可配置扩展会在 Pi agent 目录下保存状态；具体路径、命令、环境变量优先级和验证方式以各包为准。
 
-```text
-~/.pi/agent/extensions/<package-name>/config.json
-```
-
-包级配置示例和详细文档请查看 [`packages/`](./packages)。
+Pi 会加载已安装扩展包内的 `SKILL.md`，让 Agent 按包级流程完成配置。配置示例和详细文档请查看 [`packages/`](./packages)。
 
 ## 开发
 
@@ -64,6 +70,8 @@ npm run check
 ```
 
 `check` 会执行 workspace 类型检查、测试，以及可移植性和 i18n 门禁。
+
+仓库根 `.npmrc` 固定 `https://registry.npmjs.org/`，保证 lockfile 里的 tarball 地址可移植。用镜像 registry 安装会把地址改写成镜像域名，导致 npm 12+ 的 `npm ci` 报 `EALLOWREMOTE`；`node scripts/check-lockfile-registry.mjs`（已纳入 `npm run check`）在合并前拦下这类改动。
 
 ## 许可证
 

@@ -17,36 +17,10 @@ export interface MessageEntry extends SessionEntry {
   };
 }
 
-export type SeededSubagentSessionMode = "lineage-only" | "fork";
-
-function getForkContentLines(parentSessionFile: string): string[] {
-  const raw = readFileSync(parentSessionFile, "utf8");
-  const lines = raw.split("\n").filter((line) => line.trim());
-
-  let truncateAt = lines.length;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      const entry = JSON.parse(lines[i]);
-      if (entry.type === "message" && entry.message?.role === "user") {
-        truncateAt = i;
-        break;
-      }
-    } catch {
-      // ignore malformed lines
-    }
-  }
-
-  return lines.slice(0, truncateAt).filter((line) => {
-    try {
-      return JSON.parse(line).type !== "session";
-    } catch {
-      return true;
-    }
-  });
-}
+export const SUBAGENT_SESSION_MODE_STANDALONE = "standalone" as const;
+export const SUBAGENT_SESSION_MODE_LINEAGE_ONLY = "lineage-only" as const;
 
 export function seedSubagentSessionFile(params: {
-  mode: SeededSubagentSessionMode;
   parentSessionFile: string;
   childSessionFile: string;
   childCwd: string;
@@ -59,9 +33,7 @@ export function seedSubagentSessionFile(params: {
     cwd: params.childCwd,
     parentSession: params.parentSessionFile,
   };
-  const contentLines =
-    params.mode === "fork" ? getForkContentLines(params.parentSessionFile) : [];
-  const lines = [JSON.stringify(header), ...contentLines];
+  const lines = [JSON.stringify(header)];
 
   mkdirSync(dirname(params.childSessionFile), { recursive: true });
   writeFileSync(params.childSessionFile, lines.join("\n") + "\n", "utf8");

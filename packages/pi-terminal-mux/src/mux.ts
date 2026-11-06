@@ -51,13 +51,24 @@ export {
   closeSurface,
   renameSurface,
   renameAgent,
+  getRenameCapability,
   renameCurrentTab,
   renameWorkspace,
   pollForExit,
   getLastSplitSource,
   clearLastSplitSource,
 } from "./surface.ts";
-export type { PollResult } from "./surface.ts";
+export type {
+  PollResult,
+  CreateSurfaceSplitOptions,
+  SendLongCommandOptions,
+  ReadScreenOptions,
+  RenameOperation,
+  RenameTarget,
+  RenameBackend,
+  RenameCapability,
+  RenameResult,
+} from "./surface.ts";
 
 // ── Cmux 公开解析函数 ──
 export {
@@ -84,3 +95,19 @@ export {
   renameHerdrTab,
   renameHerdrWorkspace,
 } from "./backends/herdr.ts";
+
+// ── 精确目标和跨进程改名归属 ──
+export {
+  TERMINAL_RENAME_CONTEXT_ENV,
+  createSurfaceRenameContext,
+  readSurfaceRenameContext,
+  resolveTerminalRenameTargets,
+  renameTerminalTarget,
+} from "./rename.ts";
+export type {
+  SurfaceRenameContext,
+  TerminalRenameTarget,
+  TerminalRenameOutcome,
+  ResolveRenameOptions,
+  RenameCommandRunner,
+} from "./rename.ts";

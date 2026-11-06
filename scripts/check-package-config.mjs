@@ -6,15 +6,18 @@
  *
  * Checks:
  * 1. release-please-config.json paths exist on disk
- * 2. release.yml publish matrix covers all release-please packages
+ * 2. release.yml publish jobs cover all release-please packages
  * 3. Each package has required files (package.json, index.ts, README.md, README.zh-CN.md, tsconfig.json)
  * 4. package.json has required fields (name, version, description, main, exports, files, license)
  * 5. i18n catalogs have both zh-CN and en-US for every key
  * 6. package.json "files" includes README.md and README.zh-CN.md
+ * 7. The root Pi package excludes library-only workspace entrypoints
+ * 8. Every extension package publishes and registers one configuration SKILL.md
  */
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { collectPublishedPackageDirectories } from "./release-publish-coverage.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const PACKAGES_DIR = join(ROOT, "packages");
@@ -30,6 +33,32 @@ function error(msg) {
 
 function warn(msg) {
   warnings.push(`⚠️  ${msg}`);
+}
+
+const MAX_SKILL_NAME_LENGTH = 64;
+const SKILL_FILE_NAME = "SKILL.md";
+const skillNames = new Map();
+
+/** Validates the load-bearing SKILL.md frontmatter and records unique names. */
+function validateSkillFrontmatter(skillPath, label) {
+  const content = readFileSync(skillPath, "utf8");
+  const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!frontmatter) {
+    error(`${label}: SKILL.md must start with closed YAML frontmatter`);
+    return;
+  }
+  const name = frontmatter[1].match(/^name:\s*["']?([^"'\r\n]+)["']?\s*$/m)?.[1]?.trim();
+  const description = frontmatter[1].match(/^description:\s*(.+)$/m)?.[1]?.trim().replace(/^(["'])(.*)\1$/, "$2");
+  if (!name || name.length > MAX_SKILL_NAME_LENGTH || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+    error(`${label}: SKILL.md name must be 1-64 lowercase letters, digits, or single hyphens`);
+  } else if (skillNames.has(name)) {
+    error(`${label}: SKILL.md name "${name}" duplicates ${skillNames.get(name)}`);
+  } else {
+    skillNames.set(name, label);
+  }
+  if (!description) {
+    error(`${label}: SKILL.md must declare a non-empty description`);
+  }
 }
 
 function collectTypeScriptFiles(root) {
@@ -73,28 +102,27 @@ if (!existsSync(rpConfigPath)) {
   }
 
   // ---------------------------------------------------------------------------
-  // 2. release.yml publish matrix covers all release-please packages
+  // 2. release.yml publish jobs cover all release-please packages
   // ---------------------------------------------------------------------------
   const releaseYmlPath = join(ROOT, ".github/workflows/release.yml");
   if (!existsSync(releaseYmlPath)) {
     error(".github/workflows/release.yml not found");
   } else {
     const releaseContent = readFileSync(releaseYmlPath, "utf8");
-    // Extract "- dir: packages/xxx" entries from the publish-npm matrix
-    const matrixDirs = [...releaseContent.matchAll(/-\s*dir:\s*(packages\/[\w-]+)/g)].map((m) => m[1]);
+    const publishedDirectories = collectPublishedPackageDirectories(releaseContent);
 
-    if (matrixDirs.length === 0) {
-      error("release.yml: no '- dir: packages/...' entries found in publish matrix");
+    if (publishedDirectories.length === 0) {
+      error("release.yml: no package publish working directory found");
     } else {
       for (const pkgPath of rpPackages) {
-        if (!matrixDirs.includes(pkgPath)) {
-          error(`release.yml publish matrix is missing "${pkgPath}" (present in release-please-config.json)`);
+        if (!publishedDirectories.includes(pkgPath)) {
+          error(`release.yml publish jobs are missing "${pkgPath}" (present in release-please-config.json)`);
         }
       }
 
-      for (const dir of matrixDirs) {
+      for (const dir of publishedDirectories) {
         if (!rpPackages.includes(dir)) {
-          warn(`release.yml publish matrix has "${dir}" which is not in release-please-config.json`);
+          warn(`release.yml publish jobs include "${dir}" which is not in release-please-config.json`);
         }
       }
     }
@@ -102,12 +130,25 @@ if (!existsSync(rpConfigPath)) {
 }
 
 // ---------------------------------------------------------------------------
-// 3-6. Per-package checks
+// 3-8. Per-package checks
 // ---------------------------------------------------------------------------
 const packageDirs = readdirSync(PACKAGES_DIR, { withFileTypes: true })
   .filter((d) => d.isDirectory() && existsSync(join(PACKAGES_DIR, d.name, "package.json")))
   .map((d) => d.name);
 
+const rootPackageJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const rootExtensionEntries = rootPackageJson.pi?.extensions ?? [];
+const rootSkillEntries = rootPackageJson.pi?.skills ?? [];
+const WORKSPACE_PACKAGES_PATH = "packages";
+const EXTENSION_ENTRY_FILE = "index.ts";
+const PACKAGE_EXTENSION_ENTRY = `./${EXTENSION_ENTRY_FILE}`;
+const PACKAGE_SKILL_ENTRY = `./${SKILL_FILE_NAME}`;
+const ROOT_EXTENSION_GLOB = `${WORKSPACE_PACKAGES_PATH}/*/${EXTENSION_ENTRY_FILE}`;
+const ROOT_SKILL_GLOB = `${WORKSPACE_PACKAGES_PATH}/*/${SKILL_FILE_NAME}`;
+const rootLoadsAllPackageIndexes = rootExtensionEntries.includes(ROOT_EXTENSION_GLOB);
+if (!rootSkillEntries.includes(ROOT_SKILL_GLOB)) {
+  error(`Root Pi manifest must register extension configuration skills with "${ROOT_SKILL_GLOB}"`);
+}
 const REQUIRED_FILES = ["package.json", "index.ts", "README.md", "README.zh-CN.md", "tsconfig.json"];
 const REQUIRED_PKG_FIELDS = ["name", "version", "description", "main", "exports", "files", "license"];
 
@@ -115,6 +156,29 @@ for (const dir of packageDirs) {
   const pkgRoot = join(PACKAGES_DIR, dir);
   const pkgJson = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
   const label = pkgJson.name ?? dir;
+
+  // The root Git package uses a workspace glob. Utility packages still have
+  // index.ts library entrypoints, so they must be excluded from Pi's loader.
+  const exposesIndexAsExtension = pkgJson.pi?.extensions?.includes(PACKAGE_EXTENSION_ENTRY) ?? false;
+  const rootExclusion = `!${WORKSPACE_PACKAGES_PATH}/${dir}/${EXTENSION_ENTRY_FILE}`;
+  if (rootLoadsAllPackageIndexes && !exposesIndexAsExtension && !rootExtensionEntries.includes(rootExclusion)) {
+    error(`${label}: root Pi manifest must exclude library-only entrypoint "${rootExclusion.slice(1)}"`);
+  }
+
+  if (exposesIndexAsExtension) {
+    const skillPath = join(pkgRoot, SKILL_FILE_NAME);
+    if (!existsSync(skillPath)) {
+      error(`${label}: extension package is missing package-level ${SKILL_FILE_NAME}`);
+    } else {
+      validateSkillFrontmatter(skillPath, label);
+    }
+    if (!pkgJson.pi?.skills?.includes(PACKAGE_SKILL_ENTRY)) {
+      error(`${label}: Pi manifest must register package-level skill "${PACKAGE_SKILL_ENTRY}"`);
+    }
+    if (!pkgJson.files?.includes(SKILL_FILE_NAME)) {
+      error(`${label}: package.json "files" must publish ${SKILL_FILE_NAME}`);
+    }
+  }
 
   // 3. Required files
   for (const file of REQUIRED_FILES) {

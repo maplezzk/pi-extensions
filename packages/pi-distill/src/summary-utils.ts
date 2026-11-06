@@ -428,6 +428,18 @@ export function isDistillToolEnabled(
   return config?.tools?.[toolName]?.enabled ?? !DEFAULT_DISABLED_TOOL_NAMES.has(toolName);
 }
 
+/**
+ * 不能注入 outputRequest 的工具。pi 的 codemode 用 grammar 约束采样，要求参数 schema 恰好只有一个必填字符串属性；
+ * 追加第二个必填属性会让整轮模型请求在构建阶段直接失败（Tool "codemode" cannot use grammar constrained sampling）。
+ * `getAllTools()` 的 ToolInfo 不暴露 `constrainedSampling`，所以只能按工具名识别。
+ */
+const OUTPUT_REQUEST_INCOMPATIBLE_TOOL_NAMES = new Set(["codemode"]);
+
+/** 该工具能否接收 outputRequest；false 表示不加参数，也不走提炼流程。 */
+export function canAcceptOutputRequest(toolName: string): boolean {
+  return !OUTPUT_REQUEST_INCOMPATIBLE_TOOL_NAMES.has(toolName);
+}
+
 export type OutputSummaryIntent = "none" | "full" | "summary";
 
 export type OutputSummaryDecision = {
@@ -564,5 +576,20 @@ export function buildSummaryPrompt(
     buildSummarySystemPrompt(),
     "",
     buildSummaryUserPrompt(prompt, output, originalUserPrompt),
+  ].join("\n");
+}
+
+/** 构造只修复模型已有 JSON 响应的 prompt；禁止重新判断或重新总结。 */
+export function buildJsonRepairPrompt(
+  invalidResponse: string,
+  validationError: string,
+): string {
+  return [
+    i18n.t("jsonRepairSystem"),
+    i18n.t("jsonRepairRequest"),
+    i18n.t("jsonRepairValidationError", { error: validationError }),
+    "<invalid-model-response>",
+    invalidResponse,
+    "</invalid-model-response>",
   ].join("\n");
 }

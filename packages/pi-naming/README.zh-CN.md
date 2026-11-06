@@ -1,0 +1,85 @@
+# pi-naming
+
+自动或手动给 Pi session 和终端命名。
+
+[English](./README.md)
+
+## 安装与使用
+
+```bash
+pi install npm:pi-naming
+```
+
+本包发布后可通过 npm 安装。安装后执行 `/reload`。
+
+- **首条消息自动命名**：新建且未命名的 session 收到首条真实用户输入后，后台生成标题，同步允许修改的 session、workspace 和 tab。
+- **`/rename [名称]`**：显式指定名称，或省略名称、根据当前分支用户消息生成标题。与自动命名使用相同的目标配置和执行逻辑。
+- **`/config:naming`**：打开 TUI 配置面板（Pi 自带 `SettingsList`）；开关原地切换，枚举与数值回车开二级列表，自由文本回车开预填输入框。改一项立即保存并生效，不需要 `/reload`。输入 `reset` 恢复默认值。
+- 默认的模型命名模式在手动生成时综合当前分支的全部用户输入，围绕主要任务命名；后续明确纠正或目标变更优先，“继续”“验证一下”“提交”等流程性跟进不应盖过主题。不会读取其他分支、assistant 回复或工具输出。自动命名仍仅在首条输入时尝试一次，不随每轮对话更新。
+- 不覆盖已有名称的自动命名结果。手动命令优先于尚未完成的旧请求；会话切换或 reload 后丢弃旧结果和错误。
+- 各目标独立执行。终端不支持、被禁用、缺少归属信息或改名失败均明确报告，不阻止 session 和其他可用目标改名。无交互 UI 时通过 Pi 消息报告。
+
+## 配置
+
+文件：`<pi-agent-dir>/extensions/pi-naming/config.json`，遵守 `PI_CODING_AGENT_DIR`。
+
+```json
+{
+  "automaticNaming": true,
+  "manualNaming": true,
+  "targets": {
+    "session": true,
+    "workspace": true,
+    "tab": true
+  },
+  "title": {
+    "usePromptAsTitle": false,
+    "maxLength": 15,
+    "preferredLength": 10,
+    "language": "auto",
+    "instructions": "",
+    "timeoutMs": 10000,
+    "maxTokens": 2048,
+    "effort": "low"
+  }
+}
+```
+
+`automaticNaming` 和 `manualNaming` 独立控制自动入口和 `/rename` 命令。`targets` 直接分别控制 session、workspace、tab，三个目标默认开启。仅需 session 命名时关闭两个终端目标，此时不加载终端模块。
+
+| 标题字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `usePromptAsTitle` | `false` | 用首条提示词的字面文本和当前目录名生成标题，不调用模型 |
+| `maxLength` | `15` | 生成标题最大 Unicode 码点数，超出时截断 |
+| `preferredLength` | `10` | 提示模型优先采用的长度，不得超过最大长度 |
+| `language` | `"auto"` | 跟随消息主要语言，或指定 `English`、`日本語` 等 |
+| `instructions` | `""` | 追加的命名风格要求，不是模板或可执行代码 |
+| `timeoutMs` | `10000` | 标题请求超时（毫秒） |
+| `maxTokens` | `2048` | 标题请求的输出预算，受模型输出上限封顶 |
+| `effort` | `"low"` | 思考档位：`minimal`、`low`、`medium`、`high`、`xhigh`、`max` |
+
+长度、超时和输出预算必须是正安全整数，超时不超过 `2147483647` 毫秒。未知字段和非法配置会明确报错，不注册功能。缺少配置文件时使用默认值。显式输入的名称不受生成标题长度限制；补充提示不会绕过生成结果的单行清理和长度限制。
+
+`maxLength` 与 `maxTokens` 相互独立：`maxLength` 只负责截断生成的标题，`maxTokens` 只负责模型响应的预算，两者不会互相推导。推理模型的思考和标题共用这份预算，所以在推理模型上命名失败就调大 `maxTokens`，想限制成本就调小；`effort` 决定思考大概会占用多少。
+
+例如较长英文标题：`maxLength: 60`、`preferredLength: 40`、`language: "English"`。模型和鉴权直接复用 Pi 当前选择；UI 语言与标题语言独立。
+
+设置 `title.usePromptAsTitle: true`，或在 `/config:naming` 中打开「使用提示词命名」，即可使用确定性命名。自动命名使用触发它的提示词；不带名称的 `/rename` 使用当前分支首条非空用户消息。格式为 `目录名: 提示词`，例如 `project: 修复登录超时`。空白会合并为单个空格，保留字面引号、Markdown 和 `title:` 前缀。整个标题仍受 `maxLength` 的 Unicode 码点数限制：目录名最多占可用空间的一半，为提示词保留空间；上限小于 5 时只显示提示词。需要保留更长的目录名和提示词时可调大 `maxLength`。
+
+此模式不需要模型或鉴权。模型相关偏好（`preferredLength`、`language`、`instructions`、`timeoutMs`、`maxTokens`、`effort`）仅作用于模型命名。显式 `/rename 自定义标题` 仍直接使用输入名称。面板改动在下一次命名时立即生效。
+
+## 独立使用与组合
+
+- `pi-terminal-mux` 是自动安装的库依赖，无需额外启用扩展；负责目标探测与终端执行，不负责生成标题。
+- 不依赖 `pi-interactive-subagents` 或 `pi-session-tools`。没有终端后端时仍可独立命名 session。
+- 启动方可通过 terminal-mux 的 `PI_TERMINAL_RENAME_CONTEXT` 协议传递独占终端目标。子会话仍可命名 session，但不改共享 workspace；只改启动方明确授予的 pane/tab。
+- tmux/WezTerm/Otty/Orca 分屏不代表独占 window/tab，归属无法确认时跳过并说明原因，不扩大操作范围。
+- 使用 `pi-interactive-subagents` 时，需在它的 `subagentExtensions` 中显式加载本包入口；仅在主会话安装本包不会绕过子代理的扩展隔离设置。
+
+普通会话会请求每个启用且具备明确 ID 的目标，包括受支持的 tmux 和 Herdr 目标。此目标解析路径刻意忽略旧变量 `PI_SUBAGENT_RENAME_TMUX_WINDOW`、`PI_SUBAGENT_RENAME_TMUX_SESSION`、`PI_SUBAGENT_RENAME_HERDR_WORKSPACE`；它们仅保留给 terminal-mux 的旧公开改名接口。即使环境变量为 `1`，关闭的 `targets` 也绝不执行。终端目标缺少 ID 时不会使用当前焦点或第一个 tab 代替。实际目标可能是 pane、tab、window、workspace 或 session，结果中会说明。
+
+`pi-naming` 依赖已发布且导出 `resolveTerminalRenameTargets`、`renameTerminalTarget` 的 `pi-terminal-mux` 版本。release-please 会在 Release PR 中更新 workspace 依赖范围；同一次发布同时包含两包时，CI 先发布 terminal-mux，只有其 npm 发布成功后才发布 naming；仅发布 naming 时使用已发布的兼容 mux。不手动发布，也不预先把范围改成未发布版本。
+
+## 验证
+
+`npm run check -w pi-naming` 覆盖独立使用、组合改名、部分失败、配置校验和并发请求失效。真实终端及模型调用需单独验证。

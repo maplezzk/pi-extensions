@@ -36,6 +36,7 @@ if (!isMuxAvailable()) {
 const surface = createSurface("my-agent");
 
 // 长命令自动落脚本文件，避免终端宽度截断
+// （默认 Bash；Windows 上显式传 interpreter: "powershell" 切到 PowerShell）
 const scriptPath = sendLongCommand(surface, "pi --session abc", {
   scriptPreamble: "export MY_FLAG=1",
 });
@@ -54,7 +55,7 @@ closeSurface(surface);
 | tmux | `TMUX` + `tmux` 命令 |
 | zellij | `ZELLIJ` / `ZELLIJ_SESSION_NAME` + `zellij` 命令 |
 | wezterm | `WEZTERM_UNIX_SOCKET` + `wezterm` 命令 |
-| herdr | `HERDR_ENV=1` + `HERDR_PANE_ID` + `herdr` 命令 |
+| herdr | `HERDR_ENV=1` + `HERDR_PANE_ID` + `herdr` 命令（`tab` 模式还需要 `HERDR_WORKSPACE_ID`） |
 | otty | `TERM_PROGRAM=otty` + `otty` 命令 |
 | orca | `TERM_PROGRAM=Orca` + `orca` 命令 + Orca runtime 可达 |
 
@@ -65,22 +66,34 @@ closeSurface(surface);
 
 指定的后端运行环境不满足时 `getMuxBackend()` 返回 `null`，不会悄悄降级到其他后端。
 
+### Herdr surface 模式
+
+Herdr 默认保持向后兼容的广度优先分屏模式。设置 `PI_SUBAGENT_HERDR_MODE=tab` 后，每个 subagent 会创建独立后台 Tab；设置为 `split` 可显式选择原有分屏布局。`createSurfaceSplit()` 始终保留显式 pane 分屏语义。若受跟踪的分屏 pane 已关闭，下一次分屏会从 agent pane 安全地重建广度优先序列，不会复用失效 pane ID。
+
+```bash
+export PI_SUBAGENT_HERDR_MODE=tab
+```
+
 ## API 概览
 
 ### 统一 surface API（跨后端语义一致）
 
 | 函数 | 说明 |
 |------|------|
-| `createSurface(name)` | 智能放置新 surface（cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty/orca 广度优先分屏；orca 缺少 agent handle 时新建 tab），返回 surface 标识 |
-| `createSurfaceSplit(name, direction, fromSurface?)` | 指定方向（left/right/up/down）分屏 |
+| `createSurface(name)` | 智能放置新 surface（herdr 默认广度优先分屏，设置 `PI_SUBAGENT_HERDR_MODE=tab` 后每个 surface 创建独立后台 Tab；cmux 首次右分屏后续开 tab、zellij tab 感知平铺/堆叠、muxy/otty/orca 广度优先分屏；orca 缺少 agent handle 时新建 tab），返回 surface 标识 |
+| `createSurfaceSplit(name, direction, fromSurface?, options?)` | 指定方向（left/right/up/down）分屏；`options.activate`（仅 wezterm，默认 false）分屏后聚焦新 pane |
 | `sendCommand(surface, command)` | 发送命令并回车执行 |
-| `sendLongCommand(surface, command, opts?)` | 长命令先写脚本文件再执行；`opts.scriptPreamble` 可注入 env export；返回脚本路径 |
+| `sendLongCommand(surface, command, opts?)` | 长命令先写脚本文件再执行；`opts.scriptPreamble` 可注入前置片段；`opts.interpreter`（默认 `"bash"`，Windows 可显式 `"powershell"`）选择脚本运行时；返回脚本路径 |
 | `sendEscape(surface)` | 发送一次 ESC |
-| `readScreen(surface, lines?)` / `readScreenAsync` | 读取屏幕尾部 N 行 |
+| `readScreen(surface, lines?, options?)` / `readScreenAsync` | 读取屏幕尾部 N 行；`options.source`（仅 herdr）透传 herdr 读屏来源（如 `"recent_unwrapped"`），其他后端忽略 |
 | `closeSurface(surface)` | 关闭 surface |
-| `renameSurface(surface, name)` / `renameCurrentTab(title)` / `renameAgent(surface, name)` / `renameWorkspace(title)` | 命名（按后端能力降级或跳过） |
+| `renameSurface(surface, name)` / `renameAgent(surface, name)` | 重命名已知 surface 或 agent 标签 |
+| `getRenameCapability(operation, backend?, env?)` | 不执行命令，返回实际重命名目标，或明确的 `unsupported` / `disabled` 能力结果 |
+| `renameCurrentTab(title)` / `renameWorkspace(title)` | 执行重命名并返回可判别的 `renamed` / `unsupported` / `disabled` / `failed` 结果 |
 | `pollForExit(surface, signal, opts)` | 等待 surface 内进程退出：优先 `.exit` sidecar 文件，其次屏幕 sentinel（`__SUBAGENT_DONE_<code>__`），headless 走子进程 exit |
 | `getLastSplitSource()` / `clearLastSplitSource()` | 最近一次分屏的来源 pane（用于 UI 展示） |
+
+各后端的实际目标不同：muxy/zellij 的 tab 重命名作用于 pane；tmux 作用于 window/session；WezTerm 的 workspace 重命名作用于 window；cmux 和 Herdr 提供原生 workspace 重命名；Otty、Orca 没有 workspace 重命名。`resolveTerminalRenameTargets` 是明确 ID 路径，忽略旧环境开关；`getRenameCapability`、`renameCurrentTab`、`renameWorkspace` 保持旧开关行为。Headless 会明确返回 `unsupported`，不再静默成功。
 
 ### 探测与工具
 
@@ -94,14 +107,25 @@ closeSurface(surface);
 
 探测不到任何后端时，`createSurface` 返回 `headless:` 前缀的 surface，`sendLongCommand` 直接 spawn 后台子进程并把输出写入日志文件，`readScreen`/`pollForExit`/`closeSurface` 语义保持不变，调用方无需特判。
 
+## Windows PowerShell 支持
+
+所有平台默认保持 **Bash** 作为脚本运行时，以不变更现有调用方语义。Windows 11 PowerShell/WezTerm/herdr 组合下显式开启：
+
+- **命令提交（wezterm）**：Enter 终止符在 `win32` 用 `\r`、其他平台用 `\n`，PowerShell 输入只会提交一次，不会停在续行提示。
+- **长命令（`sendLongCommand`）**：传 `interpreter: "powershell"` 会生成 `.ps1`，mux 通过 `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File <path>` 执行、headless 走 `-Command "& <path>"`。显式 `scriptPath` 原样保留；自动路径按解释器选 `.ps1`/`.sh`。未传 interpreter 时保持既有 Bash command、`.sh` 路径与 `$?` 数值哨兵不变。
+- **读屏（`readScreen` / `readScreenAsync`）**：传 `{ source: "recent_unwrapped" }`（仅 herdr）选择 herdr 的软换行合并捕获；不传 options 时 herdr 保持 `recent`，其他后端保持各自读屏语义。
+
+这些都是可选项——既有 Bash 调用方与 `pi-interactive-subagents` 在所有平台继续走默认 Bash 运行时。
+
 ## 环境变量
 
 | 变量 | 说明 |
 |------|------|
 | `PI_TERMINAL_MUX` / `PI_SUBAGENT_MUX` | 强制指定后端 |
 | `PI_SUBAGENT_ZELLIJ_MIN_COLUMNS` / `PI_SUBAGENT_ZELLIJ_MIN_ROWS` | zellij 分屏最小可用尺寸（默认 50×10，不满足时改堆叠） |
-| `PI_SUBAGENT_RENAME_TMUX_WINDOW` / `PI_SUBAGENT_RENAME_TMUX_SESSION` | tmux 下允许 renameCurrentTab / renameWorkspace（默认不动用户命名） |
-| `PI_SUBAGENT_RENAME_HERDR_WORKSPACE` | herdr 下允许 renameWorkspace |
+| `PI_SUBAGENT_RENAME_TMUX_WINDOW` / `PI_SUBAGENT_RENAME_TMUX_SESSION` | tmux 下旧 `getRenameCapability` / `renameCurrentTab` / `renameWorkspace` 的兼容开关；明确目标解析忽略 |
+| `PI_SUBAGENT_HERDR_MODE` | herdr surface 放置模式：`split`（默认）或 `tab` |
+| `PI_SUBAGENT_RENAME_HERDR_WORKSPACE` | herdr 下旧 `getRenameCapability` / `renameWorkspace` 的兼容开关；明确目标解析忽略 |
 | `PI_EXTENSIONS_LOCALE` | 提示文案语言（`zh-CN` / `en-US` / `auto`），由 pi-extensions-i18n 提供 |
 
 ## 设计约束
@@ -113,3 +137,18 @@ closeSurface(surface);
 ## License
 
 MIT
+
+
+## 按归属改名
+
+`createSurfaceRenameContext(surface)` 描述启动方可授予子进程的终端改名目标。把返回值序列化为 JSON 放入 `PI_TERMINAL_RENAME_CONTEXT`，**每次启动和恢复都替换继承值**。协议属于 terminal-mux，不属于命名或子代理插件。
+
+`resolveTerminalRenameTargets({ tab, workspace })` 返回明确的目标 ID、`surface`/`shared` 范围，或逐目标跳过/失败结果。`renameTerminalTarget(reference, title)` 对捕获的身份执行改名。调用方决定何时改、改哪些目标；库不生成标题，也不修改 Pi session。
+
+受限子进程不能改 workspace。cmux surface、muxy/zellij pane、Herdr pane 或明确新建的 Herdr tab 可以授予。tmux/WezTerm/Otty/Orca 的分屏不能证明独占 window/tab，改名会跳过，不扩大到共享父目标。普通会话必须能确定自身目标 ID；缺失时不退回当前焦点或第一个 tab。明确目标解析直接使用后端能力，独立于旧改名开关。
+
+协议 JSON 损坏或版本未知会报错，不能退回无限制范围。只有旧子代理身份标志、没有归属协议时，终端改名受限，直到启动方提供归属。此协议用于可信本地进程协作，不是安全沙箱。WezTerm/Otty 创建分屏时不会重命名共享 tab。
+
+## Cmux 兼容性
+
+Cmux 关闭 surface 时使用 `--force`，避免仍在运行的 shell 阻塞清理。旧版 cmux 明确不支持该参数时会去掉参数重试；其他错误继续向调用方抛出。

@@ -1,0 +1,218 @@
+{
+  "logLabel": {
+    "zh-CN": "查看对话记录",
+    "en-US": "View conversation log"
+  },
+  "cacheHint": {
+    "zh-CN": "📁 完整输出已保存：{path}\n如需调整搜索条件，直接 grep/read 该文件即可，无需重跑命令。",
+    "en-US": "📁 Full output saved to: {path}\nTo adjust the filter, grep/read the file directly; no need to re-run the command."
+  },
+  "squashFromDescription": {
+    "zh-CN": "要压缩的起始 user turn 索引，来自 session_log。",
+    "en-US": "Starting user-turn index to squash, from session_log."
+  },
+  "squashSummaryDescription": {
+    "zh-CN": "压缩后的任务状态快照，支持自由格式。可按需包含标题、时间线、当前目标、停点、错误、制品、剩余事项和 Resume；区分用户要求/纠正与 Agent 行动/推断，不要记录压缩过程。若未提供标题或时间线，扩展会自动补齐。",
+    "en-US": "Task-state snapshot after squashing. The summary accepts any non-empty format. It may include a title, timeline, objective, stopping point, errors, artifacts, remaining work, and Resume; distinguish user requirements/corrections from agent actions/inferences and do not record the squash process. If the title or timeline is omitted, the extension adds them automatically."
+  },
+  "squashContinuationDescription": {
+    "zh-CN": "压缩后的接续模式，必须显式选择。仍有可立即执行的 Resume 时使用 auto；当前任务已完成且必须等待用户新输入时使用 next-user，只保存快照而不触发模型回合。",
+    "en-US": "Required continuation mode after squashing. Use auto when Resume has immediately actionable work; use next-user when work is complete and must await new user input, saving the snapshot without triggering a model turn."
+  },
+  "validateInputNotFound": {
+    "zh-CN": "找不到 user message 索引 {from}。",
+    "en-US": "User message {from} was not found."
+  },
+  "validateInputIncomplete": {
+    "zh-CN": "user message {from} 尚未完成，不能压缩未完成的 turn。",
+    "en-US": "User message {from} is not complete yet; cannot squash an unfinished turn."
+  },
+  "logDescription": {
+    "zh-CN": "列出当前 active branch 的用户消息（原编号、内容、是否已回复），给 session_squash 挑起点用。已作为压缩起点保留的 user anchor 仍会返回，可再次选择以折叠其后的新增内容；原分支可通过 /tree 找回。",
+    "en-US": "List user messages on the current active branch (original index, content, replied or not) so session_squash can pick a start. A retained user anchor previously used for squashing is returned again and may be reused to fold newer content after it; the original branch remains available through /tree."
+  },
+  "logSnippet": {
+    "zh-CN": "列出 active branch 消息和可复用起点",
+    "en-US": "List active-branch messages and reusable starts"
+  },
+  "squashLabel": {
+    "zh-CN": "压缩对话",
+    "en-US": "Squash conversation"
+  },
+  "squashDescription": {
+    "zh-CN": "把从指定消息开始的对话压缩成任务状态快照，释放上下文空间。原对话不删，/tree 可找回。适用时机：任务或阶段到达安全停点、对话太长、准备进入下一阶段或新任务。先用 session_log 看编号，再生成摘要并随本次调用提交。",
+    "en-US": "Squash the conversation from a chosen message into a task-state snapshot to free context. Nothing is deleted; use /tree to go back. Good times include a safe task or phase checkpoint, a long conversation, or before the next phase or task. Run session_log first, then generate and submit the summary in this call."
+  },
+  "guidelineBoundary": {
+    "zh-CN": "session_squash 通常在任务或阶段的安全边界调用：阶段完成、验证完成、关键决策落定或准备进入下一阶段时，即使整个任务尚未交付也可以压缩。上下文较高时尽快到达最近安全停点后压缩，不要等整个任务结束；收到【强制压缩】消息则立即调用 session_squash。",
+    "en-US": "Call session_squash at a safe task or phase boundary: after a phase or verification completes, a key decision is settled, or before the next phase. The whole task need not be delivered. When context is high, reach the nearest safe checkpoint and squash instead of waiting for task completion; call session_squash immediately on a [Forced squash] message."
+  },
+  "guidelineIndex": {
+    "zh-CN": "调用 session_squash 前先用 session_log 看消息编号，选择要压缩的已完成任务或阶段的第一条消息作为 from；进行中阶段也必须从已完成的 user turn 开始。若上次快照后、下一条 user turn 前已有自动续接内容，应复用 session_log 返回的既有 user anchor，把这些新增内容一并重新折叠。",
+    "en-US": "Before session_squash, call session_log and use the first message of the completed task or phase as from; an in-progress phase must still start from a completed user turn. If automatic continuation added work after the previous snapshot and before the next user turn, reuse the retained user anchor returned by session_log so that newer work is folded too."
+  },
+  "guidelineSummary": {
+    "zh-CN": "调用 session_squash 时直接把完整任务状态快照放进 summary，支持自由格式，不因缺少标题、章节或 User/Agent 时间线而拒绝压缩。若需便于接手，可按建议的 handoff 结构组织；只保留当前有效状态；用户纠正优先于 Agent 推断，未证实内容标 INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED；Completed 不得重复到 Remaining 或 Resume；不再有后续 finalize 步骤。",
+    "en-US": "Pass the complete task-state snapshot directly in session_squash.summary. The summary accepts any non-empty format and is not rejected for missing a title, sections, or User/Agent timeline. For easier handoff, you may organize it with # Handoff: <topic>, Timeline of user and agent work, Current focus (including ### Background and problem origin), Errors and resolutions, Code and artifact state, Environment and repository state, Completed work and decisions, Active issues and next actions, Important context and boundaries, and Suggested skills. Keep only effective current state; user corrections override agent inferences, and unverified content must be marked INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED. Completed work must not reappear under Remaining or Resume. There is no later finalize step."
+  },
+  "guidelineSummaryIntegrity": {
+    "zh-CN": "session_squash 的摘要是有效状态而非聊天流水账：如果包含 Timeline，建议保留用户要求和纠正，并明确 User/Agent 归属；Agent 的行动或推断不得写成用户决策。Completed 不得再出现在 Remaining 或 Resume。必要时标记 VERIFIED、INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED。吸收旧摘要中的有效任务事实，但不要写入压缩、上下文阈值、session_log、session_squash 或会话切换等维护过程。",
+    "en-US": "The session_squash summary is effective state, not a chat chronology: if it includes a Timeline, preserve user requirements and corrections with explicit User/Agent attribution; agent actions or inferences must not be presented as user decisions. Completed work must not reappear under Remaining or Resume. Use VERIFIED, INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED when needed. Absorb valid task facts from earlier summaries, but omit maintenance mechanics such as squashing, context thresholds, session_log, session_squash, or session switching."
+  },
+  "guidelineLeaf": {
+    "zh-CN": "session_squash 的压缩范围是 from 到对话末尾；from 之后聊的内容都会一起压进去。",
+    "en-US": "session_squash covers everything from the selected from turn to the latest message, including all later content."
+  },
+  "guidelineContinue": {
+    "zh-CN": "调用 session_squash 时按 Resume 选择 continuation：仍有可立即执行的工作用 auto；Current State 已完成或 Resume 依赖用户尚未确认的信息时用 next-user。不得把 Agent 推断当成用户授权。",
+    "en-US": "When calling session_squash, choose continuation from Resume: use auto when work can continue immediately; use next-user when Current State is complete or Resume depends on information the user has not confirmed. Never treat an agent inference as user authorization."
+  },
+  "continuationInstruction": {
+    "zh-CN": "【任务状态快照】以下是压缩历史后的当前任务状态，不是新的用户需求。若摘要包含 Timeline，其中 User 是用户要求/纠正，Agent 是上一阶段行动或判断，不得把 Agent 推断当成用户授权；再从摘要中的 Current focus、Resume 或等价信息，从准确停点继续。若当前没有可执行工作，不得复述已完成工作。若快照与 workspace、Git 或测试证据冲突，以实际证据为准并明确报告。",
+    "en-US": "[Task state snapshot] The content below is the current task state after history compression, not a new user request. If the summary includes a Timeline, User entries are requirements/corrections, while Agent entries are prior actions or claims and must not be treated as authorization; then continue from the exact stopping point described by Current focus, Resume, or equivalent content. If no actionable work remains, do not restate completed work. If the snapshot conflicts with workspace, Git, or test evidence, follow the evidence and report the conflict."
+  },
+  "pending": {
+    "zh-CN": "已经有一个压缩请求在排队，等这轮说完就执行，别重复调用。",
+    "en-US": "A squash is already queued and will run when this turn ends; do not call again."
+  },
+  "registered": {
+    "zh-CN": "摘要已接收，将从第 {from} 条消息开始压缩。等这轮说完就执行，原对话不删。",
+    "en-US": "Summary received. Squashing from message {from} when this turn ends; the original conversation is kept."
+  },
+  "squashSummaryEmpty": {
+    "zh-CN": "摘要不能为空，请提交非空 summary。",
+    "en-US": "The summary cannot be empty; submit a non-empty summary."
+  },
+  "switched": {
+    "zh-CN": "会话换了，排队中的压缩请求已取消。",
+    "en-US": "The session changed, so the queued squash was cancelled."
+  },
+  "noInput": {
+    "zh-CN": "找不到要压缩的起始消息，本次未执行。",
+    "en-US": "Could not find the starting message; nothing was squashed."
+  },
+  "noLeaf": {
+    "zh-CN": "当前会话没有可压缩的内容。",
+    "en-US": "There is nothing to squash in this session."
+  },
+  "imagePlaceholder": {
+    "zh-CN": "[图片]",
+    "en-US": "[image]"
+  },
+  "contextHint": {
+    "zh-CN": "【上下文提示】当前已用 {tokens} / {contextWindow}（{contextPercentage}，本次提醒阈值 {threshold}）。如果任务或阶段已到安全停点，现在就先 session_log 再 session_squash；即使整个任务尚未结束也可以压缩，不要因此忽略本提示。若正处于不可中断步骤，先到最近安全停点再压缩。summary 支持自由格式；如需便于接手，可包含标题、Timeline、目标、停点、证据、剩余工作和 Resume；不要记录压缩过程。",
+    "en-US": "[Context notice] Usage is {tokens} / {contextWindow} ({contextPercentage}; this reminder threshold is {threshold}). If the task or phase is at a safe checkpoint, run session_log then session_squash now. The whole task need not be finished, so do not ignore this notice for that reason. If an indivisible step is active, reach the nearest safe checkpoint and then squash. The summary accepts any non-empty format; for easier handoff, it may include a title, Timeline, objective, stopping point, evidence, remaining work, and Resume; omit the squash process."
+  },
+  "contextHintNotice": {
+    "zh-CN": "上下文已用 {tokens} / {contextWindow}（{contextPercentage}，提醒阈值 {threshold}），已提醒主 agent 在最近的任务或阶段安全停点压缩。",
+    "en-US": "Context usage is {tokens} / {contextWindow} ({contextPercentage}; reminder threshold {threshold}); the agent was reminded to squash at the nearest safe task or phase checkpoint."
+  },
+  "forceInterruptNotice": {
+    "zh-CN": "上下文已达 {tokens}（强制阈值 {threshold}），当前工具批结束后已中止任务并进入强制压缩模式。",
+    "en-US": "Context reached {tokens} (forced threshold {threshold}); the task was interrupted after the current tool batch and forced squash mode is now active."
+  },
+  "forceTaskPrompt": {
+    "zh-CN": "【强制压缩｜第 {attempt} 次】上下文已达 {tokens}，超过强制阈值 {threshold}。立即停止原任务；在压缩成功前不得继续实现、解释或调用其他工具。\n\n你现在只能：\n1. 调用 session_log，选择一个已完成且足以释放上下文的起点；\n2. 基于当前完整上下文生成任务状态快照；\n3. 调用 session_squash，把 from、完整 summary 和 continuation 一次提交；仍有可立即执行的 Resume 时用 auto，必须等待用户新输入时用 next-user。\n\nsummary 支持自由格式，不要求固定标题、章节或时间线；如需便于接手，可按建议的 handoff 结构组织。Agent 的行动或推断不得写成用户决策；未证实内容标记 VERIFIED、INFERRED、UNKNOWN、NOT VERIFIED 或 BLOCKED。Completed 不得再次放入 Remaining 或 Resume。只记录继续任务所需的有效状态，吸收旧摘要中的任务事实，但不得记录压缩、上下文阈值、session_log、session_squash 或会话切换过程。即使任务尚未完成也必须现在压缩。不要只回复文字，必须完成 session_squash 调用。",
+    "en-US": "[Forced squash | attempt {attempt}] Context reached {tokens}, exceeding the forced threshold {threshold}. Stop the original task immediately. Until squash succeeds, do not continue implementation, explain, or call any other tools.\n\nYou may only:\n1. Call session_log and choose a completed starting point that frees enough context;\n2. Generate a task-state snapshot from the full current context;\n3. Call session_squash once with from, the complete summary, and continuation: use auto for immediately actionable Resume work, or next-user when new user input is required.\n\nThe summary accepts any non-empty format and does not require a fixed title, section order, or timeline. For easier handoff, you may use the suggested handoff structure. Agent actions or inferences must not be presented as user decisions; mark unverified content VERIFIED, INFERRED, UNKNOWN, NOT VERIFIED, or BLOCKED. Completed work must not reappear under Remaining or Resume. Record only effective state needed to continue, absorbing task facts from earlier summaries while omitting squash, context-threshold, session_log, session_squash, and session-switching mechanics. Squash now even if the task is unfinished. Do not merely reply with text; complete the session_squash call."
+  },
+  "forceToolBlocked": {
+    "zh-CN": "强制压缩期间禁止调用 {tool}；只能调用 session_log 和 session_squash。",
+    "en-US": "Tool {tool} is blocked during forced squash; only session_log and session_squash are allowed."
+  },
+  "forceSwitched": {
+    "zh-CN": "会话已切换，原会话的强制压缩模式已取消并恢复工具。",
+    "en-US": "The session changed; forced squash for the previous session was cancelled and tools were restored."
+  },
+  "forceConfigInvalid": {
+    "zh-CN": "配置 {path} 中的强制压缩比例无效；必须是 0 到 1 的 JSON 数字，强制压缩保持关闭。",
+    "en-US": "The forced squash ratio in {path} is invalid; it must be a JSON number from 0 to 1, so forced squash remains disabled."
+  },
+  "configInvalid": {
+    "zh-CN": "配置 {path} 解析失败，已用默认阈值。",
+    "en-US": "Failed to parse {path}; default thresholds are used."
+  },
+  "configInvalidEnv": {
+    "zh-CN": "环境变量 {env} 解析失败，已用默认阈值。",
+    "en-US": "Could not parse env var {env}; default thresholds are used."
+  },
+  "configCommandDescription": {
+    "zh-CN": "配置提醒阈值或强制压缩比例（不带参数打开配置面板）",
+    "en-US": "Configure reminder thresholds or forced squash ratio (run without arguments to open the configuration panel)"
+  },
+  "configMenuTitle": {
+    "zh-CN": "pi-session-tools 配置",
+    "en-US": "pi-session-tools configuration"
+  },
+  "configInputPrompt": {
+    "zh-CN": "输入",
+    "en-US": "Value"
+  },
+  "configForceOff": {
+    "zh-CN": "关闭强制",
+    "en-US": "Forced squash off"
+  },
+  "configLabelForce": {
+    "zh-CN": "强制压缩比例",
+    "en-US": "Forced squash ratio"
+  },
+  "configDescForce": {
+    "zh-CN": "上下文达到「该比例 × 上下文窗口」时中止任务并只开放 session_log / session_squash；选「关闭强制」即不启用。",
+    "en-US": "When context reaches this ratio of the context window, the task is interrupted and only session_log / session_squash stay available; pick off to disable it."
+  },
+  "configLabelThresholds": {
+    "zh-CN": "提醒阈值",
+    "en-US": "Reminder thresholds"
+  },
+  "configDescThresholds": {
+    "zh-CN": "上下文跨过任一阈值时提醒主 agent 压缩；逗号分隔，支持 150k、75% 或数字。",
+    "en-US": "Remind the agent to squash when context crosses any threshold; comma-separated, supporting 150k, 75%, or numbers."
+  },
+  "configSaveFailed": {
+    "zh-CN": "配置保存失败：{path}（{error}）。",
+    "en-US": "Failed to save the configuration: {path} ({error})."
+  },
+  "configNoUi": {
+    "zh-CN": "当前环境无交互 UI，无法用命令配置，请直接编辑配置文件。",
+    "en-US": "No interactive UI available; edit the config file directly instead."
+  },
+  "configParseError": {
+    "zh-CN": "阈值解析失败：{value}（示例：150k,200k,75%）",
+    "en-US": "Could not parse thresholds: {value} (example: 150k,200k,75%)"
+  },
+  "configSaved": {
+    "zh-CN": "已保存阈值：{thresholds}\n配置：{path}",
+    "en-US": "Thresholds saved: {thresholds}\nConfig: {path}"
+  },
+  "configForceUsage": {
+    "zh-CN": "用法：/config:session-tools force <0到1的数字|off>",
+    "en-US": "Usage: /config:session-tools force <number from 0 to 1|off>"
+  },
+  "configForceParseError": {
+    "zh-CN": "强制压缩比例无效：{value}；请输入 0 到 1 的数字（示例：force 0.9、force off）。",
+    "en-US": "Invalid forced squash ratio: {value}; enter a number from 0 to 1 (examples: force 0.9, force off)."
+  },
+  "configForceSaved": {
+    "zh-CN": "已启用强制压缩比例：{ratio}\n配置：{path}",
+    "en-US": "Forced squash ratio enabled: {ratio}\nConfig: {path}"
+  },
+  "configForceDisabled": {
+    "zh-CN": "已关闭强制压缩。\n配置：{path}",
+    "en-US": "Forced squash disabled.\nConfig: {path}"
+  },
+  "branchFailed": {
+    "zh-CN": "压缩失败：{error}",
+    "en-US": "Squash failed: {error}"
+  },
+  "done": {
+    "zh-CN": "压缩完成，已生成总结（原对话可用 /tree 找回）。",
+    "en-US": "Squash complete; a summary was generated (use /tree to go back)."
+  },
+  "squashMessageTitle": {
+    "zh-CN": "压缩快照",
+    "en-US": "Squash snapshot"
+  },
+  "squashMessageMeta": {
+    "zh-CN": "从 #{from} 起 · 压缩前 {tokens} tokens",
+    "en-US": "from #{from} · {tokens} tokens before"
+  }
+}

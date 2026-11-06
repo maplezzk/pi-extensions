@@ -58,6 +58,16 @@ pi install npm:pi-distill
 /config:distill
 ```
 
+不带参数时打开设置面板：左边字段名、右边当前值、选中项下方一行说明。开关按回车或空格原地切换；枚举、数值和提炼模型按回车打开二级列表，列表上方带过滤输入框，模型还能直接手输。改一项立即写盘并对本次会话生效，Esc 关闭时新配置已经生效。模型列表来自 Pi 当前注册的模型。
+
+带参数时不开面板，只做对应动作：
+
+```text
+/config:distill status
+/config:distill enable
+/config:distill disable
+```
+
 ## 核心思想
 
 我们不是想让 Agent 少看信息，而是避免它为了找一句结论，被迫把几千行日志一起带进上下文。
@@ -108,11 +118,12 @@ pi-distill 根据真实结果和配置决定：原样返回，或调用模型提
 Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 ```
 
-1. 扩展在会话启动时为所有已启用、参数 schema 为 object 的工具增加必填的 `outputRequest` 参数；`edit` 和 `write` 默认关闭，其他未配置工具默认开启。不写死 `bash`、`read`、`grep` 或 `find`。
+1. 扩展在会话启动时为所有已启用、参数 schema 为 object 的工具增加必填的 `outputRequest` 参数；`edit` 和 `write` 默认关闭，其他未配置工具默认开启。不写死 `bash`、`read`、`grep` 或 `find`。唯一例外是 `codemode`，扩展完全跳过它：它使用 Pi 的 grammar 约束采样，只接受一个必填字符串属性，多一个必填属性会让整轮模型请求失败；配置面板也不会给它开关。
 2. `tool_call` 事件捕获这个参数，并在交给底层工具前移除它，因此原工具不会收到扩展专用字段。
 3. `tool_result` 事件拿到真实输出后再做判断，不依赖 Agent 对输出长度的预测。
 4. 每次工具调用都必须包含非空的 `outputRequest`；严格的 `RAW` 表示明确要求原文；其他非空 prompt 才允许进入提炼流程。
-5. OpenAI-compatible Completions 提炼请求会通过 `response_format: { "type": "json_object" }` 启用原生 JSON 模式；OpenAI Responses-compatible 请求使用等价的 `text.format`。单次提炼超时后按照 `timeoutRetryCount` 重试，其他异常按照 `errorRetryCount` 重试（两者默认都重试 1 次）；全部尝试失败、没有可用模型或结果收益过低时，扩展保留原始事实，并通过 details 和审计卡片暴露状态；模型用 Markdown 的 JSON 代码围栏（如 `````json … `````）包裹响应时也会兼容解析。
+5. OpenAI-compatible Completions 提炼请求会通过 `response_format: { "type": "json_object" }` 启用原生 JSON 模式；OpenAI Responses-compatible 请求使用等价的 `text.format`。单次提炼超时后按照 `timeoutRetryCount` 重试，其他模型调用异常按照 `errorRetryCount` 重试（两者默认都重试 1 次）。两类失败共用总重试额度，取两个配置值中较大值，不将两份额度相加：默认最多进行 2 次完整提炼，而非 3 次。单项结果使用单调时钟，总等待期限为 `timeoutSeconds × (1 + max(timeoutRetryCount, errorRetryCount))`，JSON 修复使用当前尝试剩余时间。模型或鉴权 Promise 即使不响应取消，也不能继续阻塞结果返回；迟到鉴权不得再发请求，迟到响应不被采用或修复。已发往上游的请求只能尽力取消，不承诺撤销已发生的计费。期限只约束提炼，不截断主 Agent 整轮任务或重执行原工具。如果模型已经返回文本，但只是 JSON 语法或响应结构校验失败，扩展会把坏响应和校验错误交给一次 JSON-only 修复 prompt，不会再次发送工具输出，也不会重新总结；修复失败、没有可用模型或结果收益过低时，扩展保留原始事实，并通过 details 和审计卡片暴露状态；模型用 Markdown 的 JSON 代码围栏（如 `````json … `````）包裹响应时也会兼容解析。
+6. 用户打断上级 Agent 请求时，所有尚未完成的提炼请求会立即取消，并且不会为这次中断继续重试；原始工具结果仍按 fail-open 路径保留。
 
 ## 输出处理契约
 
@@ -136,7 +147,7 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 
 ## 覆盖范围与边界
 
-- 自动处理所有当前已启用且参数 schema 为 object 的工具；能否注入 `outputRequest` 由工具 schema 决定，不维护固定工具名单。
+- 自动处理所有当前已启用且参数 schema 为 object 的工具；能否注入 `outputRequest` 由工具 schema 决定，不维护固定工具名单。`codemode` 是唯一被跳过的工具：Pi 的 grammar 约束采样要求恰好一个必填字符串属性，它的结果原样返回，面板里也没有它的开关。
 - 不注册替代工具，不改变原工具的执行语义，也不要求额外安装独立的 `pi-tool-display` 宿主包。
 - 文本提炼是有损操作；完整性要求应使用 `RAW`。
 - 非文本结果是完整性边界：图片、音频、二进制和混合 content 不进入文本提炼链路。
@@ -183,8 +194,8 @@ Agent 消费更适合当前决策的结果，并获得可审计的处理诊断
 | `maxChars` | 提炼结果超过此字符数时写入临时文件。 |
 | `maxOutputChars` | 最终返回给 Agent 的文本上限。超出后写入临时文件，只返回文件指针。 |
 | `timeoutSeconds` | 每次提炼模型尝试的最长等待时间。 |
-| `timeoutRetryCount` | 超时后的额外重试次数。默认 `1`；设为 `0` 时不重试超时。 |
-| `errorRetryCount` | 非超时异常后的额外重试次数。默认 `1`；设为 `0` 时不重试其他异常。 |
+| `timeoutRetryCount` | 超时后的额外重试上限，同时受共享总额度 `max(timeoutRetryCount, errorRetryCount)` 约束。默认 `1`；`0` 不重试超时。 |
+| `errorRetryCount` | 非超时异常后的额外重试上限，同时受上述共享总额度约束。默认 `1`；`0` 不重试异常。 |
 | `missedCompressionRatio` | 没有提供摘要 prompt 时，用于长输出诊断的倍数阈值。 |
 | `summarizeErrors` | 工具返回错误且达到 `minChars` 时，是否仍发送给提炼模型。 |
 | `tools.<name>.enabled` | 按工具开启或关闭 `outputRequest` 注入和结果提炼。`edit` 和 `write` 默认关闭，其他未配置工具默认开启，也可以通过 `/config:distill` 修改。 |

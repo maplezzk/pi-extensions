@@ -10,6 +10,8 @@ import {
   extractOrcaSplitHandle,
   extractOrcaReadTail,
   orcaSplitDirection,
+  parseOrcaTerminalTabInfo,
+  decideOrcaCloseStep,
   AGENT_ORCA_TERMINAL_HANDLE,
 } from "../src/index.ts";
 
@@ -146,6 +148,112 @@ describe("orcaSplitDirection", () => {
     assert.equal(orcaSplitDirection("right"), "vertical");
     assert.equal(orcaSplitDirection("up"), "horizontal");
     assert.equal(orcaSplitDirection("down"), "horizontal");
+  });
+});
+
+// ── 关闭 pane 的状态判定（回归：共享 tab 不得 --tab 兜底） ──
+
+describe("parseOrcaTerminalTabInfo", () => {
+  // 真实 `orca terminal list --json` 结构（精简字段）
+  const listFixture = {
+    id: "697bd7bf-d94d-4d30-aecc-009ade46b756",
+    ok: true,
+    result: {
+      terminals: [
+        { handle: "term_agent", tabId: "tab_1", title: "π - agent" },
+        { handle: "term_child", tabId: "tab_1", title: "worker" },
+        { handle: "term_solo", tabId: "tab_2", title: "单 pane tab" },
+      ],
+    },
+  };
+  const listJson = JSON.stringify(listFixture);
+
+  test("共享 tab 的 pane 会带上同 tab 的 terminal 数量", () => {
+    assert.deepEqual(parseOrcaTerminalTabInfo(listJson, "term_child"), {
+      kind: "present",
+      tabId: "tab_1",
+      tabCount: 2,
+    });
+  });
+  test("独占 tab 的 pane tabCount=1", () => {
+    assert.deepEqual(parseOrcaTerminalTabInfo(listJson, "term_solo"), {
+      kind: "present",
+      tabId: "tab_2",
+      tabCount: 1,
+    });
+  });
+  test("handle 不在列表中 → absent", () => {
+    assert.deepEqual(parseOrcaTerminalTabInfo(listJson, "term_gone"), { kind: "absent" });
+  });
+  test("缺 tabId 时无法判定 tab 占用 → tabCount 为 null", () => {
+    const noTab = JSON.stringify({ ok: true, result: { terminals: [{ handle: "term_x" }] } });
+    assert.deepEqual(parseOrcaTerminalTabInfo(noTab, "term_x"), {
+      kind: "present",
+      tabId: null,
+      tabCount: null,
+    });
+  });
+  test("非 JSON / 缺 terminals 字段 → unknown", () => {
+    assert.deepEqual(parseOrcaTerminalTabInfo("not json", "term_x"), { kind: "unknown" });
+    assert.deepEqual(parseOrcaTerminalTabInfo(JSON.stringify({ ok: true, result: {} }), "term_x"), {
+      kind: "unknown",
+    });
+  });
+});
+
+describe("decideOrcaCloseStep", () => {
+  const present = (tabCount: number | null) =>
+    ({ kind: "present", tabId: "tab_1", tabCount }) as const;
+
+  test("已不在列表中 → done", () => {
+    assert.equal(
+      decideOrcaCloseStep({ state: { kind: "absent" }, targetIsAgentPane: false, retried: true }),
+      "done",
+    );
+  });
+  test("首次仍在 → 先重试普通 close（竞态退避）", () => {
+    assert.equal(
+      decideOrcaCloseStep({ state: present(2), targetIsAgentPane: false, retried: false }),
+      "retry-close",
+    );
+  });
+  test("共享 tab 的 pane 永不允许 --tab（回归：会连带关掉 agent 会话）", () => {
+    assert.equal(
+      decideOrcaCloseStep({ state: present(2), targetIsAgentPane: false, retried: true }),
+      "skip-tab",
+    );
+    assert.equal(
+      decideOrcaCloseStep({ state: present(3), targetIsAgentPane: false, retried: true }),
+      "skip-tab",
+    );
+  });
+  test("单 pane tab 才允许 --tab", () => {
+    assert.equal(
+      decideOrcaCloseStep({ state: present(1), targetIsAgentPane: false, retried: true }),
+      "close-tab",
+    );
+  });
+  test("tab 占用不可判定（tabCount null）不升级为 --tab", () => {
+    assert.equal(
+      decideOrcaCloseStep({ state: present(null), targetIsAgentPane: false, retried: true }),
+      "skip-tab",
+    );
+  });
+  test("list 查询失败（unknown）不升级为 --tab", () => {
+    assert.equal(
+      decideOrcaCloseStep({ state: { kind: "unknown" }, targetIsAgentPane: false, retried: true }),
+      "skip-tab",
+    );
+  });
+  test("目标就是 agent 自己的 pane → 永不关 tab", () => {
+    assert.equal(
+      decideOrcaCloseStep({ state: present(1), targetIsAgentPane: true, retried: true }),
+      "skip-tab",
+    );
+    assert.equal(
+      decideOrcaCloseStep({ state: present(1), targetIsAgentPane: true, retried: false }),
+      "skip-tab",
+    );
   });
 });
 

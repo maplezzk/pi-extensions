@@ -19,6 +19,7 @@ import {
 import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../src/types.ts";
 
 const TOOL_DISPLAY_PENDING_DECORATIONS_KEY = Symbol.for("pi-tool-display.pendingDecorations.v1");
+const ALL_BUILT_IN_TOOL_NAMES = ["read", "grep", "find", "ls", "bash", "edit", "write"];
 
 interface RegisteredToolLike {
 	name: string;
@@ -68,7 +69,11 @@ function withDefaultReadEditOwners(tools: unknown[] = []): unknown[] {
 	return [...defaults, ...tools];
 }
 
-function createExtensionApiStub(allTools: unknown[] = []): {
+// Build an extension API stub whose activeToolNames mirrors Pi's current selection.
+function createExtensionApiStub(
+	allTools: unknown[] = [],
+	activeToolNames: string[] = ALL_BUILT_IN_TOOL_NAMES,
+): {
 	api: ExtensionAPI;
 	registeredTools: RegisteredToolLike[];
 	eventHandlers: ToolEventHandlers;
@@ -84,6 +89,10 @@ function createExtensionApiStub(allTools: unknown[] = []): {
 		},
 		getAllTools(): unknown[] {
 			return withDefaultReadEditOwners(allTools);
+		},
+		// Let each test control which built-ins Pi has already activated.
+		getActiveTools(): string[] {
+			return [...activeToolNames];
 		},
 	} as unknown as ExtensionAPI;
 
@@ -130,18 +139,45 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 	assert.deepEqual(byName.get("bash")?.promptGuidelines, (builtInTools.bash as unknown as RegisteredToolLike).promptGuidelines);
 });
 
-test("registerToolDisplayOverrides registers built-in display renderers during extension load for pre-bind history rendering", () => {
+test("registerToolDisplayOverrides registers active built-in display renderers immediately when activation is available", () => {
 	const { api, registeredTools } = createExtensionApiStub();
 
 	registerToolDisplayOverrides(api, () => DEFAULT_TOOL_DISPLAY_CONFIG);
 
 	const byName = new Map(registeredTools.map((tool) => [tool.name, tool]));
-	for (const name of ["read", "grep", "find", "ls", "bash", "edit", "write"] as const) {
+	for (const name of ALL_BUILT_IN_TOOL_NAMES) {
 		const registeredTool = byName.get(name);
-		assert.ok(registeredTool, `expected '${name}' to be available before session_start`);
-		assert.equal(typeof registeredTool.renderCall, "function", `${name} has renderCall before session_start`);
-		assert.equal(typeof registeredTool.renderResult, "function", `${name} has renderResult before session_start`);
+		assert.ok(registeredTool, `expected '${name}' to be available`);
+		assert.equal(typeof registeredTool.renderCall, "function", `${name} has renderCall`);
+		assert.equal(typeof registeredTool.renderResult, "function", `${name} has renderResult`);
 	}
+});
+
+test("registerToolDisplayOverrides skips built-ins that Pi has not activated", async () => {
+	const activeToolNames = ["read", "bash", "edit", "write"];
+	const { api, registeredTools, eventHandlers } = createExtensionApiStub([], activeToolNames);
+
+	registerToolDisplayOverrides(api, () => DEFAULT_TOOL_DISPLAY_CONFIG);
+	await eventHandlers.session_start?.();
+	await eventHandlers.before_agent_start?.();
+
+	assert.deepEqual(
+		registeredTools.map((tool) => tool.name).sort(),
+		[...activeToolNames].sort(),
+	);
+});
+
+test("registerToolDisplayOverrides wraps built-ins activated later in the session", async () => {
+	const activeToolNames = ["read"];
+	const { api, registeredTools, eventHandlers } = createExtensionApiStub([], activeToolNames);
+
+	registerToolDisplayOverrides(api, () => DEFAULT_TOOL_DISPLAY_CONFIG);
+	assert.deepEqual(registeredTools.map((tool) => tool.name), ["read"]);
+
+	activeToolNames.push("grep");
+	await eventHandlers.before_agent_start?.();
+
+	assert.deepEqual(registeredTools.map((tool) => tool.name).sort(), ["grep", "read"]);
 });
 
 test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI keeps extension renderers active", async () => {

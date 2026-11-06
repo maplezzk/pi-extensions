@@ -2,12 +2,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { keyHint } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createTranslator, loadCatalog } from "pi-extensions-i18n";
+import { createTranslator, installNoticeRenderer, loadCatalog, notifyWithSource, type NoticeColor, type NoticeSource } from "pi-extensions-i18n";
 import {
   readdirSync,
   readFileSync,
+  type Dirent,
   writeFileSync,
   existsSync,
   mkdirSync,
@@ -25,9 +26,8 @@ import {
   isMuxAvailable,
   sendEscape,
   shellEscape,
-  renameCurrentTab,
-  renameWorkspace,
-  renameAgent,
+  createSurfaceRenameContext,
+  TERMINAL_RENAME_CONTEXT_ENV,
   readScreen,
   getLastSplitSource,
   clearLastSplitSource,
@@ -38,18 +38,29 @@ import {
   isWezTermAvailable,
   isHerdrAvailable,
   isOttyAvailable,
+  isOrcaAvailable,
   type MuxBackend,
 } from "pi-terminal-mux";
 
 import {
   applyPersistedMuxPreference,
+  HERDR_SURFACE_MODE_TAB,
+  HERDR_SURFACE_MODES,
+  loadHerdrModeConfig,
   loadMuxConfig,
+  loadSubagentExtensionsConfig,
+  loadSubagentSpawningConfig,
+  saveHerdrMode,
   saveMuxPreference,
+  saveSubagentExtensions,
   SUBAGENT_MUX_BACKENDS,
+  type HerdrSurfaceMode,
   type SubagentMuxPreference,
 } from "./mux-config.ts";
 
 import {
+  SUBAGENT_SESSION_MODE_LINEAGE_ONLY,
+  SUBAGENT_SESSION_MODE_STANDALONE,
   findLastAssistantMessage,
   getNewEntries,
   seedSubagentSessionFile,
@@ -75,6 +86,21 @@ import {
 } from "./activity.ts";
 
 const i18n = createTranslator(loadCatalog(new URL("../../locales/index.json", import.meta.url)));
+
+/** 本扩展的提示标签；短且唯一，便于在会话里定位来源。 */
+const NOTICE_TAG = "subagents";
+/** 提示标签颜色；与其它扩展错开，避免看起来像同一条消息。 */
+const NOTICE_COLOR: NoticeColor = "toolTitle";
+/** 本扩展的提示来源。 */
+const NOTICE_SOURCE: NoticeSource = { tag: NOTICE_TAG, color: NOTICE_COLOR };
+
+/**
+ * 统一的用户可见提示出口：加来源标签后交给 Pi 的 notify。
+ * 包内所有 notify 都走这里，避免遗漏标签或颜色。
+ */
+function notify(ctx: ExtensionContext, message: string, level: "info" | "warning" | "error"): void {
+  notifyWithSource({ ctx, source: NOTICE_SOURCE, level, message });
+}
 
 /** Absolute path to `pi-extension/subagents`. https://github.com/nodejs/node/issues/37845 */
 const SUBAGENTS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -156,16 +182,16 @@ const SubagentParams = Type.Object({
   tools: Type.Optional(
     Type.String({ description: "Comma-separated tools (overrides agent default)" }),
   ),
+  denyTools: Type.Optional(
+    Type.String({
+      description:
+        "Comma-separated tool names to additionally deny in the child session, merged with the agent definition's `deny-tools`.",
+    }),
+  ),
   cwd: Type.Optional(
     Type.String({
       description:
         "Working directory for the sub-agent. The agent starts in this folder and picks up its local .pi/ config, CLAUDE.md, skills, and extensions. Use for role-specific subfolders.",
-    }),
-  ),
-  fork: Type.Optional(
-    Type.Boolean({
-      description:
-        "Force the full-context fork mode for this spawn. The sub-agent inherits the current session conversation, overriding any agent frontmatter session-mode.",
     }),
   ),
   interactive: Type.Optional(
@@ -195,7 +221,10 @@ const SubagentParams = Type.Object({
   ),
 });
 
-type SubagentSessionMode = "standalone" | "lineage-only" | "fork";
+type SubagentSessionMode =
+  | typeof SUBAGENT_SESSION_MODE_STANDALONE
+  | typeof SUBAGENT_SESSION_MODE_LINEAGE_ONLY;
+const DEFAULT_SUBAGENT_SESSION_MODE: SubagentSessionMode = SUBAGENT_SESSION_MODE_STANDALONE;
 
 interface AgentDefaults {
   model?: string;
@@ -226,7 +255,7 @@ interface ListedAgentDefinition extends AgentDefinition {
   source: AgentSource;
 }
 
-/** Tools that are gated by `spawning: false` */
+/** Tools that are unavailable inside child subagent sessions. */
 const SPAWNING_TOOLS = new Set([
   "subagent",
   "subagent_interrupt",
@@ -235,29 +264,44 @@ const SPAWNING_TOOLS = new Set([
 ]);
 
 /**
- * Resolve the effective set of denied tool names from agent defaults.
- * `spawning: false` expands to all SPAWNING_TOOLS.
- * `deny-tools` adds individual tool names on top.
+ * Parse a comma-separated tool list, dropping blank entries.
  */
-function resolveDenyTools(agentDefs: AgentDefaults | null): Set<string> {
-  const denied = new Set<string>();
-  if (!agentDefs) return denied;
+function parseToolList(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
-  // spawning: false → deny all spawning tools
-  if (agentDefs.spawning === false) {
-    for (const t of SPAWNING_TOOLS) denied.add(t);
-  }
+/**
+ * Resolve the effective set of denied tool names for a child subagent.
+ * The global switch controls whether every child session may create or manage
+ * other subagents; the legacy `spawning` field does not override it.
+ * `deny-tools` can add individual restrictions on top.
+ */
+function resolveDenyTools(
+  agentDefs: AgentDefaults | null,
+  allowSubagentSpawning = false,
+): Set<string> {
+  const denied = allowSubagentSpawning ? new Set<string>() : new Set(SPAWNING_TOOLS);
 
   // deny-tools: explicit list
-  if (agentDefs.denyTools) {
-    for (const t of agentDefs.denyTools
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)) {
-      denied.add(t);
-    }
-  }
+  for (const t of parseToolList(agentDefs?.denyTools)) denied.add(t);
 
+  return denied;
+}
+
+/**
+ * Resolve the deny set for one launch: agent definition restrictions plus the
+ * explicit per-launch `denyTools` parameter.
+ */
+function resolveLaunchDenyTools(
+  agentDefs: AgentDefaults | null,
+  allowSubagentSpawning: boolean,
+  launchDenyTools?: string,
+): Set<string> {
+  const denied = resolveDenyTools(agentDefs, allowSubagentSpawning);
+  for (const t of parseToolList(launchDenyTools)) denied.add(t);
   return denied;
 }
 
@@ -270,6 +314,180 @@ function getBundledAgentsDir(): string {
   return join(SUBAGENTS_DIR, "../../agents");
 }
 
+const HOME_PREFIX = "~/";
+const PROJECT_EXTENSIONS_DIR = [".pi", "extensions"] as const;
+const GLOBAL_EXTENSIONS_DIR = "extensions";
+const EXTENSION_ENTRY_SUFFIXES = [".ts", ".js", ".mjs", ".cjs"] as const;
+const EXTENSION_DECLARATION_SUFFIX = ".d.ts";
+const EXTENSION_INDEX_FILE_NAMES = ["index.ts", "index.js", "index.mjs", "index.cjs"] as const;
+
+const EXTENSION_SOURCE_PROJECT = "project" as const;
+const EXTENSION_SOURCE_GLOBAL = "global" as const;
+const EXTENSION_SOURCE_CONFIGURED = "configured" as const;
+
+type SubagentExtensionCandidateSource =
+  | typeof EXTENSION_SOURCE_PROJECT
+  | typeof EXTENSION_SOURCE_GLOBAL
+  | typeof EXTENSION_SOURCE_CONFIGURED;
+
+export interface SubagentExtensionCandidate {
+  path: string;
+  label: string;
+  source: SubagentExtensionCandidateSource;
+  missing?: boolean;
+  required?: boolean;
+}
+
+/** Narrow unknown manifest values to object records before reading fields. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Check whether a file can be loaded as an extension entrypoint, excluding declarations. */
+function isExtensionEntry(fileName: string): boolean {
+  return EXTENSION_ENTRY_SUFFIXES.some((suffix) => fileName.endsWith(suffix)) && !fileName.endsWith(EXTENSION_DECLARATION_SUFFIX);
+}
+
+/** Resolve an extension path from the user config against the Pi agent directory. */
+function resolveSubagentExtensionPath(extensionPath: string, agentDir = getAgentConfigDir()): string {
+  if (extensionPath === "~") return homedir();
+  if (extensionPath.startsWith(HOME_PREFIX)) return join(homedir(), extensionPath.slice(HOME_PREFIX.length));
+  return isAbsolute(extensionPath) ? extensionPath : join(agentDir, extensionPath);
+}
+
+/** Read the Pi extension manifest fields needed to discover an installed entrypoint. */
+function readExtensionManifest(extensionDir: string): { name?: string; extensions: string[] } | null {
+  try {
+    const parsed = JSON.parse(readFileSync(join(extensionDir, "package.json"), "utf8")) as unknown;
+    if (!isRecord(parsed)) return null;
+
+    const packageName = typeof parsed.name === "string" ? parsed.name : undefined;
+    const pi = isRecord(parsed.pi) ? parsed.pi : undefined;
+    const configured = pi?.extensions;
+    const extensions = Array.isArray(configured)
+      ? configured.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "")
+      : typeof configured === "string" && configured.trim() !== ""
+        ? [configured]
+        : [];
+    return { name: packageName, extensions };
+  } catch {
+    return null;
+  }
+}
+
+/** Discover extension entrypoints in one Pi extension root without throwing on stale installs. */
+function discoverExtensionRoot(
+  root: string,
+  source: Exclude<SubagentExtensionCandidateSource, "configured">,
+): SubagentExtensionCandidate[] {
+  if (!existsSync(root)) return [];
+
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const candidates: SubagentExtensionCandidate[] = [];
+  const seen = new Set<string>();
+
+  /** Add an existing extension candidate once, using its normalized path as the key. */
+  const add = (path: string, label: string) => {
+    const normalizedPath = resolve(path);
+    if (!existsSync(path) || seen.has(normalizedPath)) return;
+    seen.add(normalizedPath);
+    candidates.push({ path: normalizedPath, label, source });
+  };
+
+  for (const entry of entries) {
+    const entryPath = join(root, entry.name);
+    if (entry.isFile()) {
+      if (isExtensionEntry(entry.name)) add(entryPath, entry.name);
+      continue;
+    }
+    if (!entry.isDirectory()) continue;
+
+    const manifest = readExtensionManifest(entryPath);
+    const manifestEntries = manifest?.extensions ?? [];
+    if (manifestEntries.length > 0) {
+      for (const extension of manifestEntries) {
+        const extensionPath = isAbsolute(extension) ? extension : resolve(entryPath, extension);
+        add(extensionPath, manifest?.name ?? entry.name);
+      }
+      continue;
+    }
+
+    const indexPath = EXTENSION_INDEX_FILE_NAMES
+      .map((fileName) => join(entryPath, fileName))
+      .find((path) => existsSync(path));
+    if (indexPath) {
+      add(indexPath, manifest?.name ?? entry.name);
+      continue;
+    }
+
+    try {
+      for (const child of readdirSync(entryPath, { withFileTypes: true })) {
+        if (child.isFile() && isExtensionEntry(child.name)) {
+          add(join(entryPath, child.name), `${manifest?.name ?? entry.name}/${child.name}`);
+        }
+      }
+    } catch {
+      // An extension can disappear while the chooser is open; skip that entry.
+    }
+  }
+
+  return candidates;
+}
+
+/** Discover project/global extension candidates and retain stale configured paths for cleanup. */
+export function discoverSubagentExtensionCandidates(params: {
+  cwd?: string;
+  agentDir?: string;
+  configured?: readonly string[];
+} = {}): SubagentExtensionCandidate[] {
+  const cwd = params.cwd ?? process.cwd();
+  const agentDir = params.agentDir ?? getAgentConfigDir();
+  const candidates = [
+    ...discoverExtensionRoot(join(cwd, ...PROJECT_EXTENSIONS_DIR), EXTENSION_SOURCE_PROJECT),
+    ...discoverExtensionRoot(join(agentDir, GLOBAL_EXTENSIONS_DIR), EXTENSION_SOURCE_GLOBAL),
+  ];
+  const known = new Set(candidates.map((candidate) => resolve(candidate.path)));
+  const configured = params.configured ?? loadSubagentExtensionsConfig().extensions;
+
+  for (const configuredPath of configured) {
+    const resolvedPath = resolveSubagentExtensionPath(configuredPath, agentDir);
+    const key = resolve(resolvedPath);
+    if (known.has(key)) continue;
+    candidates.push({
+      path: key,
+      label: basename(key),
+      source: EXTENSION_SOURCE_CONFIGURED,
+      missing: !existsSync(key),
+    });
+    known.add(key);
+  }
+
+  return candidates;
+}
+
+/** Load and resolve explicitly configured child-session extension paths that still exist. */
+function getConfiguredSubagentExtensions(): string[] {
+  return loadSubagentExtensionsConfig().extensions
+    .map((extensionPath) => resolveSubagentExtensionPath(extensionPath))
+    .filter((extensionPath) => existsSync(extensionPath));
+}
+
+/** Build the no-discovery flag and explicit extensions for a child Pi command. */
+function buildChildExtensionArgs(extensionPaths = getConfiguredSubagentExtensions()): string[] {
+  return [
+    NO_EXTENSIONS_FLAG,
+    EXTENSION_FLAG,
+    shellEscape(join(SUBAGENTS_DIR, SUBAGENT_DONE_EXTENSION_FILE)),
+    ...extensionPaths.flatMap((extensionPath) => [EXTENSION_FLAG, shellEscape(extensionPath)]),
+  ];
+}
+
 function getFrontmatterValue(frontmatter: string, key: string): string | undefined {
   const match = frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
   return match ? match[1].trim() : undefined;
@@ -279,8 +497,9 @@ function parseOptionalBoolean(value: string | undefined): boolean | undefined {
   return value != null ? value === "true" : undefined;
 }
 
+/** Parse a supported session mode; invalid values return undefined. */
 function parseSessionMode(value: string | undefined): SubagentSessionMode | undefined {
-  if (value === "standalone" || value === "lineage-only" || value === "fork") {
+  if (value === SUBAGENT_SESSION_MODE_STANDALONE || value === SUBAGENT_SESSION_MODE_LINEAGE_ONLY) {
     return value;
   }
   return undefined;
@@ -370,30 +589,20 @@ function getDefaultSessionDirFor(cwd: string, _agentDir: string): string {
   return sessionDir;
 }
 
-function resolveEffectiveSessionMode(
-  params: Static<typeof SubagentParams>,
-  agentDefs: AgentDefaults | null,
-): SubagentSessionMode {
-  if (params.fork) return "fork";
-  return agentDefs?.sessionMode ?? "standalone";
+/** Resolve the agent-configured session mode, defaulting to standalone. */
+function resolveEffectiveSessionMode(agentDefs: AgentDefaults | null): SubagentSessionMode {
+  return agentDefs?.sessionMode ?? DEFAULT_SUBAGENT_SESSION_MODE;
 }
 
-function resolveLaunchBehavior(
-  params: Static<typeof SubagentParams>,
-  agentDefs: AgentDefaults | null,
-): {
+/** Resolve launch behavior for standalone and lineage-only child sessions. */
+function resolveLaunchBehavior(agentDefs: AgentDefaults | null): {
   sessionMode: SubagentSessionMode;
-  seededSessionMode: "lineage-only" | "fork" | null;
-  inheritsConversationContext: boolean;
-  taskDelivery: "direct" | "artifact";
+  seededSessionMode: typeof SUBAGENT_SESSION_MODE_LINEAGE_ONLY | null;
 } {
-  const sessionMode = resolveEffectiveSessionMode(params, agentDefs);
-  const inheritsConversationContext = sessionMode === "fork";
+  const sessionMode = resolveEffectiveSessionMode(agentDefs);
   return {
     sessionMode,
-    seededSessionMode: sessionMode === "standalone" ? null : sessionMode,
-    inheritsConversationContext,
-    taskDelivery: inheritsConversationContext ? "direct" : "artifact",
+    seededSessionMode: sessionMode === DEFAULT_SUBAGENT_SESSION_MODE ? null : SUBAGENT_SESSION_MODE_LINEAGE_ONLY,
   };
 }
 
@@ -406,12 +615,11 @@ function resolveLaunchBehavior(
  *   3. Default: the inverse of `auto-exit`. Agents that auto-exit are
  *      autonomous (scout, worker, reviewer) and the parent session should be
  *      woken on stall/recovery transitions. Agents that don't auto-exit are
- *      driven by the user in their own pane (planner, iterate/fork) and
- *      stall pings are noise.
+ *      driven by the user in their own pane (planner) and stall pings are
+ *      noise.
  *
- * When no agent defs exist at all (bare `subagent({ name, task })` call,
- * typical for `/iterate` with `fork: true`), `autoExit` is undefined and the
- * subagent is treated as interactive — matching the intent of iterate.
+ * When no agent defs exist at all (bare `subagent({ name, task })` call),
+ * `autoExit` is undefined and the subagent is treated as interactive.
  */
 function resolveEffectiveInteractive(
   params: Static<typeof SubagentParams>,
@@ -552,6 +760,13 @@ interface RunningSubagent {
   interactive: boolean;
   /** 新分屏的来源 pane ID，用于在 TUI 中展示 */
   splitFrom?: string;
+  /**
+   * When true, the agent stays in `runningSubagents` (watching, interrupting and
+   * result steering keep working) but is left out of the Subagents widget.
+   * Set by orchestration layers that render their own agent panel — currently
+   * pi-dynamic-workflows, whose agents are already shown in the Workflow panel.
+   */
+  hiddenFromWidget?: boolean;
 }
 
 /** All currently running subagents, keyed by id. */
@@ -561,6 +776,9 @@ const runningSubagents = new Map<string, RunningSubagent>();
 
 /** Latest ExtensionContext from session_start, used for widget updates. */
 let latestCtx: ExtensionContext | null = null;
+
+/** The extension instance (one per session) whose session owns `latestCtx` and the running agents. */
+let stateOwner: object | null = null;
 
 /** Interval timer for widget re-renders. */
 let widgetInterval: ReturnType<typeof setInterval> | null = null;
@@ -660,10 +878,16 @@ function renderSubagentWidgetLines(agents: RunningSubagent[], width: number): st
   return lines;
 }
 
+/** Running subagents that belong in the Subagents widget. */
+function widgetSubagents(): RunningSubagent[] {
+  return Array.from(runningSubagents.values()).filter((agent) => !agent.hiddenFromWidget);
+}
+
 function updateWidget() {
   if (!latestCtx?.hasUI) return;
 
-  if (runningSubagents.size === 0) {
+  const visible = widgetSubagents();
+  if (visible.length === 0) {
     latestCtx.ui.setWidget("subagent-status", undefined);
     if (widgetInterval) {
       clearInterval(widgetInterval);
@@ -679,7 +903,7 @@ function updateWidget() {
       return {
         invalidate() {},
         render(width: number) {
-          return renderSubagentWidgetLines(Array.from(runningSubagents.values()), width);
+          return renderSubagentWidgetLines(widgetSubagents(), width);
         },
       };
     },
@@ -700,6 +924,10 @@ function updateWidget() {
  * as standalone prompts in the child session.
  */
 const SUBAGENT_CONTROL_TOOLS = ["caller_ping", "subagent_done"] as const;
+const FILE_TIMESTAMP_LENGTH = 19;
+const NO_EXTENSIONS_FLAG = "--no-extensions";
+const EXTENSION_FLAG = "--extension";
+const SUBAGENT_DONE_EXTENSION_FILE = "subagent-done.ts";
 
 /**
  * Build the child --tools allowlist.
@@ -725,21 +953,19 @@ function buildSubagentToolAllowlist(effectiveTools?: string): string | null {
   return [...allow].join(",");
 }
 
-function buildPiPromptArgs(params: {
-  effectiveSkills?: string;
-  taskDelivery: "direct" | "artifact";
-  taskArg: string;
-}): string[] {
+/**
+ * Build positional prompt args for a child launch.
+ * Skills must be separate prompts so Pi expands each `/skill:` directive.
+ */
+function buildPiPromptArgs(params: { effectiveSkills?: string; taskArg: string }): string[] {
   const skillPrompts = (params.effectiveSkills ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .map((skill) => `/skill:${skill}`);
 
-  const needsSeparator = params.taskDelivery === "artifact" && skillPrompts.length > 0;
-
   return [
-    ...(needsSeparator ? [""] : []),
+    ...(skillPrompts.length > 0 ? [""] : []),
     ...skillPrompts,
     params.taskArg,
   ];
@@ -876,17 +1102,23 @@ function handleSubagentInterrupt(
   running.statusState = forceStatusAfterInterrupt(running.statusState, now);
   updateWidget();
 
-  // After aborting the current generation, also signal done so the subagent
-  // properly finishes (parent's pollForExit detects the .exit file and
-  // returns the result).
+  // Interrupting from the parent is terminal: Escape stops the child's active
+  // turn, while the `.exit` sidecar tells the watcher to close the surface and
+  // remove the child from the running set. Without the sidecar, the child Pi
+  // returns to its prompt and the watcher waits forever.
   if (running.sessionFile) {
     const exitFile = `${running.sessionFile}.exit`;
     try {
       writeFileSync(exitFile, JSON.stringify({ type: "done" }));
-    } catch (writeErr: any) {
-      process.stderr.write(
-        `[interrupt] .exit 写入失败 file=${exitFile} err=${writeErr?.message ?? String(writeErr)}\n`,
-      );
+    } catch (writeErr: unknown) {
+      const errorMessage = writeErr instanceof Error ? writeErr.message : String(writeErr);
+      const error =
+        `Failed to signal subagent "${running.name}" termination via ${exitFile}: ` +
+        errorMessage;
+      return {
+        content: [{ type: "text" as const, text: error }],
+        details: { error, id: running.id, name: running.name },
+      };
     }
   }
 
@@ -963,55 +1195,348 @@ function isMuxBackendAvailable(backend: MuxBackend): boolean {
     case "wezterm": return isWezTermAvailable();
     case "herdr": return isHerdrAvailable();
     case "otty": return isOttyAvailable();
+    case "orca": return isOrcaAvailable();
   }
 }
 
-function muxPreferenceLabel(preference: SubagentMuxPreference): string {
-  return preference === "auto" ? i18n.t("muxAuto") : preference;
+const AUTO_MUX_PREFERENCE: SubagentMuxPreference = "auto";
+const HERDR_MUX_BACKEND: MuxBackend = "herdr";
+const MAX_MUX_CONFIG_TOKENS = 2;
+
+interface MuxConfigSelection {
+  preference: SubagentMuxPreference;
+  herdrMode?: HerdrSurfaceMode;
 }
 
+/** 返回本地化的 Herdr surface 模式名称。 */
+function herdrModeLabel(mode: HerdrSurfaceMode): string {
+  return mode === HERDR_SURFACE_MODE_TAB
+    ? i18n.t("herdrModeTab")
+    : i18n.t("herdrModeSplit");
+}
+
+/** 格式化当前 mux；Herdr 同时展示 split/tab 子模式。 */
+function muxPreferenceLabel(preference: SubagentMuxPreference, herdrMode?: HerdrSurfaceMode): string {
+  if (preference === AUTO_MUX_PREFERENCE) return i18n.t("muxAuto");
+  if (preference === HERDR_MUX_BACKEND && herdrMode) {
+    return `herdr (${herdrModeLabel(herdrMode)})`;
+  }
+  return preference;
+}
+
+/** 解析 `/config:subagent` 直接参数，Herdr 可追加 split/tab。 */
+function parseMuxConfigRequest(requested: string): MuxConfigSelection | null {
+  const tokens = requested.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0 || tokens.length > MAX_MUX_CONFIG_TOKENS) return null;
+
+  const requestedMux = tokens[0];
+  const preference = requestedMux === AUTO_MUX_PREFERENCE || (SUBAGENT_MUX_BACKENDS as readonly string[]).includes(requestedMux)
+    ? requestedMux as SubagentMuxPreference
+    : null;
+  if (!preference) return null;
+
+  const requestedMode = tokens[1];
+  if (!requestedMode) return { preference };
+  if (preference !== HERDR_MUX_BACKEND || !(HERDR_SURFACE_MODES as readonly string[]).includes(requestedMode)) {
+    return null;
+  }
+  return { preference, herdrMode: requestedMode as HerdrSurfaceMode };
+}
+
+const SUBAGENT_EXTENSIONS_COMMAND = "extensions";
+const SUBAGENT_EXTENSIONS_CLEAR = "clear";
+const SUBAGENT_EXTENSIONS_COMMAND_NAMES = [
+  "config:subagent-extensions",
+  "subagent-extensions",
+] as const;
+
+/** Parse comma-separated extension paths from a slash-command argument. */
+function parseSubagentExtensionPaths(value: string): string[] | null {
+  const parts = value.split(",").map((part) => part.trim());
+  if (parts.length === 0 || parts.some((part) => !part)) return null;
+  return [...new Set(parts)];
+}
+
+/** Format the configured child-session extension paths for user-facing messages. */
+function formatSubagentExtensions(extensions: readonly string[]): string {
+  return extensions.length > 0 ? extensions.join(", ") : i18n.t("extensionNone");
+}
+
+/** Complete the shared subagent configuration command's first argument. */
+function getSubagentConfigArgumentCompletions(argumentPrefix: string) {
+  const trimmedPrefix = argumentPrefix.trimStart();
+  const [firstToken] = trimmedPrefix.split(/\s+/, 1);
+  if (firstToken?.toLowerCase() === SUBAGENT_EXTENSIONS_COMMAND && trimmedPrefix !== firstToken) {
+    return getSubagentExtensionsArgumentCompletions(trimmedPrefix.slice(firstToken.length).trimStart());
+  }
+
+  const prefix = argumentPrefix.trim().toLowerCase();
+  const options = [
+    {
+      value: SUBAGENT_EXTENSIONS_COMMAND,
+      label: SUBAGENT_EXTENSIONS_COMMAND,
+      description: i18n.t("extensionCommandDescription"),
+    },
+    { value: AUTO_MUX_PREFERENCE, label: AUTO_MUX_PREFERENCE, description: i18n.t("muxAuto") },
+    ...SUBAGENT_MUX_BACKENDS.map((backend) => ({
+      value: backend,
+      label: backend,
+      description: i18n.t("muxCommandDescription"),
+    })),
+  ];
+  return options.filter((option) => !prefix || option.value.startsWith(prefix));
+}
+
+/** Complete the dedicated extension command with clear and current paths. */
+function getSubagentExtensionsArgumentCompletions(argumentPrefix: string) {
+  const prefix = argumentPrefix.trim().toLowerCase();
+  const configured = loadSubagentExtensionsConfig().extensions;
+  const options = [
+    {
+      value: SUBAGENT_EXTENSIONS_CLEAR,
+      label: SUBAGENT_EXTENSIONS_CLEAR,
+      description: i18n.t("extensionClearDescription"),
+    },
+    ...configured.map((extension) => ({
+      value: extension,
+      label: extension,
+      description: i18n.t("extensionConfiguredDescription"),
+    })),
+  ];
+  return options.filter((option) => !prefix || option.value.toLowerCase().startsWith(prefix));
+}
+
+/** Return a localized source label for an extension candidate. */
+function extensionCandidateSourceLabel(source: SubagentExtensionCandidateSource): string {
+  if (source === EXTENSION_SOURCE_PROJECT) return i18n.t("extensionCandidateProject");
+  if (source === EXTENSION_SOURCE_GLOBAL) return i18n.t("extensionCandidateGlobal");
+  return i18n.t("extensionCandidateConfigured");
+}
+
+/** Format one candidate for the toggle-style slash-command chooser. */
+function formatExtensionCandidateOption(
+  candidate: SubagentExtensionCandidate,
+  selected: ReadonlySet<string>,
+): string {
+  if (candidate.required) {
+    return `● ${candidate.label} — ${i18n.t("extensionCandidateRequired")}`;
+  }
+  if (candidate.missing) {
+    return `⚠ ${candidate.label} — ${i18n.t("extensionCandidateMissing")}`;
+  }
+  const marker = selected.has(resolve(candidate.path)) ? "●" : "○";
+  return `${marker} ${candidate.label} — ${candidate.path} (${extensionCandidateSourceLabel(candidate.source)})`;
+}
+
+/** Edit explicit paths manually and return the entered values without persisting them. */
+async function editSubagentExtensionsManually(
+  ctx: ExtensionContext,
+  initial: readonly string[],
+): Promise<string[] | undefined> {
+  if (!ctx.hasUI) {
+    notify(ctx, i18n.t("extensionInteractiveOnly"), "warning");
+    return undefined;
+  }
+
+  const value = await ctx.ui.editor(i18n.t("extensionConfigTitle"), initial.join("\n"));
+  if (value === null || value === undefined) return undefined;
+  return value
+    .split(/\r?\n/)
+    .map((extension) => extension.trim())
+    .filter(Boolean);
+}
+
+/** Save a selected extension list and report the effective configuration. */
+function saveSelectedSubagentExtensions(ctx: ExtensionContext, extensions: readonly string[]): void {
+  const saved = saveSubagentExtensions(extensions);
+  notify(ctx,
+    i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+    "info",
+  );
+}
+
+/** Let the user toggle discovered extensions while keeping the built-in done hook fixed. */
+async function chooseSubagentExtensions(ctx: ExtensionContext): Promise<void> {
+  if (!ctx.hasUI) {
+    notify(ctx, i18n.t("extensionInteractiveOnly"), "warning");
+    return;
+  }
+
+  const configured = loadSubagentExtensionsConfig().extensions;
+  const configuredResolved = configured.map((extension) => resolveSubagentExtensionPath(extension));
+  const requiredPath = resolve(join(SUBAGENTS_DIR, SUBAGENT_DONE_EXTENSION_FILE));
+  const candidateMap = new Map<string, SubagentExtensionCandidate>();
+  for (const candidate of [
+    {
+      path: requiredPath,
+      label: SUBAGENT_DONE_EXTENSION_FILE,
+      source: EXTENSION_SOURCE_CONFIGURED,
+      required: true,
+    },
+    ...discoverSubagentExtensionCandidates({ configured }),
+  ]) {
+    const key = resolve(candidate.path);
+    if (!candidateMap.has(key)) candidateMap.set(key, candidate);
+  }
+  const candidates = [...candidateMap.values()];
+  const selected = new Set(
+    configuredResolved
+      .filter((extensionPath) => existsSync(extensionPath))
+      .map((extensionPath) => resolve(extensionPath)),
+  );
+
+  const candidateOptions = new Map<string, SubagentExtensionCandidate>();
+  while (true) {
+    candidateOptions.clear();
+    const options = candidates.map((candidate) => {
+      const option = formatExtensionCandidateOption(candidate, selected);
+      candidateOptions.set(option, candidate);
+      return option;
+    });
+    const doneOption = i18n.t("extensionChooserDone");
+    const manualOption = i18n.t("extensionChooserManual");
+    options.push(manualOption, doneOption);
+
+    const choice = await ctx.ui.select(i18n.t("extensionChooserTitle"), options);
+    if (choice === undefined) return;
+    if (choice === doneOption) {
+      saveSelectedSubagentExtensions(ctx, [...selected]);
+      return;
+    }
+    if (choice === manualOption) {
+      const manual = await editSubagentExtensionsManually(ctx, [...selected]);
+      if (manual !== undefined) {
+        selected.clear();
+        for (const extension of manual) selected.add(resolveSubagentExtensionPath(extension));
+      }
+      continue;
+    }
+
+    const candidate = candidateOptions.get(choice);
+    if (!candidate || candidate.required || candidate.missing) continue;
+    const normalizedPath = resolve(candidate.path);
+    if (selected.has(normalizedPath)) selected.delete(normalizedPath);
+    else selected.add(normalizedPath);
+  }
+}
+
+/** Handle `/config:subagent extensions ...` or the dedicated extension command. */
+async function handleSubagentExtensionsCommand(
+  args: string,
+  ctx: ExtensionContext,
+  hasKeyword: boolean,
+): Promise<boolean> {
+  const requested = args.trim();
+  let extensionArgs = requested;
+
+  if (hasKeyword) {
+    const [keyword] = requested.split(/\s+/, 1);
+    if (keyword?.toLowerCase() !== SUBAGENT_EXTENSIONS_COMMAND) return false;
+    extensionArgs = requested.slice(keyword.length).trim();
+  }
+
+  if (!extensionArgs) {
+    await chooseSubagentExtensions(ctx);
+    return true;
+  }
+
+  if (extensionArgs.toLowerCase() === SUBAGENT_EXTENSIONS_CLEAR) {
+    const saved = saveSubagentExtensions([]);
+    notify(ctx,
+      i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+      "info",
+    );
+    return true;
+  }
+
+  const extensions = parseSubagentExtensionPaths(extensionArgs);
+  if (!extensions) {
+    notify(ctx, i18n.t("extensionInvalid", { value: requested }), "warning");
+    return true;
+  }
+
+  const saved = saveSubagentExtensions(extensions);
+  notify(ctx,
+    i18n.t("extensionSaved", { value: formatSubagentExtensions(saved.extensions) }),
+    "info",
+  );
+  return true;
+}
+
+/** Save mux selection, and optionally its Herdr surface mode. */
+function saveMuxConfigSelection(selection: MuxConfigSelection): MuxConfigSelection {
+  const savedMux = saveMuxPreference(selection.preference);
+  const savedMode = selection.herdrMode ? saveHerdrMode(selection.herdrMode).herdrMode : undefined;
+  return { preference: savedMux.mux, herdrMode: savedMode };
+}
+
+/** 注册 mux 配置命令及其兼容别名，并持久化用户选择。 */
 function registerMuxConfigCommand(pi: ExtensionAPI): void {
   const command = {
     description: i18n.t("muxCommandDescription"),
+    getArgumentCompletions: getSubagentConfigArgumentCompletions,
     handler: async (args, ctx) => {
-      const requested = args.trim().toLowerCase();
+      const requested = args.trim();
+      if (requested && await handleSubagentExtensionsCommand(requested, ctx, true)) return;
       if (requested) {
-        const preference = requested === "auto" || (SUBAGENT_MUX_BACKENDS as readonly string[]).includes(requested)
-          ? requested as SubagentMuxPreference
-          : null;
-        if (!preference) {
-          ctx.ui.notify(i18n.t("muxInvalid", { value: requested }), "warning");
+        const selection = parseMuxConfigRequest(requested);
+        if (!selection) {
+          notify(ctx, i18n.t("muxInvalid", { value: requested }), "warning");
           return;
         }
         try {
-          const saved = saveMuxPreference(preference);
-          ctx.ui.notify(i18n.t("muxSaved", { value: muxPreferenceLabel(saved.mux) }), "info");
+          const saved = saveMuxConfigSelection(selection);
+          const herdrMode = saved.preference === HERDR_MUX_BACKEND
+            ? saved.herdrMode ?? loadHerdrModeConfig().herdrMode
+            : undefined;
+          notify(ctx,
+            i18n.t("muxSaved", { value: muxPreferenceLabel(saved.preference, herdrMode) }),
+            "info",
+          );
         } catch (error) {
-          ctx.ui.notify(String(error), "error");
+          notify(ctx, String(error), "error");
         }
         return;
       }
 
       if (!ctx.hasUI) {
-        ctx.ui.notify(i18n.t("muxInteractiveOnly"), "warning");
+        notify(ctx, i18n.t("muxInteractiveOnly"), "warning");
         return;
       }
 
       const current = loadMuxConfig();
+      const currentHerdrMode = loadHerdrModeConfig().herdrMode;
       const detected = getMuxBackend();
-      const options: Array<{ preference: SubagentMuxPreference; label: string }> = [
+      const options: Array<MuxConfigSelection & { label: string }> = [
         {
-          preference: "auto",
-          label: `${current.mux === "auto" ? "●" : "○"} ${i18n.t("muxAuto")} — ${detected ?? i18n.t("muxUnavailable")}`,
+          preference: AUTO_MUX_PREFERENCE,
+          label: `${current.mux === AUTO_MUX_PREFERENCE ? "●" : "○"} ${i18n.t("muxAuto")} — ${detected ?? i18n.t("muxUnavailable")}`,
         },
-        ...SUBAGENT_MUX_BACKENDS.map((backend) => ({
-          preference: backend,
-          label: `${current.mux === backend ? "●" : "○"} ${backend} — ${isMuxBackendAvailable(backend) ? i18n.t("muxAvailable") : i18n.t("muxUnavailable")}`,
-        })),
       ];
+      for (const backend of SUBAGENT_MUX_BACKENDS) {
+        const available = isMuxBackendAvailable(backend)
+          ? i18n.t("muxAvailable")
+          : i18n.t("muxUnavailable");
+        if (backend === HERDR_MUX_BACKEND) {
+          for (const herdrMode of HERDR_SURFACE_MODES) {
+            const selected = current.mux === backend && currentHerdrMode === herdrMode;
+            options.push({
+              preference: backend,
+              herdrMode,
+              label: `${selected ? "●" : "○"} ${muxPreferenceLabel(backend, herdrMode)} — ${available}`,
+            });
+          }
+          continue;
+        }
+        options.push({
+          preference: backend,
+          label: `${current.mux === backend ? "●" : "○"} ${backend} — ${available}`,
+        });
+      }
+
       const exit = i18n.t("muxExit");
       const choice = await ctx.ui.select(
-        i18n.t("muxConfigTitle", { value: muxPreferenceLabel(current.mux) }),
+        i18n.t("muxConfigTitle", { value: muxPreferenceLabel(current.mux, currentHerdrMode) }),
         [...options.map((option) => option.label), exit],
       );
       if (!choice || choice === exit) return;
@@ -1019,38 +1544,76 @@ function registerMuxConfigCommand(pi: ExtensionAPI): void {
       const selected = options.find((option) => option.label === choice);
       if (!selected) return;
       try {
-        const saved = saveMuxPreference(selected.preference);
-        ctx.ui.notify(i18n.t("muxSaved", { value: muxPreferenceLabel(saved.mux) }), "info");
+        const saved = saveMuxConfigSelection(selected);
+        notify(ctx,
+          i18n.t("muxSaved", {
+            value: muxPreferenceLabel(saved.preference, saved.herdrMode),
+          }),
+          "info",
+        );
       } catch (error) {
-        ctx.ui.notify(String(error), "error");
+        notify(ctx, String(error), "error");
       }
     },
   };
   for (const name of ["config:subagent", "subagent-config", "pi-subagent-config"] as const) {
     pi.registerCommand(name, command);
   }
+
+  const extensionsCommand = {
+    description: i18n.t("extensionCommandDescription"),
+    getArgumentCompletions: getSubagentExtensionsArgumentCompletions,
+    handler: async (args: string, ctx: ExtensionContext) => {
+      await handleSubagentExtensionsCommand(args, ctx, false);
+    },
+  };
+  for (const name of SUBAGENT_EXTENSIONS_COMMAND_NAMES) {
+    pi.registerCommand(name, extensionsCommand);
+  }
+}
+
+/** 每次启动或恢复都用新 surface 重建归属，不能继承父进程的改名范围。 */
+function buildTerminalRenameEnvironment(surface: string, backend = getMuxBackend()): string {
+  const context = createSurfaceRenameContext(surface, backend);
+  return `${TERMINAL_RENAME_CONTEXT_ENV}=${shellEscape(JSON.stringify(context))}`;
 }
 
 export const __test__ = {
+  notify,
+  NOTICE_SOURCE,
+  buildTerminalRenameEnvironment,
   borderLine,
+  parseMuxConfigRequest,
+  parseSubagentExtensionPaths,
+  getSubagentConfigArgumentCompletions,
+  getSubagentExtensionsArgumentCompletions,
   getShellReadyDelayMs,
   renderSubagentWidgetLines,
   loadAgentDefaults,
   discoverAgentDefinitions,
+  discoverSubagentExtensionCandidates,
+  getConfiguredSubagentExtensions,
   resolveEffectiveSessionMode,
   resolveLaunchBehavior,
   resolveEffectiveInteractive,
   buildSubagentToolAllowlist,
+  buildChildExtensionArgs,
   buildPiPromptArgs,
   formatWidgetRightLabel,
   observeRunningSubagent,
   resolveDenyTools,
+  resolveLaunchDenyTools,
   resolveInterruptTarget,
   requestSubagentInterrupt,
   handleSubagentInterrupt,
   resolveResultPresentation,
   resolveResumeLaunchBehavior,
   runningSubagents,
+  widgetSubagents,
+  updateWidget,
+  setLatestCtxForTest: (ctx: ExtensionContext | null) => {
+    latestCtx = ctx;
+  },
 };
 
 function startWidgetRefresh() {
@@ -1067,11 +1630,14 @@ function startWidgetRefresh() {
  * sends it. Returns a RunningSubagent — does NOT poll.
  *
  * Call watchSubagent() on the returned object to observe completion.
+ *
+ * `options.hiddenFromWidget` keeps the agent out of the Subagents status widget
+ * for callers that render the same agents in their own panel.
  */
 async function launchSubagent(
   params: typeof SubagentParams.static,
   ctx: { sessionManager: { getSessionFile(): string | null; getSessionId(): string; getSessionDir(): string }; cwd: string },
-  options?: { surface?: string },
+  options?: { surface?: string; hiddenFromWidget?: boolean },
 ): Promise<RunningSubagent> {
   const startTime = Date.now();
   const id = Math.random().toString(16).slice(2, 10);
@@ -1108,17 +1674,17 @@ async function launchSubagent(
   // For new surfaces, pause briefly so the shell is ready before sending the command.
   const surfacePreCreated = !!options?.surface;
   const surface = options?.surface ?? createSurface(params.name);
+  const renameEnvironment = buildTerminalRenameEnvironment(surface);
   const splitFrom = surfacePreCreated ? undefined : (getLastSplitSource() ?? undefined);
   if (!surfacePreCreated) clearLastSplitSource();
   if (!surfacePreCreated) {
     await new Promise<void>((resolve) => setTimeout(resolve, getShellReadyDelayMs()));
   }
 
-  const launchBehavior = resolveLaunchBehavior(params, agentDefs);
+  const launchBehavior = resolveLaunchBehavior(agentDefs);
 
   if (launchBehavior.seededSessionMode) {
     seedSubagentSessionFile({
-      mode: launchBehavior.seededSessionMode,
       parentSessionFile: sessionFile,
       childSessionFile: subagentSessionFile,
       childCwd: targetCwdForSession,
@@ -1127,31 +1693,27 @@ async function launchSubagent(
 
   const activityFile = getSubagentActivityFile(artifactDir, id);
   mkdirSync(dirname(activityFile), { recursive: true });
-  const { inheritsConversationContext } = launchBehavior;
 
-  // Build the task message
-  // Only full-context fork mode inherits prior conversation state.
-  // Blank-session modes need the wrapper instructions and artifact-backed handoff.
+  // Build the task message. All child sessions use artifact-backed delivery.
   const modeHint = agentDefs?.autoExit
     ? "Complete your task autonomously."
     : "Complete your task. When finished, call the subagent_done tool. The user can interact with you at any time.";
   const summaryInstruction = agentDefs?.autoExit
     ? "Your FINAL assistant message should summarize what you accomplished."
     : "Your FINAL assistant message (before calling subagent_done or before the user exits) should summarize what you accomplished.";
-  const denySet = resolveDenyTools(agentDefs);
+  const { allowSubagentSpawning } = loadSubagentSpawningConfig();
+  const denySet = resolveLaunchDenyTools(agentDefs, allowSubagentSpawning, params.denyTools);
   const identity = agentDefs?.body ?? params.systemPrompt ?? null;
   const systemPromptMode = agentDefs?.systemPromptMode;
   const identityInSystemPrompt = systemPromptMode && identity;
   const roleBlock = identity && !identityInSystemPrompt ? `\n\n${identity}` : "";
-  const fullTask = inheritsConversationContext
-    ? params.task
-    : `${roleBlock}\n\n${modeHint}\n\n${params.task}\n\n${summaryInstruction}`;
+  const fullTask = `${roleBlock}\n\n${modeHint}\n\n${params.task}\n\n${summaryInstruction}`;
   // ── Claude Code CLI path ──
   if (agentDefs?.cli === "claude") {
     const sentinelFile = `/tmp/pi-claude-${id}-done`;
     const pluginDir = join(SUBAGENTS_DIR, "plugin");
 
-    const cmdParts: string[] = [];
+    const cmdParts: string[] = [renameEnvironment];
     cmdParts.push(`PI_CLAUDE_SENTINEL=${shellEscape(sentinelFile)}`);
     cmdParts.push("claude");
     cmdParts.push("--dangerously-skip-permissions");
@@ -1210,6 +1772,7 @@ async function launchSubagent(
       sentinelFile,
       interactive: effectiveInteractive,
       splitFrom,
+      hiddenFromWidget: options?.hiddenFromWidget ?? false,
       statusState: createStatusState({
         source: "claude",
         startTimeMs: startTime,
@@ -1223,11 +1786,8 @@ async function launchSubagent(
   // ── Pi CLI path ──
 
   // Build pi command
-  const parts: string[] = ["pi"];
+  const parts: string[] = ["pi", ...buildChildExtensionArgs()];
   parts.push("--session", shellEscape(subagentSessionFile));
-
-  const subagentDonePath = join(SUBAGENTS_DIR, "subagent-done.ts");
-  parts.push("-e", shellEscape(subagentDonePath));
 
   if (effectiveModel) {
     const model = effectiveThinking ? `${effectiveModel}:${effectiveThinking}` : effectiveModel;
@@ -1239,7 +1799,7 @@ async function launchSubagent(
   // auto-detect file paths and read their contents.
   if (identityInSystemPrompt && identity) {
     const flag = systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt";
-    const spTimestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const spTimestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, FILE_TIMESTAMP_LENGTH);
     const spSafeName = params.name
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, "")
@@ -1258,7 +1818,7 @@ async function launchSubagent(
   }
 
   // Build env prefix: denied tools + subagent identity + config dir propagation
-  const envParts: string[] = [];
+  const envParts: string[] = [renameEnvironment];
 
   // If the target cwd has its own .pi/agent/, use that as the config root.
   // Otherwise propagate the current/global agent dir.
@@ -1289,33 +1849,22 @@ async function launchSubagent(
   }
   const envPrefix = envParts.join(" ") + " ";
 
-  // Pass task and skill prompts to the sub-agent.
-  // Only full-context fork mode gets a direct task argument because it already
-  // inherits the parent conversation. Blank-session modes use artifact-backed
-  // handoff so the wrapper instructions arrive as the initial user message.
-  let taskArg: string;
-  if (launchBehavior.taskDelivery === "direct") {
-    taskArg = fullTask;
-  } else {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const safeName = params.name
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "") // strip everything except alphanumeric, spaces, hyphens
-      .replace(/\s+/g, "-") // spaces to hyphens
-      .replace(/-+/g, "-") // collapse multiple hyphens
-      .replace(/^-|-$/g, ""); // trim leading/trailing hyphens
-    const artifactName = `context/${safeName || "subagent"}-${timestamp}.md`;
-    const artifactPath = join(artifactDir, artifactName);
-    mkdirSync(dirname(artifactPath), { recursive: true });
-    writeFileSync(artifactPath, fullTask, "utf8");
-    taskArg = `@${artifactPath}`;
-  }
+  // Pass task and skill prompts to the child. The task is written to an
+  // artifact so wrapper instructions arrive as the initial user message.
+  const artifactTimestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, FILE_TIMESTAMP_LENGTH);
+  const safeName = params.name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "") // strip everything except alphanumeric, spaces, hyphens
+    .replace(/\s+/g, "-") // spaces to hyphens
+    .replace(/-+/g, "-") // collapse multiple hyphens
+    .replace(/^-|-$/g, ""); // trim leading/trailing hyphens
+  const artifactName = `context/${safeName || "subagent"}-${artifactTimestamp}.md`;
+  const artifactPath = join(artifactDir, artifactName);
+  mkdirSync(dirname(artifactPath), { recursive: true });
+  writeFileSync(artifactPath, fullTask, "utf8");
+  const taskArg = `@${artifactPath}`;
 
-  for (const promptArg of buildPiPromptArgs({
-    effectiveSkills,
-    taskDelivery: launchBehavior.taskDelivery,
-    taskArg,
-  })) {
+  for (const promptArg of buildPiPromptArgs({ effectiveSkills, taskArg })) {
     parts.push(shellEscape(promptArg));
   }
 
@@ -1342,12 +1891,6 @@ async function launchSubagent(
     ].join("\n"),
   });
 
-  // 延迟重命名 agent 标题（左侧侧栏），需要等 pi 启动被 herdr 检测到
-  const agentName = params.name;
-  const agentSurface = surface;
-  setTimeout(() => renameAgent(agentSurface, agentName), 3000);
-  setTimeout(() => renameAgent(agentSurface, agentName), 5000);
-
   const running: RunningSubagent = {
     id,
     name: params.name,
@@ -1360,6 +1903,7 @@ async function launchSubagent(
     activityFile,
     interactive: effectiveInteractive,
     splitFrom,
+    hiddenFromWidget: options?.hiddenFromWidget ?? false,
     statusState: createStatusState({
       source: "pi",
       startTimeMs: startTime,
@@ -1527,18 +2071,29 @@ async function watchSubagent(
 }
 
 export default function subagentsExtension(pi: ExtensionAPI) {
+  // 提示画成会话区里的带底色消息块；渲染器在本包这个模块实例里注册一次。
+  installNoticeRenderer(pi);
   applyPersistedMuxPreference();
 
   // Expose launchSubagent / watchSubagent for programmatic use by other extensions
   (globalThis as any).__pi_subagents = { launchSubagent, watchSubagent };
 
   // Capture the UI context for widget updates
+  // Module state is shared by every session in this process. Another extension can run extra
+  // SDK sessions in-process (no UI) that load this extension too: they must not take over the
+  // session's ctx (it goes stale once they are disposed) or tear down its running agents.
+  const instance = {};
   pi.on("session_start", (_event, ctx) => {
+    if (latestCtx && !ctx.hasUI) return;
+    stateOwner = instance;
     latestCtx = ctx;
   });
 
   // Clean up on session shutdown
   pi.on("session_shutdown", (_event, _ctx) => {
+    if (stateOwner !== instance) return;
+    stateOwner = null;
+    latestCtx = null;
     if (widgetInterval) {
       clearInterval(widgetInterval);
       widgetInterval = null;
@@ -1778,13 +2333,11 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       name: "subagent_interrupt",
       label: "Interrupt Subagent",
       description:
-        "Send Escape to the active turn of a currently running Pi-backed subagent. " +
-        "The child pane, session, watcher, and running entry remain alive; this returns only a local acknowledgement " +
-        "and does not emit a subagent_result solely because of this request.",
+        "Send Escape to stop the active turn of a currently running Pi-backed subagent, then terminate the child Pi process. " +
+        "The parent watcher consumes the completion signal, closes the child pane, and removes the subagent from the running set.",
       promptSnippet:
-        "Send Escape to the active turn of a currently running Pi-backed subagent. " +
-        "The child pane, session, watcher, and running entry remain alive; this returns only a local acknowledgement " +
-        "and does not emit a subagent_result solely because of this request.",
+        "Send Escape to stop the active turn of a currently running Pi-backed subagent, then terminate the child Pi process. " +
+        "The parent watcher consumes the completion signal, closes the child pane, and removes the subagent from the running set.",
       parameters: Type.Object({
         id: Type.Optional(Type.String({ description: "Exact running subagent id" })),
         name: Type.Optional(Type.String({ description: "Exact running subagent display name" })),
@@ -1965,14 +2518,11 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         const entryCountBefore = getNewEntries(params.sessionPath, 0).length;
 
         const surface = createSurface(name);
+        const renameEnvironment = buildTerminalRenameEnvironment(surface);
         await new Promise<void>((resolve) => setTimeout(resolve, getShellReadyDelayMs()));
 
         // Build pi resume command
-        const parts = ["pi", "--session", shellEscape(params.sessionPath)];
-
-        // Load subagent-done extension so the agent can self-terminate if needed
-        const subagentDonePath = join(SUBAGENTS_DIR, "subagent-done.ts");
-        parts.push("-e", shellEscape(subagentDonePath));
+        const parts = ["pi", ...buildChildExtensionArgs(), "--session", shellEscape(params.sessionPath)];
 
         const sessionId = ctx.sessionManager.getSessionId();
         const artifactDir = getArtifactDir(ctx.sessionManager.getSessionDir(), sessionId);
@@ -1981,7 +2531,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 
         let resumeMsgFile: string | undefined;
         if (params.message) {
-          const msgTimestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+          const msgTimestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, FILE_TIMESTAMP_LENGTH);
           resumeMsgFile = join(
             artifactDir,
             "subagent-resume",
@@ -1998,14 +2548,19 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         }
 
         // Build env prefix — propagate PI_CODING_AGENT_DIR for config isolation
-        const resumeEnvParts: string[] = [];
+        const resumeEnvParts: string[] = [renameEnvironment];
+        const { allowSubagentSpawning } = loadSubagentSpawningConfig();
         if (process.env.PI_CODING_AGENT_DIR) {
           resumeEnvParts.push(`PI_CODING_AGENT_DIR=${shellEscape(process.env.PI_CODING_AGENT_DIR)}`);
         }
         resumeEnvParts.push(`PI_SUBAGENT_NAME=${shellEscape(name)}`);
         resumeEnvParts.push(`PI_SUBAGENT_SESSION=${shellEscape(params.sessionPath)}`);
         resumeEnvParts.push(`PI_SUBAGENT_ID=${shellEscape(id)}`);
+        resumeEnvParts.push(`PI_SUBAGENT_SURFACE=${shellEscape(surface)}`);
         resumeEnvParts.push(`PI_SUBAGENT_ACTIVITY_FILE=${shellEscape(activityFile)}`);
+        resumeEnvParts.push(
+          `PI_DENY_TOOLS=${shellEscape([...resolveDenyTools(null, allowSubagentSpawning)].join(","))}`,
+        );
         if (autoExit) {
           resumeEnvParts.push(`PI_SUBAGENT_AUTO_EXIT=1`);
         }
@@ -2131,25 +2686,13 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       },
     });
 
-  // /iterate command — fork the session into a subagent
-  pi.registerCommand("iterate", {
-    description: "Fork session into a subagent for focused work (bugfixes, iteration)",
-    handler: async (args, _ctx) => {
-      const task = args.trim() || "";
-      const toolCall = task
-        ? `Use subagent to fork a session. fork: true, name: "Iterate", task: ${JSON.stringify(task)}`
-        : `Use subagent to fork a session. fork: true, name: "Iterate", task: "The user wants to do some hands-on work. Help them with whatever they need."`;
-      pi.sendUserMessage(toolCall);
-    },
-  });
-
   // /subagent command — spawn a subagent by name
   pi.registerCommand("subagent", {
     description: "Spawn a subagent: /subagent <agent> <task>",
     handler: async (args, ctx) => {
       const trimmed = args.trim();
       if (!trimmed) {
-        ctx.ui.notify("Usage: /subagent <agent> [task]", "warning");
+        notify(ctx, "Usage: /subagent <agent> [task]", "warning");
         return;
       }
 
@@ -2159,7 +2702,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 
       const defs = loadAgentDefaults(agentName);
       if (!defs) {
-        ctx.ui.notify(
+        notify(ctx,
           `Agent "${agentName}" not found in ~/.pi/agent/agents/ or .pi/agents/`,
           "error",
         );
@@ -2317,19 +2860,8 @@ export default function subagentsExtension(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const task = args.trim();
       if (!task) {
-        ctx.ui.notify("Usage: /plan <what to build>", "warning");
+        notify(ctx, "Usage: /plan <what to build>", "warning");
         return;
-      }
-
-      // Rename workspace and tab to show this is a planning session
-      if (isMuxAvailable()) {
-        try {
-          const label = task.length > 40 ? task.slice(0, 40) + "..." : task;
-          renameWorkspace(`🎯 ${label}`);
-          renameCurrentTab(`🎯 Plan: ${label}`);
-        } catch {
-          // non-critical -- do not block the plan
-        }
       }
 
       // Load the plan skill from the subagents extension directory

@@ -1,0 +1,238 @@
+/**
+ * 流式登记状态机的行为测试。
+ *
+ * 这里盯的是「顺序」：开组必须早于登记（否则解说后面那几个调用会落到上一组），
+ * 登记必须早于 Pi 渲染那一行工具行（否则用户会先看到一行原样的工具调用、再突然被收进组里）。
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+	beginActionGroupStep,
+	createActionGroupState,
+	findActionGroupMembership,
+	getActionGroupSize,
+	registerActionToolCall,
+} from "../src/action-groups.ts";
+import {
+	applyStreamedMessage,
+	beginStreamedMessage,
+	createStreamRegistration,
+	type StreamedToolCall,
+} from "../src/stream-registration.ts";
+
+/** 所有调用都算「运行命令」，分类与摘要不是这组用例的重点。 */
+function describe(call: StreamedToolCall): { summary: string; activity: "command" } {
+	return { summary: `${call.toolName}:${call.toolCallId}`, activity: "command" };
+}
+
+/** 动作组状态：先开好第一个组，模拟 `agent_start`。 */
+function createGroups(): ReturnType<typeof createActionGroupState> {
+	const groups = createActionGroupState();
+	beginActionGroupStep(groups);
+	return groups;
+}
+
+/** 造一条流式 assistant 消息；`tail` 追加在参数里的内容块后面。 */
+function assistantMessage(...content: unknown[]): unknown {
+	return { role: "assistant", content };
+}
+
+/** 工具调用内容块。 */
+function toolCall(id: string): unknown {
+	return { type: "toolCall", id, name: "bash", arguments: { command: `echo ${id}` } };
+}
+
+/** 正文内容块。 */
+function text(value: string): unknown {
+	return { type: "text", text: value };
+}
+
+/** 把一条消息喂进状态机，返回结果。 */
+function feed(
+	state: ReturnType<typeof createStreamRegistration>,
+	groups: ReturnType<typeof createActionGroupState>,
+	message: unknown,
+) {
+	return applyStreamedMessage({ state, message, actionGroups: groups, describe });
+}
+
+test("解说先出现时，先开的组接住后面的工具调用", () => {
+	const groups = createGroups();
+	const state = createStreamRegistration();
+
+	beginStreamedMessage(state, assistantMessage());
+	const outcome = feed(state, groups, assistantMessage(text("我先看一眼"), toolCall("a1")));
+
+	assert.equal(outcome.stepped, true, "带解说的消息应当开新组");
+	assert.equal(outcome.registered.length, 1, "同一条消息里的调用应当被登记");
+	assert.equal(
+		findActionGroupMembership(groups, "a1")?.groupId,
+		groups.currentGroupId,
+		"调用要落在刚开的新组里",
+	);
+});
+
+test("工具调用先出现、解说后到时，那几次调用跟着挪到新组", () => {
+	const groups = createGroups();
+	const firstGroup = groups.currentGroupId;
+	const state = createStreamRegistration();
+
+	beginStreamedMessage(state, assistantMessage());
+	// 第一帧：只有工具调用，解说还没流出来 —— 先按当前组登记，工具行才能立刻被收起来。
+	const first = feed(state, groups, assistantMessage(toolCall("a1")));
+	assert.equal(first.stepped, false, "还没有解说，不该开新组");
+	assert.equal(findActionGroupMembership(groups, "a1")?.groupId, firstGroup, "先落在上一组");
+
+	// 第二帧：解说出现在工具调用后面 —— 组边界落在解说之后，调用要跟过去。
+	const second = feed(state, groups, assistantMessage(toolCall("a1"), text("顺手再确认一下")));
+	assert.equal(second.stepped, true, "解说晚到也要开新组");
+	assert.equal(second.registered.length, 0, "同一次调用不能重复登记");
+	const moved = groups.currentGroupId;
+	assert.notEqual(moved, firstGroup, "前置条件：新组号应当变了");
+	assert.equal(findActionGroupMembership(groups, "a1")?.groupId, moved, "调用要改挂到新组");
+	assert.equal(getActionGroupSize(groups, firstGroup), 0, "上一组的成员数要减回去");
+	assert.equal(getActionGroupSize(groups, moved), 1, "新组里只有这一条");
+});
+
+test("流式阶段只盖占位摘要，真摘要由后续登记层换上", () => {
+	const groups = createGroups();
+	const state = createStreamRegistration();
+	/** 参数没到齐时给占位摘要（只有标签），到齐后给真摘要。 */
+	const describeWithArgs = (call: StreamedToolCall) => {
+		const command = (call.args as Record<string, unknown> | undefined)?.command;
+		return typeof command === "string"
+			? { summary: `运行命令 ${command}`, activity: "command" as const }
+			: { summary: "运行命令", provisional: true, activity: "command" as const };
+	};
+	/** 造一个带指定参数的工具调用块，用来模拟分片拼参数的过程。 */
+	const toolCallWith = (args: unknown): unknown => ({ type: "toolCall", id: "a1", name: "bash", arguments: args });
+
+	beginStreamedMessage(state, assistantMessage());
+	// 第一帧：块刚出现，参数还没到齐 —— 先登记（要赶在渲染前），摘要只能是占位。
+	applyStreamedMessage({
+		state,
+		message: assistantMessage(toolCallWith({})),
+		actionGroups: groups,
+		describe: describeWithArgs,
+	});
+	assert.equal(
+		findActionGroupMembership(groups, "a1")?.summary,
+		"运行命令",
+		"流式阶段先给占位摘要",
+	);
+
+	// 第二帧：参数到齐，但流式阶段不重复登记。
+	const outcome = applyStreamedMessage({
+		state,
+		message: assistantMessage(toolCallWith({ command: "ls -la" })),
+		actionGroups: groups,
+		describe: describeWithArgs,
+	});
+	assert.equal(outcome.registered.length, 0, "同一次调用不重复登记");
+
+	// 真摘要由带完整参数的登记层（`tool_call` / `tool_execution_start`）换上。
+	const { summary, activity } = describeWithArgs({
+		toolCallId: "a1",
+		toolName: "bash",
+		args: { command: "ls -la" },
+	});
+	registerActionToolCall(groups, { toolCallId: "a1", summary, activity });
+	assert.equal(
+		findActionGroupMembership(groups, "a1")?.summary,
+		"运行命令 ls -la",
+		"参数到齐后占位摘要要换成真摘要",
+	);
+});
+
+test("占位摘要在流式阶段不会被锁死：换成真摘要后不再变动", () => {
+	const groups = createGroups();
+	const state = createStreamRegistration();
+	/** 参数没到齐时给占位摘要（只有标签），到齐后给真摘要。 */
+	const describeProvisional = (call: StreamedToolCall) => {
+		const command = (call.args as Record<string, unknown> | undefined)?.command;
+		return typeof command === "string"
+			? { summary: `运行命令 ${command}`, activity: "command" as const }
+			: { summary: "运行命令", provisional: true, activity: "command" as const };
+	};
+
+	beginStreamedMessage(state, assistantMessage());
+	// 第一帧：参数只有键、值还没到，只能给出「运行命令」这样的占位摘要。
+	applyStreamedMessage({
+		state,
+		message: assistantMessage({ type: "toolCall", id: "a1", name: "bash", arguments: {} }),
+		actionGroups: groups,
+		describe: describeProvisional,
+	});
+	assert.equal(findActionGroupMembership(groups, "a1")?.summary, "运行命令", "先给占位摘要");
+
+	// 第二帧：参数到齐，但流式阶段不重复登记，真摘要由登记层（`tool_call`）换上。
+	const outcome = applyStreamedMessage({
+		state,
+		message: assistantMessage({
+			type: "toolCall",
+			id: "a1",
+			name: "bash",
+			arguments: { command: "ls -la" },
+		}),
+		actionGroups: groups,
+		describe: describeProvisional,
+	});
+	assert.equal(outcome.registered.length, 0, "同一次调用不重复登记");
+
+	const { summary, activity } = describeProvisional({
+		toolCallId: "a1",
+		toolName: "bash",
+		args: { command: "ls -la" },
+	});
+	registerActionToolCall(groups, { toolCallId: "a1", summary, activity });
+	assert.equal(
+		findActionGroupMembership(groups, "a1")?.summary,
+		"运行命令 ls -la",
+		"参数到齐后占位摘要要被换掉",
+	);
+});
+
+test("同一帧反复喂进来只登记一次，也不会反复开组", () => {
+	const groups = createGroups();
+	const state = createStreamRegistration();
+
+	beginStreamedMessage(state, assistantMessage());
+	const message = assistantMessage(text("说明"), toolCall("a1"));
+	feed(state, groups, message);
+	feed(state, groups, message);
+	feed(state, groups, message);
+
+	assert.equal(getActionGroupSize(groups, groups.currentGroupId), 1, "同一次调用只算一个成员");
+});
+
+test("开始一条新消息会清掉上一条的待办与登记", () => {
+	const groups = createGroups();
+	const state = createStreamRegistration();
+
+	beginStreamedMessage(state, assistantMessage());
+	feed(state, groups, assistantMessage(toolCall("a1")));
+	assert.equal(state.toolCalls.length, 1, "登记列表里应有这一条");
+
+	beginStreamedMessage(state, assistantMessage());
+	assert.equal(state.toolCalls.length, 0, "新消息不该带着上一条的登记");
+	assert.equal(state.narrationStepPending, true, "新消息重新等着开组");
+
+	// 新消息只有工具调用：不应再开组，直接落进当前组。
+	const outcome = feed(state, groups, assistantMessage(toolCall("a2")));
+	assert.equal(outcome.stepped, false, "没有解说就不开组");
+	assert.equal(findActionGroupMembership(groups, "a2")?.groupId, groups.currentGroupId);
+});
+
+test("非 assistant 消息不改动状态机", () => {
+	const groups = createGroups();
+	const state = createStreamRegistration();
+
+	beginStreamedMessage(state, assistantMessage());
+	beginStreamedMessage(state, { role: "user", content: [text("用户消息")] });
+	assert.equal(state.narrationStepPending, true, "user 消息不该清掉 assistant 的待办");
+
+	const outcome = feed(state, groups, { role: "toolResult", content: [text("结果")] });
+	assert.equal(outcome.stepped, false, "toolResult 不该开组");
+	assert.equal(outcome.registered.length, 0, "toolResult 里没有工具调用可登记");
+});

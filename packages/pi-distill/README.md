@@ -58,6 +58,16 @@ Open the interactive configuration command with:
 /config:distill
 ```
 
+It opens a settings panel: field name on the left, current value on the right, one description line under the selection. Enter or Space flips a switch in place; enumerations, numbers and the summarizer model open a submenu with a filter box on top. Changes are written to disk and applied to the running session immediately, so Esc closes the panel with the new configuration already live. The model list comes from the models Pi has registered and can also be typed by hand.
+
+Non-interactive forms are still available:
+
+```text
+/config:distill status
+/config:distill enable
+/config:distill disable
+```
+
 ## The idea
 
 We are not trying to make the agent see less information. We are trying to avoid making it carry thousands of log lines into context just to find one conclusion.
@@ -106,11 +116,12 @@ pi-distill uses the actual result and configuration to keep it, distill it, or w
 Agent consumes a result suited to the current decision, with auditable diagnostics
 ```
 
-1. At session start, the extension adds required `outputRequest` to every enabled active tool whose parameter schema is an object. `edit` and `write` are disabled by default; other tools are enabled unless configured otherwise. It does not hard-code `bash`, `read`, `grep`, or `find`.
+1. At session start, the extension adds required `outputRequest` to every enabled active tool whose parameter schema is an object. `edit` and `write` are disabled by default; other tools are enabled unless configured otherwise. It does not hard-code `bash`, `read`, `grep`, or `find`. `codemode` is the one exception and is skipped entirely: it uses pi's grammar-constrained sampling, which accepts exactly one required string property, so a second required property would fail the whole model request. This cannot be turned on from the configuration panel.
 2. The `tool_call` handler captures the parameter and removes it before forwarding the call, so the underlying tool never receives the extension-only field.
 3. The `tool_result` handler sees the actual output and decides what to do; it does not rely on the agent predicting the output size.
 4. Every tool call must include a non-empty `outputRequest`. A prompt containing only `RAW` explicitly requests the original. Any other non-empty prompt permits distillation once the configured threshold is reached.
-5. OpenAI-compatible completion requests enable native JSON mode with `response_format: { "type": "json_object" }`; OpenAI Responses-compatible requests use the equivalent `text.format`. A timed-out attempt is retried according to `timeoutRetryCount`, while other failures use `errorRetryCount` (both default to one retry). If all attempts fail, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card. JSON responses wrapped in Markdown fences such as `````json … ````` are also accepted.
+5. OpenAI-compatible completion requests enable native JSON mode with `response_format: { "type": "json_object" }`; OpenAI Responses-compatible requests use the equivalent `text.format`. A timed-out attempt is retried according to `timeoutRetryCount`, while other provider failures use `errorRetryCount` (both default to one retry). The two error kinds share a total retry ceiling equal to the larger configured count, rather than adding both counts: defaults allow at most two complete distillation attempts, not three. A single result has a monotonic waiting deadline of `timeoutSeconds × (1 + max(timeoutRetryCount, errorRetryCount))`. JSON repair consumes the current attempt’s remaining time. A provider or authentication promise that ignores cancellation cannot keep the result hook waiting; late authentication cannot start a request, and late responses are not adopted or repaired. Cancellation of a request already sent to a provider remains best-effort. This deadline applies only to distillation, not the parent Agent run or the original tool. If a non-empty model response is only invalid JSON or violates the response schema, pi-distill makes one JSON-only repair call with the malformed response and validation error; it does not resend the tool output or run summarization again. If repair fails, no model is available, or compression is ineffective, the original facts are retained and the status is exposed through details and the audit card. JSON responses wrapped in Markdown fences such as `````json … ````` are also accepted.
+6. Interrupting the parent Agent request aborts any in-flight distillation request immediately and disables retries for that interrupted result; the original tool output remains available through the normal fail-open path.
 
 ## Output contract
 
@@ -134,7 +145,7 @@ The distillation prompt strictly follows the locale selected by `/config:languag
 
 ## Scope and boundaries
 
-- Handles every enabled active tool with an object parameter schema; whether `outputRequest` can be injected is determined by the tool schema, not a fixed allowlist.
+- Handles every enabled active tool with an object parameter schema; whether `outputRequest` can be injected is determined by the tool schema, not a fixed allowlist. `codemode` is the only tool skipped: pi's grammar-constrained sampling requires exactly one required string property, so its results are returned untouched and it has no configuration row.
 - Registers no replacement tools, does not change tool execution semantics, and does not require a separately installed `pi-tool-display` host package.
 - Text distillation is lossy; use `RAW` when completeness matters.
 - Non-text results are a completeness boundary: images, audio, binary data, and mixed content bypass text distillation.
@@ -180,8 +191,8 @@ Configuration-file fields take precedence over environment variables. Unspecifie
 | `maxChars` | Distilled text is written to a temporary file when it exceeds this length. |
 | `maxOutputChars` | Maximum text returned to the Agent. Oversized text is written to a temporary file and replaced with a file pointer. |
 | `timeoutSeconds` | Maximum time allowed for each distillation model attempt. |
-| `timeoutRetryCount` | Number of additional attempts after a timeout. Defaults to `1`; set to `0` to disable timeout retries. |
-| `errorRetryCount` | Number of additional attempts after any non-timeout error. Defaults to `1`; set to `0` to disable other error retries. |
+| `timeoutRetryCount` | Extra timeout retries, also bounded by the shared total ceiling `max(timeoutRetryCount, errorRetryCount)`. Defaults to `1`; `0` disables timeout retries. |
+| `errorRetryCount` | Extra non-timeout retries, also bounded by the same shared total ceiling. Defaults to `1`; `0` disables other error retries. |
 | `missedCompressionRatio` | Long-output threshold for a diagnostic when no summary prompt was supplied. |
 | `summarizeErrors` | Whether error results that meet `minChars` should still be sent to the distillation model. |
 | `tools.<name>.enabled` | Enables or disables `outputRequest` injection and result distillation for one tool. `edit` and `write` default to disabled; other unconfigured tools default to enabled. It can also be changed from `/config:distill`. |

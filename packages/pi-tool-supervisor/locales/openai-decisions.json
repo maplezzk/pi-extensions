@@ -1,0 +1,50 @@
+{
+  "invalidBaseUrl": {
+    "zh-CN": "Decisions baseUrl 必须是无凭证、查询参数或片段的 HTTPS URL；仅本机测试允许 HTTP。",
+    "en-US": "Decisions baseUrl must use HTTPS without credentials, query, or fragment; HTTP is allowed only for loopback tests."
+  },
+  "invalidEnvName": {
+    "zh-CN": "Decisions 密钥环境变量名格式不正确。",
+    "en-US": "Invalid Decisions API key environment variable name."
+  },
+  "missingToken": {
+    "zh-CN": "没有找到 Decisions API key；请由可信运行层注入 apiKeyEnv 指定的环境变量。",
+    "en-US": "No Decisions API key found; have the trusted launcher supply the variable named by apiKeyEnv."
+  },
+  "invalidModel": {
+    "zh-CN": "Decisions 模型名称不能为空。",
+    "en-US": "The Decisions model name cannot be empty."
+  },
+  "invalidQuestions": {
+    "zh-CN": "Decisions 需要 Noul 或 Choice 问题及说明；Choice 必须有 2–255 个候选。",
+    "en-US": "Decisions requires Noul or Choice questions with instructions; Choice must have 2–255 candidates."
+  },
+  "invalidResponse": {
+    "zh-CN": "Decisions 响应不是有效 JSON，或答案数量不正确。",
+    "en-US": "The Decisions response is invalid JSON or has an unexpected answer count."
+  },
+  "invalidAnswer": {
+    "zh-CN": "Decisions 拒绝回答，或答案名称、类型、概率或候选不合法。",
+    "en-US": "Decisions refused a question or returned invalid answer names, types, probabilities, or candidates."
+  },
+  "requestFailed": {
+    "zh-CN": "Decisions 请求失败（HTTP {status}）；未记录服务端正文。",
+    "en-US": "Decisions request failed (HTTP {status}); the server body was not recorded."
+  },
+  "networkFailed": {
+    "zh-CN": "Decisions 请求无法建立连接，重试次数已用尽。",
+    "en-US": "The Decisions request could not reach the service; retries were exhausted."
+  },
+  "responseTooLarge": {
+    "zh-CN": "Decisions 响应超过 1 MiB 上限。",
+    "en-US": "The Decisions response exceeds the 1 MiB limit."
+  },
+  "aborted": {
+    "zh-CN": "上级请求已终止，Decisions 请求已取消。",
+    "en-US": "The parent request was aborted, so the Decisions request was cancelled."
+  },
+  "timeout": {
+    "zh-CN": "Decisions 审查超时（所有批次与重试共用预算）。",
+    "en-US": "Decisions review timed out (all batches and retries share one budget)."
+  }
+}

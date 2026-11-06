@@ -38,6 +38,7 @@ function createApiStub(
     registerCommand: (name: string, cmd: unknown) => void;
     on: (event: string, handler: (...args: unknown[]) => unknown) => void;
     getAllTools: () => unknown[];
+    getActiveTools: () => string[];
     getCommands: () => Array<{ name: string }>;
   }> = {},
 ): {
@@ -65,6 +66,10 @@ function createApiStub(
     },
     getAllTools(): unknown[] {
       return overrides.getAllTools?.() ?? [];
+    },
+    // Keep existing entry-point tests focused by exposing every built-in as active.
+    getActiveTools(): string[] {
+      return overrides.getActiveTools?.() ?? ["read", "grep", "find", "ls", "bash", "edit", "write"];
     },
     getCommands(): Array<{ name: string }> {
       return overrides.getCommands?.() ?? [];
@@ -208,6 +213,44 @@ test("session_start handler refreshes capabilities and notifies pending errors",
 
   // Should not throw
   await assert.doesNotReject(async () => sessionHandler({}, ctx));
+});
+
+test("pending load error is reported with the display source tag", async () => {
+  const { api, capturedHandlers } = createApiStub();
+  initializeToolDisplayExtension(api, {
+    config: DEFAULT_TOOL_DISPLAY_CONFIG,
+    error: "config parse failed",
+  });
+
+  // Several sub-registrations add their own session_start handlers; the host
+  // handler is the one that reports the pending config load error.
+  const sessionHandlers = capturedHandlers
+    .filter((h) => h.event === "session_start")
+    .map((h) => h.handler);
+  assert.ok(sessionHandlers.length > 0, "session_start handlers captured");
+
+  const notices: Array<{ message: string; level: string }> = [];
+  const ctx = {
+    mode: "tui",
+    ui: {
+      theme: { fg: (color: string, text: string) => `<${color}>${text}</>` },
+      notify: (message: string, level: string): void => {
+        notices.push({ message, level });
+      },
+    },
+  };
+
+  for (const handler of sessionHandlers) {
+    await handler({}, ctx);
+  }
+
+  const errorNotice = notices.find((notice) => notice.message.includes("config parse failed"));
+  assert.ok(errorNotice, `expected the pending load error notice, got: ${JSON.stringify(notices)}`);
+  assert.equal(errorNotice.level, "warning");
+  assert.ok(
+    errorNotice.message.includes("<muted>[display]</>"),
+    `expected a muted-colored display tag, got: ${errorNotice.message}`,
+  );
 });
 
 test("before_agent_start handler refreshes capabilities without crashing", async () => {
