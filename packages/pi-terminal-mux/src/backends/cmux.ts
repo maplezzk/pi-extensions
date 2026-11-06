@@ -330,9 +330,19 @@ export const ops: BackendOps = {
   },
 
   close(surface: string): void {
-    execSync(`cmux close-surface --surface ${shellEscape(surface)}`, {
-      encoding: "utf8",
-    });
+    try {
+      execFileSync("cmux", ["close-surface", "--force", "--surface", surface], {
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+    } catch (error) {
+      // Older cmux builds lack --force; never retry unrelated close failures.
+      const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+      if (!/(?:unknown|unrecognized|unsupported|unexpected) (?:flag|option|argument)[^\n]*--force/i.test(stderr)) {
+        throw error;
+      }
+      execFileSync("cmux", ["close-surface", "--surface", surface], { encoding: "utf8" });
+    }
     cmuxLog(`[close] surface=${surface}`);
   },
 

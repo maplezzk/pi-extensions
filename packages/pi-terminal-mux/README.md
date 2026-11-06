@@ -75,6 +75,10 @@ Herdr keeps the backward-compatible breadth-first split mode by default. Set `PI
 export PI_SUBAGENT_HERDR_MODE=tab
 ```
 
+## Cmux compatibility
+
+Cmux closes surfaces with `--force` so a running shell does not block cleanup. Older cmux versions that reject this option are retried without it; other failures are propagated.
+
 ## API overview
 
 ### Unified surface API (same semantics across backends)
