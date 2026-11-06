@@ -790,6 +790,7 @@ async function summarizeOutput(
   context: DistillExecutionContext,
   signal: AbortSignal,
   completion: SummaryCompletion = complete,
+  onJsonRepair?: () => void,
 ): Promise<SummaryResult> {
   const model = config.modelProvider && config.modelId
     ? context.ctx.modelRegistry.find(config.modelProvider, config.modelId)
@@ -834,6 +835,7 @@ async function summarizeOutput(
 
     // 只修复模型已返回的 JSON：不重新发送工具输出，不重新总结，避免二次总结改写事实。
     let repaired: { text: string; usage: SummaryUsage | undefined };
+    onJsonRepair?.();
     try {
       repaired = await completeSummaryMessage(
         request,
@@ -881,62 +883,89 @@ async function summarizeOutputWithRetries(
   let errorRetries = 0;
   let attempts = 0;
   let totalUsage: SummaryUsage | undefined;
+  const maxAttempts = 1 + Math.max(config.timeoutRetryCount, config.errorRetryCount);
+  const deadline = performance.now() + config.timeoutSeconds * 1000 * maxAttempts;
 
   while (true) {
     if (context.signal?.aborted) {
-      throw new SummaryRetryError("Summarization aborted", attempts, totalUsage);
+      throw new SummaryRetryError(i18n.t("summaryAborted"), attempts, totalUsage);
+    }
+    const now = performance.now();
+    if (now >= deadline) {
+      throw new SummaryRetryError(i18n.t("summaryDeadlineExceeded"), attempts, totalUsage);
     }
 
     const attemptController = new AbortController();
-    const abortFromParent = () => attemptController.abort();
+    const attemptDeadline = Math.min(deadline, now + config.timeoutSeconds * 1000);
+    let interrupt: (error: Error) => void;
+    const interrupted = new Promise<never>((_, reject) => { interrupt = reject; });
+    const abortFromParent = () => {
+      interrupt(new Error(i18n.t("summaryAborted")));
+      attemptController.abort();
+    };
     context.signal?.addEventListener("abort", abortFromParent, { once: true });
-    if (context.signal?.aborted) attemptController.abort();
+    if (context.signal?.aborted) abortFromParent();
     let timedOut = false;
-    const timeout = setTimeout(
-      () => {
+    let jsonRepairStarted = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      interrupt(new Error(i18n.t("summaryTimedOut")));
+      attemptController.abort();
+    }, Math.max(0, attemptDeadline - performance.now()));
+    const checkAttempt = () => {
+      if (context.signal?.aborted) throw new Error(i18n.t("summaryAborted"));
+      if (timedOut || performance.now() >= attemptDeadline) {
         timedOut = true;
         attemptController.abort();
-      },
-      config.timeoutSeconds * 1000,
-    );
+        throw new Error(i18n.t("summaryTimedOut"));
+      }
+    };
+    // Authentication remains in the shared requester. Check its eventual
+    // completion boundary too, so late auth cannot launch an expired request.
+    const boundedCompletion: SummaryCompletion = async (...args) => {
+      checkAttempt();
+      const response = await completion(...args);
+      checkAttempt();
+      return response;
+    };
     attempts += 1;
 
     try {
-      const result = await summarizeOutput(
-        prompt,
-        output,
-        config,
-        context,
-        attemptController.signal,
-        completion,
-      );
+      checkAttempt();
+      const result = await Promise.race([
+        summarizeOutput(prompt, output, config, context, attemptController.signal,
+          boundedCompletion, () => {
+            jsonRepairStarted = true;
+            checkAttempt();
+          }),
+        interrupted,
+      ]);
+      checkAttempt();
       totalUsage = mergeSummaryUsage(totalUsage, result.usage);
-      return {
-        ...result,
-        usage: totalUsage,
-        attempts,
-      };
+      return { ...result, usage: totalUsage, attempts };
     } catch (error) {
-      totalUsage = mergeSummaryUsage(
-        totalUsage,
+      totalUsage = mergeSummaryUsage(totalUsage,
         error instanceof SummaryAttemptError || error instanceof SummaryRetryError
-          ? error.usage
-          : undefined,
-      );
+          ? error.usage : undefined);
       if (context.signal?.aborted) {
-        throw new SummaryRetryError("Summarization aborted", attempts, totalUsage);
+        throw new SummaryRetryError(i18n.t("summaryAborted"), attempts, totalUsage);
       }
-      // 已有响应只需修复 JSON 时，不再重新触发一次完整总结；否则会增加成本，
-      // 也可能让第二次总结改写原本已经生成的事实。
-      if (error instanceof SummaryJsonRepairError) throw error;
+      // A rejection may run before a delayed timeout callback. Classify it
+      // using the monotonic deadline, not only the callback's flag.
+      if (performance.now() >= attemptDeadline) {
+        timedOut = true;
+        attemptController.abort();
+      }
+      const failure = timedOut ? new Error(i18n.t("summaryTimedOut")) : error;
+      // A timeout during JSON-only repair must not resend the original output.
+      if (error instanceof SummaryJsonRepairError && !timedOut) throw error;
+      if (jsonRepairStarted) {
+        throw new SummaryJsonRepairError(failure instanceof Error ? failure.message : String(failure));
+      }
       const retryLimit = timedOut ? config.timeoutRetryCount : config.errorRetryCount;
       const retriesUsed = timedOut ? timeoutRetries : errorRetries;
-      if (retriesUsed >= retryLimit) {
-        throw new SummaryRetryError(
-          error instanceof Error ? error.message : String(error),
-          attempts,
-          totalUsage,
-        );
+      if (attempts >= maxAttempts || performance.now() >= deadline || retriesUsed >= retryLimit) {
+        throw new SummaryRetryError(failure instanceof Error ? failure.message : String(failure), attempts, totalUsage);
       }
       if (timedOut) timeoutRetries += 1;
       else errorRetries += 1;
@@ -944,7 +973,7 @@ async function summarizeOutputWithRetries(
         kind: i18n.t(timedOut ? "retryKindTimeout" : "retryKindError"),
         retry: retriesUsed + 1,
         limit: retryLimit,
-        error: error instanceof Error ? error.message : String(error),
+        error: failure instanceof Error ? failure.message : String(failure),
       }) });
     } finally {
       clearTimeout(timeout);
@@ -1199,7 +1228,10 @@ export async function processToolResult(
       summaryJsonRepairSucceeded: error instanceof SummaryJsonRepairError ? false : undefined,
       ...getTokenCompressionDiagnostics(output, output),
       outputSummaryAnomalies: ["summary-failed"],
-      outputSummaryAdvice: `Summarization failed; the original output was preserved. Check model configuration or authentication. Requests still running after ${config.timeoutSeconds}s are treated as timed out.`,
+      outputSummaryAdvice: i18n.t("summaryFailureAdvice", {
+        seconds: config.timeoutSeconds,
+        totalSeconds: config.timeoutSeconds * (1 + Math.max(config.timeoutRetryCount, config.errorRetryCount)),
+      }),
       outputSummaryError: errorMessage,
     };
     const agentDiagnostic = buildAgentDiagnosticText(diagnostics);
