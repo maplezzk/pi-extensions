@@ -1395,6 +1395,12 @@ describe("subagent-done.ts", () => {
           setWidget() {},
           hasUI: false,
         },
+        isIdle(): boolean {
+          return true;
+        },
+        hasPendingMessages(): boolean {
+          return false;
+        },
       };
       return {
         handlers,
@@ -1414,6 +1420,12 @@ describe("subagent-done.ts", () => {
             sentUserMessages.push(message);
           },
           sendMessage() {},
+          events: {
+            on(): () => void {
+              return () => undefined;
+            },
+            emit(): void {},
+          },
           getAllTools() {
             return [];
           },
@@ -1660,6 +1672,27 @@ describe("tool registration", () => {
       autoExit: false,
       interactive: true,
     });
+  });
+
+  it("passes the resolved interactive mode without inferring it from auto-exit", () => {
+    const testApi = subagentsModule.__test__;
+    assert.equal(testApi.buildSubagentInteractiveEnvironment(false), "PI_SUBAGENT_INTERACTIVE=0");
+    assert.equal(testApi.buildSubagentInteractiveEnvironment(true), "PI_SUBAGENT_INTERACTIVE=1");
+    assert.equal(
+      testApi.buildSubagentInteractiveEnvironment(
+        testApi.resolveEffectiveInteractive(
+          { name: "A", task: "T", interactive: true },
+          { autoExit: true },
+        ),
+      ),
+      "PI_SUBAGENT_INTERACTIVE=1",
+    );
+    assert.equal(
+      testApi.buildSubagentInteractiveEnvironment(
+        testApi.resolveResumeLaunchBehavior({ autoExit: true }).interactive,
+      ),
+      "PI_SUBAGENT_INTERACTIVE=0",
+    );
   });
 
   it("uses the global switch to gate all subagent lifecycle tools", () => {

@@ -53,6 +53,18 @@ type RegisteredCommand = {
   handler: (args: string, context: unknown) => Promise<void>;
 };
 
+type SquashMessage = {
+  customType?: string;
+  content?: string;
+  details?: Record<string, unknown>;
+};
+
+function isSquashMessage(message: unknown): message is SquashMessage {
+  return !!message
+    && typeof message === "object"
+    && (message as { customType?: string }).customType === SESSION_SQUASH_TYPE;
+}
+
 const VALID_HANDOFF_SUMMARY = [
   "# Handoff: test",
   "## Timeline of user and agent work",
@@ -106,6 +118,8 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   const commands = new Map<string, RegisteredCommand>();
   const handlers = new Map<string, EventHandler>();
   const sentMessages: Array<{ message: unknown; options: unknown }> = [];
+  const emittedEvents: Array<{ channel: string; data: unknown }> = [];
+  let nextSquashEntryId = 1;
   let activeTools = ["read", "bash", "session_log", "session_squash"];
   const pi = {
     /** 收集扩展注册的工具定义，供测试直接调用。 */
@@ -131,6 +145,26 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
     /** 记录扩展发送的强制任务和压缩摘要消息。 */
     sendMessage(message: unknown, options: unknown) {
       sentMessages.push({ message, options });
+      if (isSquashMessage(message) && options && (options as { triggerTurn?: boolean }).triggerTurn === false) {
+        branch.push({
+          type: "custom_message",
+          id: `squash-${nextSquashEntryId++}`,
+          parentId: "a1",
+          timestamp: "2026-01-01T00:00:02.000Z",
+          customType: SESSION_SQUASH_TYPE,
+          content: message.content ?? "",
+          display: true,
+          details: message.details ?? {},
+        });
+      }
+    },
+    events: {
+      emit(channel: string, data: unknown): void {
+        emittedEvents.push({ channel, data });
+      },
+      on(): () => void {
+        return () => undefined;
+      },
     },
   } as unknown as ExtensionAPI;
 
@@ -212,13 +246,15 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   const branchTargets: string[] = [];
   const notifications: string[] = [];
   let abortCount = 0;
+  let shouldFailBranch = false;
   const sessionManager = {
     getBranch: () => branch,
     getSessionId: () => "session-1",
-    getLeafId: () => "a1",
+    getLeafId: () => branch[branch.length - 1]?.id ?? "",
     /** 记录折叠时选择的分支起点。 */
     branch(entryId: string) {
       branchTargets.push(entryId);
+      if (shouldFailBranch) throw new Error("branch failed");
     },
     buildContextEntries: () => branch,
   };
@@ -399,6 +435,26 @@ test("强制模式限制工具，并按 continuation 控制压缩后接续", asy
   );
   assert.equal(allSquashMessages.length, 3);
   assert.deepEqual(allSquashMessages[2]?.options, { triggerTurn: true });
+  assert.deepEqual(
+    emittedEvents,
+    [
+      { channel: "pi-session-tools:squash-completed", data: { sessionId: "session-1", leafId: "squash-1", continuation: "next-user" } },
+      { channel: "pi-session-tools:squash-completed", data: { sessionId: "session-1", leafId: "squash-2", continuation: "next-user" } },
+    ],
+  );
+
+  const emittedBeforeFailedBranch = emittedEvents.length;
+  shouldFailBranch = true;
+  const failedResult = await squashTool.execute(
+    "tool-3",
+    { from: 0, summary: VALID_HANDOFF_SUMMARY, continuation: "next-user" },
+    undefined,
+    undefined,
+    context,
+  );
+  assert.equal(failedResult.terminate, true);
+  await assert.rejects(() => settled({}, context), /branch failed/);
+  assert.equal(emittedEvents.length, emittedBeforeFailedBranch);
 });
 
 test("session-squash 快照以 compaction summary 语义注入上下文", async () => {
@@ -719,6 +775,12 @@ test("压缩后的请求用压缩前抓到的 system 消息补回提示与工具
       if ((message as { customType?: string }).customType === SESSION_SQUASH_TYPE) {
         branch = [userEntry, squashEntry];
       }
+    },
+    events: {
+      emit(): void {},
+      on(): () => void {
+        return () => undefined;
+      },
     },
   } as unknown as ExtensionAPI;
   sessionTailCompaction(pi);
