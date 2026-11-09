@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.11.0...pi-tool-supervisor-v0.11.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **pi-tool-supervisor:** 修复拒绝诊断在折叠卡片外重复展示 ([b410a14](https://github.com/maplezzk/pi-extensions/commit/b410a148838927c150f0f4300b2d94ed0158a871))
+* **supervisor:** 避免拒绝诊断在折叠卡片外重复展示 ([ebd7685](https://github.com/maplezzk/pi-extensions/commit/ebd76859a165f5f43d40e3c9d141fc08764f2cca))
+
 ## [0.11.0](https://github.com/maplezzk/pi-extensions/compare/pi-tool-supervisor-v0.10.0...pi-tool-supervisor-v0.11.0) (2026-10-17)
 
 

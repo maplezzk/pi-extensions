@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.16.8](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.7...pi-interactive-subagents-v3.16.8) (2026-11-09)
+
+
+### Bug Fixes
+
+* 修复子 Agent 压缩后完成提醒漏报 ([514d15c](https://github.com/maplezzk/pi-extensions/commit/514d15c1199b3b14c0b9521918e7dcf43b2e3941))
+* 修复子 Agent 压缩后完成提醒漏报 ([cc81438](https://github.com/maplezzk/pi-extensions/commit/cc814381d4f99a7fed452a20196e8204b4ae0d97))
+
 ## [3.16.7](https://github.com/maplezzk/pi-extensions/compare/pi-interactive-subagents-v3.16.6...pi-interactive-subagents-v3.16.7) (2026-11-06)
 
 
