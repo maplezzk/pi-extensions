@@ -227,6 +227,12 @@ function notify(ctx: ExtensionContext | ExtensionCommandContext, message: string
   notifyWithSource({ ctx: { mode: ctx.mode, ui: ctx.ui }, source: NOTICE_SOURCE, level, message });
 }
 
+function notifyAfterRejection(context: FileReviewExecutionContext, diagnostic: string | undefined): void {
+  if (!diagnostic) return;
+  if (context.ctx.mode === "tui" && isSupervisorToolDisplayMiddlewareActive(context.toolName)) return;
+  notify(context.ctx, diagnostic, "error");
+}
+
 /** Detects tool execution failure without inspecting arbitrary detail fields. */
 function isFailedToolResult(result: ToolResult): boolean {
   return result.isError === true || getRecord(result).isError === true;
@@ -667,7 +673,7 @@ async function reviewToolResult(options: {
       warnings: [...configWarnings, ...(beforeAudit?.warnings ?? []), i18n.t("unchangedFileSkipped")],
     };
     const diagnostic = createReviewRejectionDiagnostic(audit);
-    if (diagnostic) notify(context.ctx, diagnostic, "error");
+    notifyAfterRejection(context, diagnostic);
     return {
       ...result,
       details: { ...(result.details ?? {}), fileEditReview: audit },
@@ -710,7 +716,7 @@ async function reviewToolResult(options: {
       warnings: [...configWarnings, ...(beforeAudit?.warnings ?? [])],
     };
     const diagnostic = createReviewRejectionDiagnostic(audit);
-    if (diagnostic) notify(context.ctx, diagnostic, "error");
+    notifyAfterRejection(context, diagnostic);
     return {
       ...result,
       details: { ...(result.details ?? {}), fileEditReview: audit },
@@ -753,9 +759,7 @@ async function reviewToolResult(options: {
     warnings: auditWarnings,
   };
   const diagnostic = createReviewRejectionDiagnostic(audit);
-  if (diagnostic) {
-    notify(context.ctx, diagnostic, "error");
-  }
+  notifyAfterRejection(context, diagnostic);
   return {
     ...result,
     details: { ...(result.details ?? {}), fileEditReview: audit },
@@ -946,7 +950,7 @@ async function processGenericReviewResult(context: FileReviewExecutionContext, p
   );
   const audit: FileEditReviewAudit = { status: getOverallReviewStatus(reviewersWithBefore), toolName: context.toolName, trigger: AFTER_TRIGGER, reviewers: reviewersWithBefore, durationMs: (pending.beforeAudit?.durationMs ?? 0) + afterDurationMs, warnings };
   const diagnostic = createReviewRejectionDiagnostic({ ...audit, filePath: context.toolName });
-  if (diagnostic) notify(context.ctx, diagnostic, "error");
+  notifyAfterRejection(context, diagnostic);
   return { ...result, details: { ...(result.details ?? {}), fileEditReview: audit }, content: diagnostic ? [...result.content, { type: "text", text: diagnostic }] : result.content };
 }
 
