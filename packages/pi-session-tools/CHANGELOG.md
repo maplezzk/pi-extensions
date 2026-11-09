@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.1](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.9.0...pi-session-tools-v0.9.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* 修复子 Agent 压缩后完成提醒漏报 ([514d15c](https://github.com/maplezzk/pi-extensions/commit/514d15c1199b3b14c0b9521918e7dcf43b2e3941))
+* 修复子 Agent 压缩后完成提醒漏报 ([cc81438](https://github.com/maplezzk/pi-extensions/commit/cc814381d4f99a7fed452a20196e8204b4ae0d97))
+* 修复子 Agent 压缩后完成提醒漏报 ([2c99c6a](https://github.com/maplezzk/pi-extensions/commit/2c99c6a64835d907379277860831bd2e6dc86dfa))
+
 ## [0.9.0](https://github.com/maplezzk/pi-extensions/compare/pi-session-tools-v0.8.0...pi-session-tools-v0.9.0) (2026-10-05)
 
 
