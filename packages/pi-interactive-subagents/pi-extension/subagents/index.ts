@@ -929,6 +929,11 @@ const NO_EXTENSIONS_FLAG = "--no-extensions";
 const EXTENSION_FLAG = "--extension";
 const SUBAGENT_DONE_EXTENSION_FILE = "subagent-done.ts";
 
+/** 将父端解析后的实际交互模式编码为子进程环境变量。 */
+function buildSubagentInteractiveEnvironment(isInteractive: boolean): string {
+  return `PI_SUBAGENT_INTERACTIVE=${isInteractive ? "1" : "0"}`;
+}
+
 /**
  * Build the child --tools allowlist.
  *
@@ -1596,6 +1601,7 @@ export const __test__ = {
   resolveEffectiveSessionMode,
   resolveLaunchBehavior,
   resolveEffectiveInteractive,
+  buildSubagentInteractiveEnvironment,
   buildSubagentToolAllowlist,
   buildChildExtensionArgs,
   buildPiPromptArgs,
@@ -1838,6 +1844,8 @@ async function launchSubagent(
   if (agentDefs?.autoExit) {
     envParts.push(`PI_SUBAGENT_AUTO_EXIT=1`);
   }
+  // 传递已解析的实际模式；子进程不得从 autoExit 推断是否为交互会话。
+  envParts.push(buildSubagentInteractiveEnvironment(effectiveInteractive));
   envParts.push(`PI_SUBAGENT_SESSION=${shellEscape(subagentSessionFile)}`);
   envParts.push(`PI_SUBAGENT_ID=${shellEscape(id)}`);
   envParts.push(`PI_SUBAGENT_ACTIVITY_FILE=${shellEscape(activityFile)}`);
@@ -2564,6 +2572,8 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         if (autoExit) {
           resumeEnvParts.push(`PI_SUBAGENT_AUTO_EXIT=1`);
         }
+        // resume 的模式由显式 autoExit 参数解析后传递，避免子进程自行猜测。
+        resumeEnvParts.push(buildSubagentInteractiveEnvironment(interactive));
         const resumeEnvPrefix = resumeEnvParts.join(" ") + " ";
 
         const command = `${resumeEnvPrefix}${parts.join(" ")}; echo '__SUBAGENT_DONE_'$?'__'`;

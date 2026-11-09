@@ -15,6 +15,8 @@ Call `session_log` first, use the index of a completed turn as `from`, and pass 
 
 Squash at a safe task or phase checkpoint, such as after a phase or verification completes, a key decision is settled, or before entering the next phase; the whole task need not be delivered. The snapshot should focus on what was done in the squashed range, its target, final outcomes, and verification, then state the exact stopping point, remaining work, artifact state, and next action. Completed work must not be repeated under remaining work. Use `VERIFIED`, `INFERRED`, `UNKNOWN`, `NOT VERIFIED`, or `BLOCKED` when needed. Preserve effective task state rather than maintenance mechanics such as context thresholds, `session_log`, `session_squash`, or session switching. Explicitly select the continuation mode on every squash: use `continuation: "auto"` when work can resume immediately; when the current task is complete and the next action requires new user input, use `continuation: "next-user"` to save the snapshot without triggering another model turn. If the snapshot conflicts with workspace, Git, or test evidence, the evidence wins and the conflict must be reported.
 
+After a `next-user` branch and its snapshot are both persisted successfully, the extension publishes the public `pi.events` event `pi-session-tools:squash-completed` with `{ sessionId, leafId, continuation }`. It verifies the persisted tail entry before publishing and does not emit for validation, branch, or summary-write failures. `auto` does not publish this event because its deferred append has no public completion hook. Consumers must treat the event as post-success only and re-check session identity before acting.
+
 ## Install
 
 ```bash

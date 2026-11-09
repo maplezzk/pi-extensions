@@ -153,6 +153,9 @@ const TAIL_START_ERROR_I18N_KEY: Record<TailStartErrorCode, string> = {
 const CONTINUATION_AUTO = "auto";
 const CONTINUATION_NEXT_USER = "next-user";
 
+/** 压缩摘要持久化成功后广播，供同会话扩展补偿自主子 Agent 的完成提醒。 */
+const SQUASH_COMPLETED_EVENT = "pi-session-tools:squash-completed";
+
 type SquashContinuation =
   | typeof CONTINUATION_AUTO
   | typeof CONTINUATION_NEXT_USER;
@@ -396,6 +399,26 @@ type PendingTailCompaction = {
   summary: string;
   continuation: SquashContinuation;
 };
+
+/** 校验 next-user 同步写入的末尾快照，避免把 sendMessage 返回当作持久化成功。 */
+function isPersistedSquashEntry(
+  entry: SessionEntry | undefined,
+  summary: string,
+  data: TailCompactionData,
+): entry is SessionEntry & { id: string } {
+  if (!entry || entry.type !== "custom_message" || entry.customType !== SESSION_SQUASH_TYPE) {
+    return false;
+  }
+  if (entry.content !== summary || !entry.details || typeof entry.details !== "object") {
+    return false;
+  }
+  const details = entry.details as Partial<TailCompactionData>;
+  return typeof entry.id === "string"
+    && details.startEntryId === data.startEntryId
+    && details.sourceLeafId === data.sourceLeafId
+    && details.fromUserInputIndex === data.fromUserInputIndex
+    && details.summary === data.summary;
+}
 
 type ForceSquashState = {
   sessionId: string;
@@ -668,6 +691,8 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       tokensBefore: ctx.getContextUsage()?.tokens ?? 0,
     };
 
+    let persistedSquashEntryId: string | null = null;
+
     try {
       // 起始 user turn 作为新分支锚点保留，确保后续 session_log 索引稳定；
       // continuation=next-user 会阻止已完成任务立即重答这条旧 prompt。
@@ -691,6 +716,17 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
         { triggerTurn: request.continuation === CONTINUATION_AUTO },
       );
       pending = null;
+
+      // next-user 的写入在当前调用内完成，必须从真实分支末尾取得成功证据。
+      // auto 通过 deferred action 追加快照，当前没有可观察的公共完成钩子，因此不广播。
+      const compactedBranch = ctx.sessionManager.getBranch();
+      const persistedEntry = compactedBranch[compactedBranch.length - 1];
+      if (
+        request.continuation === CONTINUATION_NEXT_USER
+        && isPersistedSquashEntry(persistedEntry, summary, data)
+      ) {
+        persistedSquashEntryId = persistedEntry.id;
+      }
     } catch (error) {
       pending = null;
       throw new Error(i18n.t("branchFailed", { error: String(error) }));
@@ -703,6 +739,29 @@ export default function contextFoldExtension(pi: ExtensionAPI) {
       }),
       "info",
     );
+
+    // TUI 通知会追加自定义条目并推进 leaf；通知后重新确认同一 session 仍保留已验证的摘要。
+    if (persistedSquashEntryId && ctx.sessionManager.getSessionId() === request.sessionId) {
+      const currentBranch = ctx.sessionManager.getBranch();
+      const persistedEntry = currentBranch.find((entry) => entry.id === persistedSquashEntryId);
+      const currentLeafId = ctx.sessionManager.getLeafId();
+      if (
+        currentLeafId
+        && isPersistedSquashEntry(persistedEntry, summary, data)
+      ) {
+        try {
+          pi.events.emit(SQUASH_COMPLETED_EVENT, {
+            sessionId: request.sessionId,
+            leafId: currentLeafId,
+            continuation: request.continuation,
+          });
+        } catch (error) {
+          process.stderr.write(
+            `[pi-session-tools] squash-completed event failed: ${String(error)}\n`,
+          );
+        }
+      }
+    }
   });
 
   pi.on("session_shutdown", () => {

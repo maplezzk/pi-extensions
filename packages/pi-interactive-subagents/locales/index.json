@@ -3,6 +3,10 @@
     "zh-CN": "【自动提醒】\n• 已完成 → 调用 subagent_done 结束。\n• 结束前自检：是否在原地打转？若是，立刻收敛结果，用 caller_ping 抛回主 agent，不要过度思考。\n• 还在处理 → 忽略。",
     "en-US": "[Auto reminder]\n• Done → call subagent_done to finish.\n• Before finishing, self-check: are you spinning in place? If so, converge your result immediately and hand it back to the main agent with caller_ping — don't overthink.\n• Still working → ignore."
   },
+  "squashCompletionNudge": {
+    "zh-CN": "【压缩完成提醒】\n• 任务状态已保存，且当前正在等待上级输入。\n• 若已完成 → 调用 subagent_done 上报结果。\n• 需要主 agent 协助 → 调用 caller_ping；仍在处理 → 忽略。",
+    "en-US": "[Compaction completion reminder]\n• Your task state has been saved and the session is waiting for the parent.\n• If done → call subagent_done to report your result.\n• Need help from the main agent → call caller_ping; still working → ignore."
+  },
   "muxCommandDescription": {
     "zh-CN": "配置 subagent 使用的终端复用器及 Herdr 布局模式",
     "en-US": "Configure the subagent multiplexer and Herdr layout mode"
