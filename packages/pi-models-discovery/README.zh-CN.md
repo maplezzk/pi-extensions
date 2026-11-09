@@ -62,6 +62,36 @@ pi install npm:pi-models-discovery
 
 手编方式修改配置后需 `/reload` 生效；`/config:model-discovery` 命令的修改立即生效。
 
+## 逐模型协议覆盖
+
+自动发现不探测模型支持哪种协议；provider 的 `api` 仍是默认值。用 `modelApis` 为已验证的模型 ID 指定其他协议，无需新增 provider，也不改变发给上游的模型 ID：
+
+这是通用的 Pi API 覆盖功能，适用于任意 provider 默认协议及 Pi 中已注册的协议，也包括扩展提供的自定义 API。下例模型名都是占位示例，不是内置分组或路由规则；每个模型应配置该 provider 实际提供的协议。
+
+```json
+{
+  "providers": {
+    "my-proxy": {
+      "baseUrl": "https://proxy.example.com/v1",
+      "apiKey": "$PROXY_API_KEY",
+      "api": "openai-completions",
+      "discoverModels": true,
+      "modelApis": {
+        "model-a": "openai-responses",
+        "model-b": "anthropic-messages",
+        "model-c": "google-generative-ai"
+      }
+    }
+  }
+}
+```
+
+键按模型 ID 精确匹配、区分大小写，不支持通配符，也不按模型品牌猜测能力。未匹配的模型沿用 provider 的 `api`；映射不存在的 ID 不会创建模型。例如 `/model` 中仍只有一个 `my-proxy/model-a`，请求的 `model` 仍为 `model-a`，协议为 Responses。`modelApis` 必须是非空模型 ID 到非空 API 字符串的对象；API 标识也可使用其他扩展注册的自定义协议。无效映射会明确警告并跳过发现注册，不静默改用另一协议。
+
+首次发现、缓存启动、离线初始化、打开 `/model` 的在线刷新和显式刷新命令都应用同一映射。持久化缓存与共享发现请求缓存只保存没有协议覆盖的模型目录。修改或移除 `modelApis` 时复用目录、重新应用当前配置，旧协议不会残留在缓存模型中。`modelApis` 不改变目录指纹，也不妨碍多个 provider 共用一次目录请求。
+
+在 `/config:model-discovery` 的「逐模型协议」行编辑 JSON 对象；留空或 `{}` 清除映射。面板修改即时保存并生效，目录已有缓存时无需联网；直接编辑文件后用 `/reload`。发现失败时仍沿用现有手写 `models` 回退规则，这些静态条目如有需要，应自行填写 `api`。扩展不迁移会话历史、不跨协议重试；改变模型协议后请开启新对话。
+
 ## 刷新缓存
 
 ```

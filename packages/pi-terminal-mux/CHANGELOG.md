@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.9](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.6.8...pi-terminal-mux-v0.6.9) (2026-11-06)
+
+
+### Bug Fixes
+
+* **pi-terminal-mux:** force cmux surface cleanup ([#250](https://github.com/maplezzk/pi-extensions/issues/250)) ([aa06735](https://github.com/maplezzk/pi-extensions/commit/aa0673595b7c9f0aa8987fbb1089a73d05485916)), closes [#249](https://github.com/maplezzk/pi-extensions/issues/249)
+
 ## [0.6.8](https://github.com/maplezzk/pi-extensions/compare/pi-terminal-mux-v0.6.7...pi-terminal-mux-v0.6.8) (2026-11-02)
 
 

@@ -37,9 +37,7 @@ const supervisorMiddleware: ResultMiddleware = (context, next) => {
   if (!rendered) return next();
 
   const panel = createSupervisorAuditComponent(rendered, context.theme);
-  // The full diagnostic remains in result.content for the model, while the
-  // TUI shows the audit panel and the notify toast instead of printing it as
-  // ordinary tool output in the editor area.
+  // 完整诊断保留在 result.content 给模型；TUI 用审计卡片替代原始诊断输出。
   return isDiagnosticAudit(audit) ? panel : appendResultRenderPanel(next(), panel);
 };
 

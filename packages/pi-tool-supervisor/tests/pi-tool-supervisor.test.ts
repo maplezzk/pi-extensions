@@ -538,6 +538,108 @@ test("pi-tool-supervisor 通过通用 tool-display result middleware 追加审�
   }
 });
 
+test("after 拒绝仅在 TUI 活跃卡片中展示，其他模式保留通知和完整诊断", async () => {
+  const { default: piSupervisorExtension } = await import("../src/index.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-supervisor-rejection-display-"));
+  const handlers = new Map<string, (...args: any[]) => any>();
+  const entries: Array<{ type: string; data: any }> = [];
+  const notifications: string[] = [];
+  const apiKey = Symbol.for("pi-tool-display.api.v1");
+  const faux = registerFauxProvider({ provider: "rejection-display", models: [{ id: "model" }] });
+  let registration: any;
+  let activeTool = "write";
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  (globalThis as any)[apiKey] = {
+    registerResultRenderMiddleware: (value: any) => { registration = value; return value.id; },
+    unregisterResultRenderMiddleware: () => true,
+    hasResultRenderMiddleware: (id: string) => id === registration?.id,
+    isResultRenderPipelineActive: (name: string) => name === activeTool,
+  };
+  try {
+    const rulesFile = join(agentDir, "rules.md");
+    await writeFile(rulesFile, "# rules\n");
+    const configDirectory = join(agentDir, "extensions", "pi-tool-supervisor");
+    await mkdir(configDirectory, { recursive: true });
+    const configPath = join(configDirectory, "config.json");
+    const configure = (trigger: string) => writeFile(configPath, JSON.stringify({
+      enabled: true,
+      reviewers: [{ name: "reviewer", model: "rejection-display/model", rulesFile, tools: ["*"], trigger }],
+    }));
+    const reject = () => faux.setResponses([fauxAssistantMessage(JSON.stringify({
+      passed: false, summary: "审查摘要", findings: [{ ruleGroup: "style", line: 1, message: "具体问题" }],
+    }))]);
+    const pi = {
+      getAllTools: () => [],
+      registerCommand: () => undefined,
+      registerEntryRenderer: () => undefined,
+      appendEntry: (type: string, data: any) => entries.push({ type, data }),
+      on: (event: string, handler: (...args: any[]) => any) => handlers.set(event, handler),
+    } as any;
+    piSupervisorExtension(pi);
+    const context = {
+      cwd: agentDir,
+      mode: "tui",
+      ui: { notify: (message: string) => notifications.push(message) },
+      sessionManager: { getSessionId: () => "session-test" },
+      modelRegistry: {
+        find: () => faux.getModel(),
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test", headers: {}, env: {} }),
+      },
+    };
+    const input = { path: "example.ts", content: "const value = 2;\n" };
+    const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+    await configure("after");
+    for (const scenario of [
+      { mode: "tui", tool: "write", active: "write", notices: 0 },
+      { mode: "tui", tool: "write", active: "edit", notices: 1 },
+      { mode: "rpc", tool: "write", active: "write", notices: 1 },
+      { mode: "tui", tool: "custom", active: "custom", notices: 0 },
+      { mode: "tui", tool: "custom", active: "write", notices: 1 },
+    ]) {
+      entries.length = 0;
+      notifications.length = 0;
+      context.mode = scenario.mode;
+      activeTool = scenario.active;
+      reject();
+      await writeFile(join(agentDir, "example.ts"), "const value = 1;\n");
+      await handlers.get("tool_call")?.({ toolName: scenario.tool, toolCallId: "write-1", input }, context);
+      await writeFile(join(agentDir, "example.ts"), input.content);
+      const result = await handlers.get("tool_result")?.({ toolName: scenario.tool, toolCallId: "write-1", input, content: [{ type: "text", text: "written" }], details: {}, isError: false }, context);
+      assert.equal(result.details.fileEditReview.status, "rejected");
+      assert.match(result.content[1].text, /审查摘要/);
+      assert.match(result.content[1].text, /\[style\] 第 1 行：具体问题/);
+      assert.equal(await readFile(join(agentDir, "example.ts"), "utf8"), input.content);
+      if (scenario.mode === "tui" && scenario.active === scenario.tool) {
+        const render = (expanded: boolean) => registration.middleware({ toolName: scenario.tool, result, options: { expanded }, theme }, () => new Text("raw", 0, 0)).render(160).join("\n");
+        assert.match(render(false), /Supervisor.*未通过/);
+        assert.doesNotMatch(render(false), /具体问题|raw/);
+        assert.match(render(true), /具体问题/);
+      }
+      const notices = entries.filter((entry) => entry.type === "pi-extensions-notice").map((entry) => String(entry.data.message)).concat(notifications);
+      assert.equal(notices.length, scenario.notices, `${scenario.mode} tool=${scenario.tool} active=${scenario.active}`);
+      if (scenario.notices) assert.match(notices[0], /具体问题/);
+    }
+    entries.length = 0;
+    notifications.length = 0;
+    context.mode = "tui";
+    activeTool = "write";
+    await configure("before");
+    reject();
+    const blocked = await handlers.get("tool_call")?.({ toolName: "write", toolCallId: "before-1", input }, context);
+    assert.equal(blocked.block, true);
+    assert.match(blocked.reason, /具体问题/);
+    assert.equal(entries.filter((entry) => entry.type === "pi-extensions-notice").length, 1);
+    assert.equal(entries.filter((entry) => entry.type === SUPERVISOR_AUDIT_ENTRY_TYPE).length, 1);
+  } finally {
+    await handlers.get("session_shutdown")?.();
+    faux.unregister();
+    delete (globalThis as any)[apiKey];
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
 test("Supervisor 展开态按 distill 风格展示文件、审查器详情和发现项", () => {
   const audit = buildSupervisorAuditLines("edit", {
     status: "rejected",
