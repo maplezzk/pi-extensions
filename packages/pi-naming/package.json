@@ -1,6 +1,6 @@
 {
   "name": "pi-naming",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "Configurable Pi session naming and manual terminal workspace/tab renaming",
   "type": "module",
   "main": "./index.ts",
