@@ -6,6 +6,7 @@ import type {
 import {
   buildSessionNamePrompt,
   buildPromptSessionName,
+  getSessionNamingTurns,
   getSessionUserMessages,
   normalizeSessionName,
   requestSessionName,
@@ -53,6 +54,75 @@ test("getSessionUserMessages 只提取用户消息中的文本", () => {
   ] as SessionEntry[];
 
   assert.deepEqual(getSessionUserMessages(entries), ["实现自动命名", "补充测试要求"]);
+});
+
+test("getSessionNamingTurns 提取每轮用户消息和模型最后一次非空文本输出", () => {
+  const entries = [
+    {
+      type: "message",
+      id: "assistant-before-user",
+      parentId: null,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { role: "assistant", content: [{ type: "text", text: "应被忽略" }] },
+    },
+    userEntry("user-1", "排查订单超时"),
+    {
+      type: "message",
+      id: "assistant-1a",
+      parentId: "user-1",
+      timestamp: "2026-01-01T00:00:01.000Z",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "我先查看日志" },
+          { type: "toolCall", id: "tool-1", name: "bash", arguments: {} },
+        ],
+      },
+    },
+    {
+      type: "message",
+      id: "assistant-1b",
+      parentId: "assistant-1a",
+      timestamp: "2026-01-01T00:00:02.000Z",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "已定位是 Redis 锁超时，改为分段重试后恢复。" }],
+      },
+    },
+    {
+      type: "message",
+      id: "assistant-1c-tool-only",
+      parentId: "assistant-1b",
+      timestamp: "2026-01-01T00:00:03.000Z",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "tool-2", name: "bash", arguments: {} }],
+      },
+    },
+    userEntry("user-2", "补充回归测试"),
+  ] as SessionEntry[];
+
+  assert.deepEqual(getSessionNamingTurns(entries), [
+    {
+      userMessage: "排查订单超时",
+      assistantOutput: "已定位是 Redis 锁超时，改为分段重试后恢复。",
+    },
+    {
+      userMessage: "补充回归测试",
+    },
+  ]);
+});
+
+test("buildSessionNamePrompt 支持带每轮模型输出的对话轮次边界", () => {
+  const prompt = buildSessionNamePrompt([
+    { userMessage: "排查超时", assistantOutput: "已修复 Redis 锁超时" },
+    { userMessage: "补充测试" },
+  ]);
+
+  assert.match(prompt, /<conversation-turns>/);
+  assert.match(prompt, /<turn index="1">\n<user-message>\n排查超时\n<\/user-message>\n<assistant-output>\n已修复 Redis 锁超时\n<\/assistant-output>\n<\/turn>/);
+  assert.match(prompt, /<turn index="2">\n<user-message>\n补充测试\n<\/user-message>\n<\/turn>/);
+  assert.match(prompt, /<\/conversation-turns>/);
 });
 
 test("buildSessionNamePrompt 为用户消息添加边界", () => {

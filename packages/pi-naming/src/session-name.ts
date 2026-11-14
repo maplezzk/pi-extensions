@@ -27,9 +27,16 @@ export function resolveTitleMaxTokens(
   return Math.min(model.maxTokens, configuredMaxTokens);
 }
 
-/** 标题请求参数；userMessages 只应包含待分析的用户输入。 */
+/** 单轮会话摘要输入：包含用户消息与该轮模型的最后一次文本输出。 */
+export interface SessionNamingTurn {
+  userMessage: string;
+  assistantOutput?: string;
+}
+
+/** 标题请求参数；可传 turns（含用户消息与每轮最后输出）或 userMessages。 */
 export type SessionNameRequest = {
-  userMessages: readonly string[];
+  userMessages?: readonly string[];
+  turns?: readonly SessionNamingTurn[];
   ctx: SessionNameContext;
   signal?: AbortSignal;
   completion?: SessionNameCompletion;
@@ -60,9 +67,18 @@ type UserSessionMessageEntry = Extract<SessionEntry, { type: "message" }> & {
   message: { role: "user"; content: unknown };
 };
 
-/** 判断 session 条目是否为带文本内容的用户消息。 */
+type AssistantSessionMessageEntry = Extract<SessionEntry, { type: "message" }> & {
+  message: { role: "assistant"; content: unknown };
+};
+
+/** 判断 session 条目是否为用户消息。 */
 function isUserMessageEntry(entry: SessionEntry): entry is UserSessionMessageEntry {
   return entry.type === "message" && entry.message.role === "user";
+}
+
+/** 判断 session 条目是否为模型输出消息。 */
+function isAssistantMessageEntry(entry: SessionEntry): entry is AssistantSessionMessageEntry {
+  return entry.type === "message" && entry.message.role === "assistant";
 }
 
 /** 提取当前会话分支中的用户输入，不把 assistant/tool/custom 消息交给命名模型。 */
@@ -73,6 +89,34 @@ export function getSessionUserMessages(entries: readonly SessionEntry[]): string
     .filter((message) => message.length > 0);
 }
 
+/** 提取当前会话分支中每轮的用户消息及该轮模型最后一次非空文本输出。 */
+export function getSessionNamingTurns(entries: readonly SessionEntry[]): SessionNamingTurn[] {
+  const turns: SessionNamingTurn[] = [];
+  let currentTurn: SessionNamingTurn | undefined;
+
+  for (const entry of entries) {
+    if (isUserMessageEntry(entry)) {
+      const userMessage = getTextContent(entry.message.content).trim();
+      if (userMessage.length > 0) {
+        currentTurn = { userMessage };
+        turns.push(currentTurn);
+      } else {
+        currentTurn = undefined;
+      }
+      continue;
+    }
+
+    if (currentTurn && isAssistantMessageEntry(entry)) {
+      const assistantOutput = getTextContent(entry.message.content).trim();
+      if (assistantOutput.length > 0) {
+        currentTurn.assistantOutput = assistantOutput;
+      }
+    }
+  }
+
+  return turns;
+}
+
 /** 从当前 session 分支提取用户消息，供命名请求使用。 */
 export function getCurrentSessionUserMessages(
   ctx: Pick<ExtensionContext, "sessionManager">,
@@ -80,9 +124,47 @@ export function getCurrentSessionUserMessages(
   return getSessionUserMessages(ctx.sessionManager.getBranch());
 }
 
-/** 构造带消息边界的命名提示词，避免把用户文本当作控制指令。 */
-export function buildSessionNamePrompt(userMessages: readonly string[]): string {
-  const messages = userMessages
+/** 从当前 session 分支提取每轮用户消息与模型最后输出，供手动命名请求使用。 */
+export function getCurrentSessionNamingTurns(
+  ctx: Pick<ExtensionContext, "sessionManager">,
+): SessionNamingTurn[] {
+  return getSessionNamingTurns(ctx.sessionManager.getBranch());
+}
+
+function isNamingTurn(value: string | SessionNamingTurn): value is SessionNamingTurn {
+  return typeof value === "object" && value !== null && "userMessage" in value;
+}
+
+/** 构造带消息边界的命名提示词，避免把用户文本或模型输出当作控制指令。 */
+export function buildSessionNamePrompt(
+  input: readonly string[] | readonly SessionNamingTurn[],
+): string {
+  const first = input[0];
+  if (first !== undefined && isNamingTurn(first)) {
+    const turns = (input as readonly SessionNamingTurn[])
+      .map((turn, index) => {
+        const parts = [
+          `<turn index="${index + 1}">`,
+          `<user-message>\n${turn.userMessage}\n</user-message>`,
+        ];
+        if (turn.assistantOutput) {
+          parts.push(`<assistant-output>\n${turn.assistantOutput}\n</assistant-output>`);
+        }
+        parts.push("</turn>");
+        return parts.join("\n");
+      })
+      .join("\n\n");
+
+    return [
+      i18n.t("sessionNamePrompt"),
+      "",
+      "<conversation-turns>",
+      turns,
+      "</conversation-turns>",
+    ].join("\n");
+  }
+
+  const messages = (input as readonly string[])
     .map(
       (message, index) =>
         `<user-message index="${index + 1}">\n${message}\n</user-message>`,
@@ -152,14 +234,31 @@ export function buildPromptSessionName(
 /** 调用当前 session 模型生成名称，并把鉴权、空响应和模型错误显式抛出。 */
 export async function requestSessionName({
   userMessages,
+  turns,
   ctx,
   signal,
   completion = completeSimple,
   title = DEFAULT_TITLE_CONFIG,
 }: SessionNameRequest): Promise<string> {
-  if (userMessages.length === 0) {
+  const normalizedTurns: SessionNamingTurn[] = turns && turns.length > 0
+    ? turns
+        .map((turn) => ({
+          userMessage: turn.userMessage.trim(),
+          ...(turn.assistantOutput?.trim() ? { assistantOutput: turn.assistantOutput.trim() } : {}),
+        }))
+        .filter((turn) => turn.userMessage.length > 0)
+    : (userMessages ?? [])
+        .map((message) => message.trim())
+        .filter((message) => message.length > 0)
+        .map((userMessage) => ({ userMessage }));
+
+  if (normalizedTurns.length === 0) {
     throw new Error(i18n.t("sessionNameNoMessages"));
   }
+
+  const promptInput = normalizedTurns.some((turn) => Boolean(turn.assistantOutput))
+    ? normalizedTurns
+    : normalizedTurns.map((turn) => turn.userMessage);
 
   const model = ctx.model as SessionNameModel | undefined;
   if (!model) {
@@ -185,7 +284,7 @@ export async function requestSessionName({
       messages: [
         {
           role: "user",
-          content: [{ type: "text", text: buildSessionNamePrompt(userMessages) }],
+          content: [{ type: "text", text: buildSessionNamePrompt(promptInput) }],
           timestamp: Date.now(),
         },
       ],
@@ -222,7 +321,8 @@ export async function requestSessionName({
 
 /** 标题请求的超时包装参数。 */
 export type SessionNameWithTimeoutRequest = {
-  userMessages: readonly string[];
+  userMessages?: readonly string[];
+  turns?: readonly SessionNamingTurn[];
   ctx: SessionNameContext;
   requestName?: SessionNameRequester;
   timeoutMs?: number;
@@ -235,6 +335,7 @@ export type SessionNameWithTimeoutRequest = {
  */
 export async function requestSessionNameWithTimeout({
   userMessages,
+  turns,
   ctx,
   requestName = requestSessionName,
   title = DEFAULT_TITLE_CONFIG,
@@ -251,7 +352,7 @@ export async function requestSessionNameWithTimeout({
 
   try {
     return await Promise.race([
-      requestName({ userMessages, ctx, signal: controller.signal, title }),
+      requestName({ userMessages, turns, ctx, signal: controller.signal, title }),
       timeout,
     ]);
   } finally {

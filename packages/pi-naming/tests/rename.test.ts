@@ -241,6 +241,31 @@ test("手动重新命名传入当前分支全部用户消息，包括纠正与�
   assert.equal(h.name(), "修复订单筛选");
 });
 
+test("手动重新命名传入全部用户消息及每轮模型最后输出", async () => {
+  const h = harness();
+  h.ctx.sessionManager.getBranch = () => [
+    { type: "message", message: { role: "user", content: "修复订单导出" } },
+    { type: "message", message: { role: "assistant", content: [{ type: "text", text: "先查一下导出脚本" }] } },
+    { type: "message", message: { role: "assistant", content: [{ type: "text", text: "已修复导出分页截断" }] } },
+    { type: "message", message: { role: "user", content: "顺便加个单测" } },
+    { type: "message", message: { role: "assistant", content: [{ type: "text", text: "已补充分页单测并通过" }] } },
+  ] as ReturnType<typeof h.ctx.sessionManager.getBranch>;
+
+  const requests: SessionNameRequest[] = [];
+  await registerNaming(h.pi, parseConfig({}), {
+    loadTerminal: async () => h.terminal,
+    requestName: async (request) => { requests.push(request); return "修复订单导出并补单测"; },
+  });
+  await h.commands.get("rename")!.handler("", h.ctx);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0]?.userMessages, ["修复订单导出", "顺便加个单测"]);
+  assert.deepEqual(requests[0]?.turns, [
+    { userMessage: "修复订单导出", assistantOutput: "已修复导出分页截断" },
+    { userMessage: "顺便加个单测", assistantOutput: "已补充分页单测并通过" },
+  ]);
+  assert.equal(h.name(), "修复订单导出并补单测");
+});
+
 test("session-only 不加载终端；目标开关不阻止其他目标", async () => {
   const h = harness();
   await registerNaming(h.pi, parseConfig({ targets: { workspace: false, tab: false } }), {
