@@ -14,7 +14,7 @@
   "packages/pi-safety-guards": "1.0.2",
   "packages/pi-nested-skills": "0.5.0",
   "packages/pi-notifications": "0.5.0",
-  "packages/pi-naming": "0.7.2",
+  "packages/pi-naming": "0.8.0",
   "packages/pi-auto-goal": "0.7.0",
   "packages/pi-clean-mode": "0.5.1",
   "packages/pi-gen-ui": "0.2.0"

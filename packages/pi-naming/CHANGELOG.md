@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/maplezzk/pi-extensions/compare/pi-naming-v0.7.2...pi-naming-v0.8.0) (2026-11-14)
+
+
+### Features
+
+* **pi-naming:** include each turn's last assistant output in session naming ([0e0ab83](https://github.com/maplezzk/pi-extensions/commit/0e0ab8381b1134d62fc88688887c06f91018a9ae))
+* **pi-naming:** include each turn's last assistant output in session naming ([cbfd694](https://github.com/maplezzk/pi-extensions/commit/cbfd6942a22350ed14e77387d8a2068794f5ef22))
+
 ## [0.7.2](https://github.com/maplezzk/pi-extensions/compare/pi-naming-v0.7.1...pi-naming-v0.7.2) (2026-11-06)
 
 
